@@ -1,0 +1,15 @@
+{
+  "name": "partslister-pro-server",
+  "version": "3.0.0",
+  "description": "PartsLister Pro v300 — server version",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  }
+}
