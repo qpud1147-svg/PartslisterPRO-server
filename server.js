@@ -1,4 +1,5 @@
-// PartsLister Pro server — v301
+// PartsLister Pro server — v302
+// v302: dashboard.html is the homepage (/). The listing tool moved to /list.
 // Accounts with email + password login. Each account's settings (including its
 // own API keys) and history are saved ENCRYPTED in Postgres, so you can log in
 // from any computer and everything is there. Also keeps a lifetime listing count.
@@ -266,6 +267,11 @@ app.post('/api/data', requireUser, express.json({ limit: '10mb' }), async (req, 
   }
 });
 
+// v302: just the account — the dashboard uses this so it never pulls your keys
+app.get('/api/me', requireUser, (req, res) => {
+  res.json({ email: req.user.email, isAdmin: req.user.is_admin, listingCount: req.user.listing_count });
+});
+
 // Lifetime listing counter — +1 for every successful Launch or Scheduled Listing
 app.post('/api/listing-count', requireUser, async (req, res) => {
   try {
@@ -508,14 +514,32 @@ app.post('/api/serplens', requireUser, express.json(), async (req, res) => {
   }
 });
 
-// ─── THE PAGE ────────────────────────────────────────────────────────────────
-// Only index.html is ever served — server.js and package.json stay private.
-const INDEX = path.join(__dirname, 'index.html');
+// ─── THE PAGES ───────────────────────────────────────────────────────────────
+// v302: two pages. Only these two files are ever served — server.js and
+// package.json stay private.
+//   /      → dashboard.html (homepage, where you land after signing in)
+//   /list  → index.html     (the listing tool)
+// Each page shows its own sign-in screen when you're signed out.
+const DASHBOARD = path.join(__dirname, 'dashboard.html');
+const LISTING = path.join(__dirname, 'index.html');
+
+app.get('/', (req, res) => res.sendFile(DASHBOARD));
+app.get(['/list', '/list/'], (req, res) => res.sendFile(LISTING));
+// Old links and bookmarks to the file names still work
+app.get(['/index.html'], (req, res) => res.redirect(301, '/list'));
+app.get(['/dashboard', '/dashboard.html'], (req, res) => res.redirect(301, '/'));
+
+// v301 sent every unknown address to the listing tool:
+// const INDEX = path.join(__dirname, 'index.html');
+// app.get('*', (req, res) => {
+//   if (req.path.startsWith('/api/')) return res.status(404).json({ error: 'Not found' });
+//   res.sendFile(INDEX);
+// });
 app.get('*', (req, res) => {
   if (req.path.startsWith('/api/')) return res.status(404).json({ error: 'Not found' });
-  res.sendFile(INDEX);
+  res.redirect('/');   // anything else goes to the dashboard
 });
 
 setupDatabase()
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v301 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v302 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });

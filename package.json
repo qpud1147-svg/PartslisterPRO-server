@@ -1,7 +1,7 @@
 {
   "name": "partslister-pro-server",
-  "version": "3.0.1",
-  "description": "PartsLister Pro v301 — accounts, saved settings and history, lifetime listing count",
+  "version": "3.0.2",
+  "description": "PartsLister Pro v302 — dashboard homepage, accounts, saved settings and history, lifetime listing count",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
