@@ -1,129 +1,349 @@
-// PartsLister Pro server — v300 (Phase 1)
-// Serves index.html and holds every secret. Replaces the three Netlify
-// functions (ebay.js, ebaybrowse.js, serplens.js) plus the direct
-// browser→Anthropic and browser-side Cloudinary signing.
+// PartsLister Pro server — v301
+// Accounts with email + password login. Each account's settings (including its
+// own API keys) and history are saved ENCRYPTED in Postgres, so you can log in
+// from any computer and everything is there. Also keeps a lifetime listing count.
 //
-// Required environment variables (set in Railway → service → Variables):
-//   APP_PASSWORD          password to open the app (username can be anything)
-//   ANTHROPIC_API_KEY
-//   EBAY_CLIENT_ID        App ID
-//   EBAY_CLIENT_SECRET    Cert ID
-//   EBAY_DEV_ID           Dev ID
-//   EBAY_USER_TOKEN       your Auth'n'Auth user token (same one v299 uses)
-//   CLOUDINARY_CLOUD_NAME
-//   CLOUDINARY_API_KEY
-//   CLOUDINARY_API_SECRET
-//   SERPAPI_KEY
+// Railway variables this service needs:
+//   DATABASE_URL     → reference your Postgres service: ${{Postgres.DATABASE_URL}}
+//   ENCRYPTION_KEY   → a long random secret (32+ characters). NEVER change or lose
+//                      it — saved settings can't be decrypted without it.
+//   ALLOW_SIGNUP     → optional. The FIRST account can always be created (it becomes
+//                      the admin). After that, new signups are blocked unless this
+//                      is set to "true".
+//   SERPAPI_KEY      → optional fallback if an account has no SerpApi key saved.
 
 const express = require('express');
 const crypto = require('crypto');
 const path = require('path');
+const { Pool } = require('pg');
 
 const app = express();
+app.set('trust proxy', 1); // Railway sits in front of us and handles HTTPS
 const PORT = process.env.PORT || 3000;
 const env = (k) => (process.env[k] || '').trim();
 
-// ─── PASSWORD GATE ───────────────────────────────────────────────────────────
-// The server now holds your keys, so it must not be open to the public.
-// Uses the browser's built-in login prompt; it remembers you after the first time.
-function safeEqual(a, b) {
-  const ba = Buffer.from(String(a));
-  const bb = Buffer.from(String(b));
-  return ba.length === bb.length && crypto.timingSafeEqual(ba, bb);
+// ─── STARTUP CHECKS ──────────────────────────────────────────────────────────
+if (!env('DATABASE_URL')) { console.error('DATABASE_URL is not set'); process.exit(1); }
+if (env('ENCRYPTION_KEY').length < 32) { console.error('ENCRYPTION_KEY must be at least 32 characters'); process.exit(1); }
+
+const pool = new Pool({ connectionString: env('DATABASE_URL') });
+
+async function setupDatabase() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS users (
+      id            SERIAL PRIMARY KEY,
+      email         TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      is_admin      BOOLEAN NOT NULL DEFAULT FALSE,
+      listing_count INTEGER NOT NULL DEFAULT 0,
+      created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+      last_login    TIMESTAMPTZ
+    );
+    CREATE TABLE IF NOT EXISTS sessions (
+      token_hash TEXT PRIMARY KEY,
+      user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      expires_at TIMESTAMPTZ NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS user_data (
+      user_id    INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      data_enc   TEXT NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+  await pool.query('DELETE FROM sessions WHERE expires_at < now()');
 }
 
-app.use((req, res, next) => {
-  if (req.path === '/health') return next();
-  const pass = env('APP_PASSWORD');
-  if (!pass) return res.status(500).send('APP_PASSWORD is not set on the server.');
-  const header = req.headers.authorization || '';
-  if (header.startsWith('Basic ')) {
-    const decoded = Buffer.from(header.slice(6), 'base64').toString('utf8');
-    const given = decoded.slice(decoded.indexOf(':') + 1);
-    if (safeEqual(given, pass)) return next();
-  }
-  res.set('WWW-Authenticate', 'Basic realm="PartsLister Pro"');
-  res.status(401).send('Login required');
-});
+// ─── ENCRYPTION (AES-256-GCM) ────────────────────────────────────────────────
+// Settings are scrambled before they touch the database. The key that unscrambles
+// them lives only in the ENCRYPTION_KEY variable, never in the database.
+const ENC_KEY = crypto.createHash('sha256').update(env('ENCRYPTION_KEY')).digest();
 
+function encrypt(text) {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', ENC_KEY, iv);
+  const ct = Buffer.concat([cipher.update(text, 'utf8'), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return ['v1', iv.toString('base64'), tag.toString('base64'), ct.toString('base64')].join(':');
+}
+
+function decrypt(stored) {
+  const [ver, iv, tag, ct] = String(stored).split(':');
+  if (ver !== 'v1') throw new Error('Unknown encryption format');
+  const decipher = crypto.createDecipheriv('aes-256-gcm', ENC_KEY, Buffer.from(iv, 'base64'));
+  decipher.setAuthTag(Buffer.from(tag, 'base64'));
+  return Buffer.concat([decipher.update(Buffer.from(ct, 'base64')), decipher.final()]).toString('utf8');
+}
+
+// ─── PASSWORDS (scrypt, one-way) ─────────────────────────────────────────────
+// Only a one-way hash is stored. Nobody — including you — can read a password back.
+function hashPassword(pw) {
+  return new Promise((resolve, reject) => {
+    const salt = crypto.randomBytes(16);
+    crypto.scrypt(pw, salt, 64, (err, key) => {
+      if (err) return reject(err);
+      resolve('scrypt:' + salt.toString('hex') + ':' + key.toString('hex'));
+    });
+  });
+}
+
+function checkPassword(pw, stored) {
+  return new Promise((resolve) => {
+    const [kind, saltHex, keyHex] = String(stored).split(':');
+    if (kind !== 'scrypt' || !saltHex || !keyHex) return resolve(false);
+    crypto.scrypt(pw, Buffer.from(saltHex, 'hex'), 64, (err, key) => {
+      if (err) return resolve(false);
+      const expected = Buffer.from(keyHex, 'hex');
+      resolve(expected.length === key.length && crypto.timingSafeEqual(expected, key));
+    });
+  });
+}
+
+// ─── SESSIONS ────────────────────────────────────────────────────────────────
+const COOKIE = 'plp_session';
+const SESSION_DAYS = 30;
+const sha256 = (s) => crypto.createHash('sha256').update(s).digest('hex');
+
+function readCookie(req, name) {
+  const header = req.headers.cookie || '';
+  for (const part of header.split(';')) {
+    const i = part.indexOf('=');
+    if (i > -1 && part.slice(0, i).trim() === name) return decodeURIComponent(part.slice(i + 1).trim());
+  }
+  return null;
+}
+
+function setSessionCookie(req, res, token, maxAgeSec) {
+  const secure = req.secure ? '; Secure' : '';
+  res.setHeader('Set-Cookie', `${COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAgeSec}${secure}`);
+}
+
+async function startSession(req, res, userId) {
+  const token = crypto.randomBytes(32).toString('base64url');
+  await pool.query(
+    `INSERT INTO sessions (token_hash, user_id, expires_at) VALUES ($1, $2, now() + interval '${SESSION_DAYS} days')`,
+    [sha256(token), userId]
+  );
+  await pool.query('UPDATE users SET last_login = now() WHERE id = $1', [userId]);
+  setSessionCookie(req, res, token, SESSION_DAYS * 86400);
+}
+
+async function requireUser(req, res, next) {
+  try {
+    const token = readCookie(req, COOKIE);
+    if (!token) return res.status(401).json({ error: 'Not signed in' });
+    const r = await pool.query(
+      `SELECT u.id, u.email, u.is_admin, u.listing_count
+         FROM sessions s JOIN users u ON u.id = s.user_id
+        WHERE s.token_hash = $1 AND s.expires_at > now()`,
+      [sha256(token)]
+    );
+    if (!r.rows.length) return res.status(401).json({ error: 'Not signed in' });
+    req.user = r.rows[0];
+    next();
+  } catch (e) {
+    console.error('[auth]', e);
+    res.status(500).json({ error: 'Server error' });
+  }
+}
+
+// ─── LOGIN RATE LIMIT ────────────────────────────────────────────────────────
+// Slows down anyone trying to guess passwords: after 10 failed tries from one
+// address in 15 minutes, that address has to wait. Successful sign-ins don't count.
+const failures = new Map();
+const WINDOW_MS = 15 * 60 * 1000;
+function recentFailures(ip) {
+  const now = Date.now();
+  const list = (failures.get(ip) || []).filter(t => now - t < WINDOW_MS);
+  failures.set(ip, list);
+  return list;
+}
+function tooManyAttempts(ip) { return recentFailures(ip).length >= 10; }
+function recordFailure(ip) { recentFailures(ip).push(Date.now()); }
+
+const cleanEmail = (e) => String(e || '').trim().toLowerCase();
+const validEmail = (e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e) && e.length <= 200;
+
+// ─── AUTH ROUTES ─────────────────────────────────────────────────────────────
 app.get('/health', (req, res) => res.send('ok'));
 
-// ─── CONFIG (non-secret values the page needs) ──────────────────────────────
-app.get('/api/config', (req, res) => {
-  res.json({
-    cloudinaryCloudName: env('CLOUDINARY_CLOUD_NAME'),
-    cloudinaryApiKey: env('CLOUDINARY_API_KEY')
-  });
+async function signupOpen() {
+  const r = await pool.query('SELECT COUNT(*)::int AS n FROM users');
+  return r.rows[0].n === 0 || env('ALLOW_SIGNUP').toLowerCase() === 'true';
+}
+
+app.get('/api/auth-status', async (req, res) => {
+  try { res.json({ signupOpen: await signupOpen() }); }
+  catch (e) { res.status(500).json({ error: 'Server error' }); }
 });
 
-// ─── ANTHROPIC PROXY ─────────────────────────────────────────────────────────
-// Photo scans send many base64 images, so allow large bodies.
-app.post('/api/claude', express.json({ limit: '40mb' }), async (req, res) => {
-  const key = env('ANTHROPIC_API_KEY');
-  if (!key) return res.status(500).json({ error: { message: 'ANTHROPIC_API_KEY not set on server' } });
+app.post('/api/signup', express.json(), async (req, res) => {
   try {
-    const r = await fetch('https://api.anthropic.com/v1/messages', {
+    if (tooManyAttempts(req.ip)) return res.status(429).json({ error: 'Too many attempts — wait 15 minutes.' });
+    const email = cleanEmail(req.body && req.body.email);
+    const password = String((req.body && req.body.password) || '');
+    if (!validEmail(email)) return recordFailure(req.ip), res.status(400).json({ error: 'Enter a valid email address.' });
+    if (password.length < 8) return recordFailure(req.ip), res.status(400).json({ error: 'Password must be at least 8 characters.' });
+    if (!(await signupOpen())) return recordFailure(req.ip), res.status(403).json({ error: 'New accounts are not open right now.' });
+
+    const count = (await pool.query('SELECT COUNT(*)::int AS n FROM users')).rows[0].n;
+    const hash = await hashPassword(password);
+    let r;
+    try {
+      r = await pool.query(
+        'INSERT INTO users (email, password_hash, is_admin) VALUES ($1, $2, $3) RETURNING id',
+        [email, hash, count === 0] // the very first account is the admin
+      );
+    } catch (e) {
+      if (e.code === '23505') return recordFailure(req.ip), res.status(409).json({ error: 'An account with that email already exists.' });
+      throw e;
+    }
+    await startSession(req, res, r.rows[0].id);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('[signup]', e);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.post('/api/login', express.json(), async (req, res) => {
+  try {
+    if (tooManyAttempts(req.ip)) return res.status(429).json({ error: 'Too many attempts — wait 15 minutes.' });
+    const email = cleanEmail(req.body && req.body.email);
+    const password = String((req.body && req.body.password) || '');
+    const r = await pool.query('SELECT id, password_hash FROM users WHERE email = $1', [email]);
+    const ok = r.rows.length && await checkPassword(password, r.rows[0].password_hash);
+    if (!ok) { recordFailure(req.ip); return res.status(401).json({ error: 'Wrong email or password.' }); }
+    await startSession(req, res, r.rows[0].id);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('[login]', e);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.post('/api/logout', async (req, res) => {
+  const token = readCookie(req, COOKIE);
+  if (token) await pool.query('DELETE FROM sessions WHERE token_hash = $1', [sha256(token)]).catch(() => {});
+  setSessionCookie(req, res, '', 0);
+  res.json({ ok: true });
+});
+
+// ─── ACCOUNT DATA ────────────────────────────────────────────────────────────
+// Everything the page used to keep in the browser — settings (with your keys)
+// and pigtail / other-side history — saved encrypted to your account.
+app.get('/api/data', requireUser, async (req, res) => {
+  try {
+    const r = await pool.query('SELECT data_enc FROM user_data WHERE user_id = $1', [req.user.id]);
+    let data = { settings: null, history: { pigtail: [], otherside: [] } };
+    if (r.rows.length) data = JSON.parse(decrypt(r.rows[0].data_enc));
+    res.json({
+      account: { email: req.user.email, isAdmin: req.user.is_admin, listingCount: req.user.listing_count },
+      settings: data.settings || null,
+      history: data.history || { pigtail: [], otherside: [] }
+    });
+  } catch (e) {
+    console.error('[data:get]', e);
+    res.status(500).json({ error: 'Could not load your account data' });
+  }
+});
+
+// POST so the page can also save with sendBeacon when the tab closes
+app.post('/api/data', requireUser, express.json({ limit: '10mb' }), async (req, res) => {
+  try {
+    const b = req.body || {};
+    if (!b.settings || typeof b.settings !== 'object') return res.status(400).json({ error: 'Missing settings' });
+    const history = (b.history && typeof b.history === 'object') ? b.history : { pigtail: [], otherside: [] };
+    const blob = encrypt(JSON.stringify({ settings: b.settings, history }));
+    await pool.query(
+      `INSERT INTO user_data (user_id, data_enc, updated_at) VALUES ($1, $2, now())
+       ON CONFLICT (user_id) DO UPDATE SET data_enc = EXCLUDED.data_enc, updated_at = now()`,
+      [req.user.id, blob]
+    );
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('[data:save]', e);
+    res.status(500).json({ error: 'Could not save' });
+  }
+});
+
+// Lifetime listing counter — +1 for every successful Launch or Scheduled Listing
+app.post('/api/listing-count', requireUser, async (req, res) => {
+  try {
+    const r = await pool.query(
+      'UPDATE users SET listing_count = listing_count + 1 WHERE id = $1 RETURNING listing_count',
+      [req.user.id]
+    );
+    res.json({ count: r.rows[0].listing_count });
+  } catch (e) {
+    console.error('[count]', e);
+    res.status(500).json({ error: 'Could not update count' });
+  }
+});
+
+// ─── EBAY TRADING API (port of netlify/functions/ebay.js) ───────────────────
+// Uses the keys from YOUR settings, sent by the page. Only listing calls are
+// allowed. The old Finding API branch is gone — eBay shut that API down.
+const ALLOWED_CALLS = ['AddItem', 'VerifyAddItem'];
+
+app.post('/api/ebay', requireUser, express.text({ type: '*/*', limit: '2mb' }), async (req, res) => {
+  const callName = req.get('x-ebay-api-call-name') || '';
+  if (!ALLOWED_CALLS.includes(callName)) {
+    return res.status(400).type('text/xml').send(`<error>Call not allowed: ${callName}</error>`);
+  }
+  try {
+    const r = await fetch('https://api.ebay.com/ws/api.dll', {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': key,
-        'anthropic-version': '2023-06-01'
+        'X-EBAY-API-CALL-NAME': callName,
+        'X-EBAY-API-APP-NAME': req.get('x-ebay-api-app-name') || '',
+        'X-EBAY-API-DEV-NAME': req.get('x-ebay-api-dev-name') || '',
+        'X-EBAY-API-CERT-NAME': req.get('x-ebay-api-cert-name') || '',
+        'X-EBAY-API-SITEID': req.get('x-ebay-api-siteid') || '0',
+        'X-EBAY-API-COMPATIBILITY-LEVEL': '967',
+        'Content-Type': 'text/xml'
       },
-      body: JSON.stringify(req.body)
+      body: String(req.body || '')
     });
-    const text = await r.text();
-    res.status(r.status).type('application/json').send(text);
+    res.status(200).type('text/xml').send(await r.text());
   } catch (e) {
-    res.status(502).json({ error: { message: 'Claude request failed: ' + e.message } });
+    res.status(500).type('text/xml').send(`<error>${e.message}</error>`);
   }
 });
 
-// ─── CLOUDINARY SIGNING ──────────────────────────────────────────────────────
-// Browser still uploads straight to Cloudinary; the server only signs.
-app.post('/api/cloudinary-sign', express.json(), (req, res) => {
-  const secret = env('CLOUDINARY_API_SECRET');
-  if (!secret) return res.status(500).json({ error: 'CLOUDINARY_API_SECRET not set on server' });
-  const folder = String((req.body && req.body.folder) || '');
-  const timestamp = parseInt(req.body && req.body.timestamp, 10);
-  if (folder !== 'partslister') return res.status(400).json({ error: 'Bad folder' });
-  if (!timestamp || Math.abs(Date.now() / 1000 - timestamp) > 600) {
-    return res.status(400).json({ error: 'Bad timestamp' });
-  }
-  const signature = crypto.createHash('sha1')
-    .update(`folder=${folder}&timestamp=${timestamp}${secret}`)
-    .digest('hex');
-  res.json({ signature });
-});
+// ─── EBAY BROWSE (port of netlify/functions/ebaybrowse.js) ──────────────────
+// App tokens are cached per Client ID so every search doesn't fetch a new one.
+const appTokens = new Map();
 
-// ─── EBAY BROWSE (was netlify/functions/ebaybrowse.js) ──────────────────────
-// Application token is cached so every search doesn't request a new one.
-let _appToken = null;
-let _appTokenExpires = 0;
-
-async function getAppToken() {
-  if (_appToken && Date.now() < _appTokenExpires) return _appToken;
-  const id = env('EBAY_CLIENT_ID');
-  const secret = env('EBAY_CLIENT_SECRET');
-  if (!id || !secret) throw new Error('EBAY_CLIENT_ID / EBAY_CLIENT_SECRET not set on server');
+async function getAppToken(clientId, clientSecret) {
+  const cached = appTokens.get(clientId);
+  if (cached && cached.secret === clientSecret && Date.now() < cached.expires) return cached.token;
   const r = await fetch('https://api.ebay.com/identity/v1/oauth2/token', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
-      'Authorization': 'Basic ' + Buffer.from(id + ':' + secret).toString('base64')
+      'Authorization': 'Basic ' + Buffer.from(clientId + ':' + clientSecret).toString('base64')
     },
     body: 'grant_type=client_credentials&scope=https%3A%2F%2Fapi.ebay.com%2Foauth%2Fapi_scope',
     signal: AbortSignal.timeout(8000)
   });
   const d = await r.json();
-  if (!d.access_token) throw new Error('Failed to get eBay token: ' + (d.error_description || JSON.stringify(d)));
-  _appToken = d.access_token;
-  // Refresh 5 minutes before eBay says it expires
-  _appTokenExpires = Date.now() + Math.max(60, (d.expires_in || 7200) - 300) * 1000;
-  return _appToken;
+  if (!d.access_token) {
+    const err = new Error('Failed to get eBay token');
+    err.detail = d.error_description || JSON.stringify(d);
+    throw err;
+  }
+  appTokens.set(clientId, {
+    token: d.access_token,
+    secret: clientSecret,
+    expires: Date.now() + Math.max(60, (d.expires_in || 7200) - 300) * 1000
+  });
+  return d.access_token;
 }
 
-app.post('/api/ebaybrowse', express.json(), async (req, res) => {
+app.post('/api/ebaybrowse', requireUser, express.json(), async (req, res) => {
   const b = req.body || {};
+  const clientId = String(b.clientId || '');
+  const clientSecret = String(b.clientSecret || '');
   const keywords = String(b.keywords || '');
   const limit = Math.min(parseInt(b.limit) || 10, 50);
   const offset = parseInt(b.offset) || 0;
@@ -132,15 +352,19 @@ app.post('/api/ebaybrowse', express.json(), async (req, res) => {
   const seller = String(b.seller || '').trim();
   const categoryId = String(b.categoryId || '').trim();
 
-  if (!keywords) return res.status(400).json({ error: 'Missing keywords' });
+  if (!clientId || !clientSecret || !keywords) {
+    return res.status(400).json({ error: 'Missing clientId, clientSecret, or keywords' });
+  }
+
+  let token;
+  try { token = await getAppToken(clientId, clientSecret); }
+  catch (e) { return res.status(401).json({ error: e.message, detail: e.detail }); }
 
   try {
-    const token = await getAppToken();
-
     const q = encodeURIComponent(keywords);
     const sortParam = zipCode ? '&sort=distance' : '';
     const postalParam = zipCode ? `&buyerPostalCode=${encodeURIComponent(zipCode)}` : '';
-    // eBay Browse API seller filter — literal braces, seller username only (not store name)
+    // Seller filter — literal braces, seller username only (not store name)
     const sellerFilter = seller ? `&filter=sellers%3A%7B${encodeURIComponent(seller)}%7D` : '&filter=conditions%3A%7BUSED%7D';
     const categoryParam = categoryId ? `&category_ids=${encodeURIComponent(categoryId)}` : '';
     const url = `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${q}&limit=${limit}&offset=${offset}${sellerFilter}${sortParam}${postalParam}${categoryParam}`;
@@ -152,8 +376,7 @@ app.post('/api/ebaybrowse', express.json(), async (req, res) => {
     const browseData = await r.json();
 
     if (browseData.errors && browseData.errors.length) {
-      // A rejected token clears the cache so the next call gets a fresh one
-      if (r.status === 401) { _appToken = null; _appTokenExpires = 0; }
+      if (r.status === 401) appTokens.delete(clientId); // stale token — fetch a fresh one next time
       const errMsg = browseData.errors.map(e => e.message || e.longMessage || JSON.stringify(e)).join('; ');
       return res.json({ error: 'eBay API error: ' + errMsg, items: [], titles: [], total: 0 });
     }
@@ -172,7 +395,7 @@ app.post('/api/ebaybrowse', express.json(), async (req, res) => {
           return null;
         })(),
         image: item.image ? item.image.imageUrl : null,
-        // Primary LEAF category (listable) — see original ebaybrowse.js note
+        // Primary LEAF category (listable) — the categories array mixes levels
         categoryId: (() => {
           if (Array.isArray(item.leafCategoryIds) && item.leafCategoryIds.length) return String(item.leafCategoryIds[0]);
           return item.categories && item.categories.length ? String(item.categories[item.categories.length - 1].categoryId) : null;
@@ -196,55 +419,18 @@ app.post('/api/ebaybrowse', express.json(), async (req, res) => {
         items = sellerFiltered;
       }
       return res.json({ items, total: items.length });
-    } else {
-      const titles = (browseData.itemSummaries || [])
-        .map(item => item.title || '')
-        .filter(t => t.length >= 10 && t.length <= 120);
-      return res.json({ titles, total: browseData.total || 0 });
     }
+    const titles = (browseData.itemSummaries || [])
+      .map(item => item.title || '')
+      .filter(t => t.length >= 10 && t.length <= 120);
+    return res.json({ titles, total: browseData.total || 0 });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// ─── EBAY TRADING API (was netlify/functions/ebay.js) ───────────────────────
-// Only listing calls are allowed through. The old Finding API branch is gone —
-// eBay shut that API down.
-const ALLOWED_CALLS = ['AddItem', 'VerifyAddItem'];
-
-app.post('/api/ebay', express.text({ type: '*/*', limit: '2mb' }), async (req, res) => {
-  const callName = req.get('x-ebay-api-call-name') || '';
-  if (!ALLOWED_CALLS.includes(callName)) {
-    return res.status(400).type('text/xml').send(`<error>Call not allowed: ${callName}</error>`);
-  }
-  const userToken = env('EBAY_USER_TOKEN');
-  if (!userToken) return res.status(500).type('text/xml').send('<error>EBAY_USER_TOKEN not set on server</error>');
-
-  // The page sends a placeholder; the real token is filled in here
-  const xml = String(req.body || '').replace('__EBAY_USER_TOKEN__', userToken);
-
-  try {
-    const r = await fetch('https://api.ebay.com/ws/api.dll', {
-      method: 'POST',
-      headers: {
-        'X-EBAY-API-CALL-NAME': callName,
-        'X-EBAY-API-APP-NAME': env('EBAY_CLIENT_ID'),
-        'X-EBAY-API-DEV-NAME': env('EBAY_DEV_ID'),
-        'X-EBAY-API-CERT-NAME': env('EBAY_CLIENT_SECRET'),
-        'X-EBAY-API-SITEID': req.get('x-ebay-api-siteid') || '0',
-        'X-EBAY-API-COMPATIBILITY-LEVEL': '967',
-        'Content-Type': 'text/xml'
-      },
-      body: xml
-    });
-    const text = await r.text();
-    res.status(200).type('text/xml').send(text);
-  } catch (e) {
-    res.status(500).type('text/xml').send(`<error>${e.message}</error>`);
-  }
-});
-
-// ─── SERPAPI GOOGLE LENS (was netlify/functions/serplens.js) ────────────────
+// ─── SERPAPI GOOGLE LENS (port of netlify/functions/serplens.js) ────────────
+// Uses the SerpApi key from your settings; falls back to SERPAPI_KEY if set.
 function renderAiOverview(ov) {
   if (!ov || typeof ov !== 'object') return '';
   const out = [];
@@ -263,16 +449,17 @@ const mapMatches = (arr) => (Array.isArray(arr) ? arr.slice(0, 25) : []).map(m =
   title: m.title || '', source: m.source || '', link: m.link || ''
 }));
 
-app.post('/api/serplens', express.json(), async (req, res) => {
+app.post('/api/serplens', requireUser, express.json(), async (req, res) => {
   const imageUrl = String((req.body && req.body.imageUrl) || '').trim();
+  const apiKey = String((req.body && req.body.serpApiKey) || '').trim() || env('SERPAPI_KEY');
   if (!imageUrl) return res.status(400).json({ error: 'Missing imageUrl' });
-  const apiKey = env('SERPAPI_KEY');
-  if (!apiKey) return res.status(500).json({ error: 'SerpApi key not configured on server' });
+  if (!apiKey) return res.status(400).json({ error: 'No SerpApi key — add one in Settings → Account' });
 
   const getJson = async (url) => {
     const r = await fetch(url, { signal: AbortSignal.timeout(20000) });
     const t = await r.text();
-    try { return JSON.parse(t); } catch (e) { const err = new Error('Bad response from SerpApi'); err.detail = t.slice(0, 300); throw err; }
+    try { return JSON.parse(t); }
+    catch (e) { const err = new Error('Bad response from SerpApi'); err.detail = t.slice(0, 300); throw err; }
   };
 
   try {
@@ -322,11 +509,13 @@ app.post('/api/serplens', express.json(), async (req, res) => {
 });
 
 // ─── THE PAGE ────────────────────────────────────────────────────────────────
-// Only index.html is served — server.js and package.json are never exposed.
+// Only index.html is ever served — server.js and package.json stay private.
 const INDEX = path.join(__dirname, 'index.html');
 app.get('*', (req, res) => {
   if (req.path.startsWith('/api/')) return res.status(404).json({ error: 'Not found' });
   res.sendFile(INDEX);
 });
 
-app.listen(PORT, () => console.log('PartsLister Pro v300 listening on ' + PORT));
+setupDatabase()
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v301 listening on ' + PORT)))
+  .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });

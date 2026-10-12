@@ -1,7 +1,7 @@
 {
   "name": "partslister-pro-server",
-  "version": "3.0.0",
-  "description": "PartsLister Pro v300 — server version",
+  "version": "3.0.1",
+  "description": "PartsLister Pro v301 — accounts, saved settings and history, lifetime listing count",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
@@ -10,6 +10,7 @@
     "node": ">=20"
   },
   "dependencies": {
-    "express": "^4.21.2"
+    "express": "^4.21.2",
+    "pg": "^8.13.1"
   }
 }
