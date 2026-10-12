@@ -1,0 +1,899 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PartsLister Pro Dashboard v304</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@400;500;600&display=swap');
+
+  /* Same palette as the listing tool so both pages feel like one app */
+  :root {
+    --bg: #0f0f0f;
+    --surface: #1a1a1a;
+    --surface2: #222222;
+    --border: #2e2e2e;
+    --grid: #2a2a2a;
+    --accent: #f5a623;
+    --accent2: #e8912a;
+    --bar-dim: #7a5a24;       /* bars outside the hovered one, while hovering */
+    --text: #e8e8e8;
+    --text2: #b8b8b8;
+    --muted: #888;
+    --success: #4caf82;
+    --danger: #e05252;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Barlow', sans-serif;
+    font-size: 14px;
+    min-height: 100vh;
+  }
+
+  /* HEADER — same height, border and logo as the listing tool */
+  header {
+    background: var(--surface);
+    border-bottom: 2px solid var(--accent);
+    padding: 0 24px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    height: 56px;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+  .logo-link { text-decoration: none; color: inherit; }
+  .logo {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 26px;
+    font-weight: 900;
+    letter-spacing: -0.5px;
+    line-height: 1;
+  }
+  .logo span { color: var(--accent); }
+  .logo-sub {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 3px;
+    color: var(--accent);
+    text-transform: uppercase;
+    margin-top: -2px;
+  }
+  .header-right { margin-left: auto; display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .who {
+    font-size: 12px;
+    color: var(--muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 260px;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 9px 18px;
+    border-radius: 4px;
+    border: 1px solid transparent;
+    cursor: pointer;
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    text-decoration: none;
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
+  }
+  .btn-primary { background: var(--accent); color: #000; }
+  .btn-primary:hover { background: var(--accent2); }
+  .btn-secondary { background: var(--surface2); color: var(--text); border-color: var(--border); }
+  .btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
+  .btn-sm { padding: 5px 12px; font-size: 12px; }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn { white-space: nowrap; }
+
+  /* MAIN */
+  main { max-width: 1200px; margin: 0 auto; padding: 24px 24px 48px; }
+
+  /* SALES — title row with the range picker */
+  .sales-top {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+  .sales-title {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 30px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+  }
+  .sample-badge {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--text2);
+    border: 1px solid var(--border);
+    background: var(--surface2);
+    border-radius: 3px;
+    padding: 3px 8px;
+  }
+  .range-picker {
+    margin-left: auto;
+    display: inline-flex;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 3px;
+    gap: 2px;
+  }
+  .range-picker button {
+    background: none;
+    border: none;
+    color: var(--muted);
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    padding: 7px 14px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+  }
+  .range-picker button:hover { color: var(--text); }
+  .range-picker button[aria-pressed="true"] { background: var(--accent); color: #000; }
+  .range-picker button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* FIGURES — one hero number, then supporting tiles */
+  .figures {
+    display: grid;
+    grid-template-columns: 1.6fr repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+  .tile {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 16px 18px;
+    min-width: 0;
+  }
+  .tile-label {
+    font-size: 12px;
+    color: var(--muted);
+    margin-bottom: 6px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .tile-value {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 30px;
+    font-weight: 700;
+    line-height: 1.05;
+    color: var(--text);
+    white-space: nowrap;
+  }
+  .tile-sub { font-size: 12px; color: var(--muted); margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tile.hero .tile-value { font-size: 56px; color: var(--accent); }
+
+  /* CHART */
+  .chart-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 18px 18px 10px;
+    margin-bottom: 12px;
+  }
+  .chart-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 8px;
+  }
+  .chart-title { font-size: 13px; color: var(--text2); }
+  .chart-note { font-size: 12px; color: var(--muted); }
+  #chart-wrap { position: relative; height: 380px; }
+  #chart { display: block; width: 100%; height: 100%; touch-action: pan-y; }
+  #chart .gridline { stroke: var(--grid); stroke-width: 1; shape-rendering: crispEdges; }
+  #chart .baseline { stroke: #3a3a3a; stroke-width: 1; shape-rendering: crispEdges; }
+  #chart .tick { fill: var(--muted); font-family: 'Barlow', sans-serif; font-size: 11px; }
+  #chart .bar { fill: var(--accent); transition: fill 0.12s; }
+  #chart.hovering .bar { fill: var(--bar-dim); }
+  #chart.hovering .bar.active { fill: var(--accent); }
+  #chart .bar-label { fill: var(--text); font-family: 'Barlow Condensed', sans-serif; font-size: 16px; font-weight: 700; }
+  #chart .today-ring { fill: none; stroke: var(--text2); stroke-width: 1; stroke-dasharray: none; }
+
+  .tooltip {
+    position: absolute;
+    pointer-events: none;
+    background: #0b0b0b;
+    border: 1px solid #3a3a3a;
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 12px;
+    color: var(--text2);
+    white-space: nowrap;
+    opacity: 0;
+    transform: translate(-50%, -100%);
+    transition: opacity 0.08s;
+    z-index: 5;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.5);
+  }
+  .tooltip.show { opacity: 1; }
+  .tooltip .tt-value { display: block; font-family: 'Barlow Condensed', sans-serif; font-size: 22px; font-weight: 700; color: var(--text); line-height: 1.1; }
+
+  details.table-view { margin: 6px 0 4px; }
+  details.table-view summary { cursor: pointer; font-size: 12px; color: var(--muted); padding: 4px 0; }
+  details.table-view summary:hover { color: var(--text); }
+  .table-scroll { max-height: 280px; overflow: auto; margin-top: 8px; border: 1px solid var(--border); border-radius: 4px; }
+  .table-scroll table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .table-scroll th, .table-scroll td { padding: 6px 12px; text-align: left; border-bottom: 1px solid var(--border); }
+  .table-scroll th { position: sticky; top: 0; background: var(--surface2); color: var(--muted); font-weight: 600; font-size: 12px; }
+  .table-scroll td.num, .table-scroll th.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+  /* BELOW THE CHART */
+  .lower {
+    display: grid;
+    grid-template-columns: 1fr 3fr;
+    gap: 12px;
+    margin-top: 24px;
+  }
+  .section-title {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--muted);
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 12px;
+  }
+  .soon-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 12px;
+  }
+  .soon {
+    background: var(--surface);
+    border: 1px dashed var(--border);
+    border-radius: 6px;
+    padding: 14px 16px;
+  }
+  .soon h3 {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 17px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+  }
+  .soon p { color: var(--muted); font-size: 12px; line-height: 1.45; }
+
+  /* SIGN-IN — same look as the listing tool's sign-in screen */
+  #auth-overlay {
+    position: fixed;
+    inset: 0;
+    background: var(--bg);
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+  }
+  #auth-overlay.hidden { display: none; }
+  .auth-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 36px 32px;
+    width: 100%;
+    max-width: 380px;
+    text-align: center;
+  }
+  .auth-logo {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 32px;
+    font-weight: 900;
+    margin-bottom: 2px;
+  }
+  .auth-logo span { color: var(--accent); }
+  .auth-sub {
+    font-size: 12px;
+    color: var(--muted);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 24px;
+  }
+  #auth-form { display: none; flex-direction: column; gap: 10px; text-align: left; }
+  #auth-form label {
+    display: block;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 5px;
+  }
+  #auth-form input {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 10px 12px;
+    border-radius: 4px;
+    font-family: 'Barlow', sans-serif;
+    font-size: 15px;
+    outline: none;
+  }
+  #auth-form input:focus { border-color: var(--accent); }
+  #auth-form .btn { width: 100%; }
+  .auth-error { color: var(--danger); font-size: 13px; margin-top: 12px; display: none; }
+  .auth-note { font-size: 11px; color: var(--muted); text-align: center; display: none; }
+
+  /* TABLET */
+  @media (max-width: 1000px) {
+    .figures { grid-template-columns: repeat(2, 1fr); }
+    .tile.hero { grid-column: 1 / -1; }
+    .lower { grid-template-columns: 1fr; }
+  }
+  /* PHONE */
+  @media (max-width: 700px) {
+    header { padding: 0 12px; gap: 8px; }
+    .who { display: none; }
+    .header-right { gap: 6px; }
+    .header-right .btn-sm { padding: 5px 8px; font-size: 11px; letter-spacing: 0.5px; }
+    .chart-note { display: none; }
+    main { padding: 16px 16px 40px; }
+    .range-picker { margin-left: 0; width: 100%; }
+    .range-picker button { flex: 1; padding: 8px 4px; font-size: 13px; }
+    .tile.hero .tile-value { font-size: 48px; }
+    .tile-value { font-size: 26px; }
+    #chart-wrap { height: 260px; }
+    .chart-card { padding: 14px 10px 8px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- SIGN-IN -->
+<div id="auth-overlay">
+  <div class="auth-box">
+    <div class="auth-logo"><span>PARTS</span>LISTER</div>
+    <div class="auth-sub">Pro</div>
+    <div id="auth-loading" style="color:var(--muted);font-size:13px;">Loading…</div>
+    <form id="auth-form" onsubmit="event.preventDefault();authSubmit('login');">
+      <div>
+        <label for="auth-email">Email</label>
+        <input type="email" id="auth-email" autocomplete="username" required>
+      </div>
+      <div>
+        <label for="auth-password">Password</label>
+        <input type="password" id="auth-password" autocomplete="current-password" required minlength="8">
+      </div>
+      <button type="submit" class="btn btn-primary" id="auth-login-btn" style="margin-top:4px;">Sign In</button>
+      <button type="button" class="btn btn-secondary" id="auth-signup-btn" onclick="authSubmit('signup')" style="display:none;">Create Account</button>
+      <div class="auth-note" id="auth-signup-note">No account yet? Enter an email and a password (8+ characters), then Create Account.</div>
+    </form>
+    <div class="auth-error" id="auth-error"></div>
+  </div>
+</div>
+
+<!-- HEADER -->
+<header>
+  <a href="/" class="logo-link" title="Dashboard">
+    <div class="logo"><span>PARTS</span>LISTER</div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v304</span></div>
+  </a>
+  <div class="header-right">
+    <span class="who" id="who"></span>
+    <a href="/list" class="btn btn-secondary btn-sm">Listing Tool →</a>
+    <button class="btn btn-secondary btn-sm" onclick="logout()">Log Out</button>
+  </div>
+</header>
+
+<!-- DASHBOARD -->
+<main>
+
+  <!-- SALES -->
+  <div class="sales-top">
+    <div class="sales-title">Sales</div>
+    <!-- v304: shown until real eBay sales are connected -->
+    <div class="sample-badge" id="sample-badge" title="These numbers are made up so you can see the layout. Real eBay sales come next.">Sample data</div>
+    <div class="range-picker" role="group" aria-label="Date range">
+      <button type="button" data-range="today">Today</button>
+      <button type="button" data-range="week">Week</button>
+      <button type="button" data-range="31">31 Day</button>
+      <button type="button" data-range="90">90 Day</button>
+      <button type="button" data-range="year">Year</button>
+    </div>
+  </div>
+
+  <div class="figures">
+    <div class="tile hero">
+      <div class="tile-label" id="fig-total-label">Sales</div>
+      <div class="tile-value" id="fig-total">—</div>
+      <div class="tile-sub" id="fig-total-sub">&nbsp;</div>
+    </div>
+    <div class="tile">
+      <div class="tile-label">Today</div>
+      <div class="tile-value" id="fig-today">—</div>
+      <div class="tile-sub" id="fig-today-sub">&nbsp;</div>
+    </div>
+    <div class="tile">
+      <div class="tile-label">Orders</div>
+      <div class="tile-value" id="fig-orders">—</div>
+      <div class="tile-sub" id="fig-orders-sub">&nbsp;</div>
+    </div>
+    <div class="tile">
+      <div class="tile-label">Average per day</div>
+      <div class="tile-value" id="fig-avg">—</div>
+      <div class="tile-sub" id="fig-avg-sub">&nbsp;</div>
+    </div>
+    <div class="tile">
+      <div class="tile-label">Best day</div>
+      <div class="tile-value" id="fig-best">—</div>
+      <div class="tile-sub" id="fig-best-sub">&nbsp;</div>
+    </div>
+  </div>
+
+  <div class="chart-card">
+    <div class="chart-head">
+      <div class="chart-title" id="chart-title">Sales per day</div>
+      <div class="chart-note">Each bar is one day · hover for details</div>
+    </div>
+    <div id="chart-wrap">
+      <svg id="chart" role="img" aria-labelledby="chart-title"></svg>
+      <div class="tooltip" id="tooltip"></div>
+    </div>
+    <details class="table-view">
+      <summary>View as table</summary>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Date</th><th class="num">Sales</th><th class="num">Orders</th></tr></thead>
+          <tbody id="table-body"></tbody>
+        </table>
+      </div>
+    </details>
+  </div>
+
+  <!-- BELOW: lifetime listed (real) + what's coming -->
+  <div class="lower">
+    <div>
+      <div class="section-title">Listing</div>
+      <div class="tile">
+        <div class="tile-label">Items listed — lifetime</div>
+        <div class="tile-value" id="listed-count" style="font-size:40px;">—</div>
+        <div class="tile-sub">Every Launch and Scheduled Listing</div>
+      </div>
+    </div>
+    <div>
+      <div class="section-title">Coming Next</div>
+      <div class="soon-grid">
+        <div class="soon">
+          <h3>Real eBay Sales</h3>
+          <p>Swap the sample numbers above for your actual sold orders.</p>
+        </div>
+        <div class="soon">
+          <h3>Listing Stats</h3>
+          <p>Items listed per day, with monthly and quarterly totals including value and shipping.</p>
+        </div>
+        <div class="soon">
+          <h3>Active Listings</h3>
+          <p>Your live eBay listings at a glance.</p>
+        </div>
+        <div class="soon">
+          <h3>Seller Metrics</h3>
+          <p>Defect rate, late shipments and Top Rated status from eBay.</p>
+        </div>
+        <div class="soon">
+          <h3>Drafts</h3>
+          <p>Save a listing in progress and finish it later on any computer.</p>
+        </div>
+        <div class="soon">
+          <h3>eBay Shortcuts</h3>
+          <p>One-click links to the eBay pages you use most.</p>
+        </div>
+        <div class="soon">
+          <h3>Messages &amp; Returns</h3>
+          <p>Buyer messages and return requests in one place.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- v302 hero row, replaced in v304 by the sales dashboard above:
+  <div class="hero">
+    <div class="card"> Items Listed — Lifetime ... </div>
+    <div class="card launch-card"> Listing Tool ... Start Listing → </div>
+  </div>
+  -->
+</main>
+
+<script>
+// ─── PartsLister Pro Dashboard v304 ──────────────────────────────────────────
+// Shares the same sign-in and account as the listing tool (/list).
+// v304: sales dashboard — big daily bar graph with a remembered date range.
+// The sales numbers are SAMPLE data for now; real eBay sales replace
+// getSalesDays() later and nothing else on the page needs to change.
+
+const NS = 'http://www.w3.org/2000/svg';
+const RANGES = {
+  today: { days: 1,   label: 'Today' },
+  week:  { days: 7,   label: 'Last 7 days' },
+  '31':  { days: 31,  label: 'Last 31 days' },
+  '90':  { days: 90,  label: 'Last 90 days' },
+  year:  { days: 365, label: 'Last 365 days' }
+};
+const RANGE_KEY = 'plp_dash_range';
+let currentRange = 'week';
+let allDays = [];     // [{ date: Date, key: 'YYYY-MM-DD', sales: Number, orders: Number }]
+let shownDays = [];
+
+// ─── FORMATTING ──────────────────────────────────────────────────────────────
+const money0 = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+const money2 = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 });
+function moneyShort(n) {
+  if (n >= 1e6) return '$' + (n / 1e6).toFixed(n >= 1e7 ? 0 : 1).replace(/\.0$/, '') + 'M';
+  if (n >= 1e4) return '$' + Math.round(n / 1e3) + 'K';
+  if (n >= 1e3) return '$' + (n / 1e3).toFixed(1).replace(/\.0$/, '') + 'K';
+  return '$' + Math.round(n);
+}
+const fmtLong  = (d) => d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+const fmtShort = (d) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+const fmtDow   = (d) => d.toLocaleDateString('en-US', { weekday: 'short' });
+const fmtMonth = (d) => d.toLocaleDateString('en-US', { month: 'short' });
+function dayKey(d) {
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+// ─── SAMPLE SALES (replace with real eBay data later) ───────────────────────
+// Deterministic: the same date always gets the same sample numbers, so the
+// graph doesn't jump around on refresh.
+function seededRandom(seed) {
+  let t = seed >>> 0;
+  return function () {
+    t += 0x6D2B79F5;
+    let r = Math.imul(t ^ (t >>> 15), 1 | t);
+    r ^= r + Math.imul(r ^ (r >>> 7), 61 | r);
+    return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function getSalesDays(totalDays) {
+  const days = [];
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  for (let i = totalDays - 1; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(today.getDate() - i);
+    const key = dayKey(d);
+    const rnd = seededRandom(parseInt(key.replace(/-/g, ''), 10));
+    const dow = d.getDay();
+    const weekend = dow === 0 ? 0.55 : dow === 6 ? 0.75 : 1;
+    const growth = 0.85 + 0.3 * (1 - i / totalDays);              // gently rising year
+    const season = 1 + 0.12 * Math.sin((d.getMonth() + 1) / 12 * Math.PI * 2);
+    let orders = Math.max(0, Math.round((8 + rnd() * 12) * weekend * growth * season));
+    let sales = 0;
+    for (let o = 0; o < orders; o++) sales += 28 + rnd() * rnd() * 240;   // most parts cheap, some big
+    if (i === 0) {                                                 // today: only part of the day so far
+      const frac = Math.min(1, (now.getHours() * 60 + now.getMinutes()) / (24 * 60) + 0.05);
+      orders = Math.round(orders * frac);
+      sales = sales * frac;
+    }
+    days.push({ date: d, key, sales: Math.round(sales * 100) / 100, orders });
+  }
+  return days;
+}
+
+// ─── FIGURES ─────────────────────────────────────────────────────────────────
+function setText(id, text) { document.getElementById(id).textContent = text; }
+
+function renderFigures() {
+  const r = RANGES[currentRange];
+  const total = shownDays.reduce((s, d) => s + d.sales, 0);
+  const orders = shownDays.reduce((s, d) => s + d.orders, 0);
+  const today = allDays[allDays.length - 1];
+  const yesterday = allDays[allDays.length - 2];
+  const best = shownDays.reduce((b, d) => (d.sales > b.sales ? d : b), shownDays[0]);
+
+  setText('fig-total-label', 'Sales · ' + r.label);
+  setText('fig-total', money0.format(total));
+  // Compare against the same-length period right before it
+  const prev = allDays.slice(-2 * r.days, -r.days);
+  if (prev.length === r.days && currentRange !== 'today') {
+    const prevTotal = prev.reduce((s, d) => s + d.sales, 0);
+    const pct = prevTotal ? ((total - prevTotal) / prevTotal) * 100 : 0;
+    setText('fig-total-sub', (pct >= 0 ? '▲ ' : '▼ ') + Math.abs(pct).toFixed(1) + '% vs the ' + r.days + ' days before');
+  } else {
+    setText('fig-total-sub', 'So far today');
+  }
+
+  setText('fig-today', money0.format(today.sales));
+  setText('fig-today-sub', yesterday ? 'Yesterday ' + money0.format(yesterday.sales) : ' ');
+
+  setText('fig-orders', orders.toLocaleString());
+  setText('fig-orders-sub', orders ? 'Avg ' + money2.format(total / orders) + ' per order' : ' ');
+
+  setText('fig-avg', money0.format(total / r.days));
+  setText('fig-avg-sub', r.days + ' day' + (r.days === 1 ? '' : 's'));
+
+  setText('fig-best', money0.format(best.sales));
+  setText('fig-best-sub', fmtLong(best.date));
+
+  setText('chart-title', 'Sales per day · ' + r.label);
+}
+
+// ─── CHART ───────────────────────────────────────────────────────────────────
+// Round step for the y-axis (1, 2 or 5 × a power of ten), about 4 gridlines
+function niceStep(v) {
+  if (v <= 0) return 25;
+  const exp = Math.pow(10, Math.floor(Math.log10(v)));
+  const f = v / exp;
+  return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * exp;
+}
+
+function el(name, attrs, parent) {
+  const n = document.createElementNS(NS, name);
+  for (const k in attrs) n.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(n);
+  return n;
+}
+
+// A bar with a 4px rounded top and a square bottom on the baseline
+function barPath(x, y, w, h) {
+  const r = Math.min(4, w / 2, h);
+  if (h <= 0) return '';
+  return `M${x},${y + h}V${y + r}Q${x},${y} ${x + r},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${y + h}Z`;
+}
+
+function xTicks(days, slot) {
+  const n = days.length;
+  const out = [];
+  if (n === 1) return [{ i: 0, label: fmtLong(days[0].date) }];
+  if (n <= 7) return days.map((d, i) => ({ i, label: (slot < 48 ? fmtDow(d.date).slice(0, 2) : fmtDow(d.date)) + ' ' + d.date.getDate() }));
+  if (n <= 90) {
+    // every N days, counted back from today; N grows on narrow screens
+    const need = Math.ceil(64 / slot);
+    const every = [1, 2, 3, 5, 7, 10, 14, 15, 21, 30].find(v => v >= need) || 30;
+    for (let i = n - 1; i >= 0; i -= every) out.push({ i, label: fmtShort(days[i].date) });
+    return out;
+  }
+  // Year: month names at the 1st of each month, thinned if they'd crowd
+  let last = -Infinity;
+  days.forEach((d, i) => {
+    if (d.date.getDate() === 1 && (i - last) * slot >= 34) { out.push({ i, label: fmtMonth(d.date) }); last = i; }
+  });
+  return out;
+}
+
+function renderChart() {
+  const svg = document.getElementById('chart');
+  const wrap = document.getElementById('chart-wrap');
+  const W = wrap.clientWidth, H = wrap.clientHeight;
+  if (!W || !H) return;
+  while (svg.firstChild) svg.removeChild(svg.firstChild);
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+
+  const phone = W < 520;
+  const m = { top: 28, right: 8, bottom: 26, left: phone ? 40 : 52 };
+  const pw = W - m.left - m.right, ph = H - m.top - m.bottom;
+  const n = shownDays.length;
+  const peak = Math.max(...shownDays.map(d => d.sales)) * 1.08;
+  const step = niceStep(peak / 4);
+  const steps = Math.max(1, Math.ceil(peak / step));
+  const max = step * steps;
+
+  // Gridlines + y ticks (4 steps, clean numbers)
+  const g = el('g', {}, svg);
+  for (let s = 0; s <= steps; s++) {
+    const v = step * s;
+    const y = m.top + ph - (v / max) * ph;
+    el('line', { class: s === 0 ? 'baseline' : 'gridline', x1: m.left, x2: W - m.right, y1: Math.round(y) + 0.5, y2: Math.round(y) + 0.5 }, g);
+    const t = el('text', { class: 'tick', x: m.left - 8, y: y + 4, 'text-anchor': 'end' }, g);
+    t.textContent = moneyShort(v);
+  }
+
+  // Bars — always one per day. Thin ranges drop the gap so bars stay visible.
+  const slot = pw / n;
+  const gap = slot >= 6 ? 2 : slot >= 3 ? 1 : 0;
+  const maxW = n === 1 ? 72 : 24;
+  const bw = Math.max(1, Math.min(maxW, slot - gap));
+  const bars = el('g', {}, svg);
+  const barEls = [];
+  shownDays.forEach((d, i) => {
+    const h = (d.sales / max) * ph;
+    const x = m.left + i * slot + (slot - bw) / 2;
+    const y = m.top + ph - h;
+    const p = el('path', { class: 'bar', d: barPath(x, y, bw, h) }, bars);
+    barEls.push(p);
+  });
+
+  // Label the single bar on the Today view (it's the only value)
+  if (n === 1) {
+    const d = shownDays[0];
+    const h = (d.sales / max) * ph;
+    const t = el('text', { class: 'bar-label', x: m.left + pw / 2, y: m.top + ph - h - 8, 'text-anchor': 'middle' }, svg);
+    t.textContent = money0.format(d.sales);
+  }
+
+  // X axis labels
+  const ticks = xTicks(shownDays, slot);
+  const tg = el('g', {}, svg);
+  ticks.forEach(({ i, label }) => {
+    const x = m.left + i * slot + slot / 2;
+    const t = el('text', { class: 'tick', x, y: H - 6, 'text-anchor': 'middle' }, tg);
+    t.textContent = label;
+  });
+  // Keep the first/last labels inside the chart
+  tg.querySelectorAll('text').forEach(t => {
+    const b = t.getBBox();
+    if (b.x < m.left - 4) t.setAttribute('x', parseFloat(t.getAttribute('x')) + (m.left - 4 - b.x));
+    if (b.x + b.width > W) t.setAttribute('x', parseFloat(t.getAttribute('x')) - (b.x + b.width - W));
+  });
+
+  // Hover layer: the whole column slot is the hit target, not just the bar
+  const tip = document.getElementById('tooltip');
+  let active = -1;
+  function show(i) {
+    if (i === active) return;
+    if (active >= 0) barEls[active].classList.remove('active');
+    active = i;
+    if (i < 0) { svg.classList.remove('hovering'); tip.classList.remove('show'); return; }
+    svg.classList.add('hovering');
+    barEls[i].classList.add('active');
+    const d = shownDays[i];
+    tip.textContent = '';
+    const v = document.createElement('span');
+    v.className = 'tt-value';
+    v.textContent = money2.format(d.sales);
+    tip.appendChild(v);
+    tip.appendChild(document.createTextNode(d.orders + ' order' + (d.orders === 1 ? '' : 's') + ' · ' + fmtLong(d.date)));
+    const h = (d.sales / max) * ph;
+    let x = m.left + i * slot + slot / 2;
+    const y = Math.max(m.top + ph - h - 10, 70);
+    tip.style.left = x + 'px';
+    tip.style.top = y + 'px';
+    tip.classList.add('show');
+    // keep the tooltip inside the card
+    const tw = tip.offsetWidth;
+    x = Math.max(tw / 2 + 2, Math.min(W - tw / 2 - 2, x));
+    tip.style.left = x + 'px';
+  }
+  function indexAt(clientX) {
+    const r = svg.getBoundingClientRect();
+    const px = clientX - r.left - m.left;
+    if (px < 0 || px > pw) return -1;
+    return Math.min(n - 1, Math.max(0, Math.floor(px / slot)));
+  }
+  svg.onpointermove = (e) => show(indexAt(e.clientX));
+  svg.onpointerdown = (e) => show(indexAt(e.clientX));
+  svg.onpointerleave = () => show(-1);
+
+  // Keyboard: arrow keys step through days
+  svg.setAttribute('tabindex', '0');
+  svg.onkeydown = (e) => {
+    if (e.key === 'ArrowRight') { show(Math.min(n - 1, active < 0 ? n - 1 : active + 1)); e.preventDefault(); }
+    if (e.key === 'ArrowLeft')  { show(Math.max(0, active < 0 ? n - 1 : active - 1)); e.preventDefault(); }
+    if (e.key === 'Escape') show(-1);
+  };
+  svg.onblur = () => show(-1);
+
+  svg.setAttribute('aria-label', `Sales per day, ${RANGES[currentRange].label}. Total ${money0.format(shownDays.reduce((s, d) => s + d.sales, 0))}.`);
+}
+
+function renderTable() {
+  const body = document.getElementById('table-body');
+  body.textContent = '';
+  [...shownDays].reverse().forEach(d => {
+    const tr = document.createElement('tr');
+    const a = document.createElement('td'); a.textContent = fmtLong(d.date);
+    const b = document.createElement('td'); b.className = 'num'; b.textContent = money2.format(d.sales);
+    const c = document.createElement('td'); c.className = 'num'; c.textContent = d.orders;
+    tr.append(a, b, c);
+    body.appendChild(tr);
+  });
+}
+
+// ─── RANGE PICKER (remembered) ───────────────────────────────────────────────
+function setRange(range, save) {
+  if (!RANGES[range]) range = 'week';
+  currentRange = range;
+  shownDays = allDays.slice(-RANGES[range].days);
+  document.querySelectorAll('.range-picker button').forEach(b => {
+    b.setAttribute('aria-pressed', b.dataset.range === range ? 'true' : 'false');
+  });
+  if (save) { try { localStorage.setItem(RANGE_KEY, range); } catch (e) { /* not critical */ } }
+  renderFigures();
+  renderChart();
+  renderTable();
+}
+
+document.querySelectorAll('.range-picker button').forEach(b => {
+  b.addEventListener('click', () => setRange(b.dataset.range, true));
+});
+
+let resizeTimer;
+new ResizeObserver(() => { clearTimeout(resizeTimer); resizeTimer = setTimeout(renderChart, 60); })
+  .observe(document.getElementById('chart-wrap'));
+
+// ─── SIGN-IN ─────────────────────────────────────────────────────────────────
+async function showAuth(message) {
+  document.getElementById('auth-overlay').classList.remove('hidden');
+  document.getElementById('auth-loading').style.display = 'none';
+  document.getElementById('auth-form').style.display = 'flex';
+  const err = document.getElementById('auth-error');
+  err.textContent = message || '';
+  err.style.display = message ? 'block' : 'none';
+  try {
+    const st = await (await fetch('/api/auth-status')).json();
+    document.getElementById('auth-signup-btn').style.display = st.signupOpen ? 'flex' : 'none';
+    document.getElementById('auth-signup-note').style.display = st.signupOpen ? 'block' : 'none';
+  } catch (e) { /* sign-in still works */ }
+  setTimeout(() => document.getElementById('auth-email').focus(), 50);
+}
+
+async function authSubmit(mode) {
+  const email = document.getElementById('auth-email').value.trim();
+  const password = document.getElementById('auth-password').value;
+  const err = document.getElementById('auth-error');
+  if (!email || !password) { err.textContent = 'Enter your email and password.'; err.style.display = 'block'; return; }
+  const btns = [document.getElementById('auth-login-btn'), document.getElementById('auth-signup-btn')];
+  btns.forEach(b => b.disabled = true);
+  try {
+    const r = await fetch('/api/' + (mode === 'signup' ? 'signup' : 'login'), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { err.textContent = d.error || 'Something went wrong.'; err.style.display = 'block'; return; }
+    location.reload();
+  } catch (e) {
+    err.textContent = 'Could not reach the server.'; err.style.display = 'block';
+  } finally {
+    btns.forEach(b => b.disabled = false);
+  }
+}
+
+async function logout() {
+  await fetch('/api/logout', { method: 'POST' }).catch(() => {});
+  location.reload();
+}
+
+// ─── LOAD ────────────────────────────────────────────────────────────────────
+async function load() {
+  let r;
+  try { r = await fetch('/api/me'); }
+  catch (e) { showAuth('Could not reach the server.'); return; }
+  if (r.status === 401) { showAuth(''); return; }
+  if (!r.ok) { showAuth('The server had a problem loading your account.'); return; }
+  const me = await r.json();
+
+  document.getElementById('who').textContent = me.email + (me.isAdmin ? '  · admin' : '');
+  document.getElementById('listed-count').textContent = Number(me.listingCount || 0).toLocaleString();
+  document.getElementById('auth-overlay').classList.add('hidden');
+
+  // A year plus a year before it, so "vs the days before" works on every range
+  allDays = getSalesDays(730);
+  let saved = 'week';
+  try { saved = localStorage.getItem(RANGE_KEY) || 'week'; } catch (e) { /* use default */ }
+  setRange(saved, false);
+}
+
+load();
+</script>
+</body>
+</html>
