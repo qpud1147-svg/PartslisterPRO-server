@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PartsLister Pro Dashboard v302</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@400;500;600&display=swap');
+
+  /* Same palette as the listing tool so both pages feel like one app */
+  :root {
+    --bg: #0f0f0f;
+    --surface: #1a1a1a;
+    --surface2: #222222;
+    --border: #2e2e2e;
+    --accent: #f5a623;
+    --accent2: #e8912a;
+    --text: #e8e8e8;
+    --muted: #888;
+    --success: #4caf82;
+    --danger: #e05252;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Barlow', sans-serif;
+    font-size: 14px;
+    min-height: 100vh;
+  }
+
+  /* HEADER — same height, border and logo as the listing tool */
+  header {
+    background: var(--surface);
+    border-bottom: 2px solid var(--accent);
+    padding: 0 24px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    height: 56px;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+  .logo-link { text-decoration: none; color: inherit; }
+  .logo {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 26px;
+    font-weight: 900;
+    letter-spacing: -0.5px;
+    line-height: 1;
+  }
+  .logo span { color: var(--accent); }
+  .logo-sub {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 3px;
+    color: var(--accent);
+    text-transform: uppercase;
+    margin-top: -2px;
+  }
+  .header-right { margin-left: auto; display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .who {
+    font-size: 12px;
+    color: var(--muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 260px;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 9px 18px;
+    border-radius: 4px;
+    border: 1px solid transparent;
+    cursor: pointer;
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    text-decoration: none;
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
+  }
+  .btn-primary { background: var(--accent); color: #000; }
+  .btn-primary:hover { background: var(--accent2); }
+  .btn-secondary { background: var(--surface2); color: var(--text); border-color: var(--border); }
+  .btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
+  .btn-sm { padding: 5px 12px; font-size: 12px; }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* MAIN */
+  main { max-width: 1100px; margin: 0 auto; padding: 28px 24px 48px; }
+
+  .greeting {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 30px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+  }
+  .greeting-sub { color: var(--muted); margin-bottom: 24px; }
+
+  /* Top row: the lifetime count and the way into the listing tool */
+  .hero {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 28px;
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 20px;
+  }
+  .card-label {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 10px;
+  }
+  .big-number {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 64px;
+    font-weight: 900;
+    line-height: 1;
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+  }
+  .big-number-sub { color: var(--muted); font-size: 13px; margin-top: 6px; }
+
+  .launch-card { display: flex; flex-direction: column; justify-content: space-between; gap: 16px; }
+  .launch-card p { color: var(--muted); line-height: 1.5; }
+  .launch-card .btn { font-size: 18px; padding: 14px 20px; }
+
+  /* Coming-next placeholders — each becomes a real section later */
+  .section-title {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--muted);
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 14px;
+  }
+  .soon-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+    gap: 12px;
+  }
+  .soon {
+    background: var(--surface);
+    border: 1px dashed var(--border);
+    border-radius: 6px;
+    padding: 16px;
+  }
+  .soon h3 {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 17px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+  }
+  .soon p { color: var(--muted); font-size: 12px; line-height: 1.45; }
+
+  /* SIGN-IN — same look as the listing tool's sign-in screen */
+  #auth-overlay {
+    position: fixed;
+    inset: 0;
+    background: var(--bg);
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+  }
+  #auth-overlay.hidden { display: none; }
+  .auth-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 36px 32px;
+    width: 100%;
+    max-width: 380px;
+    text-align: center;
+  }
+  .auth-logo {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 32px;
+    font-weight: 900;
+    margin-bottom: 2px;
+  }
+  .auth-logo span { color: var(--accent); }
+  .auth-sub {
+    font-size: 12px;
+    color: var(--muted);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 24px;
+  }
+  #auth-form { display: none; flex-direction: column; gap: 10px; text-align: left; }
+  #auth-form label {
+    display: block;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 5px;
+  }
+  #auth-form input {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 10px 12px;
+    border-radius: 4px;
+    font-family: 'Barlow', sans-serif;
+    font-size: 15px;
+    outline: none;
+  }
+  #auth-form input:focus { border-color: var(--accent); }
+  #auth-form .btn { width: 100%; }
+  .auth-error { color: var(--danger); font-size: 13px; margin-top: 12px; display: none; }
+  .auth-note { font-size: 11px; color: var(--muted); text-align: center; display: none; }
+
+  /* PHONE */
+  @media (max-width: 700px) {
+    header { padding: 0 16px; }
+    .who { display: none; }
+    main { padding: 20px 16px 40px; }
+    .hero { grid-template-columns: 1fr; }
+    .big-number { font-size: 52px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- SIGN-IN -->
+<div id="auth-overlay">
+  <div class="auth-box">
+    <div class="auth-logo"><span>PARTS</span>LISTER</div>
+    <div class="auth-sub">Pro</div>
+    <div id="auth-loading" style="color:var(--muted);font-size:13px;">Loading…</div>
+    <form id="auth-form" onsubmit="event.preventDefault();authSubmit('login');">
+      <div>
+        <label for="auth-email">Email</label>
+        <input type="email" id="auth-email" autocomplete="username" required>
+      </div>
+      <div>
+        <label for="auth-password">Password</label>
+        <input type="password" id="auth-password" autocomplete="current-password" required minlength="8">
+      </div>
+      <button type="submit" class="btn btn-primary" id="auth-login-btn" style="margin-top:4px;">Sign In</button>
+      <button type="button" class="btn btn-secondary" id="auth-signup-btn" onclick="authSubmit('signup')" style="display:none;">Create Account</button>
+      <div class="auth-note" id="auth-signup-note">No account yet? Enter an email and a password (8+ characters), then Create Account.</div>
+    </form>
+    <div class="auth-error" id="auth-error"></div>
+  </div>
+</div>
+
+<!-- HEADER -->
+<header>
+  <a href="/" class="logo-link" title="Dashboard">
+    <div class="logo"><span>PARTS</span>LISTER</div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v302</span></div>
+  </a>
+  <div class="header-right">
+    <span class="who" id="who"></span>
+    <a href="/list" class="btn btn-secondary btn-sm">Listing Tool →</a>
+    <button class="btn btn-secondary btn-sm" onclick="logout()">Log Out</button>
+  </div>
+</header>
+
+<!-- DASHBOARD -->
+<main>
+  <div class="greeting">Dashboard</div>
+  <div class="greeting-sub" id="greeting-sub">&nbsp;</div>
+
+  <div class="hero">
+    <div class="card">
+      <div class="card-label">Items Listed — Lifetime</div>
+      <div class="big-number" id="listed-count">—</div>
+      <div class="big-number-sub">Every successful Launch and Scheduled Listing</div>
+    </div>
+    <div class="card launch-card">
+      <div>
+        <div class="card-label">Listing Tool</div>
+        <p>Scan photos, look up parts, and launch listings to eBay.</p>
+      </div>
+      <a href="/list" class="btn btn-primary">Start Listing →</a>
+    </div>
+  </div>
+
+  <!-- Each of these becomes a real section in a later version -->
+  <div class="section-title">Coming Next</div>
+  <div class="soon-grid">
+    <div class="soon">
+      <h3>Listing Stats</h3>
+      <p>Calendar of items listed per day, with monthly and quarterly totals including value and shipping.</p>
+    </div>
+    <div class="soon">
+      <h3>Active Listings</h3>
+      <p>Your live eBay listings at a glance.</p>
+    </div>
+    <div class="soon">
+      <h3>Seller Metrics</h3>
+      <p>Defect rate, late shipments and Top Rated status from eBay.</p>
+    </div>
+    <div class="soon">
+      <h3>Drafts</h3>
+      <p>Save a listing in progress and finish it later on any computer.</p>
+    </div>
+    <div class="soon">
+      <h3>eBay Shortcuts</h3>
+      <p>One-click links to the eBay pages you use most.</p>
+    </div>
+    <div class="soon">
+      <h3>Messages &amp; Returns</h3>
+      <p>Buyer messages and return requests in one place.</p>
+    </div>
+  </div>
+</main>
+
+<script>
+// ─── PartsLister Pro Dashboard v302 ──────────────────────────────────────────
+// Shares the same sign-in and account as the listing tool (/list). Signing in
+// here signs you in there too, and vice versa.
+
+async function showAuth(message) {
+  document.getElementById('auth-overlay').classList.remove('hidden');
+  document.getElementById('auth-loading').style.display = 'none';
+  document.getElementById('auth-form').style.display = 'flex';
+  const err = document.getElementById('auth-error');
+  err.textContent = message || '';
+  err.style.display = message ? 'block' : 'none';
+  try {
+    const st = await (await fetch('/api/auth-status')).json();
+    document.getElementById('auth-signup-btn').style.display = st.signupOpen ? 'flex' : 'none';
+    document.getElementById('auth-signup-note').style.display = st.signupOpen ? 'block' : 'none';
+  } catch (e) { /* sign-in still works */ }
+  setTimeout(() => document.getElementById('auth-email').focus(), 50);
+}
+
+async function authSubmit(mode) {
+  const email = document.getElementById('auth-email').value.trim();
+  const password = document.getElementById('auth-password').value;
+  const err = document.getElementById('auth-error');
+  if (!email || !password) { err.textContent = 'Enter your email and password.'; err.style.display = 'block'; return; }
+  const btns = [document.getElementById('auth-login-btn'), document.getElementById('auth-signup-btn')];
+  btns.forEach(b => b.disabled = true);
+  try {
+    const r = await fetch('/api/' + (mode === 'signup' ? 'signup' : 'login'), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { err.textContent = d.error || 'Something went wrong.'; err.style.display = 'block'; return; }
+    location.reload();
+  } catch (e) {
+    err.textContent = 'Could not reach the server.'; err.style.display = 'block';
+  } finally {
+    btns.forEach(b => b.disabled = false);
+  }
+}
+
+async function logout() {
+  await fetch('/api/logout', { method: 'POST' }).catch(() => {});
+  location.reload();
+}
+
+function greetingFor(hour) {
+  if (hour < 12) return 'Good morning';
+  if (hour < 17) return 'Good afternoon';
+  return 'Good evening';
+}
+
+async function load() {
+  let r;
+  try { r = await fetch('/api/me'); }
+  catch (e) { showAuth('Could not reach the server.'); return; }
+  if (r.status === 401) { showAuth(''); return; }
+  if (!r.ok) { showAuth('The server had a problem loading your account.'); return; }
+  const me = await r.json();
+
+  document.getElementById('who').textContent = me.email + (me.isAdmin ? '  · admin' : '');
+  document.getElementById('greeting-sub').textContent = greetingFor(new Date().getHours()) + ', ' + me.email;
+  document.getElementById('listed-count').textContent = Number(me.listingCount || 0).toLocaleString();
+  document.getElementById('auth-overlay').classList.add('hidden');
+}
+
+load();
+</script>
+</body>
+</html>

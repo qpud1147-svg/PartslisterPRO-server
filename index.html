@@ -9,7 +9,7 @@
   // refresh, overriding anything init does.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 </script>
-<title>PartsLister Pro v301</title>
+<title>PartsLister Pro v302</title>
 <!-- auth removed -->
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@400;500;600&display=swap');
@@ -901,10 +901,12 @@
 <!-- HEADER -->
 <header>
   <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
-    <div>
+    <!-- v302: logo goes to the dashboard -->
+    <a href="/" title="Dashboard" style="text-decoration:none;color:inherit;">
       <div class="logo"><span>PARTS</span>LISTER</div>
-      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v301</span></div>
-    </div>
+      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v302</span></div>
+    </a>
+    <a href="/" class="btn btn-secondary btn-sm" title="Back to your dashboard" style="font-size:11px;padding:4px 10px;text-decoration:none;margin-left:6px;">⌂ Dashboard</a>
     <div class="platform-badge" id="global-status" style="display:none;"><span id="global-status-icon"></span><span id="global-status-text"></span></div>
   </div>
 
@@ -8481,7 +8483,8 @@ async function _authSubmit(mode) {
 async function _logout() {
   if (_saveTimer) await _flushUserData();
   await fetch('/api/logout', { method: 'POST' }).catch(() => {});
-  location.reload();
+  // location.reload();
+  location.href = '/';   // v302: back to the dashboard sign-in
 }
 
 async function _importSettings() {
@@ -8508,7 +8511,8 @@ async function _bootstrap() {
   let r;
   try { r = await fetch('/api/data'); }
   catch (e) { _showAuth('Could not reach the server.'); return; }
-  if (r.status === 401) { _showAuth(''); return; }
+  // if (r.status === 401) { _showAuth(''); return; }
+  if (r.status === 401) { location.href = '/'; return; }   // v302: sign in on the dashboard
   if (!r.ok) { _showAuth('The server had a problem loading your account.'); return; }
   const d = await r.json();
   window._serverSettingsJSON = d.settings ? JSON.stringify(d.settings) : null;
