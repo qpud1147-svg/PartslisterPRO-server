@@ -1,5 +1,6 @@
-// PartsLister Pro server — v302
+// PartsLister Pro server — v305
 // v302: dashboard.html is the homepage (/). The listing tool moved to /list.
+// v305: eBay sales connection — real sold orders on the dashboard.
 // Accounts with email + password login. Each account's settings (including its
 // own API keys) and history are saved ENCRYPTED in Postgres, so you can log in
 // from any computer and everything is there. Also keeps a lifetime listing count.
@@ -50,6 +51,31 @@ async function setupDatabase() {
       data_enc   TEXT NOT NULL,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
+    -- v305: eBay sales
+    CREATE TABLE IF NOT EXISTS ebay_connections (
+      user_id         INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      runame          TEXT,
+      refresh_enc     TEXT,
+      refresh_expires TIMESTAMPTZ,
+      connected_at    TIMESTAMPTZ,
+      history_from    TIMESTAMPTZ,
+      last_sync       TIMESTAMPTZ,
+      last_error      TEXT
+    );
+    CREATE TABLE IF NOT EXISTS ebay_orders (
+      user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      order_id   TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL,
+      total      NUMERIC(12,2) NOT NULL DEFAULT 0,
+      payout     NUMERIC(12,2),
+      fees       NUMERIC(12,2),
+      item_count INTEGER NOT NULL DEFAULT 0,
+      status     TEXT,
+      counted    BOOLEAN NOT NULL DEFAULT TRUE,
+      PRIMARY KEY (user_id, order_id)
+    );
+    CREATE INDEX IF NOT EXISTS ebay_orders_user_created ON ebay_orders (user_id, created_at);
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS dash_range TEXT;
   `);
   await pool.query('DELETE FROM sessions WHERE expires_at < now()');
 }
@@ -133,7 +159,7 @@ async function requireUser(req, res, next) {
     const token = readCookie(req, COOKIE);
     if (!token) return res.status(401).json({ error: 'Not signed in' });
     const r = await pool.query(
-      `SELECT u.id, u.email, u.is_admin, u.listing_count
+      `SELECT u.id, u.email, u.is_admin, u.listing_count, u.dash_range
          FROM sessions s JOIN users u ON u.id = s.user_id
         WHERE s.token_hash = $1 AND s.expires_at > now()`,
       [sha256(token)]
@@ -269,7 +295,8 @@ app.post('/api/data', requireUser, express.json({ limit: '10mb' }), async (req, 
 
 // v302: just the account — the dashboard uses this so it never pulls your keys
 app.get('/api/me', requireUser, (req, res) => {
-  res.json({ email: req.user.email, isAdmin: req.user.is_admin, listingCount: req.user.listing_count });
+  // res.json({ email: req.user.email, isAdmin: req.user.is_admin, listingCount: req.user.listing_count });
+  res.json({ email: req.user.email, isAdmin: req.user.is_admin, listingCount: req.user.listing_count, dashRange: req.user.dash_range || null });   // v305
 });
 
 // Lifetime listing counter — +1 for every successful Launch or Scheduled Listing
@@ -514,6 +541,358 @@ app.post('/api/serplens', requireUser, express.json(), async (req, res) => {
   }
 });
 
+// ─── v305: EBAY SALES ────────────────────────────────────────────────────────
+// Connects your eBay seller account (one-time "allow" click) and imports your
+// sold orders so the dashboard shows real sales.
+//
+// • Uses the eBay Client ID + Client Secret you already saved in the Listing
+//   Tool's Settings — nothing to re-enter.
+// • The RuName is saved from the dashboard's Admin settings.
+// • The token eBay hands back is stored ENCRYPTED, like your other keys.
+// • Only dates and dollar amounts are stored for each order — no buyer names
+//   or addresses.
+const EBAY_AUTH_HOST = env('EBAY_AUTH_HOST') || 'https://auth.ebay.com';   // override for testing only
+const EBAY_API_HOST  = env('EBAY_API_HOST')  || 'https://api.ebay.com';    // override for testing only
+const SALES_SCOPES = [
+  'https://api.ebay.com/oauth/api_scope',
+  'https://api.ebay.com/oauth/api_scope/sell.fulfillment.readonly'
+].join(' ');
+const HISTORY_DAYS = 728;               // eBay keeps orders about two years
+const AUTO_SYNC_MINUTES = 15;           // refresh in the background when older than this
+const CALLBACK_PATH = '/api/ebay-callback';
+
+function requireAdmin(req, res, next) {
+  if (!req.user || !req.user.is_admin) return res.status(403).json({ error: 'Admin only' });
+  next();
+}
+
+// The eBay keys you saved in the Listing Tool (read only — never changed here)
+async function getEbayKeys(userId) {
+  const r = await pool.query('SELECT data_enc FROM user_data WHERE user_id = $1', [userId]);
+  if (!r.rows.length) return { clientId: '', clientSecret: '' };
+  const s = (JSON.parse(decrypt(r.rows[0].data_enc)).settings) || {};
+  return { clientId: String(s.ebayClientId || '').trim(), clientSecret: String(s.ebayClientSecret || '').trim() };
+}
+
+async function getConnection(userId) {
+  const r = await pool.query('SELECT * FROM ebay_connections WHERE user_id = $1', [userId]);
+  return r.rows[0] || null;
+}
+
+async function ebayToken(keys, body) {
+  const r = await fetch(EBAY_API_HOST + '/identity/v1/oauth2/token', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Authorization': 'Basic ' + Buffer.from(keys.clientId + ':' + keys.clientSecret).toString('base64')
+    },
+    body: new URLSearchParams(body).toString(),
+    signal: AbortSignal.timeout(20000)
+  });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok || !d.access_token) {
+    const err = new Error(d.error_description || d.error || ('eBay token request failed (' + r.status + ')'));
+    err.code = d.error;
+    throw err;
+  }
+  return d;
+}
+
+// Short-lived access tokens (2 hours) are kept in memory and re-made from the
+// stored refresh token (18 months) whenever needed.
+const accessTokens = new Map();
+
+async function getAccessToken(userId) {
+  const cached = accessTokens.get(userId);
+  if (cached && Date.now() < cached.expires) return cached.token;
+  const conn = await getConnection(userId);
+  if (!conn || !conn.refresh_enc) throw new Error('eBay is not connected');
+  const keys = await getEbayKeys(userId);
+  if (!keys.clientId || !keys.clientSecret) throw new Error('Your eBay Client ID / Client Secret are missing from Listing Tool settings');
+  let d;
+  try {
+    d = await ebayToken(keys, { grant_type: 'refresh_token', refresh_token: decrypt(conn.refresh_enc), scope: SALES_SCOPES });
+  } catch (e) {
+    if (e.code === 'invalid_grant') throw new Error('eBay connection expired or was revoked — click Connect eBay again');
+    throw e;
+  }
+  accessTokens.set(userId, { token: d.access_token, expires: Date.now() + Math.max(60, (d.expires_in || 7200) - 300) * 1000 });
+  return d.access_token;
+}
+
+const money = (x) => {
+  const n = parseFloat(x && x.value !== undefined ? x.value : x);
+  return Number.isFinite(n) ? n : null;
+};
+
+// One eBay order → the few numbers the dashboard needs
+function mapOrder(o) {
+  const ps = o.pricingSummary || {};
+  const sub = money(ps.priceSubtotal);
+  const ship = money(ps.deliveryCost);
+  // Sales = item price + shipping charged (what eBay's Seller Hub calls sales, before tax)
+  const total = sub !== null ? sub + (ship || 0) : (money(ps.total) || 0);
+  const cancel = o.cancelStatus && o.cancelStatus.cancelState;
+  const pay = o.orderPaymentStatus || '';
+  const counted = cancel !== 'CANCELED' && pay !== 'FULLY_REFUNDED' && pay !== 'FAILED';
+  const items = (o.lineItems || []).reduce((s, li) => s + (parseInt(li.quantity, 10) || 1), 0);
+  return {
+    orderId: String(o.orderId),
+    created: o.creationDate,
+    total: Math.round(total * 100) / 100,
+    payout: money(o.paymentSummary && o.paymentSummary.totalDueSeller),
+    fees: money(o.totalMarketplaceFee),
+    items,
+    status: pay + (cancel && cancel !== 'NONE_REQUESTED' ? ' / ' + cancel : ''),
+    counted
+  };
+}
+
+async function saveOrders(userId, orders) {
+  if (!orders.length) return;
+  const values = [];
+  const params = [];
+  orders.forEach((o, i) => {
+    const b = i * 9;
+    values.push(`($${b + 1},$${b + 2},$${b + 3},$${b + 4},$${b + 5},$${b + 6},$${b + 7},$${b + 8},$${b + 9})`);
+    params.push(userId, o.orderId, o.created, o.total, o.payout, o.fees, o.items, o.status, o.counted);
+  });
+  await pool.query(
+    `INSERT INTO ebay_orders (user_id, order_id, created_at, total, payout, fees, item_count, status, counted)
+     VALUES ${values.join(',')}
+     ON CONFLICT (user_id, order_id) DO UPDATE SET
+       created_at = EXCLUDED.created_at, total = EXCLUDED.total, payout = EXCLUDED.payout,
+       fees = EXCLUDED.fees, item_count = EXCLUDED.item_count, status = EXCLUDED.status, counted = EXCLUDED.counted`,
+    params
+  );
+}
+
+// First sync pulls about two years; later syncs pull only orders that changed
+// since the last one (new sales, cancellations, refunds).
+const syncing = new Set();
+
+async function syncOrders(userId) {
+  if (syncing.has(userId)) return;
+  syncing.add(userId);
+  const started = new Date();
+  try {
+    const conn = await getConnection(userId);
+    if (!conn || !conn.refresh_enc) return;
+    let token = await getAccessToken(userId);
+    let filter, historyFrom = null;
+    if (!conn.last_sync) {
+      historyFrom = new Date(started.getTime() - HISTORY_DAYS * 86400000);
+      filter = `creationdate:[${historyFrom.toISOString()}..]`;
+    } else {
+      const since = new Date(new Date(conn.last_sync).getTime() - 2 * 86400000);
+      filter = `lastmodifieddate:[${since.toISOString()}..]`;
+    }
+    let offset = 0, total = Infinity, pages = 0, retried = false;
+    while (offset < total && pages < 250) {
+      const url = `${EBAY_API_HOST}/sell/fulfillment/v1/order?filter=${encodeURIComponent(filter)}&limit=200&offset=${offset}`;
+      const r = await fetch(url, {
+        headers: { 'Authorization': 'Bearer ' + token, 'Accept': 'application/json' },
+        signal: AbortSignal.timeout(30000)
+      });
+      if (r.status === 401 && !retried) {          // token went stale mid-sync
+        accessTokens.delete(userId);
+        token = await getAccessToken(userId);
+        retried = true;
+        continue;
+      }
+      if (!r.ok) {
+        const t = await r.text().catch(() => '');
+        let msg = t.slice(0, 200);
+        try { const j = JSON.parse(t); msg = (j.errors || []).map(e => e.longMessage || e.message).join('; ') || msg; } catch (e) { /* keep text */ }
+        throw new Error('eBay orders request failed (' + r.status + '): ' + msg);
+      }
+      const d = await r.json();
+      const orders = (d.orders || []).map(mapOrder).filter(o => o.orderId && o.created);
+      await saveOrders(userId, orders);
+      total = Number.isFinite(d.total) ? d.total : 0;
+      offset += (d.orders || []).length;
+      pages++;
+      if (!(d.orders || []).length) break;
+    }
+    await pool.query(
+      `UPDATE ebay_connections SET last_sync = $2, last_error = NULL,
+         history_from = COALESCE($3, history_from) WHERE user_id = $1`,
+      [userId, started, historyFrom]
+    );
+  } catch (e) {
+    console.error('[ebay sync]', e.message);
+    await pool.query('UPDATE ebay_connections SET last_error = $2 WHERE user_id = $1', [userId, String(e.message).slice(0, 500)]).catch(() => {});
+  } finally {
+    syncing.delete(userId);
+  }
+}
+
+// One-time "allow" — state links eBay's reply back to your account
+const oauthStates = new Map();
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of oauthStates) if (v.expires < now) oauthStates.delete(k);
+}, 60000).unref();
+
+app.get('/api/ebay/status', requireUser, requireAdmin, async (req, res) => {
+  try {
+    const conn = await getConnection(req.user.id);
+    const keys = await getEbayKeys(req.user.id);
+    const count = await pool.query('SELECT COUNT(*)::int AS n FROM ebay_orders WHERE user_id = $1', [req.user.id]);
+    res.json({
+      ruName: (conn && conn.runame) || '',
+      hasKeys: !!(keys.clientId && keys.clientSecret),
+      connected: !!(conn && conn.refresh_enc),
+      connectedAt: conn && conn.connected_at,
+      refreshExpires: conn && conn.refresh_expires,
+      lastSync: conn && conn.last_sync,
+      historyFrom: conn && conn.history_from,
+      lastError: (conn && conn.last_error) || null,
+      syncing: syncing.has(req.user.id),
+      orders: count.rows[0].n,
+      callbackPath: CALLBACK_PATH
+    });
+  } catch (e) {
+    console.error('[ebay status]', e);
+    res.status(500).json({ error: 'Could not load eBay status' });
+  }
+});
+
+app.post('/api/ebay/settings', requireUser, requireAdmin, express.json(), async (req, res) => {
+  const ruName = String((req.body && req.body.ruName) || '').trim();
+  if (!/^[A-Za-z0-9_\-]{5,200}$/.test(ruName)) {
+    return res.status(400).json({ error: 'That doesn’t look like a RuName — it should look like Your_Name-YourApp-PRD-abc123' });
+  }
+  await pool.query(
+    `INSERT INTO ebay_connections (user_id, runame) VALUES ($1, $2)
+     ON CONFLICT (user_id) DO UPDATE SET runame = EXCLUDED.runame`,
+    [req.user.id, ruName]
+  );
+  res.json({ ok: true });
+});
+
+// The page sends you here; this sends you on to eBay's "allow" screen
+app.get('/api/ebay/connect', requireUser, requireAdmin, async (req, res) => {
+  try {
+    const conn = await getConnection(req.user.id);
+    const keys = await getEbayKeys(req.user.id);
+    if (!conn || !conn.runame) return res.redirect('/?ebay=error&msg=' + encodeURIComponent('Save your RuName first'));
+    if (!keys.clientId || !keys.clientSecret) {
+      return res.redirect('/?ebay=error&msg=' + encodeURIComponent('Add your eBay Client ID and Client Secret in Listing Tool settings first'));
+    }
+    const state = crypto.randomBytes(24).toString('base64url');
+    oauthStates.set(state, { userId: req.user.id, expires: Date.now() + 10 * 60 * 1000 });
+    const url = EBAY_AUTH_HOST + '/oauth2/authorize?' + new URLSearchParams({
+      client_id: keys.clientId,
+      redirect_uri: conn.runame,
+      response_type: 'code',
+      scope: SALES_SCOPES,
+      state,
+      prompt: 'login'
+    }).toString();
+    res.redirect(url);
+  } catch (e) {
+    console.error('[ebay connect]', e);
+    res.redirect('/?ebay=error&msg=' + encodeURIComponent('Could not start the eBay connection'));
+  }
+});
+
+// eBay sends you back here after you click "allow" (this is the
+// "auth accepted URL" registered in your eBay developer account)
+app.get(CALLBACK_PATH, async (req, res) => {
+  const fail = (msg) => res.redirect('/?ebay=error&msg=' + encodeURIComponent(msg));
+  const { code, state, error } = req.query;
+  if (error) return fail('eBay said: ' + String(error));
+  const st = oauthStates.get(String(state || ''));
+  if (!st || st.expires < Date.now()) return fail('That eBay sign-in link expired — click Connect eBay again');
+  oauthStates.delete(String(state));
+  if (!code) return fail('eBay did not send an authorization code');
+  try {
+    const conn = await getConnection(st.userId);
+    const keys = await getEbayKeys(st.userId);
+    const d = await ebayToken(keys, { grant_type: 'authorization_code', code: String(code), redirect_uri: conn.runame });
+    if (!d.refresh_token) throw new Error('eBay did not return a refresh token');
+    await pool.query(
+      `UPDATE ebay_connections SET refresh_enc = $2, refresh_expires = $3, connected_at = now(),
+         last_sync = NULL, last_error = NULL, history_from = NULL
+       WHERE user_id = $1`,
+      [st.userId, encrypt(d.refresh_token), new Date(Date.now() + (d.refresh_token_expires_in || 47304000) * 1000)]
+    );
+    accessTokens.set(st.userId, { token: d.access_token, expires: Date.now() + Math.max(60, (d.expires_in || 7200) - 300) * 1000 });
+    syncOrders(st.userId);                 // start importing in the background
+    res.redirect('/?ebay=connected');
+  } catch (e) {
+    console.error('[ebay callback]', e.message);
+    fail('eBay connection failed: ' + e.message);
+  }
+});
+
+app.post('/api/ebay/sync', requireUser, requireAdmin, async (req, res) => {
+  const conn = await getConnection(req.user.id);
+  if (!conn || !conn.refresh_enc) return res.status(400).json({ error: 'eBay is not connected' });
+  syncOrders(req.user.id);
+  res.json({ ok: true, syncing: true });
+});
+
+app.post('/api/ebay/disconnect', requireUser, requireAdmin, async (req, res) => {
+  accessTokens.delete(req.user.id);
+  await pool.query(
+    `UPDATE ebay_connections SET refresh_enc = NULL, refresh_expires = NULL, connected_at = NULL,
+       last_sync = NULL, last_error = NULL, history_from = NULL WHERE user_id = $1`,
+    [req.user.id]
+  );
+  await pool.query('DELETE FROM ebay_orders WHERE user_id = $1', [req.user.id]);
+  res.json({ ok: true });
+});
+
+// Daily sales totals for the dashboard, bucketed in YOUR time zone
+function safeTimeZone(tz) {
+  try { new Intl.DateTimeFormat('en-US', { timeZone: tz }); return tz; } catch (e) { return 'UTC'; }
+}
+
+app.get('/api/sales', requireUser, async (req, res) => {
+  try {
+    const conn = await getConnection(req.user.id);
+    if (!conn || !conn.refresh_enc) return res.json({ connected: false });
+    const tz = safeTimeZone(String(req.query.tz || 'UTC'));
+    const r = await pool.query(
+      `SELECT to_char((created_at AT TIME ZONE $2)::date, 'YYYY-MM-DD') AS day,
+              COALESCE(SUM(total) FILTER (WHERE counted), 0)::float AS sales,
+              (COUNT(*) FILTER (WHERE counted))::int AS orders
+         FROM ebay_orders
+        WHERE user_id = $1 AND created_at > now() - interval '740 days'
+        GROUP BY 1 ORDER BY 1`,
+      [req.user.id, tz]
+    );
+    const stale = !conn.last_sync || (Date.now() - new Date(conn.last_sync).getTime()) > AUTO_SYNC_MINUTES * 60000;
+    if (stale && !syncing.has(req.user.id) && !conn.last_error) syncOrders(req.user.id);
+    let historyFrom = null;
+    if (conn.history_from) {
+      const h = await pool.query(`SELECT to_char(($1::timestamptz AT TIME ZONE $2)::date, 'YYYY-MM-DD') AS d`, [conn.history_from, tz]);
+      historyFrom = h.rows[0].d;
+    }
+    res.json({
+      connected: true,
+      syncing: syncing.has(req.user.id),
+      lastSync: conn.last_sync,
+      lastError: conn.last_error || null,
+      historyFrom,
+      days: r.rows.map(x => [x.day, Math.round(x.sales * 100) / 100, x.orders])
+    });
+  } catch (e) {
+    console.error('[sales]', e);
+    res.status(500).json({ error: 'Could not load sales' });
+  }
+});
+
+// Remember the dashboard's date range on your account (any computer)
+app.post('/api/prefs', requireUser, express.json(), async (req, res) => {
+  const range = String((req.body && req.body.dashRange) || '');
+  if (!['today', 'week', '31', '90', 'year'].includes(range)) return res.status(400).json({ error: 'Bad range' });
+  await pool.query('UPDATE users SET dash_range = $2 WHERE id = $1', [req.user.id, range]);
+  res.json({ ok: true });
+});
+
 // ─── THE PAGES ───────────────────────────────────────────────────────────────
 // v302: two pages. Only these two files are ever served — server.js and
 // package.json stay private.
@@ -541,5 +920,5 @@ app.get('*', (req, res) => {
 });
 
 setupDatabase()
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v302 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v305 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });
