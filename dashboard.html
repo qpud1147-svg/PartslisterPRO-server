@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Dashboard v304</title>
+<title>PartsLister Pro Dashboard v305</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@400;500;600&display=swap');
 
@@ -344,6 +344,72 @@
   .auth-error { color: var(--danger); font-size: 13px; margin-top: 12px; display: none; }
   .auth-note { font-size: 11px; color: var(--muted); text-align: center; display: none; }
 
+  /* v305: data-source badge states */
+  button.sample-badge { cursor: pointer; }
+  button.sample-badge:hover { border-color: var(--accent); color: var(--text); }
+  .sample-badge.live { color: var(--text); }
+  .sample-badge .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--success); margin-right: 6px; vertical-align: 1px; }
+  .sample-badge.warn .dot { background: var(--danger); }
+  .sample-badge.busy .dot { background: var(--accent); animation: pulse 1s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: 0.3; } }
+
+  /* v305: SETTINGS */
+  #settings-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 50;
+    display: none; align-items: flex-start; justify-content: center; padding: 56px 16px 16px; overflow-y: auto;
+  }
+  #settings-overlay.open { display: flex; }
+  .settings-box {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    width: 100%; max-width: 680px; box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+  }
+  .settings-head { display: flex; align-items: center; padding: 16px 20px 0; gap: 12px; }
+  .settings-head h2 { font-family: 'Barlow Condensed', sans-serif; font-size: 24px; font-weight: 700; letter-spacing: 0.5px; }
+  .settings-close { margin-left: auto; background: none; border: none; color: var(--muted); font-size: 22px; cursor: pointer; padding: 4px 8px; line-height: 1; }
+  .settings-close:hover { color: var(--text); }
+  .settings-tabs { display: flex; gap: 4px; padding: 12px 20px 0; border-bottom: 1px solid var(--border); }
+  .settings-tabs button {
+    background: none; border: none; border-bottom: 2px solid transparent; color: var(--muted);
+    font-family: 'Barlow Condensed', sans-serif; font-size: 15px; font-weight: 700; letter-spacing: 1px;
+    text-transform: uppercase; padding: 8px 12px; cursor: pointer; margin-bottom: -1px;
+  }
+  .settings-tabs button:hover { color: var(--text); }
+  .settings-tabs button[aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); }
+  .settings-panel { display: none; padding: 20px; }
+  .settings-panel.active { display: block; }
+  .set-section { margin-bottom: 22px; }
+  .set-section:last-child { margin-bottom: 0; }
+  .set-section h3 { font-family: 'Barlow Condensed', sans-serif; font-size: 18px; font-weight: 700; letter-spacing: 0.5px; margin-bottom: 6px; }
+  .set-step { font-family: 'Barlow Condensed', sans-serif; font-size: 12px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--accent); margin-bottom: 2px; }
+  .set-help { color: var(--muted); font-size: 13px; line-height: 1.5; margin-bottom: 10px; }
+  .set-help strong { color: var(--text2); font-weight: 600; }
+  .set-row { margin-bottom: 10px; }
+  .set-row label { display: block; font-size: 11px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); margin-bottom: 5px; }
+  .set-input-row { display: flex; gap: 8px; }
+  .set-input-row input {
+    flex: 1; min-width: 0; background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+    padding: 8px 10px; border-radius: 4px; font-family: 'Barlow', sans-serif; font-size: 14px; outline: none;
+  }
+  .set-input-row input:focus { border-color: var(--accent); }
+  .set-input-row input[readonly] { color: var(--text2); font-family: ui-monospace, Menlo, monospace; font-size: 12.5px; }
+  .set-info { background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: 12px 14px; font-size: 13px; color: var(--text2); line-height: 1.7; }
+  .set-info .ok { color: var(--success); font-weight: 600; }
+  .set-info .bad { color: var(--danger); font-weight: 600; }
+  .set-error { background: rgba(224,82,82,0.08); border: 1px solid rgba(224,82,82,0.4); color: #f0a0a0; border-radius: 6px; padding: 10px 12px; font-size: 13px; margin-top: 10px; line-height: 1.5; }
+  .set-buttons { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .set-divider { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
+
+  /* v305: TOAST */
+  #toast {
+    position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%) translateY(20px);
+    background: #0b0b0b; border: 1px solid #3a3a3a; border-left: 3px solid var(--success);
+    color: var(--text); padding: 12px 18px; border-radius: 6px; font-size: 14px; z-index: 200;
+    max-width: calc(100% - 32px); opacity: 0; pointer-events: none; transition: opacity 0.2s, transform 0.2s;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  #toast.error { border-left-color: var(--danger); }
+
   /* TABLET */
   @media (max-width: 1000px) {
     .figures { grid-template-columns: repeat(2, 1fr); }
@@ -357,6 +423,10 @@
     .header-right { gap: 6px; }
     .header-right .btn-sm { padding: 5px 8px; font-size: 11px; letter-spacing: 0.5px; }
     .chart-note { display: none; }
+    .header-logout { display: none !important; }   /* v305: Log Out is in ⚙ → Account on phones */
+    .settings-panel { padding: 16px; }
+    .settings-head, .settings-tabs { padding-left: 16px; padding-right: 16px; }
+    #settings-overlay { padding-top: 12px; }
     main { padding: 16px 16px 40px; }
     .range-picker { margin-left: 0; width: 100%; }
     .range-picker button { flex: 1; padding: 8px 4px; font-size: 13px; }
@@ -396,12 +466,13 @@
 <header>
   <a href="/" class="logo-link" title="Dashboard">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v304</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v305</span></div>
   </a>
   <div class="header-right">
     <span class="who" id="who"></span>
     <a href="/list" class="btn btn-secondary btn-sm">Listing Tool →</a>
-    <button class="btn btn-secondary btn-sm" onclick="logout()">Log Out</button>
+    <button class="btn btn-secondary btn-sm" onclick="openSettings()" title="Settings" aria-label="Settings">⚙</button>   <!-- v305 -->
+    <button class="btn btn-secondary btn-sm header-logout" onclick="logout()">Log Out</button>
   </div>
 </header>
 
@@ -411,8 +482,11 @@
   <!-- SALES -->
   <div class="sales-top">
     <div class="sales-title">Sales</div>
-    <!-- v304: shown until real eBay sales are connected -->
+    <!-- v304: shown until real eBay sales are connected
     <div class="sample-badge" id="sample-badge" title="These numbers are made up so you can see the layout. Real eBay sales come next.">Sample data</div>
+    -->
+    <!-- v305: says where the numbers come from — sample, or eBay with last update -->
+    <button type="button" class="sample-badge" id="sample-badge" onclick="badgeClick()">Sample data</button>
     <div class="range-picker" role="group" aria-label="Date range">
       <button type="button" data-range="today">Today</button>
       <button type="button" data-range="week">Week</button>
@@ -483,9 +557,15 @@
     <div>
       <div class="section-title">Coming Next</div>
       <div class="soon-grid">
+        <!-- v305: done — real sales are connected in ⚙ Settings → Admin
         <div class="soon">
           <h3>Real eBay Sales</h3>
           <p>Swap the sample numbers above for your actual sold orders.</p>
+        </div>
+        -->
+        <div class="soon">
+          <h3>eBay Funds</h3>
+          <p>Money available, on hold, and on its way to your bank.</p>
         </div>
         <div class="soon">
           <h3>Listing Stats</h3>
@@ -523,8 +603,92 @@
   -->
 </main>
 
+<!-- v305: SETTINGS -->
+<div id="settings-overlay" onclick="if (event.target === this) closeSettings()">
+  <div class="settings-box" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+    <div class="settings-head">
+      <h2 id="settings-title">Settings</h2>
+      <button class="settings-close" onclick="closeSettings()" aria-label="Close settings">×</button>
+    </div>
+    <div class="settings-tabs" role="tablist">
+      <button role="tab" id="tab-account" aria-selected="true" onclick="showSettingsTab('account')">Account</button>
+      <button role="tab" id="tab-admin" aria-selected="false" onclick="showSettingsTab('admin')" style="display:none;">Admin</button>
+    </div>
+
+    <!-- ACCOUNT — everyone -->
+    <div class="settings-panel active" id="panel-account" role="tabpanel">
+      <div class="set-section">
+        <h3>Your Account</h3>
+        <div class="set-info">
+          Signed in as <strong id="set-email" style="color:var(--text)">—</strong><span id="set-role"></span>
+        </div>
+        <p class="set-help" style="margin-top:10px;">Your listing settings — eBay keys, prompts, shipping and description presets — are in the <a href="/list" style="color:var(--accent)">Listing Tool</a> under ⚙.</p>
+        <div class="set-buttons">
+          <button class="btn btn-secondary btn-sm" onclick="logout()">Log Out</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ADMIN — only the admin account sees this tab -->
+    <div class="settings-panel" id="panel-admin" role="tabpanel">
+      <div class="set-section">
+        <h3>eBay Sales Connection</h3>
+        <p class="set-help">Connects your eBay seller account so the dashboard shows your real sold orders. It uses the eBay Client ID and Client Secret already saved in your Listing Tool settings.</p>
+        <div id="ebay-status-box" class="set-info">Loading…</div>
+        <div id="ebay-error" class="set-error" style="display:none;"></div>
+        <div class="set-buttons" id="ebay-connected-buttons" style="display:none;">
+          <button class="btn btn-secondary btn-sm" onclick="syncNow()" id="sync-btn">Sync Now</button>
+          <button class="btn btn-secondary btn-sm" onclick="disconnectEbay()">Disconnect</button>
+        </div>
+      </div>
+
+      <hr class="set-divider">
+
+      <div class="set-section">
+        <div class="set-step">Step 1</div>
+        <h3>Register these addresses with eBay</h3>
+        <p class="set-help">In your eBay developer account → <strong>User Tokens</strong> → <strong>Add eBay Redirect URL</strong>, choose <strong>OAuth</strong>, and paste these in. They fill in automatically from wherever this app is running — if your web address ever changes, these change too, and you paste the new ones into eBay.</p>
+        <div class="set-row">
+          <label for="url-accepted">Your auth accepted URL</label>
+          <div class="set-input-row"><input id="url-accepted" readonly><button class="btn btn-secondary btn-sm" onclick="copyField('url-accepted')">Copy</button></div>
+        </div>
+        <div class="set-row">
+          <label for="url-declined">Your auth declined URL</label>
+          <div class="set-input-row"><input id="url-declined" readonly><button class="btn btn-secondary btn-sm" onclick="copyField('url-declined')">Copy</button></div>
+        </div>
+        <div class="set-row">
+          <label for="url-privacy">Your privacy policy URL</label>
+          <div class="set-input-row"><input id="url-privacy" readonly><button class="btn btn-secondary btn-sm" onclick="copyField('url-privacy')">Copy</button></div>
+        </div>
+      </div>
+
+      <div class="set-section">
+        <div class="set-step">Step 2</div>
+        <h3>Save the RuName eBay gives you</h3>
+        <p class="set-help">After you save on eBay, it shows a name for that entry, like <strong>Peter_Hoffmann-PeterHof-Lister-abcde</strong>. Copy it here.</p>
+        <div class="set-row">
+          <label for="ru-name">RuName</label>
+          <div class="set-input-row"><input id="ru-name" placeholder="Your_Name-YourApp-Lister-abcde" autocomplete="off" spellcheck="false"><button class="btn btn-primary btn-sm" onclick="saveRuName()" id="ru-save">Save</button></div>
+        </div>
+      </div>
+
+      <div class="set-section">
+        <div class="set-step">Step 3</div>
+        <h3>Connect</h3>
+        <p class="set-help" id="connect-help">Opens eBay's sign-in. Approve access once and you're done — your sales import automatically after that.</p>
+        <div class="set-buttons">
+          <button class="btn btn-primary" id="connect-btn" onclick="connectEbay()">Connect eBay</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="toast" role="status" aria-live="polite"></div>
+
 <script>
-// ─── PartsLister Pro Dashboard v304 ──────────────────────────────────────────
+// ─── PartsLister Pro Dashboard v305 ──────────────────────────────────────────
+// v305: real eBay sales (when connected in ⚙ Settings → Admin); sample data otherwise.
 // Shares the same sign-in and account as the listing tool (/list).
 // v304: sales dashboard — big daily bar graph with a remembered date range.
 // The sales numbers are SAMPLE data for now; real eBay sales replace
@@ -541,6 +705,11 @@ const RANGES = {
 const RANGE_KEY = 'plp_dash_range';
 let currentRange = 'week';
 let allDays = [];     // [{ date: Date, key: 'YYYY-MM-DD', sales: Number, orders: Number }]
+// v305
+let me = null;              // the signed-in account
+let salesMode = 'sample';   // 'sample' until eBay is connected, then 'live'
+let salesInfo = {};         // { syncing, lastSync, lastError, historyFrom }
+let pollTimer = null;
 let shownDays = [];
 
 // ─── FORMATTING ──────────────────────────────────────────────────────────────
@@ -614,8 +783,17 @@ function renderFigures() {
   setText('fig-total', money0.format(total));
   // Compare against the same-length period right before it
   const prev = allDays.slice(-2 * r.days, -r.days);
-  if (prev.length === r.days && currentRange !== 'today') {
-    const prevTotal = prev.reduce((s, d) => s + d.sales, 0);
+  // v305: with real data, compare only against days eBay actually gave us.
+  // eBay keeps about 2 years, so the Year view's earlier period can be a day or
+  // two short — then it compares by the same number of days on both sides.
+  let prevDays = prev;
+  if (salesMode === 'live') prevDays = salesInfo.historyFrom ? prev.filter(d => d.key > salesInfo.historyFrom) : [];
+  const covered = prevDays.length >= Math.ceil(r.days * 0.9);
+  if (currentRange !== 'today' && !covered) {
+    setText('fig-total-sub', 'Not enough history yet to compare');
+  } else if (prev.length === r.days && currentRange !== 'today') {
+    // const prevTotal = prev.reduce((s, d) => s + d.sales, 0);
+    const prevTotal = prevDays.reduce((s, d) => s + d.sales, 0) * (r.days / prevDays.length);
     const pct = prevTotal ? ((total - prevTotal) / prevTotal) * 100 : 0;
     setText('fig-total-sub', (pct >= 0 ? '▲ ' : '▼ ') + Math.abs(pct).toFixed(1) + '% vs the ' + r.days + ' days before');
   } else {
@@ -631,8 +809,10 @@ function renderFigures() {
   setText('fig-avg', money0.format(total / r.days));
   setText('fig-avg-sub', r.days + ' day' + (r.days === 1 ? '' : 's'));
 
-  setText('fig-best', money0.format(best.sales));
-  setText('fig-best-sub', fmtLong(best.date));
+  // setText('fig-best', money0.format(best.sales));
+  // setText('fig-best-sub', fmtLong(best.date));
+  setText('fig-best', best.sales > 0 ? money0.format(best.sales) : '—');      // v305: no sales yet → no best day
+  setText('fig-best-sub', best.sales > 0 ? fmtLong(best.date) : ' ');
 
   setText('chart-title', 'Sales per day · ' + r.label);
 }
@@ -692,7 +872,7 @@ function renderChart() {
   const m = { top: 28, right: 8, bottom: 26, left: phone ? 40 : 52 };
   const pw = W - m.left - m.right, ph = H - m.top - m.bottom;
   const n = shownDays.length;
-  const peak = Math.max(...shownDays.map(d => d.sales)) * 1.08;
+  const peak = Math.max(1, ...shownDays.map(d => d.sales)) * 1.08;
   const step = niceStep(peak / 4);
   const steps = Math.max(1, Math.ceil(peak / step));
   const max = step * steps;
@@ -816,7 +996,11 @@ function setRange(range, save) {
   document.querySelectorAll('.range-picker button').forEach(b => {
     b.setAttribute('aria-pressed', b.dataset.range === range ? 'true' : 'false');
   });
-  if (save) { try { localStorage.setItem(RANGE_KEY, range); } catch (e) { /* not critical */ } }
+  if (save) {
+    try { localStorage.setItem(RANGE_KEY, range); } catch (e) { /* not critical */ }
+    // v305: also on your account, so every computer opens on the same range
+    fetch('/api/prefs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dashRange: range }) }).catch(() => {});
+  }
   renderFigures();
   renderChart();
   renderTable();
@@ -873,6 +1057,229 @@ async function logout() {
   location.reload();
 }
 
+// ─── v305: REAL SALES ────────────────────────────────────────────────────────
+function buildLiveDays(rows, totalDays) {
+  const byDay = new Map(rows.map(([key, sales, orders]) => [key, { sales, orders }]));
+  const days = [];
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  for (let i = totalDays - 1; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(today.getDate() - i);
+    const key = dayKey(d);
+    const v = byDay.get(key) || { sales: 0, orders: 0 };
+    days.push({ date: d, key, sales: v.sales, orders: v.orders });
+  }
+  return days;
+}
+
+async function loadSales() {
+  let d = { connected: false };
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+    const r = await fetch('/api/sales?tz=' + encodeURIComponent(tz));
+    if (r.ok) d = await r.json();
+  } catch (e) { /* fall back to sample */ }
+  if (d.connected) {
+    salesMode = 'live';
+    salesInfo = { syncing: !!d.syncing, lastSync: d.lastSync, lastError: d.lastError, historyFrom: d.historyFrom };
+    allDays = buildLiveDays(d.days || [], 730);
+  } else {
+    salesMode = 'sample';
+    salesInfo = {};
+    allDays = getSalesDays(730);
+  }
+  renderBadge();
+  clearTimeout(pollTimer);
+  if (salesInfo.syncing) pollTimer = setTimeout(refreshSales, 4000);
+}
+
+async function refreshSales() {
+  await loadSales();
+  setRange(currentRange, false);
+  if (document.getElementById('settings-overlay').classList.contains('open')) loadEbayStatus();
+}
+
+function timeAgo(iso) {
+  if (!iso) return 'never';
+  const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return mins + ' min ago';
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return hrs + ' hr ago';
+  return Math.round(hrs / 24) + ' days ago';
+}
+
+function renderBadge() {
+  const b = document.getElementById('sample-badge');
+  b.className = 'sample-badge';
+  b.textContent = '';
+  const dot = document.createElement('span');
+  dot.className = 'dot';
+  if (salesMode === 'live') {
+    b.classList.add('live');
+    let text, title;
+    if (salesInfo.lastError) { b.classList.add('warn'); text = 'eBay · sync problem'; title = salesInfo.lastError; }
+    else if (salesInfo.syncing) { b.classList.add('busy'); text = salesInfo.lastSync ? 'eBay · updating…' : 'eBay · importing…'; title = 'Importing your sold orders from eBay'; }
+    else { text = 'eBay · updated ' + timeAgo(salesInfo.lastSync); title = 'Real sales from eBay. Updates automatically every ' + 15 + ' minutes when you open the dashboard.'; }
+    b.append(dot, document.createTextNode(text));
+    b.title = title;
+    b.disabled = !(me && me.isAdmin);
+  } else {
+    b.textContent = (me && me.isAdmin) ? 'Sample data · Connect eBay' : 'Sample data';
+    b.title = 'These numbers are made up so you can see the layout.';
+    b.disabled = !(me && me.isAdmin);
+  }
+}
+
+function badgeClick() {
+  if (me && me.isAdmin) openSettings('admin');
+}
+
+// Coming back from eBay's sign-in
+function handleEbayReturn() {
+  const q = new URLSearchParams(location.search);
+  const result = q.get('ebay');
+  if (!result) return;
+  history.replaceState(null, '', '/');
+  if (result === 'connected') showToast('eBay connected — importing your sales. This can take a minute.');
+  else if (result === 'declined') showToast('eBay connection was cancelled.', true);
+  else if (result === 'error') { showToast(q.get('msg') || 'eBay connection failed.', true); openSettings('admin'); }
+}
+
+let toastTimer;
+function showToast(msg, isError) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.toggle('error', !!isError);
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), isError ? 7000 : 4500);
+}
+
+// ─── v305: SETTINGS ──────────────────────────────────────────────────────────
+function openSettings(tab) {
+  document.getElementById('set-email').textContent = me ? me.email : '—';
+  document.getElementById('set-role').textContent = me && me.isAdmin ? '  · admin' : '';
+  document.getElementById('tab-admin').style.display = me && me.isAdmin ? '' : 'none';
+  document.getElementById('settings-overlay').classList.add('open');
+  showSettingsTab(tab === 'admin' && me && me.isAdmin ? 'admin' : 'account');
+}
+
+function closeSettings() {
+  document.getElementById('settings-overlay').classList.remove('open');
+}
+
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeSettings(); });
+
+function showSettingsTab(tab) {
+  ['account', 'admin'].forEach(t => {
+    document.getElementById('tab-' + t).setAttribute('aria-selected', t === tab ? 'true' : 'false');
+    document.getElementById('panel-' + t).classList.toggle('active', t === tab);
+  });
+  if (tab === 'admin') loadEbayStatus();
+}
+
+let ebayStatus = null;
+async function loadEbayStatus() {
+  const origin = location.origin;
+  let st;
+  try {
+    const r = await fetch('/api/ebay/status');
+    if (!r.ok) throw new Error();
+    st = await r.json();
+  } catch (e) {
+    document.getElementById('ebay-status-box').textContent = 'Could not load the eBay connection status.';
+    return;
+  }
+  ebayStatus = st;
+  document.getElementById('url-accepted').value = origin + st.callbackPath;
+  document.getElementById('url-declined').value = origin + '/?ebay=declined';
+  document.getElementById('url-privacy').value = origin + '/';
+  const ru = document.getElementById('ru-name');
+  if (document.activeElement !== ru) ru.value = st.ruName || '';
+
+  // Status
+  const box = document.getElementById('ebay-status-box');
+  box.textContent = '';
+  const line = (label, value, cls) => {
+    const row = document.createElement('div');
+    const l = document.createElement('span'); l.textContent = label + ' ';
+    const v = document.createElement('span'); v.textContent = value; if (cls) v.className = cls;
+    row.append(l, v); box.appendChild(row);
+  };
+  if (st.connected) {
+    line('Status:', st.syncing ? '✓ Connected — importing orders…' : '✓ Connected', 'ok');
+    line('Orders imported:', Number(st.orders).toLocaleString());
+    if (st.historyFrom) line('History from:', new Date(st.historyFrom).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }));
+    line('Last update:', timeAgo(st.lastSync));
+    if (st.refreshExpires) line('Connection good until:', new Date(st.refreshExpires).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }));
+  } else {
+    line('Status:', 'Not connected', 'bad');
+    line('eBay keys from Listing Tool:', st.hasKeys ? '✓ Found' : '✗ Missing', st.hasKeys ? 'ok' : 'bad');
+    line('RuName:', st.ruName ? '✓ Saved' : '✗ Not saved yet', st.ruName ? 'ok' : 'bad');
+  }
+  const err = document.getElementById('ebay-error');
+  err.style.display = st.lastError ? 'block' : 'none';
+  err.textContent = st.lastError ? 'Last problem: ' + st.lastError : '';
+  document.getElementById('ebay-connected-buttons').style.display = st.connected ? 'flex' : 'none';
+  document.getElementById('sync-btn').disabled = !!st.syncing;
+  document.getElementById('sync-btn').textContent = st.syncing ? 'Syncing…' : 'Sync Now';
+
+  // Connect button
+  const btn = document.getElementById('connect-btn');
+  const help = document.getElementById('connect-help');
+  btn.textContent = st.connected ? 'Reconnect eBay' : 'Connect eBay';
+  btn.disabled = !st.hasKeys || !st.ruName;
+  if (!st.hasKeys) help.textContent = 'First add your eBay Client ID and Client Secret in the Listing Tool → ⚙ Settings → Account.';
+  else if (!st.ruName) help.textContent = 'Save your RuName above first.';
+  else help.textContent = st.connected
+    ? 'Only needed if the connection stops working.'
+    : 'Opens eBay’s sign-in. Approve access once and you’re done — your sales import automatically after that.';
+}
+
+async function saveRuName() {
+  const value = document.getElementById('ru-name').value.trim();
+  const btn = document.getElementById('ru-save');
+  btn.disabled = true;
+  try {
+    const r = await fetch('/api/ebay/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ruName: value }) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { showToast(d.error || 'Could not save.', true); return; }
+    showToast('RuName saved. Make sure that eBay entry uses the accepted URL shown above.');
+    loadEbayStatus();
+  } catch (e) {
+    showToast('Could not reach the server.', true);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function connectEbay() {
+  location.href = '/api/ebay/connect';
+}
+
+async function syncNow() {
+  await fetch('/api/ebay/sync', { method: 'POST' }).catch(() => {});
+  showToast('Updating your sales from eBay…');
+  setTimeout(refreshSales, 800);
+}
+
+async function disconnectEbay() {
+  if (!confirm('Disconnect eBay? Your imported sales are removed from PartsLister and the dashboard goes back to sample data. You can connect again anytime.')) return;
+  await fetch('/api/ebay/disconnect', { method: 'POST' }).catch(() => {});
+  showToast('eBay disconnected.');
+  await refreshSales();
+  loadEbayStatus();
+}
+
+async function copyField(id) {
+  const el = document.getElementById(id);
+  try { await navigator.clipboard.writeText(el.value); }
+  catch (e) { el.select(); document.execCommand('copy'); }
+  showToast('Copied');
+}
+
 // ─── LOAD ────────────────────────────────────────────────────────────────────
 async function load() {
   let r;
@@ -880,17 +1287,24 @@ async function load() {
   catch (e) { showAuth('Could not reach the server.'); return; }
   if (r.status === 401) { showAuth(''); return; }
   if (!r.ok) { showAuth('The server had a problem loading your account.'); return; }
-  const me = await r.json();
+  me = await r.json();
 
   document.getElementById('who').textContent = me.email + (me.isAdmin ? '  · admin' : '');
   document.getElementById('listed-count').textContent = Number(me.listingCount || 0).toLocaleString();
   document.getElementById('auth-overlay').classList.add('hidden');
 
   // A year plus a year before it, so "vs the days before" works on every range
-  allDays = getSalesDays(730);
-  let saved = 'week';
-  try { saved = localStorage.getItem(RANGE_KEY) || 'week'; } catch (e) { /* use default */ }
-  setRange(saved, false);
+  // allDays = getSalesDays(730);
+  // let saved = 'week';
+  // try { saved = localStorage.getItem(RANGE_KEY) || 'week'; } catch (e) { /* use default */ }
+  // setRange(saved, false);
+
+  // v305: real eBay sales when connected, sample otherwise
+  await loadSales();
+  let saved = me.dashRange;
+  if (!saved) { try { saved = localStorage.getItem(RANGE_KEY); } catch (e) { /* use default */ } }
+  setRange(saved || 'week', false);
+  handleEbayReturn();
 }
 
 load();
