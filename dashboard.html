@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Dashboard v307</title>
+<title>PartsLister Pro Dashboard v308</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@400;500;600&display=swap');
 
@@ -409,6 +409,19 @@
   .set-buttons { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
   .set-divider { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
 
+  /* v308: FEE CHECK */
+  .fc-dates { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; margin-bottom: 12px; }
+  .fc-dates label { display: block; font-size: 11px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); margin-bottom: 5px; }
+  .fc-dates input { background: var(--surface2); border: 1px solid var(--border); color: var(--text); padding: 7px 9px; border-radius: 4px; font-family: 'Barlow', sans-serif; font-size: 14px; color-scheme: dark; }
+  .fc-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .fc-table th, .fc-table td { padding: 7px 8px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
+  .fc-table th { color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; }
+  .fc-table td.num, .fc-table th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .fc-table .code { display: block; color: var(--muted); font-size: 11px; font-family: ui-monospace, Menlo, monospace; }
+  .fc-table tr.total td { font-weight: 700; color: var(--text); border-bottom: none; }
+  .fc-counts { margin-top: 12px; font-size: 13px; color: var(--text2); line-height: 1.7; }
+  .fc-scroll { overflow-x: auto; }
+
   /* v305: TOAST */
   #toast {
     position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%) translateY(20px);
@@ -477,7 +490,7 @@
 <header>
   <a href="/" class="logo-link" title="Dashboard">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v307</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v308</span></div>
   </a>
   <div class="header-right">
     <span class="who" id="who"></span>
@@ -667,6 +680,18 @@
         </div>
       </div>
 
+      <!-- v308: FEE CHECK -->
+      <div class="set-section" id="fee-check-section" style="display:none;">
+        <h3>Check fees against eBay</h3>
+        <p class="set-help">Set the same dates as an eBay report (Seller Hub → Performance → Sales → Download report). Each row says which column of that report it should match.</p>
+        <div class="fc-dates">
+          <div><label for="fc-from">From</label><input type="date" id="fc-from"></div>
+          <div><label for="fc-to">To</label><input type="date" id="fc-to"></div>
+          <button class="btn btn-primary btn-sm" onclick="runFeeCheck()" id="fc-btn">Check</button>
+        </div>
+        <div id="fc-result"></div>
+      </div>
+
       <hr class="set-divider">
 
       <div class="set-section">
@@ -716,6 +741,7 @@
 // v305: real eBay sales (when connected in ⚙ Settings → Admin); sample data otherwise.
 // v306: Admin lists each eBay permission and whether it's approved.
 // v307: eBay fees tile and penalty box.
+// v308: fee check in Admin — itemized fees for exact dates.
 // Shares the same sign-in and account as the listing tool (/list).
 // v304: sales dashboard — big daily bar graph with a remembered date range.
 // The sales numbers are SAMPLE data for now; real eBay sales replace
@@ -1318,6 +1344,8 @@ async function loadEbayStatus() {
   err.style.display = problems.length ? 'block' : 'none';
   err.textContent = problems.length ? 'Last problem — ' + problems.join(' · ') : '';
   document.getElementById('ebay-connected-buttons').style.display = st.connected ? 'flex' : 'none';
+  document.getElementById('fee-check-section').style.display = st.feesApproved && st.feesSync ? 'block' : 'none';   // v308
+  if (st.feesApproved && st.feesSync) initFeeCheckDates();
   document.getElementById('sync-btn').disabled = !!st.syncing;
   document.getElementById('sync-btn').textContent = st.syncing ? 'Syncing…' : 'Sync Now';
 
@@ -1368,6 +1396,95 @@ async function disconnectEbay() {
   showToast('eBay disconnected.');
   await refreshSales();
   loadEbayStatus();
+}
+
+// ─── v308: FEE CHECK ─────────────────────────────────────────────────────────
+// Which column of eBay's sales report each fee type belongs in
+const FEE_NAMES = {
+  FINAL_VALUE_FEE:                  ['Final value fee (percentage)', 'Final value fees'],
+  FINAL_VALUE_FEE_FIXED_PER_ORDER:  ['Final value fee (per order)', 'Final value fees'],
+  FINAL_VALUE_SHIPPING_FEE:         ['Final value fee on shipping', 'Final value fees'],
+  AD_FEE:                           ['Promoted Listings', 'Promoted Listings - General fees'],
+  PREMIUM_AD_FEES:                  ['Promoted Listings (priority)', 'Promoted Listings - Priority fees'],
+  INTERNATIONAL_FEE:                ['International fee', 'International fees'],
+  BELOW_STANDARD_FEE:               ['Below Standard penalty', 'Other eBay fees'],
+  HIGH_ITEM_NOT_AS_DESCRIBED_FEE:   ['"Not as described" penalty', 'Other eBay fees'],
+  EBAY_STORE_SUBSCRIPTION_FEE:      ['Store subscription', 'Account level fees (top of report)'],
+  INSERTION_FEE:                    ['Insertion fee', 'Insertion fees'],
+  PROMOTIONAL_CREDIT:               ['Promotional credit', 'Fee credits'],
+  OTHER_FEES:                       ['Not itemized by eBay', 'Total selling costs']
+};
+
+function initFeeCheckDates() {
+  const f = document.getElementById('fc-from'), t = document.getElementById('fc-to');
+  if (f.value && t.value) return;
+  const now = new Date();
+  const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+  const start = new Date(end); start.setDate(end.getDate() - 30);
+  f.value = dayKey(start); t.value = dayKey(end);
+}
+
+async function runFeeCheck() {
+  const out = document.getElementById('fc-result');
+  const from = document.getElementById('fc-from').value, to = document.getElementById('fc-to').value;
+  if (!from || !to || from > to) { showToast('Pick a start date before the end date.', true); return; }
+  const btn = document.getElementById('fc-btn');
+  btn.disabled = true;
+  out.textContent = 'Checking…';
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+    const r = await fetch(`/api/fees/breakdown?from=${from}&to=${to}&tz=${encodeURIComponent(tz)}`);
+    const d = await r.json();
+    out.textContent = '';
+    if (!r.ok) { out.textContent = d.error || 'Could not run the check.'; return; }
+    if (!d.available) { out.textContent = 'Fees aren’t imported yet.'; return; }
+
+    const wrap = document.createElement('div'); wrap.className = 'fc-scroll';
+    const table = document.createElement('table'); table.className = 'fc-table';
+    const head = table.createTHead().insertRow();
+    [['Fee', ''], ['Matches eBay column', ''], ['Charged', 'num'], ['Credited back', 'num']].forEach(([t, c]) => {
+      const th = document.createElement('th'); th.textContent = t; if (c) th.className = c; head.appendChild(th);
+    });
+    const body = table.createTBody();
+    let charged = 0, credited = 0;
+    d.feeTypes.forEach(ft => {
+      const [name, col] = FEE_NAMES[ft.feeType] || [ft.feeType.replace(/_/g, ' ').toLowerCase(), 'Other eBay fees'];
+      const tr = body.insertRow();
+      const c1 = tr.insertCell(); c1.textContent = name;
+      const code = document.createElement('span'); code.className = 'code'; code.textContent = ft.feeType; c1.appendChild(code);
+      tr.insertCell().textContent = col;
+      const c3 = tr.insertCell(); c3.className = 'num'; c3.textContent = ft.charged ? money2.format(ft.charged) : '—';
+      const c4 = tr.insertCell(); c4.className = 'num'; c4.textContent = ft.credited ? '−' + money2.format(ft.credited) : '—';
+      charged += ft.charged; credited += ft.credited;
+    });
+    const tot = body.insertRow(); tot.className = 'total';
+    tot.insertCell().textContent = 'Total fees';
+    tot.insertCell().textContent = 'Charged − credited back';
+    const tc = tot.insertCell(); tc.className = 'num'; tc.textContent = money2.format(charged - credited);
+    tot.insertCell();
+    wrap.appendChild(table);
+    out.appendChild(wrap);
+
+    const counts = document.createElement('div'); counts.className = 'fc-counts';
+    const tx = d.transactions || {};
+    [
+      ['Orders in this range (from your sales import): ', (d.orders.sold || 0) + ' sold, ' + (d.orders.items || 0) + ' items'],
+      ['Sales eBay reported fees for: ', String(tx.SALE || 0)],
+      ['Refunds with fee credits: ', String(tx.REFUND || 0)],
+      ['Other charges (ads, subscription…): ', String(tx.NON_SALE_CHARGE || 0)]
+    ].forEach(([a, b]) => { const row = document.createElement('div'); row.textContent = a + b; counts.appendChild(row); });
+    if ((tx.SALE || 0) < (d.orders.sold || 0)) {
+      const warn = document.createElement('div');
+      warn.style.color = 'var(--danger)';
+      warn.textContent = '⚠ ' + ((d.orders.sold || 0) - (tx.SALE || 0)) + ' sold orders have no fees imported — that’s where fees are missing.';
+      counts.appendChild(warn);
+    }
+    out.appendChild(counts);
+  } catch (e) {
+    out.textContent = 'Could not reach the server.';
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 async function copyField(id) {
