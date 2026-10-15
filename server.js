@@ -1,10 +1,11 @@
-// PartsLister Pro server — v309
+// PartsLister Pro server — v312
 // v302: dashboard.html is the homepage (/). The listing tool moved to /list.
 // v305: eBay sales connection — real sold orders on the dashboard.
 // v306: asks eBay for two more permissions — fees/payouts and seller metrics.
 // v307: imports eBay fees — total fees and penalty fees on the dashboard.
 // v308: fee check — itemized fees for exact dates, to compare with eBay's reports.
 // v309: sales tax per order, for the dashboard's sales-tax toggle.
+// v312: refunds subtracted the way eBay does (partial refunds too) + orders download.
 // Accounts with email + password login. Each account's settings (including its
 // own API keys) and history are saved ENCRYPTED in Postgres, so you can log in
 // from any computer and everything is there. Also keeps a lifetime listing count.
@@ -97,6 +98,7 @@ async function setupDatabase() {
     -- v309: sales tax per order + the dashboard's tax toggle
     ALTER TABLE ebay_orders ADD COLUMN IF NOT EXISTS tax NUMERIC(12,2) NOT NULL DEFAULT 0;
     ALTER TABLE ebay_connections ADD COLUMN IF NOT EXISTS orders_v INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE ebay_orders ADD COLUMN IF NOT EXISTS refunded NUMERIC(12,2) NOT NULL DEFAULT 0;   -- v312: money refunded to the buyer
     ALTER TABLE users ADD COLUMN IF NOT EXISTS dash_tax BOOLEAN NOT NULL DEFAULT FALSE;
   `);
   await pool.query('DELETE FROM sessions WHERE expires_at < now()');
@@ -684,6 +686,12 @@ function mapOrder(o) {
     for (const t of li.ebayCollectAndRemitTaxes || []) tax += money(t.amount) || 0;
     for (const t of li.taxes || []) tax += money(t.amount) || 0;
   }
+  // v312: money refunded to the buyer (full or partial). eBay's order total
+  // drops by this amount, so ours does too.
+  let refunded = 0;
+  const orderRefunds = ((o.paymentSummary && o.paymentSummary.refunds) || []).filter(x => x.refundStatus !== 'FAILED');
+  if (orderRefunds.length) orderRefunds.forEach(x => { refunded += money(x.amount) || 0; });
+  else for (const li of o.lineItems || []) for (const x of li.refunds || []) refunded += money(x.amount) || 0;
   return {
     orderId: String(o.orderId),
     created: o.creationDate,
@@ -693,7 +701,8 @@ function mapOrder(o) {
     items,
     status: pay + (cancel && cancel !== 'NONE_REQUESTED' ? ' / ' + cancel : ''),
     counted,
-    tax: Math.round(tax * 100) / 100   // v309
+    tax: Math.round(tax * 100) / 100,   // v309
+    refunded: Math.round(refunded * 100) / 100   // v312
   };
 }
 
@@ -702,17 +711,17 @@ async function saveOrders(userId, orders) {
   const values = [];
   const params = [];
   orders.forEach((o, i) => {
-    const b = i * 10;   // v309: + tax
-    values.push(`($${b + 1},$${b + 2},$${b + 3},$${b + 4},$${b + 5},$${b + 6},$${b + 7},$${b + 8},$${b + 9},$${b + 10})`);
-    params.push(userId, o.orderId, o.created, o.total, o.payout, o.fees, o.items, o.status, o.counted, o.tax);
+    const b = i * 11;   // v309: + tax, v312: + refunded
+    values.push(`($${b + 1},$${b + 2},$${b + 3},$${b + 4},$${b + 5},$${b + 6},$${b + 7},$${b + 8},$${b + 9},$${b + 10},$${b + 11})`);
+    params.push(userId, o.orderId, o.created, o.total, o.payout, o.fees, o.items, o.status, o.counted, o.tax, o.refunded);
   });
   await pool.query(
-    `INSERT INTO ebay_orders (user_id, order_id, created_at, total, payout, fees, item_count, status, counted, tax)
+    `INSERT INTO ebay_orders (user_id, order_id, created_at, total, payout, fees, item_count, status, counted, tax, refunded)
      VALUES ${values.join(',')}
      ON CONFLICT (user_id, order_id) DO UPDATE SET
        created_at = EXCLUDED.created_at, total = EXCLUDED.total, payout = EXCLUDED.payout,
        fees = EXCLUDED.fees, item_count = EXCLUDED.item_count, status = EXCLUDED.status, counted = EXCLUDED.counted,
-       tax = EXCLUDED.tax`,
+       tax = EXCLUDED.tax, refunded = EXCLUDED.refunded`,
     params
   );
 }
@@ -731,7 +740,7 @@ async function syncOrders(userId) {
     let token = await getAccessToken(userId);
     let filter, historyFrom = null;
     // if (!conn.last_sync) {
-    if (!conn.last_sync || (conn.orders_v || 0) < 2) {   // v309: re-import once to pick up tax
+    if (!conn.last_sync || (conn.orders_v || 0) < 3) {   // v309: tax, v312: refunds — re-import once
       historyFrom = new Date(started.getTime() - HISTORY_DAYS * 86400000);
       filter = `creationdate:[${historyFrom.toISOString()}..]`;
     } else {
@@ -767,7 +776,7 @@ async function syncOrders(userId) {
     }
     await pool.query(
       `UPDATE ebay_connections SET last_sync = $2, last_error = NULL,
-         history_from = COALESCE($3, history_from), orders_v = 2 WHERE user_id = $1`,
+         history_from = COALESCE($3, history_from), orders_v = 3 WHERE user_id = $1`,
       [userId, started, historyFrom]
     );
     await syncFees(userId);   // v307: fees import has its own error handling
@@ -926,9 +935,12 @@ app.get('/api/sales', requireUser, async (req, res) => {
     const tz = safeTimeZone(String(req.query.tz || 'UTC'));
     const r = await pool.query(
       `SELECT to_char((created_at AT TIME ZONE $2)::date, 'YYYY-MM-DD') AS day,
-              COALESCE(SUM(total) FILTER (WHERE counted), 0)::float AS sales,
+              -- v312: refunds come off the order the way eBay does. With tax on,
+              -- that's exactly total + tax - refunded; the refund is split between
+              -- sales and tax in proportion so the tax-off number stays sensible.
+              COALESCE(SUM(CASE WHEN total + tax > 0 THEN total - refunded * total / (total + tax) ELSE 0 END) FILTER (WHERE counted), 0)::float AS sales,
               (COUNT(*) FILTER (WHERE counted))::int AS orders,
-              COALESCE(SUM(tax) FILTER (WHERE counted), 0)::float AS tax
+              COALESCE(SUM(CASE WHEN total + tax > 0 THEN tax - refunded * tax / (total + tax) ELSE 0 END) FILTER (WHERE counted), 0)::float AS tax
          FROM ebay_orders
         WHERE user_id = $1 AND created_at > now() - interval '740 days'
         GROUP BY 1 ORDER BY 1`,
@@ -937,7 +949,7 @@ app.get('/api/sales', requireUser, async (req, res) => {
     const stale = !conn.last_sync || (Date.now() - new Date(conn.last_sync).getTime()) > AUTO_SYNC_MINUTES * 60000;
     // if (stale && !syncing.has(req.user.id) && !conn.last_error) syncOrders(req.user.id);
     const feesNeeded = hasScope(conn, FIN_SCOPE) && !conn.fees_sync && !conn.fees_error;   // v307
-    const taxNeeded = (conn.orders_v || 0) < 2;   // v309: one-time re-import for tax
+    const taxNeeded = (conn.orders_v || 0) < 3;   // v309/v312: one-time re-import for tax + refunds
     if ((stale || feesNeeded || taxNeeded) && !syncing.has(req.user.id) && !conn.last_error) syncOrders(req.user.id);
     let historyFrom = null;
     if (conn.history_from) {
@@ -950,7 +962,7 @@ app.get('/api/sales', requireUser, async (req, res) => {
       lastSync: conn.last_sync,
       lastError: conn.last_error || null,
       historyFrom,
-      taxReady: (conn.orders_v || 0) >= 2,   // v309
+      taxReady: (conn.orders_v || 0) >= 3,   // v309, v312: refunds imported too
       days: r.rows.map(x => [x.day, Math.round(x.sales * 100) / 100, x.orders, Math.round(x.tax * 100) / 100])
     });
   } catch (e) {
@@ -1104,6 +1116,36 @@ async function syncFees(userId) {
 // eBay report. Also counts orders vs. sales with fees, to spot missing ones.
 function isoDate(x) { return /^\d{4}-\d{2}-\d{2}$/.test(String(x || '')) ? String(x) : null; }
 
+// v312: ORDERS DOWNLOAD — one row per order, to line up against eBay's
+// "All orders" report. Dates are in the time zone the page asks for.
+app.get('/api/orders/export', requireUser, requireAdmin, async (req, res) => {
+  try {
+    const from = isoDate(req.query.from), to = isoDate(req.query.to);
+    if (!from || !to || from > to) return res.status(400).send('Pick a start and end date');
+    const tz = safeTimeZone(String(req.query.tz || 'UTC'));
+    const r = await pool.query(
+      `SELECT order_id, to_char(created_at AT TIME ZONE $2, 'YYYY-MM-DD HH24:MI') AS sold_at,
+              total::float, tax::float, refunded::float, counted, status
+         FROM ebay_orders
+        WHERE user_id = $1 AND (created_at AT TIME ZONE $2)::date BETWEEN $3::date AND $4::date
+        ORDER BY created_at`,
+      [req.user.id, tz, from, to]
+    );
+    const f = (n) => (Math.round(n * 100) / 100).toFixed(2);
+    const lines = ['Order Number,Sold (' + tz + '),Items + Shipping,Tax,Refunded,Counted,Total like eBay,Status'];
+    for (const x of r.rows) {
+      const ebayTotal = x.counted ? x.total + x.tax - x.refunded : 0;
+      lines.push([x.order_id, x.sold_at, f(x.total), f(x.tax), f(x.refunded), x.counted ? 'Yes' : 'No', f(ebayTotal), '"' + String(x.status || '').replace(/"/g, '') + '"'].join(','));
+    }
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="partslister-orders-${from}-to-${to}.csv"`);
+    res.send(lines.join('\n') + '\n');
+  } catch (e) {
+    console.error('[orders export]', e);
+    res.status(500).send('Could not build the download');
+  }
+});
+
 app.get('/api/fees/breakdown', requireUser, requireAdmin, async (req, res) => {
   try {
     const from = isoDate(req.query.from), to = isoDate(req.query.to);
@@ -1205,5 +1247,5 @@ app.get('*', (req, res) => {
 });
 
 setupDatabase()
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v309 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v312 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });

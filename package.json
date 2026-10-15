@@ -1,7 +1,7 @@
 {
   "name": "partslister-pro-server",
-  "version": "3.0.9",
-  "description": "PartsLister Pro v309 — sales tax toggle, fee check, eBay fees and penalty fees, fees and metrics permissions, real eBay sales on the dashboard, dashboard homepage, accounts, saved settings and history, lifetime listing count",
+  "version": "3.1.2",
+  "description": "PartsLister Pro v312 — refunds counted like eBay, orders download, sales tax toggle, fee check, eBay fees and penalty fees, fees and metrics permissions, real eBay sales on the dashboard, dashboard homepage, accounts, saved settings and history, lifetime listing count",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"

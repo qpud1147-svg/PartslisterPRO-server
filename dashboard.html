@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Dashboard v311</title>
+<title>PartsLister Pro Dashboard v312</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@400;500;600&display=swap');
 
@@ -502,7 +502,7 @@
 <header>
   <a href="/" class="logo-link" title="Dashboard">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v311</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v312</span></div>
   </a>
   <div class="header-right">
     <span class="who" id="who"></span>
@@ -704,6 +704,7 @@
           <div><label for="fc-from">From</label><input type="date" id="fc-from"></div>
           <div><label for="fc-to">To</label><input type="date" id="fc-to"></div>
           <button class="btn btn-primary btn-sm" onclick="runFeeCheck()" id="fc-btn">Check</button>
+          <button class="btn btn-secondary btn-sm" onclick="downloadOrders()" title="One row per order — to line up against eBay's All orders report">Download orders</button>   <!-- v312 -->
         </div>
         <div id="fc-result"></div>
       </div>
@@ -761,6 +762,7 @@
 // v309: sales-tax toggle — show sales with or without the tax eBay collects.
 // v310: days follow eBay's time zone (Pacific), so ranges cover the same hours as eBay's reports.
 // v311: clicking the "eBay · updated" badge refreshes from eBay right away.
+// v312: partial refunds come off sales like on eBay; "Download orders" in Admin.
 // Shares the same sign-in and account as the listing tool (/list).
 // v304: sales dashboard — big daily bar graph with a remembered date range.
 // The sales numbers are SAMPLE data for now; real eBay sales replace
@@ -1567,6 +1569,13 @@ async function runFeeCheck() {
   } finally {
     btn.disabled = false;
   }
+}
+
+// v312: one row per order for the chosen dates (same dates as the fee check)
+function downloadOrders() {
+  const from = document.getElementById('fc-from').value, to = document.getElementById('fc-to').value;
+  if (!from || !to || from > to) { showToast('Pick a start date before the end date.', true); return; }
+  location.href = `/api/orders/export?from=${from}&to=${to}&tz=${encodeURIComponent(EBAY_TZ)}`;
 }
 
 async function copyField(id) {
