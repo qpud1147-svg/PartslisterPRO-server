@@ -1,4 +1,4 @@
-// PartsLister Pro server — v312
+// PartsLister Pro server — v313
 // v302: dashboard.html is the homepage (/). The listing tool moved to /list.
 // v305: eBay sales connection — real sold orders on the dashboard.
 // v306: asks eBay for two more permissions — fees/payouts and seller metrics.
@@ -6,6 +6,8 @@
 // v308: fee check — itemized fees for exact dates, to compare with eBay's reports.
 // v309: sales tax per order, for the dashboard's sales-tax toggle.
 // v312: refunds subtracted the way eBay does (partial refunds too) + orders download.
+// v313: refunds also read per item, in case eBay lists one only there +
+//       Admin "Look up one order" to see exactly what eBay sends for an order.
 // Accounts with email + password login. Each account's settings (including its
 // own API keys) and history are saved ENCRYPTED in Postgres, so you can log in
 // from any computer and everything is there. Also keeps a lifetime listing count.
@@ -690,8 +692,14 @@ function mapOrder(o) {
   // drops by this amount, so ours does too.
   let refunded = 0;
   const orderRefunds = ((o.paymentSummary && o.paymentSummary.refunds) || []).filter(x => x.refundStatus !== 'FAILED');
-  if (orderRefunds.length) orderRefunds.forEach(x => { refunded += money(x.amount) || 0; });
-  else for (const li of o.lineItems || []) for (const x of li.refunds || []) refunded += money(x.amount) || 0;
+  // if (orderRefunds.length) orderRefunds.forEach(x => { refunded += money(x.amount) || 0; });
+  // else for (const li of o.lineItems || []) for (const x of li.refunds || []) refunded += money(x.amount) || 0;
+  // v313: add up both places eBay reports refunds and use the bigger one.
+  // They describe the same money, so adding them together would double it.
+  let orderLevel = 0, itemLevel = 0;
+  orderRefunds.forEach(x => { orderLevel += money(x.amount) || 0; });
+  for (const li of o.lineItems || []) for (const x of li.refunds || []) itemLevel += money(x.amount) || 0;
+  refunded = Math.max(orderLevel, itemLevel);
   return {
     orderId: String(o.orderId),
     created: o.creationDate,
@@ -740,7 +748,8 @@ async function syncOrders(userId) {
     let token = await getAccessToken(userId);
     let filter, historyFrom = null;
     // if (!conn.last_sync) {
-    if (!conn.last_sync || (conn.orders_v || 0) < 3) {   // v309: tax, v312: refunds — re-import once
+    // if (!conn.last_sync || (conn.orders_v || 0) < 3) {   // v309: tax, v312: refunds — re-import once
+    if (!conn.last_sync || (conn.orders_v || 0) < 4) {   // v313: refunds per item — re-import once
       historyFrom = new Date(started.getTime() - HISTORY_DAYS * 86400000);
       filter = `creationdate:[${historyFrom.toISOString()}..]`;
     } else {
@@ -776,7 +785,7 @@ async function syncOrders(userId) {
     }
     await pool.query(
       `UPDATE ebay_connections SET last_sync = $2, last_error = NULL,
-         history_from = COALESCE($3, history_from), orders_v = 3 WHERE user_id = $1`,
+         history_from = COALESCE($3, history_from), orders_v = 4 WHERE user_id = $1`,   // v313: was 3
       [userId, started, historyFrom]
     );
     await syncFees(userId);   // v307: fees import has its own error handling
@@ -1116,6 +1125,44 @@ async function syncFees(userId) {
 // eBay report. Also counts orders vs. sales with fees, to spot missing ones.
 function isoDate(x) { return /^\d{4}-\d{2}-\d{2}$/.test(String(x || '')) ? String(x) : null; }
 
+// v313: LOOK UP ONE ORDER — asks eBay for one order right now and shows only
+// the money parts (no buyer name, address or email), plus what this app counts.
+app.get('/api/orders/raw', requireUser, requireAdmin, async (req, res) => {
+  try {
+    const id = String(req.query.id || '').trim();
+    if (!/^[0-9A-Za-z-]{5,40}$/.test(id)) return res.status(400).json({ error: 'Enter an order number like 09-15200-23105' });
+    const token = await getAccessToken(req.user.id);
+    const r = await fetch(`${EBAY_API_HOST}/sell/fulfillment/v1/order/${encodeURIComponent(id)}`, {
+      headers: { 'Authorization': 'Bearer ' + token, 'Accept': 'application/json' },
+      signal: AbortSignal.timeout(30000)
+    });
+    const t = await r.text();
+    if (!r.ok) return res.status(502).json({ error: 'eBay said (' + r.status + '): ' + t.slice(0, 300) });
+    const o = JSON.parse(t);
+    const p = o.paymentSummary || {};
+    res.json({
+      orderId: o.orderId,
+      creationDate: o.creationDate,
+      orderPaymentStatus: o.orderPaymentStatus,
+      cancelStatus: o.cancelStatus && o.cancelStatus.cancelState,
+      pricingSummary: o.pricingSummary,
+      payments: (p.payments || []).map(x => ({ amount: x.amount, paymentStatus: x.paymentStatus, paymentDate: x.paymentDate })),
+      refunds: p.refunds || [],
+      totalDueSeller: p.totalDueSeller,
+      lineItems: (o.lineItems || []).map(li => ({
+        lineItemId: li.lineItemId, sku: li.sku, quantity: li.quantity,
+        lineItemCost: li.lineItemCost, deliveryCost: li.deliveryCost, total: li.total,
+        ebayCollectAndRemitTaxes: li.ebayCollectAndRemitTaxes, taxes: li.taxes,
+        refunds: li.refunds || []
+      })),
+      thisAppCounts: mapOrder(o)
+    });
+  } catch (e) {
+    console.error('[order lookup]', e);
+    res.status(500).json({ error: e.message || 'Could not look up that order' });
+  }
+});
+
 // v312: ORDERS DOWNLOAD — one row per order, to line up against eBay's
 // "All orders" report. Dates are in the time zone the page asks for.
 app.get('/api/orders/export', requireUser, requireAdmin, async (req, res) => {
@@ -1247,5 +1294,5 @@ app.get('*', (req, res) => {
 });
 
 setupDatabase()
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v312 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v313 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });
