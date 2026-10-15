@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Dashboard v310</title>
+<title>PartsLister Pro Dashboard v311</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@400;500;600&display=swap');
 
@@ -502,7 +502,7 @@
 <header>
   <a href="/" class="logo-link" title="Dashboard">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v310</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v311</span></div>
   </a>
   <div class="header-right">
     <span class="who" id="who"></span>
@@ -760,6 +760,7 @@
 // v308: fee check in Admin — itemized fees for exact dates.
 // v309: sales-tax toggle — show sales with or without the tax eBay collects.
 // v310: days follow eBay's time zone (Pacific), so ranges cover the same hours as eBay's reports.
+// v311: clicking the "eBay · updated" badge refreshes from eBay right away.
 // Shares the same sign-in and account as the listing tool (/list).
 // v304: sales dashboard — big daily bar graph with a remembered date range.
 // The sales numbers are SAMPLE data for now; real eBay sales replace
@@ -1181,7 +1182,13 @@ async function loadSales() {
   }
   renderBadge();
   clearTimeout(pollTimer);
-  if (salesInfo.syncing) pollTimer = setTimeout(refreshSales, 4000);
+  // if (salesInfo.syncing) pollTimer = setTimeout(refreshSales, 4000);
+  if (salesInfo.syncing) pollTimer = setTimeout(refreshSales, manualRefresh ? 1500 : 4000);   // v311: faster while you wait
+  else if (manualRefresh) {                                                                   // v311: your refresh finished
+    manualRefresh = false;
+    if (salesInfo.lastError) showToast('eBay refresh had a problem — click the badge for details.', true);
+    else showToast('Updated from eBay just now.');
+  }
 }
 
 async function refreshSales() {
@@ -1213,7 +1220,8 @@ function renderBadge() {
     let text, title;
     if (salesInfo.lastError) { b.classList.add('warn'); text = 'eBay · sync problem'; title = salesInfo.lastError; }
     else if (salesInfo.syncing) { b.classList.add('busy'); text = salesInfo.lastSync ? 'eBay · updating…' : 'eBay · importing…'; title = 'Importing your sold orders from eBay'; }
-    else { text = 'eBay · updated ' + timeAgo(salesInfo.lastSync); title = 'Real sales from eBay. Updates automatically every ' + 15 + ' minutes when you open the dashboard.'; }
+    // else { text = 'eBay · updated ' + timeAgo(salesInfo.lastSync); title = 'Real sales from eBay. Updates automatically every ' + 15 + ' minutes when you open the dashboard.'; }
+    else { text = 'eBay · updated ' + timeAgo(salesInfo.lastSync) + ' · ↻'; title = 'Click to refresh from eBay now. It also refreshes on its own every 15 minutes.'; }   // v311
     b.append(dot, document.createTextNode(text));
     b.title = title;
     b.disabled = !(me && me.isAdmin);
@@ -1224,8 +1232,23 @@ function renderBadge() {
   }
 }
 
-function badgeClick() {
-  if (me && me.isAdmin) openSettings('admin');
+// function badgeClick() {
+//   if (me && me.isAdmin) openSettings('admin');
+// }
+// v311: the badge IS the refresh button. It only opens Settings when there's
+// something to fix there (not connected yet, or a sync problem).
+let manualRefresh = false;
+async function badgeClick() {
+  if (!(me && me.isAdmin)) return;
+  if (salesMode !== 'live' || salesInfo.lastError) { openSettings('admin'); return; }
+  if (salesInfo.syncing) return;               // already updating
+  manualRefresh = true;
+  salesInfo.syncing = true;
+  renderBadge();                               // shows "eBay · updating…" immediately
+  try { await fetch('/api/ebay/sync', { method: 'POST' }); }
+  catch (e) { manualRefresh = false; showToast('Could not reach the server.', true); }
+  clearTimeout(pollTimer);
+  pollTimer = setTimeout(refreshSales, 1500);
 }
 
 // Coming back from eBay's sign-in
