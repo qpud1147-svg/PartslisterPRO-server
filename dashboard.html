@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Dashboard v309</title>
+<title>PartsLister Pro Dashboard v310</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@400;500;600&display=swap');
 
@@ -502,7 +502,7 @@
 <header>
   <a href="/" class="logo-link" title="Dashboard">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v309</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v310</span></div>
   </a>
   <div class="header-right">
     <span class="who" id="who"></span>
@@ -581,7 +581,7 @@
   <div class="chart-card">
     <div class="chart-head">
       <div class="chart-title" id="chart-title">Sales per day</div>
-      <div class="chart-note">Each bar is one day · hover for details</div>
+      <div class="chart-note">Each bar is one day (eBay time, Pacific) · hover for details</div>
     </div>
     <div id="chart-wrap">
       <svg id="chart" role="img" aria-labelledby="chart-title"></svg>
@@ -699,7 +699,7 @@
       <!-- v308: FEE CHECK -->
       <div class="set-section" id="fee-check-section" style="display:none;">
         <h3>Check fees against eBay</h3>
-        <p class="set-help">Set the same dates as an eBay report (Seller Hub → Performance → Sales → Download report). Each row says which column of that report it should match.</p>
+        <p class="set-help">Set the same dates as an eBay report (Seller Hub → Performance → Sales → Download report). Each row says which column of that report it should match. Dates are in eBay time (Pacific), like eBay's reports.</p>
         <div class="fc-dates">
           <div><label for="fc-from">From</label><input type="date" id="fc-from"></div>
           <div><label for="fc-to">To</label><input type="date" id="fc-to"></div>
@@ -759,6 +759,7 @@
 // v307: eBay fees tile and penalty box.
 // v308: fee check in Admin — itemized fees for exact dates.
 // v309: sales-tax toggle — show sales with or without the tax eBay collects.
+// v310: days follow eBay's time zone (Pacific), so ranges cover the same hours as eBay's reports.
 // Shares the same sign-in and account as the listing tool (/list).
 // v304: sales dashboard — big daily bar graph with a remembered date range.
 // The sales numbers are SAMPLE data for now; real eBay sales replace
@@ -801,6 +802,14 @@ const fmtDow   = (d) => d.toLocaleDateString('en-US', { weekday: 'short' });
 const fmtMonth = (d) => d.toLocaleDateString('en-US', { month: 'short' });
 function dayKey(d) {
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+// v310: eBay's Seller Hub and reports count days in Pacific time. Using the
+// same zone means a day here starts and ends at the same moment as on eBay.
+const EBAY_TZ = 'America/Los_Angeles';
+function ebayToday() {
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: EBAY_TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()).split('-').map(Number);
+  return new Date(parts[0], parts[1] - 1, parts[2]);
 }
 
 // ─── SAMPLE SALES (replace with real eBay data later) ───────────────────────
@@ -1140,7 +1149,8 @@ function buildLiveDays(rows, totalDays) {
   const byDay = new Map(rows.map(([key, sales, orders, tax]) => [key, { sales: Math.round((sales + (taxOn ? (tax || 0) : 0)) * 100) / 100, orders }]));
   const days = [];
   const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  // const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const today = ebayToday();   // v310: today in eBay time
   for (let i = totalDays - 1; i >= 0; i--) {
     const d = new Date(today);
     d.setDate(today.getDate() - i);
@@ -1154,7 +1164,8 @@ function buildLiveDays(rows, totalDays) {
 async function loadSales() {
   let d = { connected: false };
   try {
-    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+    // const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+    const tz = EBAY_TZ;   // v310
     const r = await fetch('/api/sales?tz=' + encodeURIComponent(tz));
     if (r.ok) d = await r.json();
   } catch (e) { /* fall back to sample */ }
@@ -1264,7 +1275,8 @@ async function loadFees() {
   let d = { available: false, reason: 'not_connected' };
   if (salesMode === 'live') {
     try {
-      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+      // const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+      const tz = EBAY_TZ;   // v310
       const r = await fetch('/api/fees?tz=' + encodeURIComponent(tz));
       if (r.ok) d = await r.json();
     } catch (e) { /* show as unavailable */ }
@@ -1463,8 +1475,9 @@ const FEE_NAMES = {
 function initFeeCheckDates() {
   const f = document.getElementById('fc-from'), t = document.getElementById('fc-to');
   if (f.value && t.value) return;
-  const now = new Date();
-  const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+  // const now = new Date();
+  // const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+  const end = ebayToday(); end.setDate(end.getDate() - 1);   // v310: yesterday in eBay time
   const start = new Date(end); start.setDate(end.getDate() - 30);
   f.value = dayKey(start); t.value = dayKey(end);
 }
@@ -1477,7 +1490,8 @@ async function runFeeCheck() {
   btn.disabled = true;
   out.textContent = 'Checking…';
   try {
-    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+    // const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+    const tz = EBAY_TZ;   // v310
     const r = await fetch(`/api/fees/breakdown?from=${from}&to=${to}&tz=${encodeURIComponent(tz)}`);
     const d = await r.json();
     out.textContent = '';
