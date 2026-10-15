@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Dashboard v305</title>
+<title>PartsLister Pro Dashboard v306</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@400;500;600&display=swap');
 
@@ -466,7 +466,7 @@
 <header>
   <a href="/" class="logo-link" title="Dashboard">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v305</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v306</span></div>
   </a>
   <div class="header-right">
     <span class="who" id="who"></span>
@@ -689,6 +689,7 @@
 <script>
 // ─── PartsLister Pro Dashboard v305 ──────────────────────────────────────────
 // v305: real eBay sales (when connected in ⚙ Settings → Admin); sample data otherwise.
+// v306: Admin lists each eBay permission and whether it's approved.
 // Shares the same sign-in and account as the listing tool (/list).
 // v304: sales dashboard — big daily bar graph with a remembered date range.
 // The sales numbers are SAMPLE data for now; real eBay sales replace
@@ -1214,6 +1215,14 @@ async function loadEbayStatus() {
     if (st.historyFrom) line('History from:', new Date(st.historyFrom).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }));
     line('Last update:', timeAgo(st.lastSync));
     if (st.refreshExpires) line('Connection good until:', new Date(st.refreshExpires).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }));
+    // v306: each permission, approved or not
+    if (st.permissions && st.permissions.length) {
+      const head = document.createElement('div');
+      head.textContent = 'Permissions:';
+      head.style.marginTop = '8px';
+      box.appendChild(head);
+      st.permissions.forEach(pm => line('  ' + (pm.granted ? '✓' : '✗') + ' ' + pm.label, pm.granted ? 'approved' : 'not approved yet', pm.granted ? 'ok' : 'bad'));
+    }
   } else {
     line('Status:', 'Not connected', 'bad');
     line('eBay keys from Listing Tool:', st.hasKeys ? '✓ Found' : '✗ Missing', st.hasKeys ? 'ok' : 'bad');
@@ -1230,9 +1239,11 @@ async function loadEbayStatus() {
   const btn = document.getElementById('connect-btn');
   const help = document.getElementById('connect-help');
   btn.textContent = st.connected ? 'Reconnect eBay' : 'Connect eBay';
+  const missing = st.connected && (st.permissions || []).some(pm => !pm.granted);   // v306
   btn.disabled = !st.hasKeys || !st.ruName;
   if (!st.hasKeys) help.textContent = 'First add your eBay Client ID and Client Secret in the Listing Tool → ⚙ Settings → Account.';
   else if (!st.ruName) help.textContent = 'Save your RuName above first.';
+  else if (missing) help.textContent = 'New permissions were added. Click Reconnect eBay and approve them on eBay\u2019s screen — your sales keep working in the meantime.';   // v306
   else help.textContent = st.connected
     ? 'Only needed if the connection stops working.'
     : 'Opens eBay’s sign-in. Approve access once and you’re done — your sales import automatically after that.';
