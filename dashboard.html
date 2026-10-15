@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Dashboard v308</title>
+<title>PartsLister Pro Dashboard v309</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@400;500;600&display=swap');
 
@@ -155,6 +155,18 @@
   .range-picker button:hover { color: var(--text); }
   .range-picker button[aria-pressed="true"] { background: var(--accent); color: #000; }
   .range-picker button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* v309: SALES TAX TOGGLE */
+  .tax-toggle {
+    display: inline-flex; align-items: center; gap: 8px; background: none; border: none; cursor: pointer;
+    color: var(--text2); font-family: 'Barlow', sans-serif; font-size: 13px; padding: 6px 4px;
+  }
+  .tax-toggle:disabled { cursor: not-allowed; opacity: 0.5; }
+  .tax-toggle .track { width: 34px; height: 20px; border-radius: 10px; background: var(--surface2); border: 1px solid var(--border); position: relative; transition: background 0.15s; flex-shrink: 0; }
+  .tax-toggle .knob { position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--muted); transition: left 0.15s, background 0.15s; }
+  .tax-toggle[aria-checked="true"] .track { background: var(--accent); border-color: var(--accent); }
+  .tax-toggle[aria-checked="true"] .knob { left: 16px; background: #000; }
+  .tax-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
 
   /* FIGURES — one hero number, then supporting tiles */
   .figures {
@@ -490,7 +502,7 @@
 <header>
   <a href="/" class="logo-link" title="Dashboard">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v308</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v309</span></div>
   </a>
   <div class="header-right">
     <span class="who" id="who"></span>
@@ -511,6 +523,10 @@
     -->
     <!-- v305: says where the numbers come from — sample, or eBay with last update -->
     <button type="button" class="sample-badge" id="sample-badge" onclick="badgeClick()">Sample data</button>
+    <!-- v309: sales tax on/off -->
+    <button type="button" class="tax-toggle" id="tax-toggle" role="switch" aria-checked="false" onclick="setTax(!taxOn, true)" style="display:none;">
+      <span class="track"><span class="knob"></span></span><span id="tax-toggle-label">Include sales tax</span>
+    </button>
     <div class="range-picker" role="group" aria-label="Date range">
       <button type="button" data-range="today">Today</button>
       <button type="button" data-range="week">Week</button>
@@ -742,6 +758,7 @@
 // v306: Admin lists each eBay permission and whether it's approved.
 // v307: eBay fees tile and penalty box.
 // v308: fee check in Admin — itemized fees for exact dates.
+// v309: sales-tax toggle — show sales with or without the tax eBay collects.
 // Shares the same sign-in and account as the listing tool (/list).
 // v304: sales dashboard — big daily bar graph with a remembered date range.
 // The sales numbers are SAMPLE data for now; real eBay sales replace
@@ -763,6 +780,8 @@ let me = null;              // the signed-in account
 let salesMode = 'sample';   // 'sample' until eBay is connected, then 'live'
 let salesInfo = {};         // { syncing, lastSync, lastError, historyFrom }
 let pollTimer = null;
+let taxOn = false;        // v309: add sales tax into the sales numbers
+let liveRows = [];        // v309: last daily rows from the server, so the toggle can redraw without refetching
 let feesInfo = { available: false, reason: 'not_connected' };   // v307
 let feesByDay = new Map();                                       // v307: 'YYYY-MM-DD' → [fees, penalty]
 let shownDays = [];
@@ -834,7 +853,8 @@ function renderFigures() {
   const yesterday = allDays[allDays.length - 2];
   const best = shownDays.reduce((b, d) => (d.sales > b.sales ? d : b), shownDays[0]);
 
-  setText('fig-total-label', 'Sales · ' + r.label);
+  // setText('fig-total-label', 'Sales · ' + r.label);
+  setText('fig-total-label', (salesMode === 'live' && taxOn ? 'Sales incl. tax · ' : 'Sales · ') + r.label);   // v309
   setText('fig-total', money0.format(total));
   // Compare against the same-length period right before it
   const prev = allDays.slice(-2 * r.days, -r.days);
@@ -1115,7 +1135,9 @@ async function logout() {
 
 // ─── v305: REAL SALES ────────────────────────────────────────────────────────
 function buildLiveDays(rows, totalDays) {
-  const byDay = new Map(rows.map(([key, sales, orders]) => [key, { sales, orders }]));
+  // const byDay = new Map(rows.map(([key, sales, orders]) => [key, { sales, orders }]));
+  // v309: rows are [day, sales, orders, tax]; tax is added when the toggle is on
+  const byDay = new Map(rows.map(([key, sales, orders, tax]) => [key, { sales: Math.round((sales + (taxOn ? (tax || 0) : 0)) * 100) / 100, orders }]));
   const days = [];
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -1138,8 +1160,9 @@ async function loadSales() {
   } catch (e) { /* fall back to sample */ }
   if (d.connected) {
     salesMode = 'live';
-    salesInfo = { syncing: !!d.syncing, lastSync: d.lastSync, lastError: d.lastError, historyFrom: d.historyFrom };
-    allDays = buildLiveDays(d.days || [], 730);
+    salesInfo = { syncing: !!d.syncing, lastSync: d.lastSync, lastError: d.lastError, historyFrom: d.historyFrom, taxReady: !!d.taxReady };   // v309: + taxReady
+    liveRows = d.days || [];   // v309
+    allDays = buildLiveDays(liveRows, 730);
   } else {
     salesMode = 'sample';
     salesInfo = {};
@@ -1152,6 +1175,7 @@ async function loadSales() {
 
 async function refreshSales() {
   await loadSales();
+  renderTaxToggle();   // v309
   await loadFees();   // v307
   setRange(currentRange, false);
   if (document.getElementById('settings-overlay').classList.contains('open')) loadEbayStatus();
@@ -1212,6 +1236,27 @@ function showToast(msg, isError) {
   t.classList.add('show');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => t.classList.remove('show'), isError ? 7000 : 4500);
+}
+
+// ─── v309: SALES TAX TOGGLE ──────────────────────────────────────────────────
+function renderTaxToggle() {
+  const t = document.getElementById('tax-toggle');
+  t.style.display = salesMode === 'live' ? 'inline-flex' : 'none';
+  t.setAttribute('aria-checked', taxOn ? 'true' : 'false');
+  const ready = salesInfo.taxReady;
+  t.disabled = !ready;
+  document.getElementById('tax-toggle-label').textContent = ready ? 'Include sales tax' : 'Sales tax importing…';
+  t.title = ready
+    ? 'On: sales include the sales tax eBay collects (matches eBay’s "Total sales"). Off: your item sales + shipping.'
+    : 'Importing sales tax from eBay — this takes about a minute, once.';
+}
+
+function setTax(on, save) {
+  taxOn = !!on;
+  if (salesMode === 'live') allDays = buildLiveDays(liveRows, 730);
+  renderTaxToggle();
+  setRange(currentRange, false);
+  if (save) fetch('/api/prefs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dashTax: taxOn }) }).catch(() => {});
 }
 
 // ─── v307: FEES ──────────────────────────────────────────────────────────────
@@ -1518,6 +1563,9 @@ async function load() {
   await loadFees();   // v307
   let saved = me.dashRange;
   if (!saved) { try { saved = localStorage.getItem(RANGE_KEY); } catch (e) { /* use default */ } }
+  taxOn = !!me.dashTax;   // v309
+  if (salesMode === 'live') allDays = buildLiveDays(liveRows, 730);
+  renderTaxToggle();
   setRange(saved || 'week', false);
   handleEbayReturn();
 }

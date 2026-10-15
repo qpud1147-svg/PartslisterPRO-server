@@ -1,9 +1,10 @@
-// PartsLister Pro server — v308
+// PartsLister Pro server — v309
 // v302: dashboard.html is the homepage (/). The listing tool moved to /list.
 // v305: eBay sales connection — real sold orders on the dashboard.
 // v306: asks eBay for two more permissions — fees/payouts and seller metrics.
 // v307: imports eBay fees — total fees and penalty fees on the dashboard.
 // v308: fee check — itemized fees for exact dates, to compare with eBay's reports.
+// v309: sales tax per order, for the dashboard's sales-tax toggle.
 // Accounts with email + password login. Each account's settings (including its
 // own API keys) and history are saved ENCRYPTED in Postgres, so you can log in
 // from any computer and everything is there. Also keeps a lifetime listing count.
@@ -93,6 +94,10 @@ async function setupDatabase() {
     );
     CREATE INDEX IF NOT EXISTS ebay_orders_user_created ON ebay_orders (user_id, created_at);
     ALTER TABLE users ADD COLUMN IF NOT EXISTS dash_range TEXT;
+    -- v309: sales tax per order + the dashboard's tax toggle
+    ALTER TABLE ebay_orders ADD COLUMN IF NOT EXISTS tax NUMERIC(12,2) NOT NULL DEFAULT 0;
+    ALTER TABLE ebay_connections ADD COLUMN IF NOT EXISTS orders_v INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS dash_tax BOOLEAN NOT NULL DEFAULT FALSE;
   `);
   await pool.query('DELETE FROM sessions WHERE expires_at < now()');
 }
@@ -176,7 +181,7 @@ async function requireUser(req, res, next) {
     const token = readCookie(req, COOKIE);
     if (!token) return res.status(401).json({ error: 'Not signed in' });
     const r = await pool.query(
-      `SELECT u.id, u.email, u.is_admin, u.listing_count, u.dash_range
+      `SELECT u.id, u.email, u.is_admin, u.listing_count, u.dash_range, u.dash_tax
          FROM sessions s JOIN users u ON u.id = s.user_id
         WHERE s.token_hash = $1 AND s.expires_at > now()`,
       [sha256(token)]
@@ -313,7 +318,7 @@ app.post('/api/data', requireUser, express.json({ limit: '10mb' }), async (req, 
 // v302: just the account — the dashboard uses this so it never pulls your keys
 app.get('/api/me', requireUser, (req, res) => {
   // res.json({ email: req.user.email, isAdmin: req.user.is_admin, listingCount: req.user.listing_count });
-  res.json({ email: req.user.email, isAdmin: req.user.is_admin, listingCount: req.user.listing_count, dashRange: req.user.dash_range || null });   // v305
+  res.json({ email: req.user.email, isAdmin: req.user.is_admin, listingCount: req.user.listing_count, dashRange: req.user.dash_range || null, dashTax: !!req.user.dash_tax });   // v305, v309: + dashTax
 });
 
 // Lifetime listing counter — +1 for every successful Launch or Scheduled Listing
@@ -672,6 +677,13 @@ function mapOrder(o) {
   const pay = o.orderPaymentStatus || '';
   const counted = cancel !== 'CANCELED' && pay !== 'FULLY_REFUNDED' && pay !== 'FAILED';
   const items = (o.lineItems || []).reduce((s, li) => s + (parseInt(li.quantity, 10) || 1), 0);
+  // v309: sales tax & government fees on the order — what eBay collects and
+  // remits for you, plus any tax you collected yourself
+  let tax = 0;
+  for (const li of o.lineItems || []) {
+    for (const t of li.ebayCollectAndRemitTaxes || []) tax += money(t.amount) || 0;
+    for (const t of li.taxes || []) tax += money(t.amount) || 0;
+  }
   return {
     orderId: String(o.orderId),
     created: o.creationDate,
@@ -680,7 +692,8 @@ function mapOrder(o) {
     fees: money(o.totalMarketplaceFee),
     items,
     status: pay + (cancel && cancel !== 'NONE_REQUESTED' ? ' / ' + cancel : ''),
-    counted
+    counted,
+    tax: Math.round(tax * 100) / 100   // v309
   };
 }
 
@@ -689,16 +702,17 @@ async function saveOrders(userId, orders) {
   const values = [];
   const params = [];
   orders.forEach((o, i) => {
-    const b = i * 9;
-    values.push(`($${b + 1},$${b + 2},$${b + 3},$${b + 4},$${b + 5},$${b + 6},$${b + 7},$${b + 8},$${b + 9})`);
-    params.push(userId, o.orderId, o.created, o.total, o.payout, o.fees, o.items, o.status, o.counted);
+    const b = i * 10;   // v309: + tax
+    values.push(`($${b + 1},$${b + 2},$${b + 3},$${b + 4},$${b + 5},$${b + 6},$${b + 7},$${b + 8},$${b + 9},$${b + 10})`);
+    params.push(userId, o.orderId, o.created, o.total, o.payout, o.fees, o.items, o.status, o.counted, o.tax);
   });
   await pool.query(
-    `INSERT INTO ebay_orders (user_id, order_id, created_at, total, payout, fees, item_count, status, counted)
+    `INSERT INTO ebay_orders (user_id, order_id, created_at, total, payout, fees, item_count, status, counted, tax)
      VALUES ${values.join(',')}
      ON CONFLICT (user_id, order_id) DO UPDATE SET
        created_at = EXCLUDED.created_at, total = EXCLUDED.total, payout = EXCLUDED.payout,
-       fees = EXCLUDED.fees, item_count = EXCLUDED.item_count, status = EXCLUDED.status, counted = EXCLUDED.counted`,
+       fees = EXCLUDED.fees, item_count = EXCLUDED.item_count, status = EXCLUDED.status, counted = EXCLUDED.counted,
+       tax = EXCLUDED.tax`,
     params
   );
 }
@@ -716,7 +730,8 @@ async function syncOrders(userId) {
     if (!conn || !conn.refresh_enc) return;
     let token = await getAccessToken(userId);
     let filter, historyFrom = null;
-    if (!conn.last_sync) {
+    // if (!conn.last_sync) {
+    if (!conn.last_sync || (conn.orders_v || 0) < 2) {   // v309: re-import once to pick up tax
       historyFrom = new Date(started.getTime() - HISTORY_DAYS * 86400000);
       filter = `creationdate:[${historyFrom.toISOString()}..]`;
     } else {
@@ -752,7 +767,7 @@ async function syncOrders(userId) {
     }
     await pool.query(
       `UPDATE ebay_connections SET last_sync = $2, last_error = NULL,
-         history_from = COALESCE($3, history_from) WHERE user_id = $1`,
+         history_from = COALESCE($3, history_from), orders_v = 2 WHERE user_id = $1`,
       [userId, started, historyFrom]
     );
     await syncFees(userId);   // v307: fees import has its own error handling
@@ -912,7 +927,8 @@ app.get('/api/sales', requireUser, async (req, res) => {
     const r = await pool.query(
       `SELECT to_char((created_at AT TIME ZONE $2)::date, 'YYYY-MM-DD') AS day,
               COALESCE(SUM(total) FILTER (WHERE counted), 0)::float AS sales,
-              (COUNT(*) FILTER (WHERE counted))::int AS orders
+              (COUNT(*) FILTER (WHERE counted))::int AS orders,
+              COALESCE(SUM(tax) FILTER (WHERE counted), 0)::float AS tax
          FROM ebay_orders
         WHERE user_id = $1 AND created_at > now() - interval '740 days'
         GROUP BY 1 ORDER BY 1`,
@@ -921,7 +937,8 @@ app.get('/api/sales', requireUser, async (req, res) => {
     const stale = !conn.last_sync || (Date.now() - new Date(conn.last_sync).getTime()) > AUTO_SYNC_MINUTES * 60000;
     // if (stale && !syncing.has(req.user.id) && !conn.last_error) syncOrders(req.user.id);
     const feesNeeded = hasScope(conn, FIN_SCOPE) && !conn.fees_sync && !conn.fees_error;   // v307
-    if ((stale || feesNeeded) && !syncing.has(req.user.id) && !conn.last_error) syncOrders(req.user.id);
+    const taxNeeded = (conn.orders_v || 0) < 2;   // v309: one-time re-import for tax
+    if ((stale || feesNeeded || taxNeeded) && !syncing.has(req.user.id) && !conn.last_error) syncOrders(req.user.id);
     let historyFrom = null;
     if (conn.history_from) {
       const h = await pool.query(`SELECT to_char(($1::timestamptz AT TIME ZONE $2)::date, 'YYYY-MM-DD') AS d`, [conn.history_from, tz]);
@@ -933,7 +950,8 @@ app.get('/api/sales', requireUser, async (req, res) => {
       lastSync: conn.last_sync,
       lastError: conn.last_error || null,
       historyFrom,
-      days: r.rows.map(x => [x.day, Math.round(x.sales * 100) / 100, x.orders])
+      taxReady: (conn.orders_v || 0) >= 2,   // v309
+      days: r.rows.map(x => [x.day, Math.round(x.sales * 100) / 100, x.orders, Math.round(x.tax * 100) / 100])
     });
   } catch (e) {
     console.error('[sales]', e);
@@ -943,9 +961,14 @@ app.get('/api/sales', requireUser, async (req, res) => {
 
 // Remember the dashboard's date range on your account (any computer)
 app.post('/api/prefs', requireUser, express.json(), async (req, res) => {
-  const range = String((req.body && req.body.dashRange) || '');
-  if (!['today', 'week', '31', '90', 'year'].includes(range)) return res.status(400).json({ error: 'Bad range' });
-  await pool.query('UPDATE users SET dash_range = $2 WHERE id = $1', [req.user.id, range]);
+  // v309: either setting can be saved on its own
+  const b = req.body || {};
+  if (b.dashRange !== undefined) {
+    const range = String(b.dashRange);
+    if (!['today', 'week', '31', '90', 'year'].includes(range)) return res.status(400).json({ error: 'Bad range' });
+    await pool.query('UPDATE users SET dash_range = $2 WHERE id = $1', [req.user.id, range]);
+  }
+  if (b.dashTax !== undefined) await pool.query('UPDATE users SET dash_tax = $2 WHERE id = $1', [req.user.id, !!b.dashTax]);
   res.json({ ok: true });
 });
 
@@ -1182,5 +1205,5 @@ app.get('*', (req, res) => {
 });
 
 setupDatabase()
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v308 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v309 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });
