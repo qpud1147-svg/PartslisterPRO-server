@@ -1,4 +1,4 @@
-// PartsLister Pro server — v313
+// PartsLister Pro server — v314
 // v302: dashboard.html is the homepage (/). The listing tool moved to /list.
 // v305: eBay sales connection — real sold orders on the dashboard.
 // v306: asks eBay for two more permissions — fees/payouts and seller metrics.
@@ -8,6 +8,8 @@
 // v312: refunds subtracted the way eBay does (partial refunds too) + orders download.
 // v313: refunds also read per item, in case eBay lists one only there +
 //       Admin "Look up one order" to see exactly what eBay sends for an order.
+// v314: refunds take the sales tax back off too, like eBay (checked against
+//       892 orders: matches eBay's All orders report within 1 cent).
 // Accounts with email + password login. Each account's settings (including its
 // own API keys) and history are saved ENCRYPTED in Postgres, so you can log in
 // from any computer and everything is there. Also keeps a lifetime listing count.
@@ -101,6 +103,7 @@ async function setupDatabase() {
     ALTER TABLE ebay_orders ADD COLUMN IF NOT EXISTS tax NUMERIC(12,2) NOT NULL DEFAULT 0;
     ALTER TABLE ebay_connections ADD COLUMN IF NOT EXISTS orders_v INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE ebay_orders ADD COLUMN IF NOT EXISTS refunded NUMERIC(12,2) NOT NULL DEFAULT 0;   -- v312: money refunded to the buyer
+    ALTER TABLE ebay_orders ADD COLUMN IF NOT EXISTS refunded_tax NUMERIC(12,2) NOT NULL DEFAULT 0;   -- v314: sales tax eBay gave back with the refund
     ALTER TABLE users ADD COLUMN IF NOT EXISTS dash_tax BOOLEAN NOT NULL DEFAULT FALSE;
   `);
   await pool.query('DELETE FROM sessions WHERE expires_at < now()');
@@ -670,6 +673,10 @@ const money = (x) => {
   return Number.isFinite(n) ? n : null;
 };
 
+// v314: states where eBay's sales tax is on the item only, not shipping —
+// worked out from QPUD's own eBay All orders reports (Jul–Oct 2026).
+const NO_SHIPPING_TAX_STATES = new Set(['AL','AZ','CA','IA','ID','IN','KS','LA','MA','MD','ME','MI','NV','OK','UT','VA','WY']);
+
 // One eBay order → the few numbers the dashboard needs
 function mapOrder(o) {
   const ps = o.pricingSummary || {};
@@ -688,18 +695,51 @@ function mapOrder(o) {
     for (const t of li.ebayCollectAndRemitTaxes || []) tax += money(t.amount) || 0;
     for (const t of li.taxes || []) tax += money(t.amount) || 0;
   }
+  // v314: replaced — kept for reference:
   // v312: money refunded to the buyer (full or partial). eBay's order total
   // drops by this amount, so ours does too.
-  let refunded = 0;
-  const orderRefunds = ((o.paymentSummary && o.paymentSummary.refunds) || []).filter(x => x.refundStatus !== 'FAILED');
+  //   let refunded = 0;
+  //   const orderRefunds = ((o.paymentSummary && o.paymentSummary.refunds) || []).filter(x => x.refundStatus !== 'FAILED');
   // if (orderRefunds.length) orderRefunds.forEach(x => { refunded += money(x.amount) || 0; });
   // else for (const li of o.lineItems || []) for (const x of li.refunds || []) refunded += money(x.amount) || 0;
   // v313: add up both places eBay reports refunds and use the bigger one.
   // They describe the same money, so adding them together would double it.
-  let orderLevel = 0, itemLevel = 0;
-  orderRefunds.forEach(x => { orderLevel += money(x.amount) || 0; });
-  for (const li of o.lineItems || []) for (const x of li.refunds || []) itemLevel += money(x.amount) || 0;
-  refunded = Math.max(orderLevel, itemLevel);
+  //   let orderLevel = 0, itemLevel = 0;
+  //   orderRefunds.forEach(x => { orderLevel += money(x.amount) || 0; });
+  //   for (const li of o.lineItems || []) for (const x of li.refunds || []) itemLevel += money(x.amount) || 0;
+  //   refunded = Math.max(orderLevel, itemLevel);
+  // v314: refunds per item, the way eBay counts them.
+  //  - The per-item refund is what the buyer got back for the item/shipping,
+  //    before tax. (The whole-order refund list is your amount after eBay's
+  //    fee credit, so it is only used if eBay lists no per-item refunds.)
+  //  - eBay also gives back the sales tax on that refund. In states that don't
+  //    tax shipping, refunding the full item price gives back ALL the tax;
+  //    otherwise the tax comes back in proportion to the refund.
+  //  - Fees like Colorado's retail delivery fee are not given back.
+  // The buyer's state is read only for this math — it is never saved.
+  const shipState = String((((((o.fulfillmentStartInstructions || [])[0] || {}).shippingStep || {}).shipTo || {}).contactAddress || {}).stateOrProvince || '').trim().toUpperCase();
+  const noShipTax = NO_SHIPPING_TAX_STATES.has(shipState);
+  let refunded = 0, refundedTax = 0;
+  for (const li of o.lineItems || []) {
+    let liRefund = 0;
+    for (const x of li.refunds || []) liRefund += money(x.amount) || 0;
+    if (liRefund <= 0) continue;
+    refunded += liRefund;
+    const itemCost = money(li.lineItemCost) || 0;
+    const liShip = money(li.deliveryCost && li.deliveryCost.shippingCost) || 0;
+    const liTotal = itemCost + liShip;
+    let salesTax = 0;
+    for (const t of (li.ebayCollectAndRemitTaxes || []).concat(li.taxes || [])) {
+      if (!t.taxType || /SALES_TAX|GST|VAT|HST|PST|QST/i.test(t.taxType)) salesTax += money(t.amount) || 0;
+    }
+    if (salesTax <= 0) continue;
+    if (noShipTax && liRefund >= itemCost - 0.005) refundedTax += salesTax;
+    else if (liTotal > 0) refundedTax += Math.min(salesTax, Math.round(salesTax * liRefund / liTotal * 100) / 100);
+  }
+  if (refunded <= 0) {   // no per-item refunds listed — fall back to the order's list
+    ((o.paymentSummary && o.paymentSummary.refunds) || []).filter(x => x.refundStatus !== 'FAILED')
+      .forEach(x => { refunded += money(x.amount) || 0; });
+  }
   return {
     orderId: String(o.orderId),
     created: o.creationDate,
@@ -710,7 +750,8 @@ function mapOrder(o) {
     status: pay + (cancel && cancel !== 'NONE_REQUESTED' ? ' / ' + cancel : ''),
     counted,
     tax: Math.round(tax * 100) / 100,   // v309
-    refunded: Math.round(refunded * 100) / 100   // v312
+    refunded: Math.round(refunded * 100) / 100,   // v312
+    refundedTax: Math.round(refundedTax * 100) / 100   // v314
   };
 }
 
@@ -719,17 +760,17 @@ async function saveOrders(userId, orders) {
   const values = [];
   const params = [];
   orders.forEach((o, i) => {
-    const b = i * 11;   // v309: + tax, v312: + refunded
-    values.push(`($${b + 1},$${b + 2},$${b + 3},$${b + 4},$${b + 5},$${b + 6},$${b + 7},$${b + 8},$${b + 9},$${b + 10},$${b + 11})`);
-    params.push(userId, o.orderId, o.created, o.total, o.payout, o.fees, o.items, o.status, o.counted, o.tax, o.refunded);
+    const b = i * 12;   // v309: + tax, v312: + refunded, v314: + refunded_tax
+    values.push(`($${b + 1},$${b + 2},$${b + 3},$${b + 4},$${b + 5},$${b + 6},$${b + 7},$${b + 8},$${b + 9},$${b + 10},$${b + 11},$${b + 12})`);
+    params.push(userId, o.orderId, o.created, o.total, o.payout, o.fees, o.items, o.status, o.counted, o.tax, o.refunded, o.refundedTax);
   });
   await pool.query(
-    `INSERT INTO ebay_orders (user_id, order_id, created_at, total, payout, fees, item_count, status, counted, tax, refunded)
+    `INSERT INTO ebay_orders (user_id, order_id, created_at, total, payout, fees, item_count, status, counted, tax, refunded, refunded_tax)
      VALUES ${values.join(',')}
      ON CONFLICT (user_id, order_id) DO UPDATE SET
        created_at = EXCLUDED.created_at, total = EXCLUDED.total, payout = EXCLUDED.payout,
        fees = EXCLUDED.fees, item_count = EXCLUDED.item_count, status = EXCLUDED.status, counted = EXCLUDED.counted,
-       tax = EXCLUDED.tax, refunded = EXCLUDED.refunded`,
+       tax = EXCLUDED.tax, refunded = EXCLUDED.refunded, refunded_tax = EXCLUDED.refunded_tax`,
     params
   );
 }
@@ -749,7 +790,8 @@ async function syncOrders(userId) {
     let filter, historyFrom = null;
     // if (!conn.last_sync) {
     // if (!conn.last_sync || (conn.orders_v || 0) < 3) {   // v309: tax, v312: refunds — re-import once
-    if (!conn.last_sync || (conn.orders_v || 0) < 4) {   // v313: refunds per item — re-import once
+    // if (!conn.last_sync || (conn.orders_v || 0) < 4) {   // v313: refunds per item — re-import once
+    if (!conn.last_sync || (conn.orders_v || 0) < 5) {   // v314: tax on refunds — re-import once
       historyFrom = new Date(started.getTime() - HISTORY_DAYS * 86400000);
       filter = `creationdate:[${historyFrom.toISOString()}..]`;
     } else {
@@ -785,7 +827,7 @@ async function syncOrders(userId) {
     }
     await pool.query(
       `UPDATE ebay_connections SET last_sync = $2, last_error = NULL,
-         history_from = COALESCE($3, history_from), orders_v = 4 WHERE user_id = $1`,   // v313: was 3
+         history_from = COALESCE($3, history_from), orders_v = 5 WHERE user_id = $1`,   // v313: was 3, v314: was 4
       [userId, started, historyFrom]
     );
     await syncFees(userId);   // v307: fees import has its own error handling
@@ -947,9 +989,12 @@ app.get('/api/sales', requireUser, async (req, res) => {
               -- v312: refunds come off the order the way eBay does. With tax on,
               -- that's exactly total + tax - refunded; the refund is split between
               -- sales and tax in proportion so the tax-off number stays sensible.
-              COALESCE(SUM(CASE WHEN total + tax > 0 THEN total - refunded * total / (total + tax) ELSE 0 END) FILTER (WHERE counted), 0)::float AS sales,
+              -- COALESCE(SUM(CASE WHEN total + tax > 0 THEN total - refunded * total / (total + tax) ELSE 0 END) FILTER (WHERE counted), 0)::float AS sales,
+              -- COALESCE(SUM(CASE WHEN total + tax > 0 THEN tax - refunded * tax / (total + tax) ELSE 0 END) FILTER (WHERE counted), 0)::float AS tax
+              -- v314: refund comes off sales; the tax eBay gave back comes off tax.
+              COALESCE(SUM(total - refunded) FILTER (WHERE counted), 0)::float AS sales,
               (COUNT(*) FILTER (WHERE counted))::int AS orders,
-              COALESCE(SUM(CASE WHEN total + tax > 0 THEN tax - refunded * tax / (total + tax) ELSE 0 END) FILTER (WHERE counted), 0)::float AS tax
+              COALESCE(SUM(tax - refunded_tax) FILTER (WHERE counted), 0)::float AS tax
          FROM ebay_orders
         WHERE user_id = $1 AND created_at > now() - interval '740 days'
         GROUP BY 1 ORDER BY 1`,
@@ -958,7 +1003,8 @@ app.get('/api/sales', requireUser, async (req, res) => {
     const stale = !conn.last_sync || (Date.now() - new Date(conn.last_sync).getTime()) > AUTO_SYNC_MINUTES * 60000;
     // if (stale && !syncing.has(req.user.id) && !conn.last_error) syncOrders(req.user.id);
     const feesNeeded = hasScope(conn, FIN_SCOPE) && !conn.fees_sync && !conn.fees_error;   // v307
-    const taxNeeded = (conn.orders_v || 0) < 3;   // v309/v312: one-time re-import for tax + refunds
+    // const taxNeeded = (conn.orders_v || 0) < 3;   // v309/v312: one-time re-import for tax + refunds
+    const taxNeeded = (conn.orders_v || 0) < 5;   // v314: re-import right away for tax on refunds
     if ((stale || feesNeeded || taxNeeded) && !syncing.has(req.user.id) && !conn.last_error) syncOrders(req.user.id);
     let historyFrom = null;
     if (conn.history_from) {
@@ -1172,17 +1218,17 @@ app.get('/api/orders/export', requireUser, requireAdmin, async (req, res) => {
     const tz = safeTimeZone(String(req.query.tz || 'UTC'));
     const r = await pool.query(
       `SELECT order_id, to_char(created_at AT TIME ZONE $2, 'YYYY-MM-DD HH24:MI') AS sold_at,
-              total::float, tax::float, refunded::float, counted, status
+              total::float, tax::float, refunded::float, refunded_tax::float, counted, status
          FROM ebay_orders
         WHERE user_id = $1 AND (created_at AT TIME ZONE $2)::date BETWEEN $3::date AND $4::date
         ORDER BY created_at`,
       [req.user.id, tz, from, to]
     );
     const f = (n) => (Math.round(n * 100) / 100).toFixed(2);
-    const lines = ['Order Number,Sold (' + tz + '),Items + Shipping,Tax,Refunded,Counted,Total like eBay,Status'];
+    const lines = ['Order Number,Sold (' + tz + '),Items + Shipping,Tax,Refunded,Tax Refunded,Counted,Total like eBay,Status'];   // v314: + Tax Refunded
     for (const x of r.rows) {
-      const ebayTotal = x.counted ? x.total + x.tax - x.refunded : 0;
-      lines.push([x.order_id, x.sold_at, f(x.total), f(x.tax), f(x.refunded), x.counted ? 'Yes' : 'No', f(ebayTotal), '"' + String(x.status || '').replace(/"/g, '') + '"'].join(','));
+      const ebayTotal = x.counted ? x.total + x.tax - x.refunded - x.refunded_tax : 0;   // v314: - refunded_tax
+      lines.push([x.order_id, x.sold_at, f(x.total), f(x.tax), f(x.refunded), f(x.refunded_tax), x.counted ? 'Yes' : 'No', f(ebayTotal), '"' + String(x.status || '').replace(/"/g, '') + '"'].join(','));
     }
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="partslister-orders-${from}-to-${to}.csv"`);
@@ -1294,5 +1340,5 @@ app.get('*', (req, res) => {
 });
 
 setupDatabase()
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v313 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v314 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });
