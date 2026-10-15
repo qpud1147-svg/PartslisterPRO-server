@@ -1,8 +1,9 @@
-// PartsLister Pro server — v307
+// PartsLister Pro server — v308
 // v302: dashboard.html is the homepage (/). The listing tool moved to /list.
 // v305: eBay sales connection — real sold orders on the dashboard.
 // v306: asks eBay for two more permissions — fees/payouts and seller metrics.
 // v307: imports eBay fees — total fees and penalty fees on the dashboard.
+// v308: fee check — itemized fees for exact dates, to compare with eBay's reports.
 // Accounts with email + password login. Each account's settings (including its
 // own API keys) and history are saved ENCRYPTED in Postgres, so you can log in
 // from any computer and everything is there. Also keeps a lifetime listing count.
@@ -1076,6 +1077,53 @@ async function syncFees(userId) {
   }
 }
 
+// v308: FEE CHECK — every fee type for exact dates, to line up against an
+// eBay report. Also counts orders vs. sales with fees, to spot missing ones.
+function isoDate(x) { return /^\d{4}-\d{2}-\d{2}$/.test(String(x || '')) ? String(x) : null; }
+
+app.get('/api/fees/breakdown', requireUser, requireAdmin, async (req, res) => {
+  try {
+    const from = isoDate(req.query.from), to = isoDate(req.query.to);
+    if (!from || !to || from > to) return res.status(400).json({ error: 'Pick a start and end date' });
+    const tz = safeTimeZone(String(req.query.tz || 'UTC'));
+    const conn = await getConnection(req.user.id);
+    if (!hasScope(conn, FIN_SCOPE) || !conn.fees_sync) return res.json({ available: false });
+    const range = `(tx_date AT TIME ZONE $2)::date BETWEEN $3::date AND $4::date`;
+    const types = await pool.query(
+      `SELECT fee_type,
+              COALESCE(SUM(cost) FILTER (WHERE cost > 0), 0)::float AS charged,
+              COALESCE(-SUM(cost) FILTER (WHERE cost < 0), 0)::float AS credited,
+              COUNT(*)::int AS entries
+         FROM ebay_fee_lines WHERE user_id = $1 AND ${range}
+        GROUP BY fee_type ORDER BY charged DESC`,
+      [req.user.id, tz, from, to]
+    );
+    const tx = await pool.query(
+      `SELECT split_part(tx_key, ':', 1) AS kind, COUNT(DISTINCT tx_key)::int AS n
+         FROM ebay_fee_lines WHERE user_id = $1 AND ${range}
+        GROUP BY 1 ORDER BY 1`,
+      [req.user.id, tz, from, to]
+    );
+    const orders = await pool.query(
+      `SELECT COUNT(*) FILTER (WHERE counted)::int AS sold, COUNT(*)::int AS all_orders,
+              COALESCE(SUM(item_count) FILTER (WHERE counted), 0)::int AS items
+         FROM ebay_orders WHERE user_id = $1 AND (created_at AT TIME ZONE $2)::date BETWEEN $3::date AND $4::date`,
+      [req.user.id, tz, from, to]
+    );
+    const r2 = (x) => Math.round(x * 100) / 100;
+    res.json({
+      available: true, from, to, tz,
+      feeTypes: types.rows.map(x => ({ feeType: x.fee_type, charged: r2(x.charged), credited: r2(x.credited), entries: x.entries })),
+      transactions: Object.fromEntries(tx.rows.map(x => [x.kind, x.n])),
+      orders: orders.rows[0],
+      lastSync: conn.fees_sync
+    });
+  } catch (e) {
+    console.error('[fees breakdown]', e);
+    res.status(500).json({ error: 'Could not build the fee check' });
+  }
+});
+
 // Daily fee totals for the dashboard, in YOUR time zone
 app.get('/api/fees', requireUser, async (req, res) => {
   try {
@@ -1134,5 +1182,5 @@ app.get('*', (req, res) => {
 });
 
 setupDatabase()
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v307 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v308 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });
