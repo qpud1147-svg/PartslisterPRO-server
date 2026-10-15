@@ -1,6 +1,7 @@
-// PartsLister Pro server — v305
+// PartsLister Pro server — v306
 // v302: dashboard.html is the homepage (/). The listing tool moved to /list.
 // v305: eBay sales connection — real sold orders on the dashboard.
+// v306: asks eBay for two more permissions — fees/payouts and seller metrics.
 // Accounts with email + password login. Each account's settings (including its
 // own API keys) and history are saved ENCRYPTED in Postgres, so you can log in
 // from any computer and everything is there. Also keeps a lifetime listing count.
@@ -62,6 +63,7 @@ async function setupDatabase() {
       last_sync       TIMESTAMPTZ,
       last_error      TEXT
     );
+    ALTER TABLE ebay_connections ADD COLUMN IF NOT EXISTS scopes TEXT;   -- v306: permissions you approved
     CREATE TABLE IF NOT EXISTS ebay_orders (
       user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       order_id   TEXT NOT NULL,
@@ -553,10 +555,28 @@ app.post('/api/serplens', requireUser, express.json(), async (req, res) => {
 //   or addresses.
 const EBAY_AUTH_HOST = env('EBAY_AUTH_HOST') || 'https://auth.ebay.com';   // override for testing only
 const EBAY_API_HOST  = env('EBAY_API_HOST')  || 'https://api.ebay.com';    // override for testing only
-const SALES_SCOPES = [
+// const SALES_SCOPES = [
+//   'https://api.ebay.com/oauth/api_scope',
+//   'https://api.ebay.com/oauth/api_scope/sell.fulfillment.readonly'
+// ].join(' ');
+
+// v306: every permission the app asks for, with a plain-English name for the
+// Admin page. Add a line here to ask for something new — then Reconnect once.
+const EBAY_SCOPES = [
+  { scope: 'https://api.ebay.com/oauth/api_scope',                            label: 'Basic access' },
+  { scope: 'https://api.ebay.com/oauth/api_scope/sell.fulfillment.readonly',  label: 'Your orders (sales)' },
+  { scope: 'https://api.ebay.com/oauth/api_scope/sell.finances',              label: 'Fees, payouts & sales tax' },
+  { scope: 'https://api.ebay.com/oauth/api_scope/sell.analytics.readonly',    label: 'Seller metrics & standing' }
+];
+const SALES_SCOPES = EBAY_SCOPES.map(x => x.scope).join(' ');
+
+// What v305 asked for — used for connections made before v306, so their
+// token keeps refreshing (eBay refuses a refresh that asks for MORE than was approved).
+const V305_SCOPES = [
   'https://api.ebay.com/oauth/api_scope',
   'https://api.ebay.com/oauth/api_scope/sell.fulfillment.readonly'
 ].join(' ');
+const grantedScopes = (conn) => (conn && conn.scopes) || V305_SCOPES;
 const HISTORY_DAYS = 728;               // eBay keeps orders about two years
 const AUTO_SYNC_MINUTES = 15;           // refresh in the background when older than this
 const CALLBACK_PATH = '/api/ebay-callback';
@@ -611,7 +631,8 @@ async function getAccessToken(userId) {
   if (!keys.clientId || !keys.clientSecret) throw new Error('Your eBay Client ID / Client Secret are missing from Listing Tool settings');
   let d;
   try {
-    d = await ebayToken(keys, { grant_type: 'refresh_token', refresh_token: decrypt(conn.refresh_enc), scope: SALES_SCOPES });
+    // d = await ebayToken(keys, { grant_type: 'refresh_token', refresh_token: decrypt(conn.refresh_enc), scope: SALES_SCOPES });
+    d = await ebayToken(keys, { grant_type: 'refresh_token', refresh_token: decrypt(conn.refresh_enc), scope: grantedScopes(conn) });   // v306
   } catch (e) {
     if (e.code === 'invalid_grant') throw new Error('eBay connection expired or was revoked — click Connect eBay again');
     throw e;
@@ -750,7 +771,12 @@ app.get('/api/ebay/status', requireUser, requireAdmin, async (req, res) => {
       lastError: (conn && conn.last_error) || null,
       syncing: syncing.has(req.user.id),
       orders: count.rows[0].n,
-      callbackPath: CALLBACK_PATH
+      callbackPath: CALLBACK_PATH,
+      // v306: each permission and whether you've approved it
+      permissions: EBAY_SCOPES.map(x => ({
+        label: x.label,
+        granted: !!(conn && conn.refresh_enc) && grantedScopes(conn).split(' ').includes(x.scope)
+      }))
     });
   } catch (e) {
     console.error('[ebay status]', e);
@@ -802,6 +828,10 @@ app.get('/api/ebay/connect', requireUser, requireAdmin, async (req, res) => {
 app.get(CALLBACK_PATH, async (req, res) => {
   const fail = (msg) => res.redirect('/?ebay=error&msg=' + encodeURIComponent(msg));
   const { code, state, error } = req.query;
+  // if (error) return fail('eBay said: ' + String(error));
+  if (error === 'invalid_scope') {   // v306
+    return fail('eBay refused one of the permissions. Your app keyset may not have Fees or Seller Metrics enabled — check OAuth Scopes in your eBay developer account. Your existing connection still works.');
+  }
   if (error) return fail('eBay said: ' + String(error));
   const st = oauthStates.get(String(state || ''));
   if (!st || st.expires < Date.now()) return fail('That eBay sign-in link expired — click Connect eBay again');
@@ -814,9 +844,9 @@ app.get(CALLBACK_PATH, async (req, res) => {
     if (!d.refresh_token) throw new Error('eBay did not return a refresh token');
     await pool.query(
       `UPDATE ebay_connections SET refresh_enc = $2, refresh_expires = $3, connected_at = now(),
-         last_sync = NULL, last_error = NULL, history_from = NULL
+         last_sync = NULL, last_error = NULL, history_from = NULL, scopes = $4
        WHERE user_id = $1`,
-      [st.userId, encrypt(d.refresh_token), new Date(Date.now() + (d.refresh_token_expires_in || 47304000) * 1000)]
+      [st.userId, encrypt(d.refresh_token), new Date(Date.now() + (d.refresh_token_expires_in || 47304000) * 1000), SALES_SCOPES]   // v306: + scopes
     );
     accessTokens.set(st.userId, { token: d.access_token, expires: Date.now() + Math.max(60, (d.expires_in || 7200) - 300) * 1000 });
     syncOrders(st.userId);                 // start importing in the background
@@ -838,7 +868,7 @@ app.post('/api/ebay/disconnect', requireUser, requireAdmin, async (req, res) => 
   accessTokens.delete(req.user.id);
   await pool.query(
     `UPDATE ebay_connections SET refresh_enc = NULL, refresh_expires = NULL, connected_at = NULL,
-       last_sync = NULL, last_error = NULL, history_from = NULL WHERE user_id = $1`,
+       last_sync = NULL, last_error = NULL, history_from = NULL, scopes = NULL WHERE user_id = $1`,
     [req.user.id]
   );
   await pool.query('DELETE FROM ebay_orders WHERE user_id = $1', [req.user.id]);
@@ -920,5 +950,5 @@ app.get('*', (req, res) => {
 });
 
 setupDatabase()
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v305 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v306 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });
