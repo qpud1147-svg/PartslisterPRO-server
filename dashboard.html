@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Dashboard v306</title>
+<title>PartsLister Pro Dashboard v307</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@400;500;600&display=swap');
 
@@ -188,6 +188,16 @@
   }
   .tile-sub { font-size: 12px; color: var(--muted); margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .tile.hero .tile-value { font-size: 56px; color: var(--accent); }
+
+  /* v307: FEES */
+  .fees-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+  .tile.penalty { border-left-width: 3px; }
+  .tile.penalty.ok { border-left-color: var(--success); }
+  .tile.penalty.bad { border-left-color: var(--danger); background: rgba(224,82,82,0.06); }
+  .tile.penalty.bad .tile-value { color: var(--danger); }
+  .tile .status-tag { display: inline-block; font-family: 'Barlow Condensed', sans-serif; font-size: 12px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; margin-left: 8px; vertical-align: 6px; }
+  .tile.penalty.ok .status-tag { color: var(--success); }
+  .tile.penalty.bad .status-tag { color: var(--danger); }
 
   /* CHART */
   .chart-card {
@@ -414,6 +424,7 @@
   @media (max-width: 1000px) {
     .figures { grid-template-columns: repeat(2, 1fr); }
     .tile.hero { grid-column: 1 / -1; }
+    .fees-row { grid-template-columns: 1fr; }   /* v307 */
     .lower { grid-template-columns: 1fr; }
   }
   /* PHONE */
@@ -466,7 +477,7 @@
 <header>
   <a href="/" class="logo-link" title="Dashboard">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v306</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v307</span></div>
   </a>
   <div class="header-right">
     <span class="who" id="who"></span>
@@ -521,6 +532,20 @@
       <div class="tile-label">Best day</div>
       <div class="tile-value" id="fig-best">—</div>
       <div class="tile-sub" id="fig-best-sub">&nbsp;</div>
+    </div>
+  </div>
+
+  <!-- v307: FEES — what eBay charged you, and how much of it is penalty -->
+  <div class="fees-row">
+    <div class="tile">
+      <div class="tile-label" id="fig-fees-label">eBay fees</div>
+      <div class="tile-value" id="fig-fees">—</div>
+      <div class="tile-sub" id="fig-fees-sub">&nbsp;</div>
+    </div>
+    <div class="tile penalty" id="penalty-tile">
+      <div class="tile-label" id="fig-penalty-label">Penalty fees</div>
+      <div class="tile-value"><span id="fig-penalty">—</span><span class="status-tag" id="penalty-tag"></span></div>
+      <div class="tile-sub" id="fig-penalty-sub">&nbsp;</div>
     </div>
   </div>
 
@@ -690,6 +715,7 @@
 // ─── PartsLister Pro Dashboard v305 ──────────────────────────────────────────
 // v305: real eBay sales (when connected in ⚙ Settings → Admin); sample data otherwise.
 // v306: Admin lists each eBay permission and whether it's approved.
+// v307: eBay fees tile and penalty box.
 // Shares the same sign-in and account as the listing tool (/list).
 // v304: sales dashboard — big daily bar graph with a remembered date range.
 // The sales numbers are SAMPLE data for now; real eBay sales replace
@@ -711,6 +737,8 @@ let me = null;              // the signed-in account
 let salesMode = 'sample';   // 'sample' until eBay is connected, then 'live'
 let salesInfo = {};         // { syncing, lastSync, lastError, historyFrom }
 let pollTimer = null;
+let feesInfo = { available: false, reason: 'not_connected' };   // v307
+let feesByDay = new Map();                                       // v307: 'YYYY-MM-DD' → [fees, penalty]
 let shownDays = [];
 
 // ─── FORMATTING ──────────────────────────────────────────────────────────────
@@ -816,6 +844,7 @@ function renderFigures() {
   setText('fig-best-sub', best.sales > 0 ? fmtLong(best.date) : ' ');
 
   setText('chart-title', 'Sales per day · ' + r.label);
+  renderFees(total);   // v307
 }
 
 // ─── CHART ───────────────────────────────────────────────────────────────────
@@ -1097,6 +1126,7 @@ async function loadSales() {
 
 async function refreshSales() {
   await loadSales();
+  await loadFees();   // v307
   setRange(currentRange, false);
   if (document.getElementById('settings-overlay').classList.contains('open')) loadEbayStatus();
 }
@@ -1158,6 +1188,58 @@ function showToast(msg, isError) {
   toastTimer = setTimeout(() => t.classList.remove('show'), isError ? 7000 : 4500);
 }
 
+// ─── v307: FEES ──────────────────────────────────────────────────────────────
+async function loadFees() {
+  let d = { available: false, reason: 'not_connected' };
+  if (salesMode === 'live') {
+    try {
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+      const r = await fetch('/api/fees?tz=' + encodeURIComponent(tz));
+      if (r.ok) d = await r.json();
+    } catch (e) { /* show as unavailable */ }
+  }
+  feesInfo = d;
+  feesByDay = new Map((d.days || []).map(([key, fees, penalty]) => [key, [fees, penalty]]));
+  // keep checking while the first fee import runs
+  if (d.reason === 'importing') { clearTimeout(pollTimer); pollTimer = setTimeout(refreshSales, 4000); }
+}
+
+function renderFees(salesTotal) {
+  const r = RANGES[currentRange];
+  const tile = document.getElementById('penalty-tile');
+  const tag = document.getElementById('penalty-tag');
+  setText('fig-fees-label', 'eBay fees · ' + r.label);
+  setText('fig-penalty-label', 'Penalty fees · ' + r.label);
+  tile.classList.remove('ok', 'bad');
+  tag.textContent = '';
+  if (!feesInfo.available) {
+    const why = {
+      not_connected: 'Connect eBay in ⚙ Settings to see fees',
+      not_approved: 'Approve "Fees" in ⚙ Settings → Admin',
+      importing: 'Importing your fees from eBay…',
+      error: 'Fee import problem — see ⚙ Settings → Admin'
+    }[feesInfo.reason] || ' ';
+    setText('fig-fees', '—'); setText('fig-fees-sub', why);
+    setText('fig-penalty', '—'); setText('fig-penalty-sub', ' ');
+    return;
+  }
+  let fees = 0, penalty = 0;
+  shownDays.forEach(d => { const v = feesByDay.get(d.key); if (v) { fees += v[0]; penalty += v[1]; } });
+  setText('fig-fees', money0.format(Math.max(0, fees)));
+  setText('fig-fees-sub', salesTotal > 0 ? (fees / salesTotal * 100).toFixed(1) + '% of your sales' : 'No sales in this period');
+  if (penalty > 0.005) {
+    tile.classList.add('bad');
+    setText('fig-penalty', money2.format(penalty));
+    tag.textContent = 'Paying penalty';
+    setText('fig-penalty-sub', 'Extra fees from your seller standing — ' + (fees > 0 ? (penalty / fees * 100).toFixed(1) + '% of your fees' : ''));
+  } else {
+    tile.classList.add('ok');
+    setText('fig-penalty', '$0');
+    tag.textContent = 'None';
+    setText('fig-penalty-sub', 'No Below Standard or "not as described" surcharges');
+  }
+}
+
 // ─── v305: SETTINGS ──────────────────────────────────────────────────────────
 function openSettings(tab) {
   document.getElementById('set-email').textContent = me ? me.email : '—';
@@ -1214,6 +1296,7 @@ async function loadEbayStatus() {
     line('Orders imported:', Number(st.orders).toLocaleString());
     if (st.historyFrom) line('History from:', new Date(st.historyFrom).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }));
     line('Last update:', timeAgo(st.lastSync));
+    if (st.feesApproved) line('Fees imported:', st.feesSync ? Number(st.feeLines).toLocaleString() + ' fee entries · updated ' + timeAgo(st.feesSync) : (st.feesError ? 'problem — see below' : 'importing…'));   // v307
     if (st.refreshExpires) line('Connection good until:', new Date(st.refreshExpires).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }));
     // v306: each permission, approved or not
     if (st.permissions && st.permissions.length) {
@@ -1229,8 +1312,11 @@ async function loadEbayStatus() {
     line('RuName:', st.ruName ? '✓ Saved' : '✗ Not saved yet', st.ruName ? 'ok' : 'bad');
   }
   const err = document.getElementById('ebay-error');
-  err.style.display = st.lastError ? 'block' : 'none';
-  err.textContent = st.lastError ? 'Last problem: ' + st.lastError : '';
+  // err.style.display = st.lastError ? 'block' : 'none';
+  // err.textContent = st.lastError ? 'Last problem: ' + st.lastError : '';
+  const problems = [st.lastError && ('Sales: ' + st.lastError), st.feesError && ('Fees: ' + st.feesError)].filter(Boolean);   // v307
+  err.style.display = problems.length ? 'block' : 'none';
+  err.textContent = problems.length ? 'Last problem — ' + problems.join(' · ') : '';
   document.getElementById('ebay-connected-buttons').style.display = st.connected ? 'flex' : 'none';
   document.getElementById('sync-btn').disabled = !!st.syncing;
   document.getElementById('sync-btn').textContent = st.syncing ? 'Syncing…' : 'Sync Now';
@@ -1312,6 +1398,7 @@ async function load() {
 
   // v305: real eBay sales when connected, sample otherwise
   await loadSales();
+  await loadFees();   // v307
   let saved = me.dashRange;
   if (!saved) { try { saved = localStorage.getItem(RANGE_KEY); } catch (e) { /* use default */ } }
   setRange(saved || 'week', false);

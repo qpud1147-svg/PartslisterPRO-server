@@ -1,7 +1,8 @@
-// PartsLister Pro server — v306
+// PartsLister Pro server — v307
 // v302: dashboard.html is the homepage (/). The listing tool moved to /list.
 // v305: eBay sales connection — real sold orders on the dashboard.
 // v306: asks eBay for two more permissions — fees/payouts and seller metrics.
+// v307: imports eBay fees — total fees and penalty fees on the dashboard.
 // Accounts with email + password login. Each account's settings (including its
 // own API keys) and history are saved ENCRYPTED in Postgres, so you can log in
 // from any computer and everything is there. Also keeps a lifetime listing count.
@@ -64,6 +65,19 @@ async function setupDatabase() {
       last_error      TEXT
     );
     ALTER TABLE ebay_connections ADD COLUMN IF NOT EXISTS scopes TEXT;   -- v306: permissions you approved
+    -- v307: eBay fees
+    CREATE TABLE IF NOT EXISTS ebay_fee_lines (
+      user_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      tx_key   TEXT NOT NULL,
+      line_no  INTEGER NOT NULL,
+      tx_date  TIMESTAMPTZ NOT NULL,
+      fee_type TEXT NOT NULL,
+      cost     NUMERIC(12,2) NOT NULL,
+      PRIMARY KEY (user_id, tx_key, line_no)
+    );
+    CREATE INDEX IF NOT EXISTS ebay_fee_lines_user_date ON ebay_fee_lines (user_id, tx_date);
+    ALTER TABLE ebay_connections ADD COLUMN IF NOT EXISTS fees_sync TIMESTAMPTZ;
+    ALTER TABLE ebay_connections ADD COLUMN IF NOT EXISTS fees_error TEXT;
     CREATE TABLE IF NOT EXISTS ebay_orders (
       user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       order_id   TEXT NOT NULL,
@@ -740,6 +754,7 @@ async function syncOrders(userId) {
          history_from = COALESCE($3, history_from) WHERE user_id = $1`,
       [userId, started, historyFrom]
     );
+    await syncFees(userId);   // v307: fees import has its own error handling
   } catch (e) {
     console.error('[ebay sync]', e.message);
     await pool.query('UPDATE ebay_connections SET last_error = $2 WHERE user_id = $1', [userId, String(e.message).slice(0, 500)]).catch(() => {});
@@ -770,6 +785,11 @@ app.get('/api/ebay/status', requireUser, requireAdmin, async (req, res) => {
       historyFrom: conn && conn.history_from,
       lastError: (conn && conn.last_error) || null,
       syncing: syncing.has(req.user.id),
+      // v307: fees
+      feesApproved: hasScope(conn, FIN_SCOPE),
+      feesSync: (conn && conn.fees_sync) || null,
+      feesError: (conn && conn.fees_error) || null,
+      feeLines: (await pool.query('SELECT COUNT(*)::int AS n FROM ebay_fee_lines WHERE user_id = $1', [req.user.id])).rows[0].n,
       orders: count.rows[0].n,
       callbackPath: CALLBACK_PATH,
       // v306: each permission and whether you've approved it
@@ -844,7 +864,8 @@ app.get(CALLBACK_PATH, async (req, res) => {
     if (!d.refresh_token) throw new Error('eBay did not return a refresh token');
     await pool.query(
       `UPDATE ebay_connections SET refresh_enc = $2, refresh_expires = $3, connected_at = now(),
-         last_sync = NULL, last_error = NULL, history_from = NULL, scopes = $4
+         last_sync = NULL, last_error = NULL, history_from = NULL, scopes = $4,
+         fees_sync = NULL, fees_error = NULL
        WHERE user_id = $1`,
       [st.userId, encrypt(d.refresh_token), new Date(Date.now() + (d.refresh_token_expires_in || 47304000) * 1000), SALES_SCOPES]   // v306: + scopes
     );
@@ -868,10 +889,12 @@ app.post('/api/ebay/disconnect', requireUser, requireAdmin, async (req, res) => 
   accessTokens.delete(req.user.id);
   await pool.query(
     `UPDATE ebay_connections SET refresh_enc = NULL, refresh_expires = NULL, connected_at = NULL,
-       last_sync = NULL, last_error = NULL, history_from = NULL, scopes = NULL WHERE user_id = $1`,
+       last_sync = NULL, last_error = NULL, history_from = NULL, scopes = NULL,
+       fees_sync = NULL, fees_error = NULL WHERE user_id = $1`,
     [req.user.id]
   );
   await pool.query('DELETE FROM ebay_orders WHERE user_id = $1', [req.user.id]);
+  await pool.query('DELETE FROM ebay_fee_lines WHERE user_id = $1', [req.user.id]);   // v307
   res.json({ ok: true });
 });
 
@@ -895,7 +918,9 @@ app.get('/api/sales', requireUser, async (req, res) => {
       [req.user.id, tz]
     );
     const stale = !conn.last_sync || (Date.now() - new Date(conn.last_sync).getTime()) > AUTO_SYNC_MINUTES * 60000;
-    if (stale && !syncing.has(req.user.id) && !conn.last_error) syncOrders(req.user.id);
+    // if (stale && !syncing.has(req.user.id) && !conn.last_error) syncOrders(req.user.id);
+    const feesNeeded = hasScope(conn, FIN_SCOPE) && !conn.fees_sync && !conn.fees_error;   // v307
+    if ((stale || feesNeeded) && !syncing.has(req.user.id) && !conn.last_error) syncOrders(req.user.id);
     let historyFrom = null;
     if (conn.history_from) {
       const h = await pool.query(`SELECT to_char(($1::timestamptz AT TIME ZONE $2)::date, 'YYYY-MM-DD') AS d`, [conn.history_from, tz]);
@@ -921,6 +946,165 @@ app.post('/api/prefs', requireUser, express.json(), async (req, res) => {
   if (!['today', 'week', '31', '90', 'year'].includes(range)) return res.status(400).json({ error: 'Bad range' });
   await pool.query('UPDATE users SET dash_range = $2 WHERE id = $1', [req.user.id, range]);
   res.json({ ok: true });
+});
+
+// ─── v307: EBAY FEES ─────────────────────────────────────────────────────────
+// Imports your eBay fees from the Finances API (needs the "Fees, payouts &
+// sales tax" permission). Each fee is stored as a cost: positive = eBay charged
+// you, negative = eBay credited it back (e.g. on a refund).
+//
+// • SALE      → that order's fees (final value fee, per-order fee, penalties…)
+// • REFUND    → fees eBay credited back on the refund
+// • NON_SALE_CHARGE → ad fees, store subscription, and other account charges
+// The penalty box adds up only eBay's two penalty fee types.
+const EBAY_FIN_HOST = env('EBAY_FIN_HOST') || 'https://apiz.ebay.com';   // override for testing only
+const FIN_SCOPE = 'https://api.ebay.com/oauth/api_scope/sell.finances';
+const PENALTY_FEES = [
+  'BELOW_STANDARD_FEE',                        // Below Standard seller surcharge
+  'BELOW_STANDARD_SHIPPING_FEE',
+  'HIGH_ITEM_NOT_AS_DESCRIBED_FEE',            // too many "not as described" returns
+  'HIGH_ITEM_NOT_AS_DESCRIBED_SHIPPING_FEE'
+];
+const hasScope = (conn, scope) => !!(conn && conn.refresh_enc) && grantedScopes(conn).split(' ').includes(scope);
+
+// One eBay transaction → its fee lines
+function feeLines(t) {
+  const lines = [];
+  const type = t.transactionType;
+  if (type === 'SALE' || type === 'REFUND') {
+    const sign = type === 'SALE' ? 1 : -1;
+    let listed = 0;
+    for (const li of t.orderLineItems || []) {
+      for (const f of li.marketplaceFees || []) {
+        const a = money(f.amount);
+        if (a === null || a === 0) continue;
+        lines.push({ feeType: String(f.feeType || 'OTHER_FEES'), cost: sign * Math.abs(a) });
+        listed += Math.abs(a);
+      }
+    }
+    // eBay's own total for the transaction wins — anything not itemized is "other"
+    const total = money(t.totalFeeAmount);
+    if (total !== null && Math.abs(total) - listed > 0.004) {
+      lines.push({ feeType: 'OTHER_FEES', cost: sign * (Math.abs(total) - listed) });
+    }
+  } else if (type === 'NON_SALE_CHARGE') {
+    const a = money(t.amount);
+    if (a !== null && a !== 0) lines.push({ feeType: String(t.feeType || 'OTHER_FEES'), cost: (t.bookingEntry === 'CREDIT' ? -1 : 1) * Math.abs(a) });
+  }
+  return lines.map(l => ({ ...l, cost: Math.round(l.cost * 100) / 100 }));
+}
+
+async function saveFeeTransactions(userId, transactions) {
+  const keys = [];
+  const rows = [];
+  for (const t of transactions) {
+    if (!t.transactionId || !t.transactionDate) continue;
+    const key = t.transactionType + ':' + t.transactionId;
+    keys.push(key);
+    feeLines(t).forEach((l, i) => rows.push([userId, key, i, t.transactionDate, l.feeType, l.cost]));
+  }
+  if (!keys.length) return;
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('DELETE FROM ebay_fee_lines WHERE user_id = $1 AND tx_key = ANY($2)', [userId, keys]);
+    for (let i = 0; i < rows.length; i += 500) {
+      const chunk = rows.slice(i, i + 500);
+      const values = chunk.map((_, j) => `($${j * 6 + 1},$${j * 6 + 2},$${j * 6 + 3},$${j * 6 + 4},$${j * 6 + 5},$${j * 6 + 6})`);
+      await client.query(
+        `INSERT INTO ebay_fee_lines (user_id, tx_key, line_no, tx_date, fee_type, cost) VALUES ${values.join(',')}`,
+        chunk.flat()
+      );
+    }
+    await client.query('COMMIT');
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
+// First run pulls about two years (in 90-day pieces); later runs re-pull the
+// last week so late adjustments are caught.
+async function syncFees(userId) {
+  const conn = await getConnection(userId);
+  if (!hasScope(conn, FIN_SCOPE)) return;
+  const started = new Date();
+  try {
+    let token = await getAccessToken(userId);
+    const from = conn.fees_sync
+      ? new Date(new Date(conn.fees_sync).getTime() - 7 * 86400000)
+      : new Date(started.getTime() - HISTORY_DAYS * 86400000);
+    for (let winStart = from; winStart < started; ) {
+      const winEnd = new Date(Math.min(started.getTime(), winStart.getTime() + 90 * 86400000));
+      const filter = `transactionDate:[${winStart.toISOString()}..${winEnd.toISOString()}]`;
+      let offset = 0, total = Infinity, pages = 0, retried = false;
+      while (offset < total && pages < 50) {
+        const url = `${EBAY_FIN_HOST}/sell/finances/v1/transaction?filter=${encodeURIComponent(filter)}&limit=1000&offset=${offset}`;
+        const r = await fetch(url, {
+          headers: { 'Authorization': 'Bearer ' + token, 'Accept': 'application/json', 'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US' },
+          signal: AbortSignal.timeout(45000)
+        });
+        if (r.status === 204) break;                     // nothing in this window
+        if (r.status === 401 && !retried) {
+          accessTokens.delete(userId);
+          token = await getAccessToken(userId);
+          retried = true;
+          continue;
+        }
+        if (!r.ok) {
+          const t = await r.text().catch(() => '');
+          let msg = t.slice(0, 200);
+          try { const j = JSON.parse(t); msg = (j.errors || []).map(e => e.longMessage || e.message).join('; ') || msg; } catch (e) { /* keep text */ }
+          throw new Error('eBay fees request failed (' + r.status + '): ' + msg);
+        }
+        const d = await r.json();
+        const list = d.transactions || [];
+        await saveFeeTransactions(userId, list);
+        total = Number.isFinite(d.total) ? d.total : 0;
+        offset += list.length;
+        pages++;
+        if (!list.length) break;
+      }
+      winStart = winEnd;
+    }
+    await pool.query('UPDATE ebay_connections SET fees_sync = $2, fees_error = NULL WHERE user_id = $1', [userId, started]);
+  } catch (e) {
+    console.error('[ebay fees]', e.message);
+    await pool.query('UPDATE ebay_connections SET fees_error = $2 WHERE user_id = $1', [userId, String(e.message).slice(0, 500)]).catch(() => {});
+  }
+}
+
+// Daily fee totals for the dashboard, in YOUR time zone
+app.get('/api/fees', requireUser, async (req, res) => {
+  try {
+    const conn = await getConnection(req.user.id);
+    if (!conn || !conn.refresh_enc) return res.json({ available: false, reason: 'not_connected' });
+    if (!hasScope(conn, FIN_SCOPE)) return res.json({ available: false, reason: 'not_approved' });
+    if (!conn.fees_sync) {
+      return res.json({ available: false, reason: conn.fees_error ? 'error' : 'importing', error: conn.fees_error || null });
+    }
+    const tz = safeTimeZone(String(req.query.tz || 'UTC'));
+    const r = await pool.query(
+      `SELECT to_char((tx_date AT TIME ZONE $2)::date, 'YYYY-MM-DD') AS day,
+              COALESCE(SUM(cost), 0)::float AS fees,
+              COALESCE(SUM(cost) FILTER (WHERE fee_type = ANY($3)), 0)::float AS penalty
+         FROM ebay_fee_lines
+        WHERE user_id = $1 AND tx_date > now() - interval '740 days'
+        GROUP BY 1 ORDER BY 1`,
+      [req.user.id, tz, PENALTY_FEES]
+    );
+    res.json({
+      available: true,
+      lastSync: conn.fees_sync,
+      error: conn.fees_error || null,
+      days: r.rows.map(x => [x.day, Math.round(x.fees * 100) / 100, Math.round(x.penalty * 100) / 100])
+    });
+  } catch (e) {
+    console.error('[fees]', e);
+    res.status(500).json({ error: 'Could not load fees' });
+  }
 });
 
 // ─── THE PAGES ───────────────────────────────────────────────────────────────
@@ -950,5 +1134,5 @@ app.get('*', (req, res) => {
 });
 
 setupDatabase()
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v306 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v307 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });
