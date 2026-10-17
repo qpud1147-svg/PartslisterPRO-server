@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Dashboard v315</title>
+<title>PartsLister Pro Sales v316</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@400;500;600&display=swap');
 
@@ -65,6 +65,15 @@
     text-transform: uppercase;
     margin-top: -2px;
   }
+  /* v316: Home / Sales / Listings tabs — same on all three pages */
+  .page-tabs { display: flex; gap: 2px; margin-left: 12px; }
+  .page-tabs a {
+    font-family: 'Barlow Condensed', sans-serif; font-size: 15px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;
+    color: var(--muted); text-decoration: none; padding: 6px 12px; border-radius: 4px;
+  }
+  .page-tabs a:hover { color: var(--text); background: var(--surface2); }
+  .page-tabs a[aria-current="page"] { color: #000; background: var(--accent); }
+  @media (max-width: 700px) { .page-tabs { margin-left: 4px; } .page-tabs a { padding: 5px 7px; font-size: 13px; letter-spacing: 0.5px; } .logo { font-size: 20px; } }
   .header-right { margin-left: auto; display: flex; align-items: center; gap: 10px; min-width: 0; }
   .who {
     font-size: 12px;
@@ -517,10 +526,16 @@
 
 <!-- HEADER -->
 <header>
-  <a href="/" class="logo-link" title="Dashboard">
+  <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v315</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v316</span></div>
   </a>
+  <!-- v316: switch pages -->
+  <nav class="page-tabs" aria-label="Pages">
+    <a href="/">Home</a>
+    <a href="/sales" aria-current="page">Sales</a>
+    <a href="/listings">Listings</a>
+  </nav>
   <div class="header-right">
     <span class="who" id="who"></span>
     <a href="/list" class="btn btn-secondary btn-sm">Listing Tool →</a>
@@ -661,10 +676,16 @@
           <h3>Listing Stats</h3>
           <p>Items listed per day, with monthly and quarterly totals including value and shipping.</p>
         </div>
+        <!-- v316: now on the Listings page
         <div class="soon">
           <h3>Active Listings</h3>
           <p>Your live eBay listings at a glance.</p>
         </div>
+        -->
+        <a class="soon" href="/listings" style="text-decoration:none;color:inherit;border-style:solid;">
+          <h3>Active Listings →</h3>
+          <p>Live on the Listings page: how many are up and their total value.</p>
+        </a>
         <div class="soon">
           <h3>Seller Metrics</h3>
           <p>Defect rate, late shipments and Top Rated status from eBay.</p>
@@ -800,6 +821,7 @@
 // v311: clicking the "eBay · updated" badge refreshes from eBay right away.
 // v312: partial refunds come off sales like on eBay; "Download orders" in Admin.
 // v315: This month / Last month / any month / custom dates; penalty fees this year (last year under it).
+// v316: this page is now Sales (/sales). Home (/) and Listings (/listings) tabs in the header.
 // Shares the same sign-in and account as the listing tool (/list).
 // v304: sales dashboard — big daily bar graph with a remembered date range.
 // The sales numbers are SAMPLE data for now; real eBay sales replace
@@ -1262,7 +1284,10 @@ async function authSubmit(mode) {
     });
     const d = await r.json().catch(() => ({}));
     if (!r.ok) { err.textContent = d.error || 'Something went wrong.'; err.style.display = 'block'; return; }
-    location.reload();
+    // location.reload();
+    // v316: after signing in, go Home — or back to the page that sent you here
+    const next = new URLSearchParams(location.search).get('next');
+    location.href = next && /^\/[a-z]*$/.test(next) ? next : '/';
   } catch (e) {
     err.textContent = 'Could not reach the server.'; err.style.display = 'block';
   } finally {
@@ -1388,7 +1413,8 @@ function handleEbayReturn() {
   const q = new URLSearchParams(location.search);
   const result = q.get('ebay');
   if (!result) return;
-  history.replaceState(null, '', '/');
+  // history.replaceState(null, '', '/');
+  history.replaceState(null, '', '/sales');   // v316: this page is /sales now
   if (result === 'connected') showToast('eBay connected — importing your sales. This can take a minute.');
   else if (result === 'declined') showToast('eBay connection was cancelled.', true);
   else if (result === 'error') { showToast(q.get('msg') || 'eBay connection failed.', true); openSettings('admin'); }
@@ -1766,6 +1792,12 @@ async function load() {
   renderTaxToggle();
   setRange(saved || 'week', false);
   handleEbayReturn();
+  // v316: links from Home — ?range=thismonth shows that range (not saved),
+  // ?settings=1 or ?settings=admin opens Settings
+  const q = new URLSearchParams(location.search);
+  if (q.get('range')) setRange(q.get('range'), false);
+  if (q.get('settings')) openSettings(q.get('settings'));
+  if (q.get('range') || q.get('settings')) history.replaceState(null, '', '/sales');
 }
 
 load();

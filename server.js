@@ -1,4 +1,4 @@
-// PartsLister Pro server — v315
+// PartsLister Pro server — v316
 // v302: dashboard.html is the homepage (/). The listing tool moved to /list.
 // v305: eBay sales connection — real sold orders on the dashboard.
 // v306: asks eBay for two more permissions — fees/payouts and seller metrics.
@@ -11,6 +11,8 @@
 // v314: refunds take the sales tax back off too, like eBay (checked against
 //       892 orders: matches eBay's All orders report within 1 cent).
 // v315: remembers the new dashboard ranges (this/last month, a month, custom dates).
+// v316: new Home page (/) and Listings page (/listings); the sales dashboard moved to /sales.
+//       Active listing count + value from eBay (Trading API GetMyeBaySelling), cached an hour.
 // Accounts with email + password login. Each account's settings (including its
 // own API keys) and history are saved ENCRYPTED in Postgres, so you can log in
 // from any computer and everything is there. Also keeps a lifetime listing count.
@@ -103,6 +105,10 @@ async function setupDatabase() {
     -- v309: sales tax per order + the dashboard's tax toggle
     ALTER TABLE ebay_orders ADD COLUMN IF NOT EXISTS tax NUMERIC(12,2) NOT NULL DEFAULT 0;
     ALTER TABLE ebay_connections ADD COLUMN IF NOT EXISTS orders_v INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE ebay_connections ADD COLUMN IF NOT EXISTS active_count INTEGER;          -- v316: live listings on eBay
+    ALTER TABLE ebay_connections ADD COLUMN IF NOT EXISTS active_value NUMERIC(14,2);    -- v316: their asking prices added up
+    ALTER TABLE ebay_connections ADD COLUMN IF NOT EXISTS active_sync TIMESTAMPTZ;       -- v316: when that was last checked
+    ALTER TABLE ebay_connections ADD COLUMN IF NOT EXISTS active_error TEXT;             -- v316: last problem checking it
     ALTER TABLE ebay_orders ADD COLUMN IF NOT EXISTS refunded NUMERIC(12,2) NOT NULL DEFAULT 0;   -- v312: money refunded to the buyer
     ALTER TABLE ebay_orders ADD COLUMN IF NOT EXISTS refunded_tax NUMERIC(12,2) NOT NULL DEFAULT 0;   -- v314: sales tax eBay gave back with the refund
     ALTER TABLE users ADD COLUMN IF NOT EXISTS dash_tax BOOLEAN NOT NULL DEFAULT FALSE;
@@ -899,9 +905,9 @@ app.get('/api/ebay/connect', requireUser, requireAdmin, async (req, res) => {
   try {
     const conn = await getConnection(req.user.id);
     const keys = await getEbayKeys(req.user.id);
-    if (!conn || !conn.runame) return res.redirect('/?ebay=error&msg=' + encodeURIComponent('Save your RuName first'));
+    if (!conn || !conn.runame) return res.redirect('/sales?ebay=error&msg=' + encodeURIComponent('Save your RuName first'));   // v316: was /
     if (!keys.clientId || !keys.clientSecret) {
-      return res.redirect('/?ebay=error&msg=' + encodeURIComponent('Add your eBay Client ID and Client Secret in Listing Tool settings first'));
+      return res.redirect('/sales?ebay=error&msg=' + encodeURIComponent('Add your eBay Client ID and Client Secret in Listing Tool settings first'));
     }
     const state = crypto.randomBytes(24).toString('base64url');
     oauthStates.set(state, { userId: req.user.id, expires: Date.now() + 10 * 60 * 1000 });
@@ -916,14 +922,14 @@ app.get('/api/ebay/connect', requireUser, requireAdmin, async (req, res) => {
     res.redirect(url);
   } catch (e) {
     console.error('[ebay connect]', e);
-    res.redirect('/?ebay=error&msg=' + encodeURIComponent('Could not start the eBay connection'));
+    res.redirect('/sales?ebay=error&msg=' + encodeURIComponent('Could not start the eBay connection'));   // v316: was /
   }
 });
 
 // eBay sends you back here after you click "allow" (this is the
 // "auth accepted URL" registered in your eBay developer account)
 app.get(CALLBACK_PATH, async (req, res) => {
-  const fail = (msg) => res.redirect('/?ebay=error&msg=' + encodeURIComponent(msg));
+  const fail = (msg) => res.redirect('/sales?ebay=error&msg=' + encodeURIComponent(msg));   // v316: was /
   const { code, state, error } = req.query;
   // if (error) return fail('eBay said: ' + String(error));
   if (error === 'invalid_scope') {   // v306
@@ -948,7 +954,7 @@ app.get(CALLBACK_PATH, async (req, res) => {
     );
     accessTokens.set(st.userId, { token: d.access_token, expires: Date.now() + Math.max(60, (d.expires_in || 7200) - 300) * 1000 });
     syncOrders(st.userId);                 // start importing in the background
-    res.redirect('/?ebay=connected');
+    res.redirect('/sales?ebay=connected');   // v316: was /
   } catch (e) {
     console.error('[ebay callback]', e.message);
     fail('eBay connection failed: ' + e.message);
@@ -1316,6 +1322,98 @@ app.get('/api/fees', requireUser, async (req, res) => {
   }
 });
 
+// ─── v316: ACTIVE LISTINGS ───────────────────────────────────────────────────
+// How many listings are live on eBay and what their asking prices add up to.
+// Uses the Trading API's GetMyeBaySelling (ActiveList), 200 listings per call.
+// Checked at most once an hour unless you press Refresh.
+const ACTIVE_MAX_AGE_MIN = 60;
+const activeChecking = new Set();
+const xmlTag = (xml, tag) => { const m = new RegExp('<' + tag + '[^>]*>([\\s\\S]*?)</' + tag + '>').exec(xml); return m ? m[1] : null; };
+
+async function checkActiveListings(userId) {
+  if (activeChecking.has(userId)) return;
+  activeChecking.add(userId);
+  try {
+    const token = await getAccessToken(userId);
+    let page = 1, pages = 1, count = 0, value = 0;
+    while (page <= pages && page <= 150) {
+      const body = `<?xml version="1.0" encoding="utf-8"?>
+<GetMyeBaySellingRequest xmlns="urn:ebay:apis:eBLBaseComponents">
+  <ActiveList><Include>true</Include><Pagination><EntriesPerPage>200</EntriesPerPage><PageNumber>${page}</PageNumber></Pagination></ActiveList>
+  <ScheduledList><Include>false</Include></ScheduledList>
+  <SoldList><Include>false</Include></SoldList>
+  <UnsoldList><Include>false</Include></UnsoldList>
+  <BidList><Include>false</Include></BidList>
+  <DeletedFromSoldList><Include>false</Include></DeletedFromSoldList>
+  <DeletedFromUnsoldList><Include>false</Include></DeletedFromUnsoldList>
+</GetMyeBaySellingRequest>`;
+      const r = await fetch('https://api.ebay.com/ws/api.dll', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'text/xml',
+          'X-EBAY-API-CALL-NAME': 'GetMyeBaySelling',
+          'X-EBAY-API-SITEID': '0',
+          'X-EBAY-API-COMPATIBILITY-LEVEL': '1193',
+          'X-EBAY-API-IAF-TOKEN': token
+        },
+        body,
+        signal: AbortSignal.timeout(45000)
+      });
+      const xml = await r.text();
+      const ack = xmlTag(xml, 'Ack');
+      if (!r.ok || ack === 'Failure') {
+        const msg = xmlTag(xml, 'LongMessage') || xmlTag(xml, 'ShortMessage') || ('HTTP ' + r.status);
+        throw new Error('eBay listings request failed: ' + msg.replace(/<[^>]+>/g, '').slice(0, 300));
+      }
+      const active = xmlTag(xml, 'ActiveList') || '';
+      if (page === 1) {
+        const pr = xmlTag(active, 'PaginationResult') || '';
+        count = parseInt(xmlTag(pr, 'TotalNumberOfEntries') || '0', 10) || 0;
+        pages = parseInt(xmlTag(pr, 'TotalNumberOfPages') || '1', 10) || 1;
+      }
+      const items = active.match(/<Item>[\s\S]*?<\/Item>/g) || [];
+      for (const it of items) {
+        const price = parseFloat(xmlTag(xmlTag(it, 'SellingStatus') || '', 'CurrentPrice') || xmlTag(it, 'BuyItNowPrice') || '0') || 0;
+        const qtyAvail = parseInt(xmlTag(it, 'QuantityAvailable') || '1', 10);
+        value += price * (Number.isFinite(qtyAvail) && qtyAvail > 0 ? qtyAvail : 1);
+      }
+      if (!items.length) break;
+      page++;
+    }
+    await pool.query(
+      'UPDATE ebay_connections SET active_count = $2, active_value = $3, active_sync = now(), active_error = NULL WHERE user_id = $1',
+      [userId, count, Math.round(value * 100) / 100]
+    );
+  } catch (e) {
+    console.error('[active listings]', e.message);
+    await pool.query('UPDATE ebay_connections SET active_error = $2, active_sync = now() WHERE user_id = $1', [userId, String(e.message).slice(0, 500)]).catch(() => {});
+  } finally {
+    activeChecking.delete(userId);
+  }
+}
+
+app.get('/api/listings/summary', requireUser, async (req, res) => {
+  try {
+    const conn = await getConnection(req.user.id);
+    const base = { listedLifetime: req.user.listing_count || 0 };
+    if (!conn || !conn.refresh_enc) return res.json({ ...base, connected: false });
+    const age = conn.active_sync ? (Date.now() - new Date(conn.active_sync).getTime()) / 60000 : Infinity;
+    if ((req.query.refresh === '1' || age > ACTIVE_MAX_AGE_MIN) && !activeChecking.has(req.user.id)) checkActiveListings(req.user.id);
+    res.json({
+      ...base,
+      connected: true,
+      checking: activeChecking.has(req.user.id),
+      activeCount: conn.active_count === null || conn.active_count === undefined ? null : conn.active_count,
+      activeValue: conn.active_value === null || conn.active_value === undefined ? null : parseFloat(conn.active_value),
+      lastCheck: conn.active_sync || null,
+      error: conn.active_error || null
+    });
+  } catch (e) {
+    console.error('[listings summary]', e);
+    res.status(500).json({ error: 'Could not load listings' });
+  }
+});
+
 // ─── THE PAGES ───────────────────────────────────────────────────────────────
 // v302: two pages. Only these two files are ever served — server.js and
 // package.json stay private.
@@ -1324,12 +1422,21 @@ app.get('/api/fees', requireUser, async (req, res) => {
 // Each page shows its own sign-in screen when you're signed out.
 const DASHBOARD = path.join(__dirname, 'dashboard.html');
 const LISTING = path.join(__dirname, 'index.html');
+const HOME = path.join(__dirname, 'home.html');            // v316
+const LISTINGS = path.join(__dirname, 'listings.html');    // v316
 
-app.get('/', (req, res) => res.sendFile(DASHBOARD));
+// app.get('/', (req, res) => res.sendFile(DASHBOARD));
+// v316: Home is the landing page; the sales dashboard is /sales
+app.get('/', (req, res) => res.sendFile(HOME));
+app.get(['/sales', '/sales/'], (req, res) => res.sendFile(DASHBOARD));
+app.get(['/listings', '/listings/'], (req, res) => res.sendFile(LISTINGS));
 app.get(['/list', '/list/'], (req, res) => res.sendFile(LISTING));
 // Old links and bookmarks to the file names still work
 app.get(['/index.html'], (req, res) => res.redirect(301, '/list'));
-app.get(['/dashboard', '/dashboard.html'], (req, res) => res.redirect(301, '/'));
+// app.get(['/dashboard', '/dashboard.html'], (req, res) => res.redirect(301, '/'));
+app.get(['/dashboard', '/dashboard.html'], (req, res) => res.redirect(301, '/sales'));   // v316
+app.get(['/home.html'], (req, res) => res.redirect(301, '/'));                           // v316
+app.get(['/listings.html'], (req, res) => res.redirect(301, '/listings'));               // v316
 
 // v301 sent every unknown address to the listing tool:
 // const INDEX = path.join(__dirname, 'index.html');
@@ -1343,5 +1450,5 @@ app.get('*', (req, res) => {
 });
 
 setupDatabase()
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v315 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v316 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });
