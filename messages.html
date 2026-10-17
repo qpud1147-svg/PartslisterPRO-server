@@ -3,10 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Messages v322</title>
+<title>PartsLister Pro Messages v323</title>
 <!-- PartsLister Pro — Messages page (v321: new; v322: conversation threads — the whole back-and-forth
      with each buyer, chat style, from eBay's Message API. Offers from a conversation. The v321
-     email-style view is still at /messages/classic). Nothing about your messages is saved on the server. -->
+     email-style view is still at /messages/classic). Nothing about your messages is saved on the server.
+     v323: delete a conversation + Trash (restore from there); "AI draft" writes a reply from the
+     conversation and the listing — you edit it and press Send. -->
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@400;500;600&display=swap');
 
@@ -165,6 +167,14 @@
   .th-compose { border-top: 1px solid var(--border); padding: 10px 12px; display: flex; gap: 8px; align-items: flex-end; }
   .th-compose textarea { flex: 1; min-height: 44px; max-height: 180px; resize: vertical; background: var(--surface2); border: 1px solid var(--border); color: var(--text); border-radius: 18px; padding: 10px 14px; font-family: 'Barlow', sans-serif; font-size: 14px; line-height: 1.4; outline: none; }
   .th-compose textarea:focus { border-color: var(--accent); }
+  /* v323: AI draft row above the reply box */
+  .th-ai { border-top: 1px solid var(--border); padding: 8px 12px 0; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .th-ai input { flex: 1; min-width: 160px; background: var(--surface2); border: 1px solid var(--border); color: var(--text); border-radius: 4px; padding: 6px 10px; font: inherit; font-size: 13px; }
+  .th-ai input:focus { border-color: var(--accent); outline: none; }
+  .th-ai .aimsg { font-size: 12px; color: var(--muted); }
+  .th-ai + .th-compose { border-top: none; }
+  .btn-danger { background: var(--surface2); color: var(--danger); border-color: rgba(224,82,82,0.5); }
+  .btn-danger:hover { border-color: var(--danger); color: var(--danger); }
   .th-note { padding: 10px 16px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13px; }
   .btn-primary { background: var(--accent); color: #000; }
   .btn-primary:hover { background: var(--accent2); }
@@ -205,7 +215,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v322</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v323</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -243,6 +253,7 @@
       <button type="button" data-show="all">All</button>
       <button type="button" data-show="unread">Unread</button>
       <button type="button" data-show="waiting">Waiting on me</button>
+      <button type="button" data-show="trash" title="Deleted conversations">🗑 Trash</button>   <!-- v323 -->
     </div>
     <input type="search" class="search" id="t-search" placeholder="Search buyer, item or message" autocomplete="off">
   </div>
@@ -324,16 +335,20 @@ function renderList() {
   document.querySelectorAll('#seg-show button').forEach(b => b.setAttribute('aria-pressed', b.dataset.show === show ? 'true' : 'false'));
   const q = norm(document.getElementById('t-search').value).trim();
   const list = threads.filter(t => {
+    if (show !== 'trash' && /DELET/i.test(t.status || '')) return false;   // v323: deleted ones only show in the Trash
     if (show === 'unread' && !t.unread) return false;
     if (show === 'waiting' && (t.last.mine || type === 'ebay')) return false;
     if (q && !norm(t.other + ' ' + t.title + ' ' + t.last.text + ' ' + (t.itemId || '')).includes(q)) return false;
     return true;
   });
   const unread = threads.reduce((s, t) => s + (t.unread ? 1 : 0), 0);
-  setText('t-summary', list.length + ' conversation' + (list.length === 1 ? '' : 's') + ' · ' + unread + ' unread');
+  // setText('t-summary', list.length + ' conversation' + (list.length === 1 ? '' : 's') + ' · ' + unread + ' unread');
+  setText('t-summary', show === 'trash' ? list.length + ' deleted conversation' + (list.length === 1 ? '' : 's') + ' — open one to restore it'
+    : list.length + ' conversation' + (list.length === 1 ? '' : 's') + ' · ' + unread + ' unread');   // v323
   const box = document.getElementById('t-list');
   box.textContent = '';
-  if (!list.length) { box.append(el('div', 'empty', threads.length ? 'No conversations match.' : 'No conversations.')); return; }
+  // if (!list.length) { box.append(el('div', 'empty', threads.length ? 'No conversations match.' : 'No conversations.')); return; }
+  if (!list.length) { box.append(el('div', 'empty', show === 'trash' ? 'The Trash is empty.' : threads.length ? 'No conversations match.' : 'No conversations.')); return; }   // v323
   list.forEach(t => {
     const b = el('button', 'trow' + (t.unread ? ' unread' : '') + (current === t.id ? ' on' : ''));
     b.type = 'button';
@@ -354,7 +369,8 @@ async function loadList() {
   if (!who) return;
   isAdmin = !!who.isAdmin;
   setText('t-note', 'Loading from eBay…');
-  const d = await getJSON('/api/threads?type=' + type);
+  // const d = await getJSON('/api/threads?type=' + type);
+  const d = await getJSON('/api/threads?type=' + type + (show === 'trash' ? '&trash=1' : ''));   // v323: Trash comes from eBay's deleted folder
   document.getElementById('loading').classList.add('hidden');
   const err = document.getElementById('t-error'); err.style.display = 'none';
   showScopeBox(false);
@@ -411,6 +427,12 @@ async function showThread(id) {
       head.append(ob);
     }
   } else if (t.title) head.append(el('div', 'th-item', t.title));
+  // v323: delete (to the Trash) or, in the Trash, restore
+  const inTrash = show === 'trash';
+  const del = el('button', 'btn btn-sm ' + (inTrash ? 'btn-secondary' : 'btn-danger'), inTrash ? 'Restore' : '🗑 Delete'); del.type = 'button';
+  del.title = inTrash ? 'Put it back with your other conversations' : 'Move to the Trash (you can restore it)';
+  del.onclick = () => setStatus(t, inTrash ? 'restore' : 'delete');
+  head.append(del);
   const offers = el('div', 'offers'); offers.id = 't-offers';
   const body = el('div', 'th-body'); body.append(el('div', 'empty', 'Loading the conversation from eBay…'));
   v.append(head, offers, body);
@@ -430,6 +452,7 @@ async function showThread(id) {
   body.scrollTop = body.scrollHeight;
   // compose — buyers only (eBay's own messages can't be answered)
   if (type === 'ebay') { v.append(el('div', 'th-note', 'Messages from eBay can’t be answered.')); return; }
+  if (inTrash) { v.append(el('div', 'th-note', 'This conversation is in the Trash. Restore it to reply.')); return; }   // v323
   const comp = el('div', 'th-compose');
   const ta = el('textarea'); ta.placeholder = 'Message ' + (t.other || 'buyer') + '…'; ta.maxLength = 2000; ta.rows = 1;
   const send = el('button', 'btn btn-primary btn-sm', 'Send'); send.type = 'button';
@@ -452,8 +475,49 @@ async function showThread(id) {
     finally { send.disabled = false; send.textContent = 'Send'; }
   };
   comp.append(ta, send);
+  // v323: AI draft — reads this conversation + the listing, fills the reply box. Nothing is sent until you press Send.
+  const ai = el('div', 'th-ai');
+  const aiBtn = el('button', 'btn btn-secondary btn-sm', 'AI draft'); aiBtn.type = 'button';
+  aiBtn.title = 'Draft a reply from this conversation and the listing';
+  const hint = el('input'); hint.placeholder = 'Tell the AI anything (optional) — e.g. "lowest I’ll take is $150"'; hint.maxLength = 500;
+  const aiMsg = el('span', 'aimsg', '');
+  aiBtn.onclick = async () => {
+    if (ta.value.trim() && !confirm('Replace what you’ve typed with an AI draft?')) return;
+    aiBtn.disabled = true; aiBtn.textContent = 'Drafting…'; aiMsg.textContent = t.itemId ? 'Reading the conversation and the listing…' : 'Reading the conversation…';
+    try {
+      const r = await fetch('/api/threads/' + encodeURIComponent(id) + '/draft', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ itemId: t.itemId, hint: hint.value }) });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(out.error || 'No draft');
+      if (current !== id) return;
+      ta.value = out.draft; ta.focus();
+      ta.style.height = Math.min(180, ta.scrollHeight + 2) + 'px';   // grow to fit the draft
+      aiMsg.textContent = 'Draft ready — check it, edit if needed, then Send.';
+    } catch (e) { aiMsg.textContent = ''; toast(e.message, true); }
+    finally { aiBtn.disabled = false; aiBtn.textContent = 'AI draft'; }
+  };
+  hint.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); aiBtn.click(); } });
+  ai.append(aiBtn, hint, aiMsg);
+  v.append(ai);
   v.append(comp);
   if (!phone()) ta.focus();
+}
+
+// ─── v323: DELETE / RESTORE ──────────────────────────────────────────────────
+async function setStatus(t, action) {
+  if (action === 'delete' && !confirm('Move the conversation with ' + (t.other || 'this buyer') + ' to the Trash? You can restore it later.')) return;
+  try {
+    const r = await fetch('/api/threads/' + encodeURIComponent(t.id) + '/status', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type, action }) });
+    const out = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(out.error || 'eBay said no');
+    threads = threads.filter(x => x.id !== t.id);
+    current = null;
+    if (phone()) closeThread();
+    document.getElementById('t-view').innerHTML = '<div class="empty">Pick a conversation.</div>';
+    renderList();
+    toast(action === 'delete' ? 'Moved to the Trash.' : 'Restored.');
+  } catch (e) { toast(e.message, true); }
 }
 
 // ─── OFFERS ──────────────────────────────────────────────────────────────────
@@ -527,7 +591,14 @@ async function toggleOffers(t) {
 }
 
 document.querySelectorAll('#seg-type button').forEach(b => b.addEventListener('click', () => { type = b.dataset.type; current = null; document.getElementById('t-view').innerHTML = '<div class="empty">Pick a conversation.</div>'; loadList(); }));
-document.querySelectorAll('#seg-show button').forEach(b => b.addEventListener('click', () => { show = b.dataset.show; renderList(); }));
+// document.querySelectorAll('#seg-show button').forEach(b => b.addEventListener('click', () => { show = b.dataset.show; renderList(); }));
+// v323: switching into or out of the Trash loads a different list from eBay
+document.querySelectorAll('#seg-show button').forEach(b => b.addEventListener('click', () => {
+  const wasTrash = show === 'trash';
+  show = b.dataset.show;
+  if (wasTrash !== (show === 'trash')) { current = null; document.getElementById('t-view').innerHTML = '<div class="empty">Pick a conversation.</div>'; loadList(); }
+  else renderList();
+}));
 let st; document.getElementById('t-search').addEventListener('input', () => { clearTimeout(st); st = setTimeout(renderList, 120); });
 loadList();
 setInterval(() => { if (!document.hidden && !document.querySelector('.th-compose textarea:focus') && !document.querySelector('.offers.open')) loadList(); }, 3 * 60000);

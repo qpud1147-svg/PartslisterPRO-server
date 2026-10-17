@@ -1,4 +1,4 @@
-// PartsLister Pro server — v322
+// PartsLister Pro server — v323
 // v302: dashboard.html is the homepage (/). The listing tool moved to /list.
 // v305: eBay sales connection — real sold orders on the dashboard.
 // v306: asks eBay for two more permissions — fees/payouts and seller metrics.
@@ -23,6 +23,8 @@
 // v322: message THREADS (eBay Message API, commerce/message/v1) and offers: answer a buyer's
 //       Best Offer (accept / counter / decline) and send an offer to everyone interested in an
 //       item (Negotiation API). Two new eBay permissions — Reconnect eBay once to approve them.
+// v323: delete / restore conversations + a Trash list; AI-drafted replies that read the
+//       conversation and the listing (uses the Anthropic key saved in your Listing Tool settings).
 // Accounts with email + password login. Each account's settings (including its
 // own API keys) and history are saved ENCRYPTED in Postgres, so you can log in
 // from any computer and everything is there. Also keeps a lifetime listing count.
@@ -1726,7 +1728,15 @@ app.get('/api/threads', requireUser, async (req, res) => {
     for (let offset = 0; offset < 200; offset += 50) {
       const q = new URLSearchParams({ conversation_type: type, limit: '50', offset: String(offset) });
       if (req.query.unread === '1') q.set('conversation_status', 'UNREAD');
-      const { data } = await restCall(req.user.id, 'GET', '/commerce/message/v1/conversation?' + q);
+      if (req.query.trash === '1') q.set('conversation_status', 'DELETE');   // v323: the Trash
+      // const { data } = await restCall(req.user.id, 'GET', '/commerce/message/v1/conversation?' + q);
+      let data;   // v323: eBay's docs name the deleted status two ways — try the other if one is refused
+      try { ({ data } = await restCall(req.user.id, 'GET', '/commerce/message/v1/conversation?' + q)); }
+      catch (e) {
+        if (req.query.trash !== '1' || e.status !== 400) throw e;
+        q.set('conversation_status', 'DELETED');
+        ({ data } = await restCall(req.user.id, 'GET', '/commerce/message/v1/conversation?' + q));
+      }
       const list = (data && data.conversations) || [];
       list.forEach(c => {
         const lm = c.latestMessage || {};
@@ -1801,6 +1811,130 @@ app.post('/api/threads/:id/send', requireUser, express.json(), async (req, res) 
   } catch (e) {
     console.error('[thread send]', e.message);
     res.status(502).json({ error: 'eBay didn\u2019t send it: ' + e.message });
+  }
+});
+
+// ─── v323: DELETE / RESTORE A CONVERSATION ──────────────────────────────────
+// { type, action: 'delete' | 'restore' } — delete moves it to eBay's deleted folder
+// (the Trash here); restore puts it back with your other conversations.
+app.post('/api/threads/:id/status', requireUser, express.json(), async (req, res) => {
+  const id = String(req.params.id || '');
+  const action = String((req.body || {}).action || '');
+  if (!/^[\w.:-]{1,80}$/.test(id) || !['delete', 'restore'].includes(action)) return res.status(400).json({ error: 'Bad request' });
+  try {
+    const conn = await getConnection(req.user.id);
+    const blocked = threadsBlocked(conn); if (blocked) return res.status(400).json({ error: 'Reconnect eBay to approve message threads first.' });
+    await restCall(req.user.id, 'POST', '/commerce/message/v1/update_conversation', {
+      conversationId: id, conversationType: convType((req.body || {}).type), conversationStatus: action === 'delete' ? 'DELETE' : 'ACTIVE'
+    });
+    msgCounts.delete(req.user.id);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('[thread status]', e.message);
+    res.status(502).json({ error: 'eBay didn\u2019t ' + (action === 'delete' ? 'delete' : 'restore') + ' it: ' + e.message });
+  }
+});
+
+// ─── v323: AI-DRAFTED REPLIES ────────────────────────────────────────────────
+// Reads the conversation + the listing it's about (title, price, condition, item
+// specifics, description, and the fitment list if the listing has one), then asks
+// Claude for a reply. The draft goes into your reply box — nothing is sent until
+// you press Send. Uses the Anthropic key + model from your Listing Tool settings.
+async function getUserSettings(userId) {
+  const r = await pool.query('SELECT data_enc FROM user_data WHERE user_id = $1', [userId]);
+  if (!r.rows.length) return {};
+  try { return (JSON.parse(decrypt(r.rows[0].data_enc)).settings) || {}; } catch (e) { return {}; }
+}
+const htmlToText = (h) => String(h || '')
+  .replace(/<(script|style)[\s\S]*?<\/\1>/gi, ' ')
+  .replace(/<br\s*\/?>|<\/(p|div|li|tr|h\d)>/gi, '\n')
+  .replace(/<[^>]+>/g, ' ')
+  .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+  .replace(/[ \t]+/g, ' ').replace(/\n\s*\n+/g, '\n').trim();
+
+async function getFitment(userId, itemId) {
+  try {
+    const xml = await tradingCall(userId, 'GetItem',
+      `<ItemID>${itemId}</ItemID><IncludeItemCompatibilityList>true</IncludeItemCompatibilityList><OutputSelector>ItemCompatibilityList</OutputSelector>`);
+    const rows = xmlAll(xmlTag(xml, 'ItemCompatibilityList') || '', 'Compatibility').slice(0, 200).map(c =>
+      xmlAll(c, 'NameValueList').map(nv => xmlDecode(xmlTag(nv, 'Value'))).filter(Boolean).join(' '));
+    return rows.filter(Boolean);
+  } catch (e) { return []; }
+}
+
+app.post('/api/threads/:id/draft', requireUser, express.json(), async (req, res) => {
+  const id = String(req.params.id || '');
+  const b = req.body || {};
+  const itemId = /^\d{6,20}$/.test(String(b.itemId || '')) ? String(b.itemId) : null;
+  const hint = String(b.hint || '').trim().slice(0, 500);
+  if (!/^[\w.:-]{1,80}$/.test(id)) return res.status(400).json({ error: 'Bad conversation' });
+  try {
+    const settings = await getUserSettings(req.user.id);
+    const apiKey = String(settings.apiKey || '').trim();
+    if (!apiKey) return res.status(400).json({ error: 'Add your Anthropic API key in the Listing Tool → ⚙ Settings first.' });
+    const model = String(settings.claudeModel || '').trim() || 'claude-sonnet-4-5';
+    const conn = await getConnection(req.user.id);
+    const blocked = threadsBlocked(conn); if (blocked) return res.status(400).json({ error: 'Reconnect eBay to approve message threads first.' });
+
+    // the conversation (last 30 messages)
+    const me = await myEbayUser(req.user.id);
+    const msgs = [];
+    for (let offset = 0; offset < 300; offset += 50) {
+      const q = new URLSearchParams({ conversation_type: 'FROM_MEMBERS', limit: '50', offset: String(offset) });
+      const { data } = await restCall(req.user.id, 'GET', '/commerce/message/v1/conversation/' + encodeURIComponent(id) + '?' + q);
+      ((data && data.messages) || []).forEach(m => msgs.push({ from: m.senderUsername || '', date: m.createdDate || '', text: m.messageBody || '', mine: !!(me && m.senderUsername === me) }));
+      if (!data || !data.next || ((data && data.messages) || []).length < 50) break;
+    }
+    msgs.sort((x, y) => String(x.date).localeCompare(String(y.date)));
+    const convo = msgs.slice(-30).map(m => (m.mine ? 'SELLER (me)' : 'BUYER (' + m.from + ')') + ' [' + String(m.date).slice(0, 10) + ']: ' + m.text).join('\n');
+    if (!convo) return res.status(400).json({ error: 'There\u2019s no message to answer yet.' });
+
+    // the listing
+    let listing = 'No listing is attached to this conversation.';
+    if (itemId) {
+      const it = await getItemData(req.user.id, itemId);
+      const fit = await getFitment(req.user.id, itemId);
+      if (it.data) {
+        const d = it.data;
+        listing = [
+          'Title: ' + (d.title || ''),
+          'Item number: ' + d.itemId,
+          d.price ? 'Price: $' + d.price : '',
+          d.condition ? 'Condition: ' + d.condition + (d.conditionNote ? ' — ' + d.conditionNote : '') : '',
+          d.category ? 'Category: ' + d.category : '',
+          d.listingStatus ? 'Listing status: ' + d.listingStatus : '',
+          (d.specifics || []).length ? 'Item specifics:\n' + d.specifics.map(s => '- ' + s.name + ': ' + s.value).join('\n') : '',
+          fit.length ? 'Fitment list (vehicles the listing says it fits' + (fit.length >= 200 ? ', first 200' : '') + '):\n' + fit.map(f => '- ' + f).join('\n') : 'Fitment list: none on the listing.',
+          'Description:\n' + htmlToText(d.description).slice(0, 6000)
+        ].filter(Boolean).join('\n');
+      } else listing = 'The listing details could not be loaded (' + (it.error || 'unknown') + ').';
+    }
+
+    const system = [
+      'You draft replies for a small eBay seller of used auto parts (pulled from salvage vehicles) to buyer messages.',
+      'Write the reply the seller will send, answering the buyer\'s latest message.',
+      'Use ONLY facts from the listing and the conversation. Never invent part numbers, fitment, measurements, condition details, shipping times, or policies.',
+      'Fitment questions: if the buyer\'s vehicle is in the fitment list, say it is listed as fitting and suggest they match the part number to their original part. If it is not listed or there is no fitment list, say you can\'t confirm it and ask them to compare the part number on their original part (or send the VIN). Never promise fit.',
+      'Price/offer questions: don\'t invent a price; if the seller gave instructions, follow them, otherwise suggest they send an offer through the listing.',
+      'Keep it short (1–4 sentences), friendly and plain. Plain text only: no markdown, no subject line, no placeholders like [Name], no signature.',
+      'Reply with only the message text.'
+    ].join(' ');
+    const user = 'LISTING\n' + listing + '\n\nCONVERSATION (oldest first)\n' + convo + (hint ? '\n\nSELLER\'S INSTRUCTIONS FOR THIS REPLY\n' + hint : '') + '\n\nWrite the seller\'s reply now.';
+
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({ model, max_tokens: 600, system, messages: [{ role: 'user', content: user }] }),
+      signal: AbortSignal.timeout(60000)
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) return res.status(502).json({ error: 'Claude didn\u2019t answer: ' + ((d.error && d.error.message) || ('HTTP ' + r.status)) });
+    const text = ((d.content || []).filter(c => c.type === 'text').map(c => c.text).join('\n') || '').trim();
+    if (!text) return res.status(502).json({ error: 'Claude returned an empty draft — try again.' });
+    res.json({ draft: text.slice(0, 2000), usedListing: !!itemId });
+  } catch (e) {
+    console.error('[draft]', e.message);
+    res.status(500).json({ error: 'Could not draft a reply: ' + e.message });
   }
 });
 
@@ -2035,5 +2169,5 @@ app.get('*', (req, res) => {
 });
 
 setupDatabase()
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v322 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v323 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });
