@@ -1,4 +1,4 @@
-// PartsLister Pro server — v320
+// PartsLister Pro server — v321
 // v302: dashboard.html is the homepage (/). The listing tool moved to /list.
 // v305: eBay sales connection — real sold orders on the dashboard.
 // v306: asks eBay for two more permissions — fees/payouts and seller metrics.
@@ -18,6 +18,8 @@
 //       quantity, price) and shipping status. No buyer names or addresses are saved.
 // v320: item photos and full listing details (photos, description, item specifics) for the
 //       Orders page, from eBay's Trading API GetItem. Saved once per item, so eBay is asked once.
+// v321: Messages page — your eBay messages (Trading API GetMyMessages), read them, reply
+//       (AddMemberMessageRTQ). Messages are read live from eBay and never saved here.
 // Accounts with email + password login. Each account's settings (including its
 // own API keys) and history are saved ENCRYPTED in Postgres, so you can log in
 // from any computer and everything is there. Also keeps a lifetime listing count.
@@ -1546,6 +1548,122 @@ app.get('/api/items/:id', requireUser, async (req, res) => {
   }
 });
 
+// ─── v321: MESSAGES ──────────────────────────────────────────────────────────
+// Read live from eBay every time — nothing about your messages is saved here.
+const xmlEsc = (t) => String(t || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+const isMsgId = (s) => /^[0-9]{3,20}$/.test(String(s || ''));
+
+function mapMessage(m) {
+  const flag = (t) => xmlTag(m, t) === 'true';
+  return {
+    id: xmlTag(m, 'MessageID'),
+    externalId: xmlTag(m, 'ExternalMessageID') || null,
+    from: xmlDecode(xmlTag(m, 'Sender')) || null,
+    to: xmlDecode(xmlTag(m, 'RecipientUserID') || xmlTag(m, 'SendToName')) || null,
+    subject: xmlDecode(xmlTag(m, 'Subject')) || '(no subject)',
+    date: xmlTag(m, 'ReceiveDate') || null,
+    itemId: xmlTag(m, 'ItemID') || null,
+    itemTitle: xmlDecode(xmlTag(m, 'ItemTitle')) || null,
+    type: xmlTag(m, 'MessageType') || null,
+    read: flag('Read'),
+    replied: flag('Replied'),
+    flagged: flag('Flagged'),
+    canReply: xmlTag(xmlTag(m, 'ResponseDetails') || '', 'ResponseEnabled') === 'true',
+    replyUrl: xmlDecode(xmlTag(xmlTag(m, 'ResponseDetails') || '', 'ResponseURL')) || null
+  };
+}
+
+// List: ?folder=inbox|sent&days=30
+app.get('/api/messages', requireUser, async (req, res) => {
+  try {
+    const conn = await getConnection(req.user.id);
+    if (!conn || !conn.refresh_enc) return res.json({ connected: false });
+    const folder = req.query.folder === 'sent' ? 1 : 0;
+    const days = Math.max(1, Math.min(365, parseInt(req.query.days, 10) || 30));
+    const end = new Date(), start = new Date(end.getTime() - days * 86400000);
+    const out = [];
+    for (let page = 1; page <= 5; page++) {
+      const xml = await tradingCall(req.user.id, 'GetMyMessages',
+        `<DetailLevel>ReturnHeaders</DetailLevel><FolderID>${folder}</FolderID>` +
+        `<StartTime>${start.toISOString()}</StartTime><EndTime>${end.toISOString()}</EndTime>` +
+        `<Pagination><EntriesPerPage>200</EntriesPerPage><PageNumber>${page}</PageNumber></Pagination>`);
+      const msgs = xmlAll(xmlTag(xml, 'Messages') || '', 'Message').map(mapMessage).filter(m => m.id);
+      out.push(...msgs);
+      const pages = parseInt(xmlTag(xmlTag(xml, 'PaginationResult') || '', 'TotalNumberOfPages') || '1', 10) || 1;
+      if (page >= pages || !msgs.length) break;
+    }
+    out.sort((a, b) => String(b.date).localeCompare(String(a.date)));
+    res.json({ connected: true, messages: out });
+  } catch (e) {
+    console.error('[messages]', e.message);
+    res.json({ connected: true, error: 'eBay didn\u2019t give us your messages: ' + e.message, messages: [] });
+  }
+});
+
+// Unread count for Home (asked at most every 2 minutes)
+const msgCounts = new Map();
+app.get('/api/messages/summary', requireUser, async (req, res) => {
+  try {
+    const conn = await getConnection(req.user.id);
+    if (!conn || !conn.refresh_enc) return res.json({ connected: false });
+    const c = msgCounts.get(req.user.id);
+    if (c && Date.now() - c.at < 120000) return res.json(c.data);
+    const xml = await tradingCall(req.user.id, 'GetMyMessages', '<DetailLevel>ReturnSummary</DetailLevel>');
+    const sum = xmlTag(xml, 'Summary') || '';
+    const data = { connected: true, unread: parseInt(xmlTag(sum, 'NewMessageCount') || '0', 10) || 0 };
+    msgCounts.set(req.user.id, { at: Date.now(), data });
+    res.json(data);
+  } catch (e) {
+    console.error('[messages summary]', e.message);
+    res.json({ connected: true, unread: null, error: e.message });
+  }
+});
+
+// One message, in full. Opening it marks it read on eBay too.
+app.get('/api/messages/:id', requireUser, async (req, res) => {
+  const id = String(req.params.id || '');
+  if (!isMsgId(id)) return res.status(400).json({ error: 'Bad message number' });
+  try {
+    const xml = await tradingCall(req.user.id, 'GetMyMessages',
+      `<DetailLevel>ReturnMessages</DetailLevel><MessageIDs><MessageID>${id}</MessageID></MessageIDs>`);
+    const m = xmlAll(xmlTag(xml, 'Messages') || '', 'Message')[0];
+    if (!m) return res.json({ error: 'eBay couldn\u2019t find that message.' });
+    const msg = mapMessage(m);
+    msg.html = xmlDecode(xmlTag(m, 'Text')) || null;
+    msg.text = xmlDecode(xmlTag(m, 'Content')) || null;
+    if (!msg.read) {
+      tradingCall(req.user.id, 'ReviseMyMessages', `<MessageIDs><MessageID>${id}</MessageID></MessageIDs><Read>true</Read>`)
+        .then(() => msgCounts.delete(req.user.id))
+        .catch(e => console.error('[mark read]', e.message));
+    }
+    res.json({ message: msg });
+  } catch (e) {
+    console.error('[message]', e.message);
+    res.json({ error: 'eBay didn\u2019t give us that message: ' + e.message });
+  }
+});
+
+// Reply to a buyer's question about an item. eBay sends it as a normal eBay message.
+app.post('/api/messages/:id/reply', requireUser, express.json(), async (req, res) => {
+  const b = req.body || {};
+  const text = String(b.text || '').trim();
+  const itemId = String(b.itemId || ''), parent = String(b.externalId || ''), to = String(b.to || '');
+  if (!text) return res.status(400).json({ error: 'Type a reply first.' });
+  if (text.length > 2000) return res.status(400).json({ error: 'eBay allows up to 2,000 characters.' });
+  if (!/^\d{6,20}$/.test(itemId) || !isMsgId(parent) || !/^[^<>&\s]{1,64}$/.test(to)) {
+    return res.status(400).json({ error: 'This message can\u2019t be answered from here — reply on eBay.' });
+  }
+  try {
+    await tradingCall(req.user.id, 'AddMemberMessageRTQ',
+      `<ItemID>${itemId}</ItemID><MemberMessage><Body>${xmlEsc(text)}</Body><DisplayToPublic>false</DisplayToPublic>` +
+      `<EmailCopyToSender>true</EmailCopyToSender><ParentMessageID>${parent}</ParentMessageID><RecipientID>${xmlEsc(to)}</RecipientID></MemberMessage>`);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('[reply]', e.message);
+    res.status(502).json({ error: 'eBay didn\u2019t accept the reply: ' + e.message });
+  }
+});
+
 // ─── v316: ACTIVE LISTINGS ───────────────────────────────────────────────────
 // How many listings are live on eBay and what their asking prices add up to.
 // Uses the Trading API's GetMyeBaySelling (ActiveList), 200 listings per call.
@@ -1652,6 +1770,7 @@ const HOME = path.join(__dirname, 'home.html');            // v316
 // const LISTINGS = path.join(__dirname, 'listings.html');    // v316
 const ACTIVE = path.join(__dirname, 'active.html');        // v318: was listings.html
 const ORDERS = path.join(__dirname, 'orders.html');        // v319
+const MESSAGES = path.join(__dirname, 'messages.html');    // v321
 
 // app.get('/', (req, res) => res.sendFile(DASHBOARD));
 // v316: Home is the landing page; the sales dashboard is /sales
@@ -1660,6 +1779,7 @@ app.get(['/sales', '/sales/'], (req, res) => res.sendFile(DASHBOARD));
 // app.get(['/listings', '/listings/'], (req, res) => res.sendFile(LISTINGS));
 app.get(['/active', '/active/'], (req, res) => res.sendFile(ACTIVE));                     // v318
 app.get(['/orders', '/orders/'], (req, res) => res.sendFile(ORDERS));                     // v319
+app.get(['/messages', '/messages/'], (req, res) => res.sendFile(MESSAGES));               // v321
 app.get(['/listings', '/listings/'], (req, res) => res.redirect(301, '/active'));         // v318: old address
 app.get(['/list', '/list/'], (req, res) => res.sendFile(LISTING));
 // Old links and bookmarks to the file names still work
@@ -1670,6 +1790,7 @@ app.get(['/home.html'], (req, res) => res.redirect(301, '/'));                  
 // app.get(['/listings.html'], (req, res) => res.redirect(301, '/listings'));               // v316
 app.get(['/listings.html', '/active.html'], (req, res) => res.redirect(301, '/active'));  // v318
 app.get(['/orders.html'], (req, res) => res.redirect(301, '/orders'));                    // v319
+app.get(['/messages.html'], (req, res) => res.redirect(301, '/messages'));                // v321
 
 // v301 sent every unknown address to the listing tool:
 // const INDEX = path.join(__dirname, 'index.html');
@@ -1683,5 +1804,5 @@ app.get('*', (req, res) => {
 });
 
 setupDatabase()
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v320 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v321 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });
