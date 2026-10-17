@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Home v316</title>
-<!-- PartsLister Pro — Home page (v316: new). Shares the sign-in, account and
+<title>PartsLister Pro Home v317</title>
+<!-- PartsLister Pro — Home page (v316: new; v317: cut to three tiles — Sales, Active listings, Needs attention). Shares the sign-in, account and
      eBay connection with the Sales page (/sales) and the listing tool (/list). -->
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@400;500;600&display=swap');
@@ -117,7 +117,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v316</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v317</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <a href="/" aria-current="page">Home</a>
@@ -139,6 +139,13 @@
   <div class="error-box" id="home-error"></div>
 
   <div class="grid">
+    <!-- v317: one Sales tile — last 31 days, today underneath -->
+    <a class="tile" href="/sales?range=31">
+      <div class="tile-label" id="h-31-label">Sales · Last 31 days</div>
+      <div class="tile-value accent" id="h-31">—</div>
+      <div class="tile-sub" id="h-31-sub">&nbsp;</div>
+    </a>
+    <!-- v317: replaced by the one Sales tile above
     <a class="tile" href="/sales?range=today">
       <div class="tile-label">Sales today</div>
       <div class="tile-value accent" id="h-today">—</div>
@@ -154,16 +161,19 @@
       <div class="tile-value" id="h-fees">—</div>
       <div class="tile-sub" id="h-fees-sub">&nbsp;</div>
     </a>
+    -->
     <a class="tile" href="/listings">
       <div class="tile-label">Active listings</div>
       <div class="tile-value" id="h-active">—</div>
       <div class="tile-sub" id="h-active-sub">&nbsp;</div>
     </a>
+    <!-- v317: penalty fees now show under Needs attention, only when you're paying one
     <a class="tile status" id="h-penalty-tile" href="/sales?range=31">
       <div class="tile-label">Penalty fees · Last 31 days</div>
       <div class="tile-value"><span id="h-penalty">—</span><span class="status-tag" id="h-penalty-tag"></span></div>
       <div class="tile-sub" id="h-penalty-sub">&nbsp;</div>
     </a>
+    -->
     <div class="tile status" id="h-attn-tile">
       <div class="tile-label">Needs attention</div>
       <div class="tile-value" id="h-attn" style="font-size:30px;">—</div>
@@ -177,7 +187,8 @@
 const EBAY_TZ = 'America/Los_Angeles';   // eBay counts days in Pacific time
 const money0 = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
 const money2 = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 });
-function setText(id, text) { document.getElementById(id).textContent = text; }
+// function setText(id, text) { document.getElementById(id).textContent = text; }
+function setText(id, text) { const el = document.getElementById(id); if (el) el.textContent = text; }   // v317: skips tiles that were removed
 function ebayTodayKey() { return new Intl.DateTimeFormat('en-CA', { timeZone: EBAY_TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()); }
 function keyPlus(key, n) { const [y, m, d] = key.split('-').map(Number); const t = new Date(y, m - 1, d + n); return t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0') + '-' + String(t.getDate()).padStart(2, '0'); }
 function timeAgo(iso) {
@@ -225,7 +236,8 @@ async function loadHome() {
 
   // SALES — with or without sales tax, the same as you set it on the Sales page
   if (!sales || !sales.connected) {
-    ['h-today', 'h-month', 'h-fees'].forEach(id => setText(id, '—'));
+    ['h-today', 'h-month', 'h-fees', 'h-31'].forEach(id => setText(id, '—'));   // v317: + h-31
+    setText('h-31-sub', 'Connect eBay to see real sales');   // v317
     setText('h-today-sub', 'Connect eBay to see real sales');
     setText('home-note', 'eBay isn’t connected yet.');
     if (me.isAdmin) attention.push(['Connect your eBay account', '/sales?settings=admin']);
@@ -238,6 +250,12 @@ async function loadHome() {
       else if (k.startsWith(lastMonth)) lastMonthSales += v.s;
     });
     const t = by.get(today) || { s: 0, o: 0 }, yd = by.get(yesterday) || { s: 0, o: 0 };
+    // v317: the Sales tile — last 31 days (today included, like the Sales page), today underneath
+    let s31 = 0, o31 = 0;
+    by.forEach((v, k) => { if (k >= from31 && k <= today) { s31 += v.s; o31 += v.o; } });
+    setText('h-31-label', 'Sales · Last 31 days' + (taxOn ? ' incl. tax' : ''));
+    setText('h-31', money0.format(s31));
+    setText('h-31-sub', 'Today ' + money0.format(t.s) + ' · ' + t.o + ' order' + (t.o === 1 ? '' : 's') + ' today · ' + o31.toLocaleString() + ' in 31 days');
     setText('h-today', money0.format(t.s));
     setText('h-today-sub', t.o + ' order' + (t.o === 1 ? '' : 's') + ' · Yesterday ' + money0.format(yd.s));
     setText('h-month-label', 'Sales this month' + (taxOn ? ' incl. tax' : ''));
@@ -256,11 +274,13 @@ async function loadHome() {
       });
       setText('h-fees', money0.format(Math.max(0, monthFees)));
       setText('h-fees-sub', monthSales > 0 ? (monthFees / monthSales * 100).toFixed(1) + '% of sales this month' : 'No sales yet this month');
-      const tile = document.getElementById('h-penalty-tile');
-      tile.classList.remove('ok', 'bad');
+      // const tile = document.getElementById('h-penalty-tile');
+      // tile.classList.remove('ok', 'bad');
+      const tile = document.getElementById('h-penalty-tile') || document.createElement('div');   // v317: tile removed from Home
       if (pen31 > 0.005) {
         tile.classList.add('bad'); setText('h-penalty', money2.format(pen31)); setText('h-penalty-tag', 'Paying penalty');
-        attention.push(['Paying penalty fees (' + money2.format(pen31) + ' in 31 days)', '/sales?range=31']);
+        // attention.push(['Paying penalty fees (' + money2.format(pen31) + ' in 31 days)', '/sales?range=31']);
+        attention.push(['Paying penalty fees: ' + money2.format(pen31) + ' in the last 31 days (' + money2.format(penYear) + ' in ' + y + ')', '/sales?range=31']);   // v317
       } else {
         tile.classList.add('ok'); setText('h-penalty', '$0'); setText('h-penalty-tag', 'None');
       }
