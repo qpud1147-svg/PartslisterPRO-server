@@ -3,8 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Orders v319</title>
+<title>PartsLister Pro Orders v320</title>
 <!-- PartsLister Pro — Orders page (v319: new). Your sold items from eBay, newest first.
+     v320: item photos, and click an order to see the listing (photos, description, item specifics).
      Shares the sign-in, account and eBay connection with the other pages. -->
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@400;500;600&display=swap');
@@ -130,8 +131,43 @@
   .summary { color: var(--muted); font-size: 13px; margin-bottom: 10px; }
   .orders { display: flex; flex-direction: column; gap: 8px; }
   .order {
-    display: grid; grid-template-columns: 110px 1fr auto; gap: 14px; align-items: start;
+    /* display: grid; grid-template-columns: 110px 1fr auto; gap: 14px; align-items: start; */
+    display: grid; grid-template-columns: 110px 64px 1fr auto; gap: 14px; align-items: start;   /* v320: + photo */
     background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 12px 16px;
+    cursor: pointer;   /* v320: click to open */
+  }
+  .order:hover { border-color: #444; }
+  .o-thumb { width: 64px; height: 64px; border-radius: 4px; background: var(--surface2); border: 1px solid var(--border); object-fit: cover; display: block; }
+
+  /* v320: ORDER DETAIL — looks like the eBay listing */
+  #detail { position: fixed; inset: 0; background: rgba(0,0,0,0.75); z-index: 60; display: none; overflow-y: auto; padding: 24px 16px; }
+  #detail.open { display: block; }
+  .d-box { max-width: 1100px; margin: 0 auto; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 20px; position: relative; }
+  .d-close { position: absolute; top: 12px; right: 12px; }
+  .d-order { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: baseline; color: var(--text2); font-size: 13px; padding-bottom: 14px; border-bottom: 1px solid var(--border); margin-bottom: 18px; padding-right: 90px; }
+  .d-order .o-total { font-size: 26px; color: var(--text); }
+  .d-item + .d-item { margin-top: 28px; padding-top: 22px; border-top: 1px solid var(--border); }
+  .d-top { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 24px; }
+  .d-main { width: 100%; aspect-ratio: 1 / 1; object-fit: contain; background: #fff; border-radius: 6px; border: 1px solid var(--border); }
+  .d-strip { display: flex; gap: 6px; margin-top: 8px; overflow-x: auto; padding-bottom: 4px; }
+  .d-strip img { width: 60px; height: 60px; object-fit: cover; border-radius: 4px; border: 2px solid transparent; cursor: pointer; flex-shrink: 0; background: var(--surface2); }
+  .d-strip img.on { border-color: var(--accent); }
+  .d-title { font-size: 20px; font-weight: 600; line-height: 1.35; margin-bottom: 10px; }
+  .d-price { font-family: 'Barlow Condensed', sans-serif; font-size: 32px; font-weight: 700; margin-bottom: 6px; }
+  .d-facts { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-size: 13px; margin: 12px 0; }
+  .d-facts dt { color: var(--muted); }
+  .d-facts dd { color: var(--text); }
+  .d-h { font-family: 'Barlow Condensed', sans-serif; font-size: 13px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); margin: 22px 0 8px; }
+  .d-specs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 24px; font-size: 13px; }
+  .d-specs div { display: grid; grid-template-columns: 45% 55%; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--border); }
+  .d-specs span:first-child { color: var(--muted); }
+  .d-desc { width: 100%; border: 1px solid var(--border); border-radius: 6px; background: #fff; min-height: 200px; }
+  .d-msg { color: var(--muted); padding: 20px 0; }
+  @media (max-width: 800px) {
+    .d-top { grid-template-columns: 1fr; }
+    .d-specs { grid-template-columns: 1fr; }
+    #detail { padding: 0; }
+    .d-box { border-radius: 0; border: none; min-height: 100vh; padding: 16px; }
   }
   .order.off { opacity: 0.55; }
   .o-when { color: var(--text2); font-size: 13px; line-height: 1.4; }
@@ -153,7 +189,9 @@
   .empty { color: var(--muted); padding: 30px 0; text-align: center; }
   .more { margin: 14px auto 0; display: block; }
   @media (max-width: 700px) {
-    .order { grid-template-columns: 1fr auto; gap: 6px 12px; padding: 12px; }
+    /* .order { grid-template-columns: 1fr auto; gap: 6px 12px; padding: 12px; } */
+    .order { grid-template-columns: 56px 1fr auto; gap: 6px 12px; padding: 12px; }   /* v320: + photo */
+    .o-thumb { width: 56px; height: 56px; }
     .o-when { grid-column: 1 / -1; display: flex; gap: 8px; align-items: baseline; }
     .seg button { padding: 6px 9px; font-size: 13px; }
     .search { min-width: 0; width: 100%; flex-basis: 100%; }
@@ -165,7 +203,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v319</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v320</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -211,6 +249,14 @@
   <div class="orders" id="o-list"></div>
   <button type="button" class="btn btn-secondary btn-sm more" id="o-more" style="display:none;" onclick="showMore()">Show more</button>
 </main>
+
+<!-- v320: order detail -->
+<div id="detail" onclick="if (event.target === this) closeDetail()">
+  <div class="d-box" role="dialog" aria-modal="true" aria-label="Order details">
+    <button type="button" class="btn btn-secondary btn-sm d-close" onclick="closeDetail()">✕ Close</button>
+    <div id="d-content"></div>
+  </div>
+</div>
 
 <script>
 // ─── SHARED (same on Home and Listings) ─────────────────────────────────────
@@ -308,6 +354,12 @@ function render() {
     const dt = new Date(d + 'T12:00:00');
     when.append(document.createTextNode(dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' · ' + t));
     const id = document.createElement('div'); id.className = 'o-id'; id.textContent = o.id; when.append(id);
+    // v320: photo of the first item (loaded after the list shows)
+    const first = o.items.find(i => i.itemId);
+    const img = document.createElement('img');
+    img.className = 'o-thumb'; img.alt = ''; img.loading = 'lazy';
+    if (first) { img.dataset.item = first.itemId; if (thumbs[first.itemId]) img.src = thumbs[first.itemId]; }
+    row.addEventListener('click', (e) => { if (!e.target.closest('a')) openOrder(o.id); });
     const mid = document.createElement('div');
     if (!o.items.length) { const p = document.createElement('div'); p.className = 'o-title'; p.style.color = 'var(--muted)'; p.textContent = 'Items still importing…'; mid.append(p); }
     o.items.forEach(i => {
@@ -323,11 +375,129 @@ function render() {
     const tot = document.createElement('div'); tot.className = 'o-total'; tot.textContent = money2.format(o.total); right.append(tot);
     const chip = document.createElement('div'); chip.className = 'chip ' + CHIP[k][1];
     chip.textContent = CHIP[k][0] + (k !== 'refunded' && o.refunded > 0 ? ' · part refund' : ''); right.append(chip);
-    row.append(when, mid, right);
+    // row.append(when, mid, right);
+    row.append(when, img, mid, right);   // v320
     box.append(row);
   });
   document.getElementById('o-more').style.display = list.length > shown ? '' : 'none';
+  loadThumbs();   // v320
 }
+
+// ─── v320: PHOTOS ────────────────────────────────────────────────────────────
+// Asks the server for the photos it doesn't have yet, 40 at a time. The server
+// asks eBay once per item and remembers it.
+const thumbs = {};          // itemId → photo URL (or null if eBay had none)
+let thumbsBusy = false;
+async function loadThumbs() {
+  if (thumbsBusy) return;
+  const need = [...new Set([...document.querySelectorAll('img.o-thumb[data-item]')].map(i => i.dataset.item).filter(id => !(id in thumbs)))];
+  if (!need.length) return;
+  thumbsBusy = true;
+  try {
+    for (let k = 0; k < need.length; k += 40) {
+      const d = await getJSON('/api/items/thumbs?ids=' + need.slice(k, k + 40).join(','));
+      if (!d || !d.thumbs) break;
+      Object.assign(thumbs, d.thumbs);
+      document.querySelectorAll('img.o-thumb[data-item]').forEach(im => { const u = thumbs[im.dataset.item]; if (u && im.src !== u) im.src = u; });
+    }
+  } finally { thumbsBusy = false; }
+}
+
+// ─── v320: ORDER DETAIL ──────────────────────────────────────────────────────
+// Opens over the list (the phone's Back button closes it). Shows each item like
+// its eBay listing: photos, title, price, condition, item specifics, description.
+function openOrder(id) { if (location.hash !== '#order=' + id) location.hash = 'order=' + id; else showDetail(id); }
+function closeDetail() { if (location.hash.startsWith('#order=')) history.back(); else hideDetail(); }
+function hideDetail() { document.getElementById('detail').classList.remove('open'); document.body.style.overflow = ''; }
+window.addEventListener('hashchange', () => { const m = /^#order=(.+)$/.exec(location.hash); if (m) showDetail(decodeURIComponent(m[1])); else hideDetail(); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && document.getElementById('detail').classList.contains('open')) closeDetail(); });
+
+function el(tag, cls, text) { const n = document.createElement(tag); if (cls) n.className = cls; if (text !== undefined) n.textContent = text; return n; }
+
+async function showDetail(id) {
+  const o = orders.find(x => x.id === id);
+  const box = document.getElementById('d-content');
+  document.getElementById('detail').classList.add('open');
+  document.body.style.overflow = 'hidden';
+  box.textContent = '';
+  if (!o) { box.append(el('div', 'd-msg', 'That order isn\u2019t in the dates you\u2019re looking at.')); return; }
+  const k = kind(o);
+  const head = el('div', 'd-order');
+  const [d, t] = o.sold.split(' ');
+  head.append(el('div', 'o-total', money2.format(o.total)));
+  const chip = el('span', 'chip ' + CHIP[k][1], CHIP[k][0] + (k !== 'refunded' && o.refunded > 0 ? ' · part refund' : '')); head.append(chip);
+  head.append(el('span', '', 'Sold ' + new Date(d + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }) + ' · ' + t + ' (eBay time)'));
+  head.append(el('span', '', 'Order ' + o.id));
+  if (o.refunded > 0) head.append(el('span', '', 'Refunded ' + money2.format(o.refunded)));
+  box.append(head);
+  if (!o.items.length) { box.append(el('div', 'd-msg', 'The items in this order are still importing.')); return; }
+  for (const it of o.items) {
+    const wrap = el('div', 'd-item');
+    box.append(wrap);
+    if (!it.itemId) { wrap.append(el('div', 'd-title', it.title || '(no title)')); continue; }
+    wrap.append(el('div', 'd-msg', 'Loading the listing from eBay…'));
+    const r = await getJSON('/api/items/' + encodeURIComponent(it.itemId));
+    if (!document.getElementById('detail').classList.contains('open')) return;
+    wrap.textContent = '';
+    const item = r && r.item;
+    if (!item) {
+      wrap.append(el('div', 'd-title', it.title || '(no title)'));
+      if (it.sku) wrap.append(skuEl(it.sku));
+      wrap.append(el('div', 'd-msg', 'eBay didn\u2019t give us this listing' + (r && r.error ? ': ' + r.error : '.')));
+      const a = el('a', 'btn btn-secondary btn-sm', 'Open on eBay'); a.href = 'https://www.ebay.com/itm/' + encodeURIComponent(it.itemId); a.target = '_blank'; a.rel = 'noopener'; wrap.append(a);
+      continue;
+    }
+    const top = el('div', 'd-top');
+    // photos
+    const gal = el('div');
+    const main = el('img', 'd-main'); main.alt = item.title || '';
+    if (item.pictures.length) main.src = item.pictures[0];
+    gal.append(main);
+    if (item.pictures.length > 1) {
+      const strip = el('div', 'd-strip');
+      item.pictures.forEach((u, n) => {
+        const th = el('img', n === 0 ? 'on' : ''); th.src = smallPicUrl(u); th.alt = 'Photo ' + (n + 1); th.loading = 'lazy';
+        th.addEventListener('click', () => { main.src = u; strip.querySelectorAll('img').forEach(x => x.classList.remove('on')); th.classList.add('on'); });
+        strip.append(th);
+      });
+      gal.append(strip);
+    }
+    // facts
+    const info = el('div');
+    info.append(el('div', 'd-title', item.title || it.title || ''));
+    info.append(el('div', 'd-price', money2.format(it.price || item.price || 0) + (it.qty > 1 ? ' × ' + it.qty : '')));
+    const facts = el('dl', 'd-facts');
+    const fact = (k2, v) => { if (v === null || v === undefined || v === '') return; facts.append(el('dt', '', k2)); const dd = el('dd'); if (v instanceof Node) dd.append(v); else dd.textContent = v; facts.append(dd); };
+    fact('SKU', (it.sku || item.sku) ? skuEl(it.sku || item.sku) : null);
+    fact('Condition', item.condition);
+    fact('Condition note', item.conditionNote);
+    fact('Category', item.category ? item.category.split(':').slice(-2).join(' › ') : null);
+    fact('Item number', item.itemId);
+    if (item.started) fact('Listed', new Date(item.started).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) + (item.started && d ? ' · sold after ' + Math.max(0, Math.round((new Date(d + 'T12:00:00') - new Date(item.started)) / 86400000)) + ' days' : ''));
+    info.append(facts);
+    const a = el('a', 'btn btn-secondary btn-sm', 'Open on eBay'); a.href = item.url; a.target = '_blank'; a.rel = 'noopener'; info.append(a);
+    top.append(gal, info);
+    wrap.append(top);
+    // item specifics
+    if (item.specifics && item.specifics.length) {
+      wrap.append(el('div', 'd-h', 'Item specifics'));
+      const sp = el('div', 'd-specs');
+      item.specifics.forEach(x => { const row = el('div'); row.append(el('span', '', x.name), el('span', '', x.value)); sp.append(row); });
+      wrap.append(sp);
+    }
+    // description — shown as on eBay, in a box where no scripts can run
+    if (item.description) {
+      wrap.append(el('div', 'd-h', 'Description'));
+      const f = el('iframe', 'd-desc');
+      f.setAttribute('sandbox', 'allow-same-origin allow-popups');
+      f.setAttribute('title', 'Item description');
+      f.srcdoc = '<!doctype html><html><head><meta charset="utf-8"><base target="_blank"><style>body{margin:12px;font-family:Arial,sans-serif;color:#111;background:#fff}img{max-width:100%;height:auto}</style></head><body>' + item.description + '</body></html>';
+      f.addEventListener('load', () => { try { f.style.height = (f.contentDocument.documentElement.scrollHeight + 4) + 'px'; } catch (e) { f.style.height = '600px'; } });
+      wrap.append(f);
+    }
+  }
+}
+function smallPicUrl(u) { return String(u).replace(/\/s-l\d+\.(jpg|jpeg|png|webp)/i, '/s-l140.$1'); }
 function showMore() { shown += 200; render(); }
 
 async function loadOrders() {
@@ -344,6 +514,8 @@ async function loadOrders() {
     : 'From eBay · updated ' + timeAgo(d.lastSync) + (d.syncing ? ' · updating now…' : ''));
   if (d.lastError) { err.textContent = 'eBay sync problem: ' + d.lastError; err.style.display = 'block'; }
   render();
+  const hm = /^#order=(.+)$/.exec(location.hash);                                  // v320: link straight to an order
+  if (hm && !document.getElementById('detail').classList.contains('open')) showDetail(decodeURIComponent(hm[1]));
   pollTimer = setTimeout(loadOrders, !d.ready || d.syncing ? 4000 : 5 * 60000);
 }
 

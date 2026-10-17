@@ -1,4 +1,4 @@
-// PartsLister Pro server — v319
+// PartsLister Pro server — v320
 // v302: dashboard.html is the homepage (/). The listing tool moved to /list.
 // v305: eBay sales connection — real sold orders on the dashboard.
 // v306: asks eBay for two more permissions — fees/payouts and seller metrics.
@@ -16,6 +16,8 @@
 // v318: the active-listings page is now Active (/active, active.html); the Listings tab opens the Listing Tool (/list).
 // v319: Orders page (/orders) — your sold items. Saves each order's items (title, SKU,
 //       quantity, price) and shipping status. No buyer names or addresses are saved.
+// v320: item photos and full listing details (photos, description, item specifics) for the
+//       Orders page, from eBay's Trading API GetItem. Saved once per item, so eBay is asked once.
 // Accounts with email + password login. Each account's settings (including its
 // own API keys) and history are saved ENCRYPTED in Postgres, so you can log in
 // from any computer and everything is there. Also keeps a lifetime listing count.
@@ -122,6 +124,15 @@ async function setupDatabase() {
     );
     CREATE INDEX IF NOT EXISTS ebay_order_items_order ON ebay_order_items (user_id, order_id);
     ALTER TABLE ebay_orders ADD COLUMN IF NOT EXISTS ship_status TEXT;
+    -- v320: listing details (photos, description, item specifics) saved per item
+    CREATE TABLE IF NOT EXISTS ebay_items (
+      user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      item_id    TEXT NOT NULL,
+      data       JSONB,
+      error      TEXT,
+      fetched_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY (user_id, item_id)
+    );
     ALTER TABLE ebay_connections ADD COLUMN IF NOT EXISTS active_count INTEGER;          -- v316: live listings on eBay
     ALTER TABLE ebay_connections ADD COLUMN IF NOT EXISTS active_value NUMERIC(14,2);    -- v316: their asking prices added up
     ALTER TABLE ebay_connections ADD COLUMN IF NOT EXISTS active_sync TIMESTAMPTZ;       -- v316: when that was last checked
@@ -1024,6 +1035,7 @@ app.post('/api/ebay/disconnect', requireUser, requireAdmin, async (req, res) => 
   );
   await pool.query('DELETE FROM ebay_orders WHERE user_id = $1', [req.user.id]);
   await pool.query('DELETE FROM ebay_order_items WHERE user_id = $1', [req.user.id]);   // v319
+  await pool.query('DELETE FROM ebay_items WHERE user_id = $1', [req.user.id]);         // v320
   await pool.query('DELETE FROM ebay_fee_lines WHERE user_id = $1', [req.user.id]);   // v307
   res.json({ ok: true });
 });
@@ -1412,13 +1424,137 @@ app.get('/api/orders/list', requireUser, async (req, res) => {
   }
 });
 
+// ─── v320: ITEM PHOTOS + LISTING DETAILS ────────────────────────────────────
+// One Trading API GetItem per item, saved in ebay_items so eBay is asked once.
+// If eBay can't give an item (e.g. a very old listing), that's remembered for a
+// day before trying again.
+const xmlDecode = (t) => String(t || '')
+  .replace(/^<!\[CDATA\[([\s\S]*)\]\]>$/, '$1')
+  .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&#(\d+);/g, (m, n) => String.fromCharCode(+n)).replace(/&amp;/g, '&');
+const xmlAll = (xml, tag) => (String(xml || '').match(new RegExp('<' + tag + '(?:\\s[^>]*)?>[\\s\\S]*?</' + tag + '>', 'g')) || [])
+  .map(x => x.replace(new RegExp('^<' + tag + '(?:\\s[^>]*)?>'), '').replace(new RegExp('</' + tag + '>$'), ''));
+
+async function tradingCall(userId, callName, inner) {
+  const token = await getAccessToken(userId);
+  const r = await fetch('https://api.ebay.com/ws/api.dll', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'text/xml',
+      'X-EBAY-API-CALL-NAME': callName,
+      'X-EBAY-API-SITEID': '0',
+      'X-EBAY-API-COMPATIBILITY-LEVEL': '1193',
+      'X-EBAY-API-IAF-TOKEN': token
+    },
+    body: `<?xml version="1.0" encoding="utf-8"?>\n<${callName}Request xmlns="urn:ebay:apis:eBLBaseComponents">${inner}</${callName}Request>`,
+    signal: AbortSignal.timeout(30000)
+  });
+  const xml = await r.text();
+  if (!r.ok || xmlTag(xml, 'Ack') === 'Failure') {
+    const msg = xmlTag(xml, 'LongMessage') || xmlTag(xml, 'ShortMessage') || ('HTTP ' + r.status);
+    throw new Error(xmlDecode(msg).replace(/<[^>]+>/g, '').slice(0, 300));
+  }
+  return xml;
+}
+
+async function fetchItem(userId, itemId) {
+  try {
+    const xml = await tradingCall(userId, 'GetItem',
+      `<ItemID>${itemId}</ItemID><DetailLevel>ReturnAll</DetailLevel><IncludeItemSpecifics>true</IncludeItemSpecifics>`);
+    const item = xmlTag(xml, 'Item') || '';
+    const pics = xmlAll(xmlTag(item, 'PictureDetails') || '', 'PictureURL').map(xmlDecode).filter(u => /^https:\/\//.test(u));
+    const specifics = xmlAll(xmlTag(item, 'ItemSpecifics') || '', 'NameValueList').map(nv => ({
+      name: xmlDecode(xmlTag(nv, 'Name')),
+      value: xmlAll(nv, 'Value').map(xmlDecode).join(', ')
+    })).filter(x => x.name);
+    const ld = xmlTag(item, 'ListingDetails') || '';
+    const data = {
+      itemId: String(itemId),
+      title: xmlDecode(xmlTag(item, 'Title')),
+      sku: xmlDecode(xmlTag(item, 'SKU')) || null,
+      pictures: pics,
+      description: xmlDecode(xmlTag(item, 'Description')),
+      condition: xmlDecode(xmlTag(item, 'ConditionDisplayName')) || null,
+      conditionNote: xmlDecode(xmlTag(item, 'ConditionDescription')) || null,
+      category: xmlDecode(xmlTag(xmlTag(item, 'PrimaryCategory') || '', 'CategoryName')) || null,
+      price: parseFloat(xmlTag(xmlTag(item, 'SellingStatus') || '', 'CurrentPrice') || '') || null,
+      listingStatus: xmlTag(xmlTag(item, 'SellingStatus') || '', 'ListingStatus') || null,
+      started: xmlTag(ld, 'StartTime') || null,
+      ended: xmlTag(ld, 'EndTime') || null,
+      url: xmlDecode(xmlTag(ld, 'ViewItemURL')) || ('https://www.ebay.com/itm/' + itemId),
+      specifics
+    };
+    await pool.query(
+      `INSERT INTO ebay_items (user_id, item_id, data, error, fetched_at) VALUES ($1, $2, $3, NULL, now())
+       ON CONFLICT (user_id, item_id) DO UPDATE SET data = EXCLUDED.data, error = NULL, fetched_at = now()`,
+      [userId, String(itemId), JSON.stringify(data)]
+    );
+    return { data };
+  } catch (e) {
+    const error = String(e.message || e).slice(0, 300);
+    await pool.query(
+      `INSERT INTO ebay_items (user_id, item_id, data, error, fetched_at) VALUES ($1, $2, NULL, $3, now())
+       ON CONFLICT (user_id, item_id) DO UPDATE SET error = EXCLUDED.error, fetched_at = now()`,
+      [userId, String(itemId), error]
+    ).catch(() => {});
+    return { error };
+  }
+}
+
+// Saved copy, or ask eBay (again after a day if eBay couldn't give it last time)
+async function getItemData(userId, itemId) {
+  const r = await pool.query('SELECT data, error, fetched_at FROM ebay_items WHERE user_id = $1 AND item_id = $2', [userId, itemId]);
+  const row = r.rows[0];
+  if (row && row.data) return { data: row.data };
+  if (row && row.error && Date.now() - new Date(row.fetched_at).getTime() < 86400000) return { error: row.error };
+  return fetchItem(userId, itemId);
+}
+
+const smallPic = (u) => (u ? u.replace(/\/s-l\d+\.(jpg|jpeg|png|webp)/i, '/s-l225.$1').replace(/\$_\d+\.(JPG|JPEG|PNG)/i, '$_35.$1') : null);
+
+// First photo of up to 40 items: { "376490833387": "https://i.ebayimg.com/…", … }
+app.get('/api/items/thumbs', requireUser, async (req, res) => {
+  try {
+    const ids = [...new Set(String(req.query.ids || '').split(',').map(s => s.trim()).filter(s => /^\d{6,20}$/.test(s)))].slice(0, 40);
+    const out = {};
+    let i = 0;
+    async function worker() {
+      while (i < ids.length) {
+        const id = ids[i++];
+        const r = await getItemData(req.user.id, id);
+        out[id] = r.data && r.data.pictures && r.data.pictures[0] ? smallPic(r.data.pictures[0]) : null;
+      }
+    }
+    await Promise.all([worker(), worker(), worker(), worker()]);
+    res.json({ thumbs: out });
+  } catch (e) {
+    console.error('[thumbs]', e);
+    res.status(500).json({ error: 'Could not load photos' });
+  }
+});
+
+// Everything about one item, for the order detail view
+app.get('/api/items/:id', requireUser, async (req, res) => {
+  const id = String(req.params.id || '');
+  if (!/^\d{6,20}$/.test(id)) return res.status(400).json({ error: 'Bad item number' });
+  try {
+    const r = await getItemData(req.user.id, id);
+    if (r.error) return res.json({ error: r.error });
+    res.json({ item: r.data });
+  } catch (e) {
+    console.error('[item]', e);
+    res.status(500).json({ error: 'Could not load that item' });
+  }
+});
+
 // ─── v316: ACTIVE LISTINGS ───────────────────────────────────────────────────
 // How many listings are live on eBay and what their asking prices add up to.
 // Uses the Trading API's GetMyeBaySelling (ActiveList), 200 listings per call.
 // Checked at most once an hour unless you press Refresh.
 const ACTIVE_MAX_AGE_MIN = 60;
 const activeChecking = new Set();
-const xmlTag = (xml, tag) => { const m = new RegExp('<' + tag + '[^>]*>([\\s\\S]*?)</' + tag + '>').exec(xml); return m ? m[1] : null; };
+// const xmlTag = (xml, tag) => { const m = new RegExp('<' + tag + '[^>]*>([\\s\\S]*?)</' + tag + '>').exec(xml); return m ? m[1] : null; };
+// v320: the tag name must end there, so <Item> doesn't also match <ItemID>
+const xmlTag = (xml, tag) => { const m = new RegExp('<' + tag + '(?:\\s[^>]*)?>([\\s\\S]*?)</' + tag + '>').exec(xml); return m ? m[1] : null; };
 
 async function checkActiveListings(userId) {
   if (activeChecking.has(userId)) return;
@@ -1547,5 +1683,5 @@ app.get('*', (req, res) => {
 });
 
 setupDatabase()
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v319 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v320 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });
