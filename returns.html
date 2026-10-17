@@ -3,9 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Returns v324</title>
+<title>PartsLister Pro Returns v325</title>
 <!-- PartsLister Pro — Returns page (v324: new). Returns, "item not received" claims and cases from
-     eBay's Post-Order API, read live (nothing saved on the server). Approve / decline / refund from here. -->
+     eBay's Post-Order API, read live (nothing saved on the server). Approve / decline / refund from here.
+     v325: "Open on eBay" uses the link eBay gives for that return's current stage. -->
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@400;500;600&display=swap');
 
@@ -229,7 +230,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v324</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v325</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -522,9 +523,25 @@ async function showDetail(key) {
     acts.append(el('h4', '', 'Case'));
     acts.append(el('div', 'r-line', 'eBay is deciding this case. You can follow it and respond on eBay.'));
   }
-  const link = el('a', 'btn btn-secondary btn-sm', 'Open eBay orders'); link.href = 'https://www.ebay.com/sh/ord'; link.target = '_blank'; link.rel = 'noopener';
-  link.style.marginTop = '8px';
-  acts.append(link);
+  // const link = el('a', 'btn btn-secondary btn-sm', 'Open eBay orders'); link.href = 'https://www.ebay.com/sh/ord'; link.target = '_blank'; link.rel = 'noopener';
+  // link.style.marginTop = '8px';
+  // acts.append(link);
+  // v325: eBay sends a link for each next step on a return, already pointing at the right
+  // page for its stage (requested, shipped, delivered…). Show those; otherwise the returns list.
+  const lr = el('div', 'row'); lr.style.marginTop = '8px';
+  const links = x.links || [];
+  if (links.length) {
+    links.forEach((o, n) => {
+      const a = el('a', 'btn btn-secondary btn-sm', (n === 0 ? 'Open on eBay: ' : '') + nice(o.type.replace(/^SELLER_/, '')));
+      a.href = o.url; a.target = '_blank'; a.rel = 'noopener';
+      lr.append(a);
+    });
+  } else {
+    const a = el('a', 'btn btn-secondary btn-sm', 'Open eBay orders');
+    a.href = 'https://www.ebay.com/sh/ord'; a.target = '_blank'; a.rel = 'noopener';   // the page that worked before
+    lr.append(a, el('span', 'r-line', 'eBay didn\u2019t send a direct link for this one.'));
+  }
+  acts.append(lr);
 }
 
 document.querySelectorAll('#seg-view button').forEach(b => b.addEventListener('click', () => { view = b.dataset.view; load(); }));

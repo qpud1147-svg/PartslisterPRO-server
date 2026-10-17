@@ -1,4 +1,4 @@
-// PartsLister Pro server — v324
+// PartsLister Pro server — v325
 // v302: dashboard.html is the homepage (/). The listing tool moved to /list.
 // v305: eBay sales connection — real sold orders on the dashboard.
 // v306: asks eBay for two more permissions — fees/payouts and seller metrics.
@@ -27,6 +27,8 @@
 //       conversation and the listing (uses the Anthropic key saved in your Listing Tool settings).
 // v324: Returns page — returns, "item not received" claims and cases (eBay Post-Order API):
 //       approve / decline / partial refund / refund a return; add tracking or refund a claim.
+// v325: keep eBay's own link for each return action, so "Open on eBay" lands on that return
+//       at whatever stage it's in (eBay picks the right page).
 // Accounts with email + password login. Each account's settings (including its
 // own API keys) and history are saved ENCRYPTED in Postgres, so you can log in
 // from any computer and everything is there. Also keeps a lifetime listing count.
@@ -2066,6 +2068,8 @@ function mapReturn(m) {
     amount: amt(refund.actualRefundAmount) || amt(refund.estimatedRefundAmount),
     refunded: amt(refund.actualRefundAmount),
     options: (m.sellerAvailableOptions || []).map(o => o.actionType).filter(Boolean),
+    links: (m.sellerAvailableOptions || []).filter(o => o.actionType && /^https:\/\/[^/]*ebay\.com\//i.test(o.actionURL || ''))
+      .map(o => ({ type: o.actionType, url: o.actionURL })),   // v325: eBay's own page for each next step
     escalated: !!(m.escalationInfo && m.escalationInfo.caseId)
   };
 }
@@ -2376,5 +2380,5 @@ app.get('*', (req, res) => {
 });
 
 setupDatabase()
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v324 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v325 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });
