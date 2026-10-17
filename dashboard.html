@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Dashboard v312</title>
+<title>PartsLister Pro Dashboard v315</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@400;500;600&display=swap');
 
@@ -156,6 +156,22 @@
   .range-picker button[aria-pressed="true"] { background: var(--accent); color: #000; }
   .range-picker button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
+  /* v315: MONTH + CUSTOM DATES, next to the range buttons */
+  .range-extra { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .range-extra select, .range-extra input[type="date"] {
+    background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 6px;
+    font-family: 'Barlow', sans-serif; font-size: 13px; padding: 7px 8px; color-scheme: dark;
+  }
+  .range-extra select.active { border-color: var(--accent); color: var(--accent); }
+  .range-extra .custom-btn {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 6px; color: var(--muted); cursor: pointer;
+    font-family: 'Barlow Condensed', sans-serif; font-size: 14px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; padding: 7px 12px;
+  }
+  .range-extra .custom-btn:hover { color: var(--text); }
+  .range-extra .custom-btn[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #000; }
+  .range-custom { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; }
+  .range-custom[hidden] { display: none; }
+
   /* v309: SALES TAX TOGGLE */
   .tax-toggle {
     display: inline-flex; align-items: center; gap: 8px; background: none; border: none; cursor: pointer;
@@ -202,7 +218,8 @@
   .tile.hero .tile-value { font-size: 56px; color: var(--accent); }
 
   /* v307: FEES */
-  .fees-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+  /* .fees-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; } */
+  .fees-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 12px; }   /* v315: + penalty this year */
   .tile.penalty { border-left-width: 3px; }
   .tile.penalty.ok { border-left-color: var(--success); }
   .tile.penalty.bad { border-left-color: var(--danger); background: rgba(224,82,82,0.06); }
@@ -502,7 +519,7 @@
 <header>
   <a href="/" class="logo-link" title="Dashboard">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v312</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v315</span></div>
   </a>
   <div class="header-right">
     <span class="who" id="who"></span>
@@ -533,6 +550,19 @@
       <button type="button" data-range="31">31 Day</button>
       <button type="button" data-range="90">90 Day</button>
       <button type="button" data-range="year">Year</button>
+      <button type="button" data-range="thismonth">This month</button>   <!-- v315 -->
+      <button type="button" data-range="lastmonth">Last month</button>   <!-- v315 -->
+    </div>
+    <!-- v315: any month, or your own start and end dates -->
+    <div class="range-extra">
+      <select id="range-month" aria-label="Show one month" onchange="if (this.value) setRange(this.value, true)">
+        <option value="">Month…</option>
+      </select>
+      <button type="button" class="custom-btn" id="range-custom-btn" aria-pressed="false" onclick="toggleCustom()">Custom</button>
+      <span class="range-custom" id="range-custom" hidden>
+        <input type="date" id="range-from" aria-label="Start date"> to <input type="date" id="range-to" aria-label="End date">
+        <button type="button" class="custom-btn" onclick="applyCustom()">Show</button>
+      </span>
     </div>
   </div>
 
@@ -575,6 +605,12 @@
       <div class="tile-label" id="fig-penalty-label">Penalty fees</div>
       <div class="tile-value"><span id="fig-penalty">—</span><span class="status-tag" id="penalty-tag"></span></div>
       <div class="tile-sub" id="fig-penalty-sub">&nbsp;</div>
+    </div>
+    <!-- v315: penalty fees paid this calendar year, last year underneath -->
+    <div class="tile penalty" id="penalty-year-tile">
+      <div class="tile-label" id="fig-penalty-year-label">Penalty fees · This year</div>
+      <div class="tile-value"><span id="fig-penalty-year">—</span><span class="status-tag" id="penalty-year-tag"></span></div>
+      <div class="tile-sub" id="fig-penalty-year-sub">&nbsp;</div>
     </div>
   </div>
 
@@ -763,6 +799,7 @@
 // v310: days follow eBay's time zone (Pacific), so ranges cover the same hours as eBay's reports.
 // v311: clicking the "eBay · updated" badge refreshes from eBay right away.
 // v312: partial refunds come off sales like on eBay; "Download orders" in Admin.
+// v315: This month / Last month / any month / custom dates; penalty fees this year (last year under it).
 // Shares the same sign-in and account as the listing tool (/list).
 // v304: sales dashboard — big daily bar graph with a remembered date range.
 // The sales numbers are SAMPLE data for now; real eBay sales replace
@@ -789,6 +826,8 @@ let liveRows = [];        // v309: last daily rows from the server, so the toggl
 let feesInfo = { available: false, reason: 'not_connected' };   // v307
 let feesByDay = new Map();                                       // v307: 'YYYY-MM-DD' → [fees, penalty]
 let shownDays = [];
+let curInfo = { days: 7, label: 'Last 7 days', start: '', end: '' };   // v315: the range being shown
+let rangeStartIdx = 0;                                                   // v315: where it starts in allDays
 
 // ─── FORMATTING ──────────────────────────────────────────────────────────────
 const money0 = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
@@ -858,7 +897,8 @@ function getSalesDays(totalDays) {
 function setText(id, text) { document.getElementById(id).textContent = text; }
 
 function renderFigures() {
-  const r = RANGES[currentRange];
+  // const r = RANGES[currentRange];
+  const r = curInfo;   // v315: works for months and custom dates too
   const total = shownDays.reduce((s, d) => s + d.sales, 0);
   const orders = shownDays.reduce((s, d) => s + d.orders, 0);
   const today = allDays[allDays.length - 1];
@@ -869,7 +909,8 @@ function renderFigures() {
   setText('fig-total-label', (salesMode === 'live' && taxOn ? 'Sales incl. tax · ' : 'Sales · ') + r.label);   // v309
   setText('fig-total', money0.format(total));
   // Compare against the same-length period right before it
-  const prev = allDays.slice(-2 * r.days, -r.days);
+  // const prev = allDays.slice(-2 * r.days, -r.days);
+  const prev = allDays.slice(Math.max(0, rangeStartIdx - r.days), rangeStartIdx);   // v315: the days right before the range
   // v305: with real data, compare only against days eBay actually gave us.
   // eBay keeps about 2 years, so the Year view's earlier period can be a day or
   // two short — then it compares by the same number of days on both sides.
@@ -1060,7 +1101,7 @@ function renderChart() {
   };
   svg.onblur = () => show(-1);
 
-  svg.setAttribute('aria-label', `Sales per day, ${RANGES[currentRange].label}. Total ${money0.format(shownDays.reduce((s, d) => s + d.sales, 0))}.`);
+  svg.setAttribute('aria-label', `Sales per day, ${curInfo.label}. Total ${money0.format(shownDays.reduce((s, d) => s + d.sales, 0))}.`);
 }
 
 function renderTable() {
@@ -1077,13 +1118,102 @@ function renderTable() {
 }
 
 // ─── RANGE PICKER (remembered) ───────────────────────────────────────────────
+// v315: any range → first and last day (eBay time), how many days, and a label.
+// Ranges: today, week, 31, 90, year, thismonth, lastmonth,
+//         m:YYYY-MM (one month), c:YYYY-MM-DD:YYYY-MM-DD (custom dates)
+function keyToDate(k) { const [y, m, d] = k.split('-').map(Number); return new Date(y, m - 1, d); }
+function daysBetween(a, b) { return Math.round((keyToDate(b) - keyToDate(a)) / 86400000) + 1; }
+const fmtMonthYear = (d) => d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+function rangeInfo(range) {
+  if (!allDays.length) return null;
+  const todayKey = allDays[allDays.length - 1].key, firstKey = allDays[0].key;
+  const today = keyToDate(todayKey);
+  const clamp = (k) => (k < firstKey ? firstKey : k > todayKey ? todayKey : k);
+  let start, end, label;
+  if (RANGES[range]) {
+    const r = RANGES[range];
+    return { days: r.days, label: r.label, start: allDays[allDays.length - r.days].key, end: todayKey };
+  }
+  if (range === 'thismonth' || range === 'lastmonth' || /^m:\d{4}-\d{2}$/.test(range)) {
+    let first;
+    if (range === 'thismonth') first = new Date(today.getFullYear(), today.getMonth(), 1);
+    else if (range === 'lastmonth') first = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+    else { const [y, m] = range.slice(2).split('-').map(Number); first = new Date(y, m - 1, 1); }
+    const last = new Date(first.getFullYear(), first.getMonth() + 1, 0);
+    start = dayKey(first); end = dayKey(last);
+    if (start > todayKey || end < firstKey) return null;
+    label = fmtMonthYear(first) + (end > todayKey ? ' (so far)' : '');
+  } else {
+    const m = /^c:(\d{4}-\d{2}-\d{2}):(\d{4}-\d{2}-\d{2})$/.exec(range);
+    if (!m) return null;
+    start = m[1]; end = m[2];
+    if (start > end) [start, end] = [end, start];
+    const a = keyToDate(clamp(start)), b = keyToDate(clamp(end));
+    label = fmtShort(a) + (a.getFullYear() !== b.getFullYear() ? ', ' + a.getFullYear() : '') + ' – ' + fmtShort(b) + ', ' + b.getFullYear();
+  }
+  start = clamp(start); end = clamp(end);
+  return { days: daysBetween(start, end), label, start, end };
+}
+
+// v315: month dropdown — every month we have sales history for, newest first
+function fillMonthMenu() {
+  const sel = document.getElementById('range-month');
+  if (!allDays.length) return;
+  while (sel.options.length > 1) sel.remove(1);
+  const first = keyToDate(allDays[0].key), last = keyToDate(allDays[allDays.length - 1].key);
+  for (let d = new Date(last.getFullYear(), last.getMonth(), 1); d >= new Date(first.getFullYear(), first.getMonth(), 1); d.setMonth(d.getMonth() - 1)) {
+    const o = document.createElement('option');
+    o.value = 'm:' + d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+    o.textContent = fmtMonthYear(d);
+    sel.appendChild(o);
+  }
+}
+
+function toggleCustom() {
+  const box = document.getElementById('range-custom');
+  box.hidden = !box.hidden;
+  if (!box.hidden) {
+    const from = document.getElementById('range-from'), to = document.getElementById('range-to');
+    if (allDays.length) { from.min = to.min = allDays[0].key; from.max = to.max = allDays[allDays.length - 1].key; }
+    if (!from.value) from.value = curInfo.start;
+    if (!to.value) to.value = curInfo.end;
+    from.focus();
+  }
+  document.getElementById('range-custom-btn').setAttribute('aria-pressed', !box.hidden || currentRange.startsWith('c:') ? 'true' : 'false');
+}
+
+function applyCustom() {
+  const a = document.getElementById('range-from').value, b = document.getElementById('range-to').value;
+  if (!a || !b) { showToast('Pick a start date and an end date.', true); return; }
+  setRange('c:' + a + ':' + b, true);
+}
+
 function setRange(range, save) {
-  if (!RANGES[range]) range = 'week';
+  // if (!RANGES[range]) range = 'week';
+  // currentRange = range;
+  // shownDays = allDays.slice(-RANGES[range].days);
+  // document.querySelectorAll('.range-picker button').forEach(b => {
+  //   b.setAttribute('aria-pressed', b.dataset.range === range ? 'true' : 'false');
+  // });
+  // v315: months and custom dates too
+  let info = rangeInfo(range);
+  if (!info) { range = 'week'; info = rangeInfo(range); }
+  if (!info) return;
   currentRange = range;
-  shownDays = allDays.slice(-RANGES[range].days);
+  curInfo = info;
+  rangeStartIdx = allDays.findIndex(d => d.key >= info.start);
+  shownDays = allDays.filter(d => d.key >= info.start && d.key <= info.end);
   document.querySelectorAll('.range-picker button').forEach(b => {
     b.setAttribute('aria-pressed', b.dataset.range === range ? 'true' : 'false');
   });
+  fillMonthMenu();
+  const sel = document.getElementById('range-month');
+  sel.value = range.startsWith('m:') ? range : '';
+  sel.classList.toggle('active', range.startsWith('m:'));
+  const isCustom = range.startsWith('c:');
+  if (isCustom) { document.getElementById('range-from').value = info.start; document.getElementById('range-to').value = info.end; }
+  else document.getElementById('range-custom').hidden = true;
+  document.getElementById('range-custom-btn').setAttribute('aria-pressed', isCustom ? 'true' : 'false');
   if (save) {
     try { localStorage.setItem(RANGE_KEY, range); } catch (e) { /* not critical */ }
     // v305: also on your account, so every computer opens on the same range
@@ -1313,7 +1443,9 @@ async function loadFees() {
 }
 
 function renderFees(salesTotal) {
-  const r = RANGES[currentRange];
+  // const r = RANGES[currentRange];
+  const r = curInfo;   // v315
+  renderPenaltyYear();   // v315
   const tile = document.getElementById('penalty-tile');
   const tag = document.getElementById('penalty-tag');
   setText('fig-fees-label', 'eBay fees · ' + r.label);
@@ -1346,6 +1478,26 @@ function renderFees(salesTotal) {
     tag.textContent = 'None';
     setText('fig-penalty-sub', 'No Below Standard or "not as described" surcharges');
   }
+}
+
+// v315: penalty fees paid this calendar year (eBay time), last year underneath —
+// the same whatever range the graph shows.
+function renderPenaltyYear() {
+  const tile = document.getElementById('penalty-year-tile');
+  const tag = document.getElementById('penalty-year-tag');
+  const year = ebayToday().getFullYear();
+  setText('fig-penalty-year-label', 'Penalty fees · ' + year);
+  tile.classList.remove('ok', 'bad');
+  tag.textContent = '';
+  if (!feesInfo.available) { setText('fig-penalty-year', '—'); setText('fig-penalty-year-sub', ' '); return; }
+  let thisYear = 0, lastYear = 0;
+  feesByDay.forEach((v, key) => {
+    if (key.startsWith(year + '-')) thisYear += v[1];
+    else if (key.startsWith((year - 1) + '-')) lastYear += v[1];
+  });
+  if (thisYear > 0.005) { tile.classList.add('bad'); setText('fig-penalty-year', money2.format(thisYear)); tag.textContent = 'Paid'; }
+  else { tile.classList.add('ok'); setText('fig-penalty-year', '$0'); tag.textContent = 'None'; }
+  setText('fig-penalty-year-sub', (year - 1) + ' ' + (lastYear > 0.005 ? money2.format(lastYear) : '$0'));
 }
 
 // ─── v305: SETTINGS ──────────────────────────────────────────────────────────

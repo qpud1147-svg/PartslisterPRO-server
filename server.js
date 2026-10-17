@@ -1,4 +1,4 @@
-// PartsLister Pro server — v314
+// PartsLister Pro server — v315
 // v302: dashboard.html is the homepage (/). The listing tool moved to /list.
 // v305: eBay sales connection — real sold orders on the dashboard.
 // v306: asks eBay for two more permissions — fees/payouts and seller metrics.
@@ -10,6 +10,7 @@
 //       Admin "Look up one order" to see exactly what eBay sends for an order.
 // v314: refunds take the sales tax back off too, like eBay (checked against
 //       892 orders: matches eBay's All orders report within 1 cent).
+// v315: remembers the new dashboard ranges (this/last month, a month, custom dates).
 // Accounts with email + password login. Each account's settings (including its
 // own API keys) and history are saved ENCRYPTED in Postgres, so you can log in
 // from any computer and everything is there. Also keeps a lifetime listing count.
@@ -1032,7 +1033,9 @@ app.post('/api/prefs', requireUser, express.json(), async (req, res) => {
   const b = req.body || {};
   if (b.dashRange !== undefined) {
     const range = String(b.dashRange);
-    if (!['today', 'week', '31', '90', 'year'].includes(range)) return res.status(400).json({ error: 'Bad range' });
+    // if (!['today', 'week', '31', '90', 'year'].includes(range)) return res.status(400).json({ error: 'Bad range' });
+    // v315: + this month, last month, one month (m:2026-09), custom dates (c:2026-09-01:2026-09-30)
+    if (!/^(today|week|31|90|year|thismonth|lastmonth|m:\d{4}-\d{2}|c:\d{4}-\d{2}-\d{2}:\d{4}-\d{2}-\d{2})$/.test(range)) return res.status(400).json({ error: 'Bad range' });
     await pool.query('UPDATE users SET dash_range = $2 WHERE id = $1', [req.user.id, range]);
   }
   if (b.dashTax !== undefined) await pool.query('UPDATE users SET dash_tax = $2 WHERE id = $1', [req.user.id, !!b.dashTax]);
@@ -1340,5 +1343,5 @@ app.get('*', (req, res) => {
 });
 
 setupDatabase()
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v314 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v315 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });
