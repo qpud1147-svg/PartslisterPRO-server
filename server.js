@@ -1,4 +1,4 @@
-// PartsLister Pro server — v316
+// PartsLister Pro server — v319
 // v302: dashboard.html is the homepage (/). The listing tool moved to /list.
 // v305: eBay sales connection — real sold orders on the dashboard.
 // v306: asks eBay for two more permissions — fees/payouts and seller metrics.
@@ -13,6 +13,9 @@
 // v315: remembers the new dashboard ranges (this/last month, a month, custom dates).
 // v316: new Home page (/) and Listings page (/listings); the sales dashboard moved to /sales.
 //       Active listing count + value from eBay (Trading API GetMyeBaySelling), cached an hour.
+// v318: the active-listings page is now Active (/active, active.html); the Listings tab opens the Listing Tool (/list).
+// v319: Orders page (/orders) — your sold items. Saves each order's items (title, SKU,
+//       quantity, price) and shipping status. No buyer names or addresses are saved.
 // Accounts with email + password login. Each account's settings (including its
 // own API keys) and history are saved ENCRYPTED in Postgres, so you can log in
 // from any computer and everything is there. Also keeps a lifetime listing count.
@@ -105,6 +108,20 @@ async function setupDatabase() {
     -- v309: sales tax per order + the dashboard's tax toggle
     ALTER TABLE ebay_orders ADD COLUMN IF NOT EXISTS tax NUMERIC(12,2) NOT NULL DEFAULT 0;
     ALTER TABLE ebay_connections ADD COLUMN IF NOT EXISTS orders_v INTEGER NOT NULL DEFAULT 0;
+    -- v319: what was in each order (for the Orders page) + whether it has shipped
+    CREATE TABLE IF NOT EXISTS ebay_order_items (
+      user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      order_id     TEXT NOT NULL,
+      line_item_id TEXT NOT NULL,
+      item_id      TEXT,
+      sku          TEXT,
+      title        TEXT,
+      qty          INTEGER NOT NULL DEFAULT 1,
+      price        NUMERIC(12,2),
+      PRIMARY KEY (user_id, line_item_id)
+    );
+    CREATE INDEX IF NOT EXISTS ebay_order_items_order ON ebay_order_items (user_id, order_id);
+    ALTER TABLE ebay_orders ADD COLUMN IF NOT EXISTS ship_status TEXT;
     ALTER TABLE ebay_connections ADD COLUMN IF NOT EXISTS active_count INTEGER;          -- v316: live listings on eBay
     ALTER TABLE ebay_connections ADD COLUMN IF NOT EXISTS active_value NUMERIC(14,2);    -- v316: their asking prices added up
     ALTER TABLE ebay_connections ADD COLUMN IF NOT EXISTS active_sync TIMESTAMPTZ;       -- v316: when that was last checked
@@ -758,7 +775,16 @@ function mapOrder(o) {
     counted,
     tax: Math.round(tax * 100) / 100,   // v309
     refunded: Math.round(refunded * 100) / 100,   // v312
-    refundedTax: Math.round(refundedTax * 100) / 100   // v314
+    refundedTax: Math.round(refundedTax * 100) / 100,   // v314
+    shipStatus: o.orderFulfillmentStatus || null,          // v319: NOT_STARTED / IN_PROGRESS / FULFILLED
+    lineItems: (o.lineItems || []).map(li => ({            // v319: what was sold (no buyer details)
+      lineItemId: String(li.lineItemId || ''),
+      itemId: li.legacyItemId ? String(li.legacyItemId) : null,
+      sku: li.sku || null,
+      title: li.title || null,
+      qty: parseInt(li.quantity, 10) || 1,
+      price: money(li.lineItemCost)
+    })).filter(li => li.lineItemId)
   };
 }
 
@@ -767,19 +793,38 @@ async function saveOrders(userId, orders) {
   const values = [];
   const params = [];
   orders.forEach((o, i) => {
-    const b = i * 12;   // v309: + tax, v312: + refunded, v314: + refunded_tax
-    values.push(`($${b + 1},$${b + 2},$${b + 3},$${b + 4},$${b + 5},$${b + 6},$${b + 7},$${b + 8},$${b + 9},$${b + 10},$${b + 11},$${b + 12})`);
-    params.push(userId, o.orderId, o.created, o.total, o.payout, o.fees, o.items, o.status, o.counted, o.tax, o.refunded, o.refundedTax);
+    const b = i * 13;   // v309: + tax, v312: + refunded, v314: + refunded_tax, v319: + ship_status
+    values.push(`($${b + 1},$${b + 2},$${b + 3},$${b + 4},$${b + 5},$${b + 6},$${b + 7},$${b + 8},$${b + 9},$${b + 10},$${b + 11},$${b + 12},$${b + 13})`);
+    params.push(userId, o.orderId, o.created, o.total, o.payout, o.fees, o.items, o.status, o.counted, o.tax, o.refunded, o.refundedTax, o.shipStatus);
   });
   await pool.query(
-    `INSERT INTO ebay_orders (user_id, order_id, created_at, total, payout, fees, item_count, status, counted, tax, refunded, refunded_tax)
+    `INSERT INTO ebay_orders (user_id, order_id, created_at, total, payout, fees, item_count, status, counted, tax, refunded, refunded_tax, ship_status)
      VALUES ${values.join(',')}
      ON CONFLICT (user_id, order_id) DO UPDATE SET
        created_at = EXCLUDED.created_at, total = EXCLUDED.total, payout = EXCLUDED.payout,
        fees = EXCLUDED.fees, item_count = EXCLUDED.item_count, status = EXCLUDED.status, counted = EXCLUDED.counted,
-       tax = EXCLUDED.tax, refunded = EXCLUDED.refunded, refunded_tax = EXCLUDED.refunded_tax`,
+       tax = EXCLUDED.tax, refunded = EXCLUDED.refunded, refunded_tax = EXCLUDED.refunded_tax, ship_status = EXCLUDED.ship_status`,
     params
   );
+  // v319: the items in each order
+  const lis = [];
+  orders.forEach(o => (o.lineItems || []).forEach(li => lis.push([o.orderId, li])));
+  if (lis.length) {
+    const v2 = [], p2 = [];
+    lis.forEach(([orderId, li], i) => {
+      const b = i * 8;
+      v2.push(`($${b + 1},$${b + 2},$${b + 3},$${b + 4},$${b + 5},$${b + 6},$${b + 7},$${b + 8})`);
+      p2.push(userId, orderId, li.lineItemId, li.itemId, li.sku, li.title ? String(li.title).slice(0, 300) : null, li.qty, li.price);
+    });
+    await pool.query(
+      `INSERT INTO ebay_order_items (user_id, order_id, line_item_id, item_id, sku, title, qty, price)
+       VALUES ${v2.join(',')}
+       ON CONFLICT (user_id, line_item_id) DO UPDATE SET
+         order_id = EXCLUDED.order_id, item_id = EXCLUDED.item_id, sku = EXCLUDED.sku,
+         title = EXCLUDED.title, qty = EXCLUDED.qty, price = EXCLUDED.price`,
+      p2
+    );
+  }
 }
 
 // First sync pulls about two years; later syncs pull only orders that changed
@@ -798,7 +843,8 @@ async function syncOrders(userId) {
     // if (!conn.last_sync) {
     // if (!conn.last_sync || (conn.orders_v || 0) < 3) {   // v309: tax, v312: refunds — re-import once
     // if (!conn.last_sync || (conn.orders_v || 0) < 4) {   // v313: refunds per item — re-import once
-    if (!conn.last_sync || (conn.orders_v || 0) < 5) {   // v314: tax on refunds — re-import once
+    // if (!conn.last_sync || (conn.orders_v || 0) < 5) {   // v314: tax on refunds — re-import once
+    if (!conn.last_sync || (conn.orders_v || 0) < 6) {   // v319: order items for the Orders page — re-import once
       historyFrom = new Date(started.getTime() - HISTORY_DAYS * 86400000);
       filter = `creationdate:[${historyFrom.toISOString()}..]`;
     } else {
@@ -834,7 +880,7 @@ async function syncOrders(userId) {
     }
     await pool.query(
       `UPDATE ebay_connections SET last_sync = $2, last_error = NULL,
-         history_from = COALESCE($3, history_from), orders_v = 5 WHERE user_id = $1`,   // v313: was 3, v314: was 4
+         history_from = COALESCE($3, history_from), orders_v = 6 WHERE user_id = $1`,   // v313: was 3, v314: was 4, v319: was 5
       [userId, started, historyFrom]
     );
     await syncFees(userId);   // v307: fees import has its own error handling
@@ -977,6 +1023,7 @@ app.post('/api/ebay/disconnect', requireUser, requireAdmin, async (req, res) => 
     [req.user.id]
   );
   await pool.query('DELETE FROM ebay_orders WHERE user_id = $1', [req.user.id]);
+  await pool.query('DELETE FROM ebay_order_items WHERE user_id = $1', [req.user.id]);   // v319
   await pool.query('DELETE FROM ebay_fee_lines WHERE user_id = $1', [req.user.id]);   // v307
   res.json({ ok: true });
 });
@@ -1011,7 +1058,8 @@ app.get('/api/sales', requireUser, async (req, res) => {
     // if (stale && !syncing.has(req.user.id) && !conn.last_error) syncOrders(req.user.id);
     const feesNeeded = hasScope(conn, FIN_SCOPE) && !conn.fees_sync && !conn.fees_error;   // v307
     // const taxNeeded = (conn.orders_v || 0) < 3;   // v309/v312: one-time re-import for tax + refunds
-    const taxNeeded = (conn.orders_v || 0) < 5;   // v314: re-import right away for tax on refunds
+    // const taxNeeded = (conn.orders_v || 0) < 5;   // v314: re-import right away for tax on refunds
+    const taxNeeded = (conn.orders_v || 0) < 6;   // v319: re-import right away for order items
     if ((stale || feesNeeded || taxNeeded) && !syncing.has(req.user.id) && !conn.last_error) syncOrders(req.user.id);
     let historyFrom = null;
     if (conn.history_from) {
@@ -1322,6 +1370,48 @@ app.get('/api/fees', requireUser, async (req, res) => {
   }
 });
 
+// ─── v319: ORDERS PAGE ───────────────────────────────────────────────────────
+// Your sold orders with what was in them, newest first. Days are in the time
+// zone the page asks for (eBay's Pacific time).
+app.get('/api/orders/list', requireUser, async (req, res) => {
+  try {
+    const conn = await getConnection(req.user.id);
+    if (!conn || !conn.refresh_enc) return res.json({ connected: false });
+    const days = Math.max(1, Math.min(730, parseInt(req.query.days, 10) || 31));
+    const tz = safeTimeZone(String(req.query.tz || 'UTC'));
+    if ((conn.orders_v || 0) < 6 && !syncing.has(req.user.id) && !conn.last_error) syncOrders(req.user.id);
+    const r = await pool.query(
+      `SELECT o.order_id, o.created_at, to_char(o.created_at AT TIME ZONE $2, 'YYYY-MM-DD HH24:MI') AS sold_local,
+              o.total::float, o.tax::float, o.refunded::float, o.refunded_tax::float, o.counted, o.status, o.ship_status,
+              COALESCE(json_agg(json_build_object('itemId', i.item_id, 'sku', i.sku, 'title', i.title, 'qty', i.qty, 'price', i.price::float)
+                         ORDER BY i.line_item_id) FILTER (WHERE i.line_item_id IS NOT NULL), '[]') AS items
+         FROM ebay_orders o
+         LEFT JOIN ebay_order_items i ON i.user_id = o.user_id AND i.order_id = o.order_id
+        WHERE o.user_id = $1 AND (o.created_at AT TIME ZONE $2)::date > (now() AT TIME ZONE $2)::date - $3::int
+        GROUP BY o.order_id, o.created_at, o.total, o.tax, o.refunded, o.refunded_tax, o.counted, o.status, o.ship_status
+        ORDER BY o.created_at DESC
+        LIMIT 3000`,
+      [req.user.id, tz, days]
+    );
+    res.json({
+      connected: true,
+      ready: (conn.orders_v || 0) >= 6,
+      syncing: syncing.has(req.user.id),
+      lastSync: conn.last_sync,
+      lastError: conn.last_error || null,
+      orders: r.rows.map(x => ({
+        id: x.order_id, sold: x.sold_local, counted: x.counted, status: x.status || '', ship: x.ship_status || null,
+        total: x.counted ? Math.round((x.total + x.tax - x.refunded - x.refunded_tax) * 100) / 100 : 0,
+        refunded: Math.round((x.refunded + x.refunded_tax) * 100) / 100,
+        items: x.items
+      }))
+    });
+  } catch (e) {
+    console.error('[orders list]', e);
+    res.status(500).json({ error: 'Could not load orders' });
+  }
+});
+
 // ─── v316: ACTIVE LISTINGS ───────────────────────────────────────────────────
 // How many listings are live on eBay and what their asking prices add up to.
 // Uses the Trading API's GetMyeBaySelling (ActiveList), 200 listings per call.
@@ -1423,20 +1513,27 @@ app.get('/api/listings/summary', requireUser, async (req, res) => {
 const DASHBOARD = path.join(__dirname, 'dashboard.html');
 const LISTING = path.join(__dirname, 'index.html');
 const HOME = path.join(__dirname, 'home.html');            // v316
-const LISTINGS = path.join(__dirname, 'listings.html');    // v316
+// const LISTINGS = path.join(__dirname, 'listings.html');    // v316
+const ACTIVE = path.join(__dirname, 'active.html');        // v318: was listings.html
+const ORDERS = path.join(__dirname, 'orders.html');        // v319
 
 // app.get('/', (req, res) => res.sendFile(DASHBOARD));
 // v316: Home is the landing page; the sales dashboard is /sales
 app.get('/', (req, res) => res.sendFile(HOME));
 app.get(['/sales', '/sales/'], (req, res) => res.sendFile(DASHBOARD));
-app.get(['/listings', '/listings/'], (req, res) => res.sendFile(LISTINGS));
+// app.get(['/listings', '/listings/'], (req, res) => res.sendFile(LISTINGS));
+app.get(['/active', '/active/'], (req, res) => res.sendFile(ACTIVE));                     // v318
+app.get(['/orders', '/orders/'], (req, res) => res.sendFile(ORDERS));                     // v319
+app.get(['/listings', '/listings/'], (req, res) => res.redirect(301, '/active'));         // v318: old address
 app.get(['/list', '/list/'], (req, res) => res.sendFile(LISTING));
 // Old links and bookmarks to the file names still work
 app.get(['/index.html'], (req, res) => res.redirect(301, '/list'));
 // app.get(['/dashboard', '/dashboard.html'], (req, res) => res.redirect(301, '/'));
 app.get(['/dashboard', '/dashboard.html'], (req, res) => res.redirect(301, '/sales'));   // v316
 app.get(['/home.html'], (req, res) => res.redirect(301, '/'));                           // v316
-app.get(['/listings.html'], (req, res) => res.redirect(301, '/listings'));               // v316
+// app.get(['/listings.html'], (req, res) => res.redirect(301, '/listings'));               // v316
+app.get(['/listings.html', '/active.html'], (req, res) => res.redirect(301, '/active'));  // v318
+app.get(['/orders.html'], (req, res) => res.redirect(301, '/orders'));                    // v319
 
 // v301 sent every unknown address to the listing tool:
 // const INDEX = path.join(__dirname, 'index.html');
@@ -1450,5 +1547,5 @@ app.get('*', (req, res) => {
 });
 
 setupDatabase()
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v316 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v319 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });

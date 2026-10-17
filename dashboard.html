@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Sales v316</title>
+<title>PartsLister Pro Sales v319</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@400;500;600&display=swap');
 
@@ -74,6 +74,7 @@
   .page-tabs a:hover { color: var(--text); background: var(--surface2); }
   .page-tabs a[aria-current="page"] { color: #000; background: var(--accent); }
   @media (max-width: 700px) { .page-tabs { margin-left: 4px; } .page-tabs a { padding: 5px 7px; font-size: 13px; letter-spacing: 0.5px; } .logo { font-size: 20px; } }
+  @media (max-width: 700px) { .page-tabs { overflow-x: auto; scrollbar-width: none; flex-shrink: 1; min-width: 0; } .page-tabs a { padding: 5px 6px; font-size: 12px; flex-shrink: 0; } }   /* v319: 5 tabs */
   .header-right { margin-left: auto; display: flex; align-items: center; gap: 10px; min-width: 0; }
   .who {
     font-size: 12px;
@@ -528,17 +529,24 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v316</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v319</span></div>
   </a>
   <!-- v316: switch pages -->
   <nav class="page-tabs" aria-label="Pages">
+    <!-- v318: was Home / Sales / Listings (the active page)
     <a href="/">Home</a>
     <a href="/sales" aria-current="page">Sales</a>
     <a href="/listings">Listings</a>
+    -->
+    <a href="/">Home</a>
+    <a href="/sales" aria-current="page">Sales</a>
+    <a href="/orders">Orders</a>   <!-- v319 -->
+    <a href="/active">Active</a>
+    <a href="/list" title="Open the Listing Tool">Listings</a>   <!-- v318: the Listing Tool -->
   </nav>
   <div class="header-right">
     <span class="who" id="who"></span>
-    <a href="/list" class="btn btn-secondary btn-sm">Listing Tool →</a>
+    <!-- <a href="/list" class="btn btn-secondary btn-sm">Listing Tool →</a>   v318: now the Listings tab -->
     <button class="btn btn-secondary btn-sm" onclick="openSettings()" title="Settings" aria-label="Settings">⚙</button>   <!-- v305 -->
     <button class="btn btn-secondary btn-sm header-logout" onclick="logout()">Log Out</button>
   </div>
@@ -682,7 +690,7 @@
           <p>Your live eBay listings at a glance.</p>
         </div>
         -->
-        <a class="soon" href="/listings" style="text-decoration:none;color:inherit;border-style:solid;">
+        <a class="soon" href="/active" style="text-decoration:none;color:inherit;border-style:solid;">
           <h3>Active Listings →</h3>
           <p>Live on the Listings page: how many are up and their total value.</p>
         </a>
@@ -822,6 +830,7 @@
 // v312: partial refunds come off sales like on eBay; "Download orders" in Admin.
 // v315: This month / Last month / any month / custom dates; penalty fees this year (last year under it).
 // v316: this page is now Sales (/sales). Home (/) and Listings (/listings) tabs in the header.
+// v318: tabs are Home / Sales / Active (/active) / Listings (the Listing Tool, /list).
 // Shares the same sign-in and account as the listing tool (/list).
 // v304: sales dashboard — big daily bar graph with a remembered date range.
 // The sales numbers are SAMPLE data for now; real eBay sales replace

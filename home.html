@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Home v317</title>
-<!-- PartsLister Pro — Home page (v316: new; v317: cut to three tiles — Sales, Active listings, Needs attention). Shares the sign-in, account and
+<title>PartsLister Pro Home v319</title>
+<!-- PartsLister Pro — Home page (v316: new; v317: cut to three tiles — Sales, Active listings, Needs attention; v318: tabs Home / Sales / Active / Listings). Shares the sign-in, account and
      eBay connection with the Sales page (/sales) and the listing tool (/list). -->
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@400;500;600&display=swap');
@@ -105,6 +105,8 @@
     .header-right .btn-sm { padding: 5px 8px; font-size: 11px; letter-spacing: 0.5px; }
     .page-tabs { margin-left: 4px; }
     .page-tabs a { padding: 5px 7px; font-size: 13px; letter-spacing: 0.5px; }
+    .page-tabs { overflow-x: auto; scrollbar-width: none; flex-shrink: 1; min-width: 0; }   /* v319: 5 tabs — slide sideways if needed */
+    .page-tabs a { padding: 5px 6px; font-size: 12px; flex-shrink: 0; }
     .logo { font-size: 20px; }
     main { padding: 16px 16px 40px; }
     .grid { grid-template-columns: 1fr; }
@@ -117,16 +119,23 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v317</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v319</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
+    <!-- v318: was Home / Sales / Listings (the active page)
     <a href="/" aria-current="page">Home</a>
     <a href="/sales">Sales</a>
     <a href="/listings">Listings</a>
+    -->
+    <a href="/" aria-current="page">Home</a>
+    <a href="/sales">Sales</a>
+    <a href="/orders">Orders</a>   <!-- v319 -->
+    <a href="/active">Active</a>
+    <a href="/list" title="Open the Listing Tool">Listings</a>   <!-- v318: the Listing Tool -->
   </nav>
   <div class="header-right">
     <span class="who" id="who"></span>
-    <a href="/list" class="btn btn-secondary btn-sm header-wide">Listing Tool →</a>
+    <!-- <a href="/list" class="btn btn-secondary btn-sm header-wide">Listing Tool →</a>   v318: now the Listings tab -->
     <a href="/sales?settings=1" class="btn btn-secondary btn-sm" title="Settings" aria-label="Settings">⚙</a>
     <button class="btn btn-secondary btn-sm header-wide" onclick="logout()">Log Out</button>
   </div>
@@ -162,7 +171,7 @@
       <div class="tile-sub" id="h-fees-sub">&nbsp;</div>
     </a>
     -->
-    <a class="tile" href="/listings">
+    <a class="tile" href="/active">   <!-- v318: was /listings -->
       <div class="tile-label">Active listings</div>
       <div class="tile-value" id="h-active">—</div>
       <div class="tile-sub" id="h-active-sub">&nbsp;</div>
@@ -303,7 +312,7 @@ async function loadHome() {
       setText('h-active', Number(listings.activeCount).toLocaleString());
       setText('h-active-sub', 'Worth ' + money0.format(listings.activeValue || 0) + ' · Listed ever ' + Number(listings.listedLifetime || 0).toLocaleString());
     }
-    if (listings.error) attention.push(['Couldn’t read active listings', '/listings']);
+    if (listings.error) attention.push(['Couldn’t read active listings', '/active']);   // v318: was /listings
   } else {
     setText('h-active', '—');
     setText('h-active-sub', 'Connect eBay to see listings');
