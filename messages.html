@@ -3,9 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Messages v321</title>
-<!-- PartsLister Pro — Messages page (v321: new). Your eBay messages, read live from eBay
-     (nothing about them is saved on the server). Reply to buyers' questions from here. -->
+<title>PartsLister Pro Messages v322</title>
+<!-- PartsLister Pro — Messages page (v321: new; v322: conversation threads — the whole back-and-forth
+     with each buyer, chat style, from eBay's Message API. Offers from a conversation. The v321
+     email-style view is still at /messages/classic). Nothing about your messages is saved on the server. -->
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@400;500;600&display=swap');
 
@@ -113,7 +114,7 @@
     .tile-value { font-size: 34px; }
   }
 
-  /* v321: MESSAGES — same controls as Orders */
+  /* v322: MESSAGE THREADS */
   .controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 14px; }
   .seg { display: inline-flex; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 3px; gap: 2px; }
   .seg button {
@@ -129,48 +130,71 @@
   .search:focus { border-color: var(--accent); }
   .summary { color: var(--muted); font-size: 13px; margin-bottom: 10px; }
 
-  .mlist .empty { color: var(--muted); padding: 40px 0; text-align: center; }
-  .mwrap { display: grid; grid-template-columns: minmax(300px, 380px) 1fr; gap: 12px; align-items: start; }
-  .mlist { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; max-height: calc(100vh - 250px); min-height: 300px; overflow-y: auto; }
-  .mrow { display: block; width: 100%; text-align: left; background: none; border: none; border-bottom: 1px solid var(--border); color: var(--text2); padding: 10px 14px; cursor: pointer; font: inherit; }
-  .mrow:hover { background: var(--surface2); }
-  .mrow.on { background: var(--surface2); box-shadow: inset 3px 0 0 var(--accent); }
-  .mrow .m1 { display: flex; gap: 8px; align-items: baseline; }
-  .mrow .mwho { font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: none; font-size: 14px; }
-  .mrow .when { margin-left: auto; font-size: 12px; color: var(--muted); white-space: nowrap; }
-  .mrow .subj { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
-  .mrow .item { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
-  .mrow.unread .mwho, .mrow.unread .subj { color: var(--text); font-weight: 700; }
-  .mrow.unread .mwho::before { content: ''; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); margin-right: 6px; vertical-align: 1px; }
-  .tag { font-family: 'Barlow Condensed', sans-serif; font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--success); margin-left: 6px; }
-  .mview { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 16px 18px; min-height: 300px; }
-  .mview .empty { color: var(--muted); padding: 60px 0; text-align: center; }
-  .mv-subj { font-size: 18px; font-weight: 600; line-height: 1.35; margin-bottom: 6px; padding-right: 80px; }
-  .mv-meta { color: var(--muted); font-size: 13px; margin-bottom: 12px; }
-  .mv-meta b { color: var(--text2); font-weight: 600; }
-  .mv-item { display: flex; gap: 12px; align-items: center; background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; margin-bottom: 12px; color: var(--text); text-decoration: none; }
-  .mv-item:hover { border-color: var(--accent); }
-  .mv-item img { width: 48px; height: 48px; object-fit: cover; border-radius: 4px; background: var(--bg); flex-shrink: 0; }
-  .mv-item span { font-size: 13px; line-height: 1.35; }
-  .mv-body { width: 100%; border: 1px solid var(--border); border-radius: 6px; background: #fff; min-height: 160px; }
-  .mv-text { white-space: pre-wrap; line-height: 1.5; color: var(--text); background: var(--surface2); border-radius: 6px; padding: 12px; }
-  .reply { margin-top: 14px; }
-  .reply textarea { width: 100%; min-height: 110px; resize: vertical; background: var(--surface2); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 10px 12px; font-family: 'Barlow', sans-serif; font-size: 14px; line-height: 1.45; outline: none; }
-  .reply textarea:focus { border-color: var(--accent); }
-  .reply-row { display: flex; align-items: center; gap: 10px; margin-top: 8px; flex-wrap: wrap; }
-  .reply-row .count { color: var(--muted); font-size: 12px; margin-left: auto; }
+
+  .twrap { display: grid; grid-template-columns: minmax(280px, 360px) 1fr; gap: 12px; align-items: stretch; height: calc(100vh - 260px); min-height: 420px; }
+  .tlist { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; overflow-y: auto; }
+  .tlist .empty { color: var(--muted); padding: 40px 12px; text-align: center; }
+  .trow { display: block; width: 100%; text-align: left; background: none; border: none; border-bottom: 1px solid var(--border); color: var(--text2); padding: 10px 14px; cursor: pointer; font: inherit; }
+  .trow:hover { background: var(--surface2); }
+  .trow.on { background: var(--surface2); box-shadow: inset 3px 0 0 var(--accent); }
+  .trow .r1 { display: flex; gap: 8px; align-items: baseline; }
+  .trow .tname { font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .trow .tdate { margin-left: auto; font-size: 12px; color: var(--muted); white-space: nowrap; }
+  .trow .badge { background: var(--accent); color: #000; font-size: 11px; font-weight: 700; border-radius: 10px; padding: 1px 7px; }
+  .trow .ttitle { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+  .trow .tlast { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+  .trow.unread .tname, .trow.unread .tlast { color: var(--text); font-weight: 700; }
+
+  .thread { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; display: flex; flex-direction: column; min-height: 0; }
+  .thread .empty { color: var(--muted); margin: auto; padding: 40px; text-align: center; }
+  .th-head { padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .th-who { font-size: 17px; font-weight: 700; }
+  .th-item { display: flex; gap: 10px; align-items: center; color: var(--text2); text-decoration: none; font-size: 13px; min-width: 0; flex: 1; }
+  .th-item:hover { color: var(--accent); }
+  .th-item img { width: 40px; height: 40px; border-radius: 4px; object-fit: cover; background: var(--surface2); flex-shrink: 0; }
+  .th-item span { overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .th-close { display: none; }
+  .th-body { flex: 1; overflow-y: auto; padding: 14px 16px; display: flex; flex-direction: column; gap: 4px; }
+  .day { align-self: center; color: var(--muted); font-size: 11px; letter-spacing: 1px; text-transform: uppercase; margin: 10px 0 4px; }
+  .bub { max-width: 75%; padding: 8px 12px; border-radius: 14px; line-height: 1.45; white-space: pre-wrap; word-wrap: break-word; font-size: 14px; }
+  .bub.them { align-self: flex-start; background: var(--surface2); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
+  .bub.me { align-self: flex-end; background: #3b2a0c; border: 1px solid #6b4b14; border-bottom-right-radius: 4px; }
+  .bub .bt { display: block; font-size: 11px; color: var(--muted); margin-top: 3px; text-align: right; white-space: nowrap; }
+  .bub img { display: block; max-width: 220px; max-height: 220px; border-radius: 8px; margin-top: 6px; }
+  .bub a { color: var(--accent); }
+  .th-compose { border-top: 1px solid var(--border); padding: 10px 12px; display: flex; gap: 8px; align-items: flex-end; }
+  .th-compose textarea { flex: 1; min-height: 44px; max-height: 180px; resize: vertical; background: var(--surface2); border: 1px solid var(--border); color: var(--text); border-radius: 18px; padding: 10px 14px; font-family: 'Barlow', sans-serif; font-size: 14px; line-height: 1.4; outline: none; }
+  .th-compose textarea:focus { border-color: var(--accent); }
+  .th-note { padding: 10px 16px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13px; }
   .btn-primary { background: var(--accent); color: #000; }
   .btn-primary:hover { background: var(--accent2); }
-  .mv-close { display: none; float: right; }
+
+  /* offers panel */
+  .offers { border-bottom: 1px solid var(--border); padding: 12px 16px; background: var(--surface2); display: none; font-size: 13px; }
+  .offers.open { display: block; }
+  .offers h4 { font-family: 'Barlow Condensed', sans-serif; font-size: 13px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--muted); margin: 0 0 8px; }
+  .offers h4 + * { margin-bottom: 4px; }
+  .bo { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border); }
+  .bo:last-of-type { border-bottom: none; }
+  .bo .amt { font-family: 'Barlow Condensed', sans-serif; font-size: 20px; font-weight: 700; color: var(--accent); }
+  .money-in { width: 100px; background: var(--surface); border: 1px solid var(--border); color: var(--text); border-radius: 4px; padding: 6px 8px; font: inherit; }
+  .text-in { flex: 1; min-width: 160px; background: var(--surface); border: 1px solid var(--border); color: var(--text); border-radius: 4px; padding: 6px 8px; font: inherit; }
+  .offers .help { color: var(--muted); line-height: 1.5; margin: 4px 0 8px; }
+  .offers .sendrow { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .scope-box { background: rgba(245,166,35,0.08); border: 1px solid rgba(245,166,35,0.45); color: var(--text); border-radius: 6px; padding: 12px 14px; font-size: 13px; line-height: 1.55; margin-bottom: 12px; display: none; }
+  .scope-box a { color: var(--accent); }
   #toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: #0b0b0b; border: 1px solid #3a3a3a; border-left: 3px solid var(--success); padding: 12px 18px; border-radius: 6px; z-index: 200; display: none; max-width: calc(100% - 32px); }
   #toast.show { display: block; }
   #toast.error { border-left-color: var(--danger); }
   @media (max-width: 800px) {
-    .mwrap { grid-template-columns: 1fr; }
-    .mlist { max-height: none; }
-    .mview { display: none; position: fixed; inset: 0; z-index: 60; border-radius: 0; border: none; overflow-y: auto; }
-    .mview.open { display: block; }
-    .mv-close { display: inline-flex; }
+    .twrap { grid-template-columns: 1fr; height: auto; }
+    .tlist { max-height: none; }
+    .thread { display: none; position: fixed; inset: 0; z-index: 60; border-radius: 0; border: none; }
+    .thread.open { display: flex; }
+    .th-close { display: inline-flex; }
+    .th-item span { display: none; }   /* phone: photo only, name stays readable */
+    .th-head { flex-wrap: nowrap; }
+    .bub { max-width: 85%; }
     .seg button { padding: 6px 9px; font-size: 13px; }
     .search { min-width: 0; width: 100%; flex-basis: 100%; }
   }
@@ -181,7 +205,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v321</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v322</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -205,32 +229,28 @@
 </header>
 
 <main>
-  <div class="page-title">Messages</div>
-  <div class="page-note" id="m-note">&nbsp;</div>
-  <div class="error-box" id="m-error"></div>
+  <div class="page-title">Messages <a href="/messages/classic" style="font-size:14px;color:var(--accent);margin-left:8px;font-family:'Barlow',sans-serif;font-weight:400;letter-spacing:0;">Classic view</a></div>
+  <div class="page-note" id="t-note">&nbsp;</div>
+  <div class="error-box" id="t-error"></div>
+  <div class="scope-box" id="t-scope"></div>
 
   <div class="controls">
-    <div class="seg" role="group" aria-label="Folder" id="seg-folder">
-      <button type="button" data-folder="inbox">Inbox</button>
-      <button type="button" data-folder="sent">Sent</button>
+    <div class="seg" role="group" aria-label="Who" id="seg-type">
+      <button type="button" data-type="members">Buyers</button>
+      <button type="button" data-type="ebay">From eBay</button>
     </div>
     <div class="seg" role="group" aria-label="Show" id="seg-show">
       <button type="button" data-show="all">All</button>
       <button type="button" data-show="unread">Unread</button>
-      <button type="button" data-show="noreply">Not replied</button>
+      <button type="button" data-show="waiting">Waiting on me</button>
     </div>
-    <div class="seg" role="group" aria-label="Dates" id="seg-days">
-      <button type="button" data-days="30">30 days</button>
-      <button type="button" data-days="90">90 days</button>
-      <button type="button" data-days="365">Year</button>
-    </div>
-    <input type="search" class="search" id="m-search" placeholder="Search buyer, subject or item" autocomplete="off">
+    <input type="search" class="search" id="t-search" placeholder="Search buyer, item or message" autocomplete="off">
   </div>
-  <div class="summary" id="m-summary">&nbsp;</div>
+  <div class="summary" id="t-summary">&nbsp;</div>
 
-  <div class="mwrap">
-    <div class="mlist" id="m-list"></div>
-    <div class="mview" id="m-view"><div class="empty">Pick a message to read it.</div></div>
+  <div class="twrap">
+    <div class="tlist" id="t-list"></div>
+    <div class="thread" id="t-view"><div class="empty">Pick a conversation.</div></div>
   </div>
 </main>
 <div id="toast"></div>
@@ -268,17 +288,17 @@ async function loadMe() {
   return me;
 }
 
-// ─── MESSAGES ────────────────────────────────────────────────────────────────
-// v321: your eBay messages, read live from eBay. Opening one marks it read on
-// eBay. Questions about an item can be answered right here; anything else has
-// an "Open on eBay" link.
-let msgs = [], folder = 'inbox', show = 'all', days = 30, current = null;
-try { days = parseInt(localStorage.getItem('plp_msg_days'), 10) || 30; } catch (e) { /* default */ }
+// ─── MESSAGE THREADS ─────────────────────────────────────────────────────────
+// v322: conversations from eBay's Message API, chat style. Opening one marks it
+// read on eBay. Replies go into the same conversation. If the conversation is
+// about an item, "Offers" lets you answer the buyer's Best Offer or send an
+// offer to everyone interested in the item.
+let threads = [], type = 'members', show = 'all', current = null, me = null, isAdmin = false;
 
 function el(tag, cls, text) { const n = document.createElement(tag); if (cls) n.className = cls; if (text !== undefined) n.textContent = text; return n; }
 let toastTimer;
 function toast(msg, bad) { const t = document.getElementById('toast'); t.textContent = msg; t.className = 'show' + (bad ? ' error' : ''); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.className = '', bad ? 7000 : 4000); }
-function when(iso) {
+function shortDate(iso) {
   if (!iso) return '';
   const d = new Date(iso), now = new Date();
   if (d.toDateString() === now.toDateString()) return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
@@ -286,148 +306,231 @@ function when(iso) {
 }
 const norm = (t) => String(t || '').toLowerCase();
 
+function showScopeBox(on) {
+  const b = document.getElementById('t-scope');
+  b.style.display = on ? 'block' : 'none';
+  if (!on) return;
+  b.textContent = '';
+  b.append(el('b', '', 'Conversations need one more eBay permission. '));
+  b.append(document.createTextNode(isAdmin
+    ? 'Go to ⚙ Settings → Admin and click Reconnect eBay, then approve on eBay’s screen. Your sales and orders keep working while you do. Until then, '
+    : 'Ask the account admin to reconnect eBay. Until then, '));
+  const a = el('a', '', 'use the classic view'); a.href = '/messages/classic';
+  b.append(a, document.createTextNode('.'));
+}
+
 function renderList() {
-  document.querySelectorAll('#seg-folder button').forEach(b => b.setAttribute('aria-pressed', b.dataset.folder === folder ? 'true' : 'false'));
+  document.querySelectorAll('#seg-type button').forEach(b => b.setAttribute('aria-pressed', b.dataset.type === type ? 'true' : 'false'));
   document.querySelectorAll('#seg-show button').forEach(b => b.setAttribute('aria-pressed', b.dataset.show === show ? 'true' : 'false'));
-  document.querySelectorAll('#seg-days button').forEach(b => b.setAttribute('aria-pressed', +b.dataset.days === days ? 'true' : 'false'));
-  const q = norm(document.getElementById('m-search').value).trim();
-  const list = msgs.filter(m => {
-    if (show === 'unread' && m.read) return false;
-    if (show === 'noreply' && (m.replied || !m.canReply)) return false;
-    if (q && !norm(m.from + ' ' + m.to + ' ' + m.subject + ' ' + m.itemTitle + ' ' + m.itemId).includes(q)) return false;
+  const q = norm(document.getElementById('t-search').value).trim();
+  const list = threads.filter(t => {
+    if (show === 'unread' && !t.unread) return false;
+    if (show === 'waiting' && (t.last.mine || type === 'ebay')) return false;
+    if (q && !norm(t.other + ' ' + t.title + ' ' + t.last.text + ' ' + (t.itemId || '')).includes(q)) return false;
     return true;
   });
-  const unread = msgs.filter(m => !m.read).length;
-  setText('m-summary', list.length + ' message' + (list.length === 1 ? '' : 's') + (folder === 'inbox' ? ' · ' + unread + ' unread' : ''));
-  const box = document.getElementById('m-list');
+  const unread = threads.reduce((s, t) => s + (t.unread ? 1 : 0), 0);
+  setText('t-summary', list.length + ' conversation' + (list.length === 1 ? '' : 's') + ' · ' + unread + ' unread');
+  const box = document.getElementById('t-list');
   box.textContent = '';
-  if (!list.length) { box.append(el('div', 'empty', msgs.length ? 'No messages match.' : 'No messages in these dates.')); return; }
-  list.forEach(m => {
-    const b = el('button', 'mrow' + (m.read ? '' : ' unread') + (current === m.id ? ' on' : ''));
+  if (!list.length) { box.append(el('div', 'empty', threads.length ? 'No conversations match.' : 'No conversations.')); return; }
+  list.forEach(t => {
+    const b = el('button', 'trow' + (t.unread ? ' unread' : '') + (current === t.id ? ' on' : ''));
     b.type = 'button';
-    const l1 = el('div', 'm1');
-    const who = el('span', 'mwho', folder === 'sent' ? 'To ' + (m.to || '—') : (m.from || 'eBay'));
-    l1.append(who);
-    if (m.replied) l1.append(el('span', 'tag', 'Replied'));
-    l1.append(el('span', 'when', when(m.date)));
-    b.append(l1, el('div', 'subj', m.subject));
-    if (m.itemTitle) b.append(el('div', 'item', m.itemTitle));
-    b.addEventListener('click', () => openMsg(m.id));
+    const r1 = el('div', 'r1');
+    r1.append(el('span', 'tname', t.other || '—'));
+    if (t.unread) r1.append(el('span', 'badge', String(t.unread)));
+    r1.append(el('span', 'tdate', shortDate(t.last.date)));
+    b.append(r1);
+    if (t.title) b.append(el('div', 'ttitle', t.title));
+    b.append(el('div', 'tlast', (t.last.mine ? 'You: ' : '') + t.last.text.replace(/\s+/g, ' ')));
+    b.addEventListener('click', () => openThread(t.id));
     box.append(b);
   });
 }
 
 async function loadList() {
-  const me = await loadMe();
-  if (!me) return;
-  setText('m-note', 'Loading from eBay…');
-  const d = await getJSON('/api/messages?folder=' + folder + '&days=' + days);
+  const who = await loadMe();
+  if (!who) return;
+  isAdmin = !!who.isAdmin;
+  setText('t-note', 'Loading from eBay…');
+  const d = await getJSON('/api/threads?type=' + type);
   document.getElementById('loading').classList.add('hidden');
-  const err = document.getElementById('m-error'); err.style.display = 'none';
+  const err = document.getElementById('t-error'); err.style.display = 'none';
+  showScopeBox(false);
   if (!d) { err.textContent = 'Could not reach the server.'; err.style.display = 'block'; return; }
-  if (!d.connected) { setText('m-note', 'eBay isn\u2019t connected yet' + (me.isAdmin ? ' — connect it in Settings → Admin.' : '.')); msgs = []; renderList(); return; }
+  if (!d.connected) { setText('t-note', 'eBay isn’t connected yet' + (isAdmin ? ' — connect it in Settings → Admin.' : '.')); threads = []; renderList(); return; }
+  if (d.needScope) { setText('t-note', ' '); showScopeBox(true); threads = []; renderList(); return; }
   if (d.error) { err.textContent = d.error; err.style.display = 'block'; }
-  msgs = d.messages || [];
-  setText('m-note', 'From eBay · checked ' + new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) + ' · ');
+  me = d.me || me;
+  threads = d.threads || [];
+  setText('t-note', 'From eBay · checked ' + new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) + ' · ');
   const r = el('button', '', 'Refresh'); r.type = 'button'; r.onclick = loadList;
-  document.getElementById('m-note').append(r);
+  document.getElementById('t-note').append(r);
   renderList();
-  const hm = /^#msg=(\d+)$/.exec(location.hash);
-  if (hm && current !== hm[1]) showMsg(hm[1]);
+  const hm = /^#c=(.+)$/.exec(location.hash);
+  if (hm && current !== decodeURIComponent(hm[1])) showThread(decodeURIComponent(hm[1]));
 }
 
-// Phones: the message opens full screen and Back closes it
+// Phones: the conversation opens full screen and Back closes it
 const phone = () => window.matchMedia('(max-width: 800px)').matches;
-function openMsg(id) { if (phone()) { if (location.hash !== '#msg=' + id) location.hash = 'msg=' + id; else showMsg(id); } else showMsg(id); }
-function closeMsg() { if (location.hash.startsWith('#msg=')) history.back(); else hideMsg(); }
-function hideMsg() { document.getElementById('m-view').classList.remove('open'); document.body.style.overflow = ''; }
-window.addEventListener('hashchange', () => { const m = /^#msg=(\d+)$/.exec(location.hash); if (m) showMsg(m[1]); else hideMsg(); });
+function openThread(id) { if (phone()) { const h = '#c=' + encodeURIComponent(id); if (location.hash !== h) location.hash = h; else showThread(id); } else showThread(id); }
+function closeThread() { if (location.hash.startsWith('#c=')) history.back(); else hideThread(); }
+function hideThread() { document.getElementById('t-view').classList.remove('open'); document.body.style.overflow = ''; }
+window.addEventListener('hashchange', () => { const m = /^#c=(.+)$/.exec(location.hash); if (m) showThread(decodeURIComponent(m[1])); else hideThread(); });
 
-async function showMsg(id) {
+function bubble(m) {
+  const b = el('div', 'bub ' + (m.mine ? 'me' : 'them'));
+  b.append(document.createTextNode(m.text || ''));
+  (m.media || []).forEach(x => {
+    if (x.type === 'IMAGE') { const a = el('a'); a.href = x.url; a.target = '_blank'; a.rel = 'noopener'; const im = el('img'); im.src = x.url; im.alt = x.name || 'Photo'; a.append(im); b.append(a); }
+    else { const a = el('a', '', '\n' + (x.name || 'Attachment')); a.href = x.url; a.target = '_blank'; a.rel = 'noopener'; b.append(a); }
+  });
+  b.append(el('span', 'bt', m.date ? new Date(m.date).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : ''));
+  return b;
+}
+
+async function showThread(id) {
   current = id;
-  const v = document.getElementById('m-view');
+  const t = threads.find(x => x.id === id) || { id, other: '', title: '', itemId: null, unread: 0, last: {} };
+  const v = document.getElementById('t-view');
   if (phone()) { v.classList.add('open'); document.body.style.overflow = 'hidden'; }
   v.textContent = '';
-  const close = el('button', 'btn btn-secondary btn-sm mv-close', '✕ Close'); close.type = 'button'; close.onclick = closeMsg;
-  v.append(close, el('div', 'empty', 'Loading the message from eBay…'));
+  // header
+  const head = el('div', 'th-head');
+  const close = el('button', 'btn btn-secondary btn-sm th-close', '← Back'); close.type = 'button'; close.onclick = closeThread;
+  head.append(close, el('div', 'th-who', t.other || 'Conversation'));
+  if (t.itemId) {
+    const a = el('a', 'th-item'); a.href = 'https://www.ebay.com/itm/' + encodeURIComponent(t.itemId); a.target = '_blank'; a.rel = 'noopener';
+    const im = el('img'); im.alt = ''; a.append(im, el('span', '', t.title || ('Item #' + t.itemId)));
+    head.append(a);
+    getJSON('/api/items/thumbs?ids=' + encodeURIComponent(t.itemId)).then(x => { const u = x && x.thumbs && x.thumbs[t.itemId]; if (u) im.src = u; });
+    if (type === 'members') {
+      const ob = el('button', 'btn btn-secondary btn-sm', 'Offers'); ob.type = 'button';
+      ob.onclick = () => toggleOffers(t);
+      head.append(ob);
+    }
+  } else if (t.title) head.append(el('div', 'th-item', t.title));
+  const offers = el('div', 'offers'); offers.id = 't-offers';
+  const body = el('div', 'th-body'); body.append(el('div', 'empty', 'Loading the conversation from eBay…'));
+  v.append(head, offers, body);
   renderList();
-  const d = await getJSON('/api/messages/' + id);
+  const d = await getJSON('/api/threads/' + encodeURIComponent(id) + '?type=' + type + (t.unread ? '&markRead=1' : ''));
   if (current !== id) return;
-  v.textContent = '';
-  v.append(close);
-  const m = d && d.message;
-  if (!m) { v.append(el('div', 'empty', (d && d.error) || 'Could not load that message.')); return; }
-  const inList = msgs.find(x => x.id === id);
-  if (inList && !inList.read) { inList.read = true; renderList(); }
-  v.append(el('div', 'mv-subj', m.subject));
-  const meta = el('div', 'mv-meta');
-  meta.append(document.createTextNode('From '), el('b', '', m.from || 'eBay'), document.createTextNode(' to '), el('b', '', m.to || 'you'),
-    document.createTextNode(' · ' + (m.date ? new Date(m.date).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '')));
-  v.append(meta);
-  if (m.itemId) {
-    const a = el('a', 'mv-item'); a.href = 'https://www.ebay.com/itm/' + encodeURIComponent(m.itemId); a.target = '_blank'; a.rel = 'noopener';
-    const img = el('img'); img.alt = ''; img.style.display = 'none';
-    img.onload = () => { img.style.display = ''; };
-    a.append(img, el('span', '', (m.itemTitle || 'Item') + ' · #' + m.itemId));
-    v.append(a);
-    getJSON('/api/items/thumbs?ids=' + encodeURIComponent(m.itemId)).then(t => { const u = t && t.thumbs && t.thumbs[m.itemId]; if (u) img.src = u; });
-  }
-  if (m.html) {
-    const f = el('iframe', 'mv-body');
-    f.setAttribute('sandbox', 'allow-same-origin allow-popups');
-    f.setAttribute('title', 'Message');
-    f.srcdoc = '<!doctype html><html><head><meta charset="utf-8"><base target="_blank"><style>body{margin:10px;font-family:Arial,sans-serif;color:#111;background:#fff}img{max-width:100%;height:auto}table{max-width:100%}</style></head><body>' + m.html + '</body></html>';
-    f.addEventListener('load', () => { try { f.style.height = (f.contentDocument.documentElement.scrollHeight + 4) + 'px'; } catch (e) { f.style.height = '500px'; } });
-    v.append(f);
-  } else v.append(el('div', 'mv-text', m.text || '(empty message)'));
-
-  // Reply — only for buyers' questions about an item (that's what eBay allows apps to answer)
-  const can = folder === 'inbox' && m.itemId && m.externalId && m.from && m.canReply !== false;
-  const rep = el('div', 'reply');
-  if (can) {
-    const ta = el('textarea'); ta.placeholder = 'Reply to ' + m.from + '…'; ta.maxLength = 2000;
-    const row = el('div', 'reply-row');
-    const send = el('button', 'btn btn-primary btn-sm', 'Send reply'); send.type = 'button';
-    const count = el('span', 'count', '0 / 2000');
-    ta.addEventListener('input', () => count.textContent = ta.value.length + ' / 2000');
-    send.onclick = async () => {
-      const text = ta.value.trim();
-      if (!text) { toast('Type a reply first.', true); return; }
-      if (!confirm('Send this reply to ' + m.from + ' on eBay?')) return;
-      send.disabled = true; send.textContent = 'Sending…';
-      try {
-        const r = await fetch('/api/messages/' + id + '/reply', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text, itemId: m.itemId, externalId: m.externalId, to: m.from }) });
-        const out = await r.json().catch(() => ({}));
-        if (!r.ok) throw new Error(out.error || 'Reply failed');
-        ta.value = ''; count.textContent = '0 / 2000';
-        if (inList) { inList.replied = true; renderList(); }
-        toast('Reply sent to ' + m.from + '.');
-      } catch (e) { toast(e.message, true); }
-      finally { send.disabled = false; send.textContent = 'Send reply'; }
-    };
-    const open = el('a', 'btn btn-secondary btn-sm', 'Open on eBay'); open.target = '_blank'; open.rel = 'noopener';
-    open.href = m.replyUrl || 'https://mesg.ebay.com/mesgweb/ViewMessages/0';
-    row.append(send, open, count);
-    rep.append(ta, row);
-  } else {
-    const open = el('a', 'btn btn-secondary btn-sm', 'Reply on eBay'); open.target = '_blank'; open.rel = 'noopener';
-    open.href = m.replyUrl || 'https://mesg.ebay.com/mesgweb/ViewMessages/0';
-    rep.append(open);
-  }
-  v.append(rep);
+  body.textContent = '';
+  if (!d || d.error || d.needScope) { body.append(el('div', 'empty', (d && d.error) || 'Could not load that conversation.')); return; }
+  if (t.unread) { t.unread = 0; renderList(); }
+  let lastDay = '';
+  (d.messages || []).forEach(m => {
+    const day = m.date ? new Date(m.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }) : '';
+    if (day !== lastDay) { body.append(el('div', 'day', day)); lastDay = day; }
+    body.append(bubble(m));
+  });
+  if (!(d.messages || []).length) body.append(el('div', 'empty', 'No messages in this conversation.'));
+  body.scrollTop = body.scrollHeight;
+  // compose — buyers only (eBay's own messages can't be answered)
+  if (type === 'ebay') { v.append(el('div', 'th-note', 'Messages from eBay can’t be answered.')); return; }
+  const comp = el('div', 'th-compose');
+  const ta = el('textarea'); ta.placeholder = 'Message ' + (t.other || 'buyer') + '…'; ta.maxLength = 2000; ta.rows = 1;
+  const send = el('button', 'btn btn-primary btn-sm', 'Send'); send.type = 'button';
+  ta.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); send.click(); } });
+  send.onclick = async () => {
+    const text = ta.value.trim();
+    if (!text) return;
+    send.disabled = true; send.textContent = 'Sending…';
+    try {
+      const r = await fetch('/api/threads/' + encodeURIComponent(id) + '/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(out.error || 'Not sent');
+      ta.value = '';
+      const m = (out.message) || { text, date: new Date().toISOString(), mine: true };
+      m.mine = true;
+      if (body.querySelector('.empty')) body.textContent = '';
+      body.append(bubble(m)); body.scrollTop = body.scrollHeight;
+      t.last = { text: m.text, date: m.date, mine: true }; renderList();
+    } catch (e) { toast(e.message, true); }
+    finally { send.disabled = false; send.textContent = 'Send'; }
+  };
+  comp.append(ta, send);
+  v.append(comp);
+  if (!phone()) ta.focus();
 }
 
-document.querySelectorAll('#seg-folder button').forEach(b => b.addEventListener('click', () => { folder = b.dataset.folder; current = null; loadList(); }));
+// ─── OFFERS ──────────────────────────────────────────────────────────────────
+async function toggleOffers(t) {
+  const box = document.getElementById('t-offers');
+  if (box.classList.contains('open')) { box.classList.remove('open'); return; }
+  box.classList.add('open');
+  box.textContent = 'Checking offers on eBay…';
+  const d = await getJSON('/api/offers/' + encodeURIComponent(t.itemId));
+  box.textContent = '';
+  if (!d || d.error) { box.append(el('div', 'help', (d && d.error) || 'Could not load offers.')); return; }
+
+  // 1) Best Offers buyers sent on this item
+  box.append(el('h4', '', 'Best Offers on this item'));
+  if (d.bestError) box.append(el('div', 'help', 'eBay: ' + d.bestError));
+  else if (!d.bestOffers.length) box.append(el('div', 'help', 'No open Best Offers right now.'));
+  d.bestOffers.forEach(o => {
+    const row = el('div', 'bo');
+    row.append(el('span', 'amt', money2.format(o.price || 0)), el('span', '', 'from ' + (o.buyer || 'buyer') + (o.qty > 1 ? ' · qty ' + o.qty : '') + (o.expires ? ' · expires ' + shortDate(o.expires) : '')));
+    if (o.buyer && t.other && o.buyer === t.other) row.append(el('b', '', '(this buyer)'));
+    if (o.message) row.append(el('span', '', '“' + o.message + '”'));
+    const price = el('input', 'money-in'); price.type = 'number'; price.min = '1'; price.step = '0.01'; price.placeholder = 'Counter $';
+    const acc = el('button', 'btn btn-primary btn-sm', 'Accept'); acc.type = 'button';
+    const ctr = el('button', 'btn btn-secondary btn-sm', 'Counter'); ctr.type = 'button';
+    const dec = el('button', 'btn btn-secondary btn-sm', 'Decline'); dec.type = 'button';
+    const go = async (action) => {
+      const body = { bestOfferId: o.id, action };
+      if (action === 'counter') { body.price = parseFloat(price.value); if (!(body.price > 0)) { toast('Type your counter price first.', true); return; } }
+      const what = action === 'accept' ? 'Accept ' + money2.format(o.price) : action === 'counter' ? 'Counter at ' + money2.format(body.price) : 'Decline ' + money2.format(o.price);
+      if (!confirm(what + ' from ' + (o.buyer || 'this buyer') + '?')) return;
+      const r = await fetch('/api/offers/' + encodeURIComponent(t.itemId) + '/respond', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok) { toast(out.error || 'eBay said no.', true); return; }
+      toast(action === 'accept' ? 'Offer accepted.' : action === 'counter' ? 'Counter-offer sent.' : 'Offer declined.');
+      box.classList.remove('open'); toggleOffers(t);
+    };
+    acc.onclick = () => go('accept'); ctr.onclick = () => go('counter'); dec.onclick = () => go('decline');
+    row.append(acc, price, ctr, dec);
+    box.append(row);
+  });
+
+  // 2) Send an offer to everyone interested
+  box.append(el('h4', '', 'Send an offer'));
+  if (d.sendError === 'needScope') {
+    box.append(el('div', 'help', isAdmin ? 'Needs the "Send offers to buyers" permission — ⚙ Settings → Admin → Reconnect eBay.' : 'Needs a new eBay permission — ask the account admin to reconnect eBay.'));
+    return;
+  }
+  if (d.sendError) { box.append(el('div', 'help', 'eBay: ' + d.sendError)); return; }
+  box.append(el('div', 'help', 'eBay sends this to everyone who is watching this item or has it in their cart — apps can’t pick one buyer. If ' + (t.other || 'this buyer') + ' is watching it, they’ll get it. Good for 2 days.'));
+  if (!d.interested) { box.append(el('div', 'help', 'Right now nobody is watching this item, so eBay won’t send an offer. Ask the buyer to tap Watch, then try again — or just tell them your price in a message.')); return; }
+  const row = el('div', 'sendrow');
+  const p = el('input', 'money-in'); p.type = 'number'; p.min = '1'; p.step = '0.01'; p.placeholder = 'Price $';
+  const msg = el('input', 'text-in'); msg.placeholder = 'Note with the offer (optional)'; msg.maxLength = 2000;
+  const sb = el('button', 'btn btn-primary btn-sm', 'Send offer'); sb.type = 'button';
+  sb.onclick = async () => {
+    const price = parseFloat(p.value);
+    if (!(price > 0)) { toast('Type the offer price first.', true); return; }
+    if (!confirm('Send an offer of ' + money2.format(price) + ' to everyone interested in this item? It lasts 2 days.')) return;
+    sb.disabled = true;
+    try {
+      const r = await fetch('/api/offers/' + encodeURIComponent(t.itemId) + '/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ price, message: msg.value }) });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(out.error || 'Not sent');
+      toast('Offer sent' + (out.sent ? ' to ' + out.sent + ' interested buyer' + (out.sent === 1 ? '' : 's') : '') + '.');
+      p.value = ''; msg.value = '';
+    } catch (e) { toast(e.message, true); }
+    finally { sb.disabled = false; }
+  };
+  row.append(p, msg, sb);
+  box.append(row);
+}
+
+document.querySelectorAll('#seg-type button').forEach(b => b.addEventListener('click', () => { type = b.dataset.type; current = null; document.getElementById('t-view').innerHTML = '<div class="empty">Pick a conversation.</div>'; loadList(); }));
 document.querySelectorAll('#seg-show button').forEach(b => b.addEventListener('click', () => { show = b.dataset.show; renderList(); }));
-document.querySelectorAll('#seg-days button').forEach(b => b.addEventListener('click', () => {
-  days = +b.dataset.days;
-  try { localStorage.setItem('plp_msg_days', days); } catch (e) { /* not critical */ }
-  loadList();
-}));
-let st; document.getElementById('m-search').addEventListener('input', () => { clearTimeout(st); st = setTimeout(renderList, 120); });
+let st; document.getElementById('t-search').addEventListener('input', () => { clearTimeout(st); st = setTimeout(renderList, 120); });
 loadList();
-setInterval(() => { if (!document.hidden && !document.querySelector('.reply textarea:focus')) loadList(); }, 5 * 60000);
+setInterval(() => { if (!document.hidden && !document.querySelector('.th-compose textarea:focus') && !document.querySelector('.offers.open')) loadList(); }, 3 * 60000);
 </script>
 </body>
 </html>

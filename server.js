@@ -1,4 +1,4 @@
-// PartsLister Pro server — v321
+// PartsLister Pro server — v322
 // v302: dashboard.html is the homepage (/). The listing tool moved to /list.
 // v305: eBay sales connection — real sold orders on the dashboard.
 // v306: asks eBay for two more permissions — fees/payouts and seller metrics.
@@ -20,6 +20,9 @@
 //       Orders page, from eBay's Trading API GetItem. Saved once per item, so eBay is asked once.
 // v321: Messages page — your eBay messages (Trading API GetMyMessages), read them, reply
 //       (AddMemberMessageRTQ). Messages are read live from eBay and never saved here.
+// v322: message THREADS (eBay Message API, commerce/message/v1) and offers: answer a buyer's
+//       Best Offer (accept / counter / decline) and send an offer to everyone interested in an
+//       item (Negotiation API). Two new eBay permissions — Reconnect eBay once to approve them.
 // Accounts with email + password login. Each account's settings (including its
 // own API keys) and history are saved ENCRYPTED in Postgres, so you can log in
 // from any computer and everything is there. Also keeps a lifetime listing count.
@@ -630,7 +633,9 @@ const EBAY_SCOPES = [
   { scope: 'https://api.ebay.com/oauth/api_scope',                            label: 'Basic access' },
   { scope: 'https://api.ebay.com/oauth/api_scope/sell.fulfillment.readonly',  label: 'Your orders (sales)' },
   { scope: 'https://api.ebay.com/oauth/api_scope/sell.finances',              label: 'Fees, payouts & sales tax' },
-  { scope: 'https://api.ebay.com/oauth/api_scope/sell.analytics.readonly',    label: 'Seller metrics & standing' }
+  { scope: 'https://api.ebay.com/oauth/api_scope/sell.analytics.readonly',    label: 'Seller metrics & standing' },
+  { scope: 'https://api.ebay.com/oauth/api_scope/commerce.message',           label: 'Message threads (read & reply)' },   // v322
+  { scope: 'https://api.ebay.com/oauth/api_scope/sell.inventory',             label: 'Send offers to buyers' }             // v322
 ];
 const SALES_SCOPES = EBAY_SCOPES.map(x => x.scope).join(' ');
 
@@ -992,7 +997,8 @@ app.get(CALLBACK_PATH, async (req, res) => {
   const { code, state, error } = req.query;
   // if (error) return fail('eBay said: ' + String(error));
   if (error === 'invalid_scope') {   // v306
-    return fail('eBay refused one of the permissions. Your app keyset may not have Fees or Seller Metrics enabled — check OAuth Scopes in your eBay developer account. Your existing connection still works.');
+    // return fail('eBay refused one of the permissions. Your app keyset may not have Fees or Seller Metrics enabled — check OAuth Scopes in your eBay developer account. Your existing connection still works.');
+    return fail('eBay refused one of the permissions the app asked for. Your eBay developer keyset may not have it turned on — check "OAuth Scopes" for your Production keyset in your eBay developer account. Your existing connection still works.');   // v322
   }
   if (error) return fail('eBay said: ' + String(error));
   const st = oauthStates.get(String(state || ''));
@@ -1664,6 +1670,229 @@ app.post('/api/messages/:id/reply', requireUser, express.json(), async (req, res
   }
 });
 
+// ─── v322: MESSAGE THREADS (eBay Message API) ───────────────────────────────
+// Read live from eBay — nothing is saved here. Needs the commerce.message permission.
+const MSG_SCOPE = 'https://api.ebay.com/oauth/api_scope/commerce.message';
+const INV_SCOPE = 'https://api.ebay.com/oauth/api_scope/sell.inventory';
+
+// A call to one of eBay's newer (REST) APIs → { status, data }
+async function restCall(userId, method, path, body, headers) {
+  const token = await getAccessToken(userId);
+  const r = await fetch(EBAY_API_HOST + path, {
+    method,
+    headers: Object.assign({ 'Authorization': 'Bearer ' + token, 'Accept': 'application/json' },
+      body ? { 'Content-Type': 'application/json' } : {}, headers || {}),
+    body: body ? JSON.stringify(body) : undefined,
+    signal: AbortSignal.timeout(30000)
+  });
+  if (r.status === 204) return { status: 204, data: null };
+  const t = await r.text();
+  let d = null; try { d = t ? JSON.parse(t) : null; } catch (e) { /* not JSON */ }
+  if (!r.ok) {
+    const msg = (d && d.errors && d.errors.map(e => e.longMessage || e.message).join('; ')) || t.slice(0, 200) || ('HTTP ' + r.status);
+    const err = new Error(msg); err.status = r.status; throw err;
+  }
+  return { status: r.status, data: d };
+}
+
+// Your own eBay user ID (so we know which side of a thread is you)
+const myUserIds = new Map();
+async function myEbayUser(userId) {
+  if (myUserIds.has(userId)) return myUserIds.get(userId);
+  try {
+    const xml = await tradingCall(userId, 'GetUser', '<DetailLevel>ReturnSummary</DetailLevel>');
+    const id = xmlDecode(xmlTag(xmlTag(xml, 'User') || '', 'UserID')) || null;
+    if (id) myUserIds.set(userId, id);
+    return id;
+  } catch (e) { return null; }
+}
+
+function threadsBlocked(conn) {
+  if (!conn || !conn.refresh_enc) return { connected: false };
+  if (!hasScope(conn, MSG_SCOPE)) return { connected: true, needScope: true };
+  return null;
+}
+const convType = (t) => (t === 'ebay' ? 'FROM_EBAY' : 'FROM_MEMBERS');
+const scopeError = (e) => e.status === 403 || /scope|access denied|insufficient permissions/i.test(e.message || '');
+
+// Conversations: ?type=members|ebay&unread=1
+app.get('/api/threads', requireUser, async (req, res) => {
+  try {
+    const conn = await getConnection(req.user.id);
+    const blocked = threadsBlocked(conn); if (blocked) return res.json(blocked);
+    const type = convType(req.query.type);
+    const me = await myEbayUser(req.user.id);
+    const out = [];
+    for (let offset = 0; offset < 200; offset += 50) {
+      const q = new URLSearchParams({ conversation_type: type, limit: '50', offset: String(offset) });
+      if (req.query.unread === '1') q.set('conversation_status', 'UNREAD');
+      const { data } = await restCall(req.user.id, 'GET', '/commerce/message/v1/conversation?' + q);
+      const list = (data && data.conversations) || [];
+      list.forEach(c => {
+        const lm = c.latestMessage || {};
+        const other = me ? (lm.senderUsername && lm.senderUsername !== me ? lm.senderUsername : lm.recipientUsername) : (lm.senderUsername || lm.recipientUsername);
+        out.push({
+          id: c.conversationId, title: c.conversationTitle || '', status: c.conversationStatus || '', unread: c.unreadCount || 0,
+          itemId: c.referenceType === 'LISTING' ? (c.referenceId || null) : null,
+          other: type === 'FROM_EBAY' ? 'eBay' : (other || ''),
+          last: { text: lm.messageBody || '', from: lm.senderUsername || '', date: lm.createdDate || c.createdDate || null, mine: !!(me && lm.senderUsername === me) }
+        });
+      });
+      if (!data || !data.next || list.length < 50) break;
+    }
+    out.sort((a, b) => String(b.last.date).localeCompare(String(a.last.date)));
+    res.json({ connected: true, me, threads: out });
+  } catch (e) {
+    console.error('[threads]', e.message);
+    if (scopeError(e)) return res.json({ connected: true, needScope: true, error: e.message });
+    res.json({ connected: true, error: 'eBay didn\u2019t give us your conversations: ' + e.message, threads: [] });
+  }
+});
+
+// One conversation, oldest message first. ?type=…&markRead=1 also marks it read on eBay.
+app.get('/api/threads/:id', requireUser, async (req, res) => {
+  const id = String(req.params.id || '');
+  if (!/^[\w.:-]{1,80}$/.test(id)) return res.status(400).json({ error: 'Bad conversation' });
+  try {
+    const conn = await getConnection(req.user.id);
+    const blocked = threadsBlocked(conn); if (blocked) return res.json(blocked);
+    const type = convType(req.query.type);
+    const me = await myEbayUser(req.user.id);
+    const msgs = []; let head = null;
+    for (let offset = 0; offset < 300; offset += 50) {
+      const q = new URLSearchParams({ conversation_type: type, limit: '50', offset: String(offset) });
+      const { data } = await restCall(req.user.id, 'GET', '/commerce/message/v1/conversation/' + encodeURIComponent(id) + '?' + q);
+      if (!head) head = data || {};
+      const list = (data && data.messages) || [];
+      list.forEach(m => msgs.push({
+        id: m.messageId, from: m.senderUsername || '', to: m.recipientUsername || '', date: m.createdDate || null,
+        text: m.messageBody || '', subject: m.subject || '', mine: !!(me && m.senderUsername === me),
+        media: (m.messageMedia || []).filter(x => x && /^https:\/\//.test(x.mediaUrl || '')).map(x => ({ name: x.mediaName || '', type: x.mediaType || '', url: x.mediaUrl }))
+      }));
+      if (!data || !data.next || list.length < 50) break;
+    }
+    msgs.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+    if (req.query.markRead === '1') {
+      restCall(req.user.id, 'POST', '/commerce/message/v1/update_conversation', { conversationId: id, conversationType: type, read: true })
+        .then(() => msgCounts.delete(req.user.id))
+        .catch(e => console.error('[thread read]', e.message));
+    }
+    res.json({ me, title: (head && head.conversationTitle) || '', messages: msgs });
+  } catch (e) {
+    console.error('[thread]', e.message);
+    if (scopeError(e)) return res.json({ needScope: true, error: e.message });
+    res.json({ error: 'eBay didn\u2019t give us that conversation: ' + e.message });
+  }
+});
+
+// Reply in a conversation
+app.post('/api/threads/:id/send', requireUser, express.json(), async (req, res) => {
+  const id = String(req.params.id || '');
+  const text = String((req.body && req.body.text) || '').trim();
+  if (!/^[\w.:-]{1,80}$/.test(id)) return res.status(400).json({ error: 'Bad conversation' });
+  if (!text) return res.status(400).json({ error: 'Type a message first.' });
+  if (text.length > 2000) return res.status(400).json({ error: 'eBay allows up to 2,000 characters.' });
+  try {
+    const conn = await getConnection(req.user.id);
+    const blocked = threadsBlocked(conn); if (blocked) return res.status(400).json({ error: 'Reconnect eBay to approve message threads first.' });
+    const { data } = await restCall(req.user.id, 'POST', '/commerce/message/v1/send_message', { conversationId: id, messageText: text, emailCopyToSender: true });
+    msgCounts.delete(req.user.id);
+    res.json({ ok: true, message: data ? { id: data.messageId, text: data.messageBody || text, date: data.createdDate || new Date().toISOString(), mine: true } : null });
+  } catch (e) {
+    console.error('[thread send]', e.message);
+    res.status(502).json({ error: 'eBay didn\u2019t send it: ' + e.message });
+  }
+});
+
+// ─── v322: OFFERS ────────────────────────────────────────────────────────────
+// • Best Offers a buyer sent on an item → accept / counter / decline (Trading API)
+// • "Send offer" → eBay's Negotiation API sends it to EVERYONE interested in the
+//   item (watching it or has it in their cart). eBay doesn't let apps pick one buyer.
+app.get('/api/offers/:itemId', requireUser, async (req, res) => {
+  const itemId = String(req.params.itemId || '');
+  if (!/^\d{6,20}$/.test(itemId)) return res.status(400).json({ error: 'Bad item number' });
+  try {
+    const conn = await getConnection(req.user.id);
+    if (!conn || !conn.refresh_enc) return res.json({ connected: false });
+    let best = [], bestError = null;
+    try {
+      const xml = await tradingCall(req.user.id, 'GetBestOffers', `<ItemID>${itemId}</ItemID><BestOfferStatus>Active</BestOfferStatus>`);
+      best = xmlAll(xmlTag(xml, 'BestOfferArray') || '', 'BestOffer').map(b => ({
+        id: xmlTag(b, 'BestOfferID'),
+        buyer: xmlDecode(xmlTag(xmlTag(b, 'Buyer') || '', 'UserID')) || '',
+        price: parseFloat(xmlTag(b, 'Price') || '') || null,
+        qty: parseInt(xmlTag(b, 'Quantity') || '1', 10) || 1,
+        status: xmlTag(b, 'Status') || '',
+        kind: xmlTag(b, 'BestOfferCodeType') || '',
+        message: xmlDecode(xmlTag(b, 'BuyerMessage')) || '',
+        expires: xmlTag(b, 'ExpirationTime') || null
+      })).filter(b => b.id);
+    } catch (e) { if (!/no best offer|not found|no offers/i.test(e.message)) bestError = e.message; }
+    let interested = null, sendError = null;
+    if (!hasScope(conn, INV_SCOPE)) sendError = 'needScope';
+    else {
+      try {
+        interested = false;
+        for (let offset = 0; offset < 1000 && !interested; offset += 200) {
+          const { status, data } = await restCall(req.user.id, 'GET', '/sell/negotiation/v1/find_eligible_items?limit=200&offset=' + offset, null, { 'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US' });
+          const list = (status === 204 || !data) ? [] : (data.eligibleItems || []);
+          if (list.some(x => String(x.listingId) === itemId)) interested = true;
+          if (!data || !data.next || list.length < 200) break;
+        }
+      } catch (e) { sendError = scopeError(e) ? 'needScope' : e.message; interested = null; }
+    }
+    res.json({ connected: true, bestOffers: best, bestError, interested, sendError });
+  } catch (e) {
+    console.error('[offers]', e.message);
+    res.status(500).json({ error: 'Could not load offers' });
+  }
+});
+
+// Answer a Best Offer: { bestOfferId, action: accept|counter|decline, price?, message? }
+app.post('/api/offers/:itemId/respond', requireUser, express.json(), async (req, res) => {
+  const itemId = String(req.params.itemId || '');
+  const b = req.body || {};
+  const action = { accept: 'Accept', counter: 'Counter', decline: 'Decline' }[String(b.action)];
+  const boId = String(b.bestOfferId || '');
+  const price = parseFloat(b.price);
+  const note = String(b.message || '').trim().slice(0, 250);
+  if (!/^\d{6,20}$/.test(itemId) || !/^\d{1,20}$/.test(boId) || !action) return res.status(400).json({ error: 'Bad request' });
+  if (action === 'Counter' && !(price > 0)) return res.status(400).json({ error: 'Enter your counter price.' });
+  try {
+    await tradingCall(req.user.id, 'RespondToBestOffer',
+      `<ItemID>${itemId}</ItemID><BestOfferID>${boId}</BestOfferID><Action>${action}</Action>` +
+      (action === 'Counter' ? `<CounterOfferPrice currencyID="USD">${price.toFixed(2)}</CounterOfferPrice><CounterOfferQuantity>1</CounterOfferQuantity>` : '') +
+      (note ? `<SellerResponse>${xmlEsc(note)}</SellerResponse>` : ''));
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('[offer respond]', e.message);
+    res.status(502).json({ error: 'eBay didn\u2019t accept that: ' + e.message });
+  }
+});
+
+// Send an offer to everyone interested in the item: { price, message? } — good for 2 days
+app.post('/api/offers/:itemId/send', requireUser, express.json(), async (req, res) => {
+  const itemId = String(req.params.itemId || '');
+  const price = parseFloat((req.body || {}).price);
+  const message = String((req.body || {}).message || '').trim().slice(0, 2000);
+  if (!/^\d{6,20}$/.test(itemId)) return res.status(400).json({ error: 'Bad item number' });
+  if (!(price > 0)) return res.status(400).json({ error: 'Enter the offer price.' });
+  try {
+    const conn = await getConnection(req.user.id);
+    if (!hasScope(conn, INV_SCOPE)) return res.status(400).json({ error: 'Reconnect eBay to approve "Send offers to buyers" first.' });
+    const { data } = await restCall(req.user.id, 'POST', '/sell/negotiation/v1/send_offer_to_interested_buyers', {
+      offeredItems: [{ listingId: itemId, price: { currency: 'USD', value: price.toFixed(2) }, quantity: 1 }],
+      allowCounterOffer: false,
+      message: message || undefined,
+      offerDuration: { unit: 'DAY', value: 2 }
+    }, { 'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US' });
+    res.json({ ok: true, sent: ((data && data.offers) || []).length });
+  } catch (e) {
+    console.error('[offer send]', e.message);
+    res.status(502).json({ error: 'eBay didn\u2019t send the offer: ' + e.message });
+  }
+});
+
 // ─── v316: ACTIVE LISTINGS ───────────────────────────────────────────────────
 // How many listings are live on eBay and what their asking prices add up to.
 // Uses the Trading API's GetMyeBaySelling (ActiveList), 200 listings per call.
@@ -1771,6 +2000,7 @@ const HOME = path.join(__dirname, 'home.html');            // v316
 const ACTIVE = path.join(__dirname, 'active.html');        // v318: was listings.html
 const ORDERS = path.join(__dirname, 'orders.html');        // v319
 const MESSAGES = path.join(__dirname, 'messages.html');    // v321
+const MESSAGES_CLASSIC = path.join(__dirname, 'messages-classic.html');   // v322: the v321 email-style view
 
 // app.get('/', (req, res) => res.sendFile(DASHBOARD));
 // v316: Home is the landing page; the sales dashboard is /sales
@@ -1780,6 +2010,7 @@ app.get(['/sales', '/sales/'], (req, res) => res.sendFile(DASHBOARD));
 app.get(['/active', '/active/'], (req, res) => res.sendFile(ACTIVE));                     // v318
 app.get(['/orders', '/orders/'], (req, res) => res.sendFile(ORDERS));                     // v319
 app.get(['/messages', '/messages/'], (req, res) => res.sendFile(MESSAGES));               // v321
+app.get(['/messages/classic'], (req, res) => res.sendFile(MESSAGES_CLASSIC));             // v322
 app.get(['/listings', '/listings/'], (req, res) => res.redirect(301, '/active'));         // v318: old address
 app.get(['/list', '/list/'], (req, res) => res.sendFile(LISTING));
 // Old links and bookmarks to the file names still work
@@ -1804,5 +2035,5 @@ app.get('*', (req, res) => {
 });
 
 setupDatabase()
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v321 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v322 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });

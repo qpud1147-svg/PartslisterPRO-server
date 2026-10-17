@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PartsLister Pro Messages (classic) v322</title>
+<!-- PartsLister Pro — Messages, classic view (v322: the v321 Messages page, kept at /messages/classic; the main Messages page shows threads now). Your eBay messages, read live from eBay
+     (nothing about them is saved on the server). Reply to buyers' questions from here. -->
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@400;500;600&display=swap');
+
+  /* Same palette as the Sales page and the listing tool */
+  :root {
+    --bg: #0f0f0f;
+    --surface: #1a1a1a;
+    --surface2: #222222;
+    --border: #2e2e2e;
+    --accent: #f5a623;
+    --accent2: #e8912a;
+    --text: #e8e8e8;
+    --text2: #b8b8b8;
+    --muted: #888;
+    --success: #4caf82;
+    --danger: #e05252;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'Barlow', sans-serif; font-size: 14px; min-height: 100vh; }
+
+  /* HEADER — same as the Sales page */
+  header {
+    background: var(--surface); border-bottom: 2px solid var(--accent); padding: 0 24px;
+    display: flex; align-items: center; gap: 16px; height: 56px; position: sticky; top: 0; z-index: 10;
+  }
+  .logo-link { text-decoration: none; color: inherit; }
+  .logo { font-family: 'Barlow Condensed', sans-serif; font-size: 26px; font-weight: 900; letter-spacing: -0.5px; line-height: 1; }
+  .logo span { color: var(--accent); }
+  .logo-sub { font-family: 'Barlow Condensed', sans-serif; font-size: 12px; font-weight: 600; letter-spacing: 3px; color: var(--accent); text-transform: uppercase; margin-top: -2px; }
+  .page-tabs { display: flex; gap: 2px; margin-left: 12px; }
+  .page-tabs a {
+    font-family: 'Barlow Condensed', sans-serif; font-size: 15px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;
+    color: var(--muted); text-decoration: none; padding: 6px 12px; border-radius: 4px;
+  }
+  .page-tabs a:hover { color: var(--text); background: var(--surface2); }
+  .page-tabs a[aria-current="page"] { color: #000; background: var(--accent); }
+  .header-right { margin-left: auto; display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .who { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 260px; }
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 9px 18px; border-radius: 4px;
+    border: 1px solid transparent; cursor: pointer; font-family: 'Barlow Condensed', sans-serif; font-size: 14px; font-weight: 700;
+    letter-spacing: 1px; text-transform: uppercase; text-decoration: none; white-space: nowrap;
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
+  }
+  .btn-secondary { background: var(--surface2); color: var(--text); border-color: var(--border); }
+  .btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
+  .btn-sm { padding: 5px 12px; font-size: 12px; }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  main { max-width: 1200px; margin: 0 auto; padding: 24px 24px 48px; }
+  .page-title { font-family: 'Barlow Condensed', sans-serif; font-size: 30px; font-weight: 700; letter-spacing: 0.5px; margin-bottom: 4px; }
+  .page-note { color: var(--muted); font-size: 13px; margin-bottom: 18px; }
+  .page-note button { background: none; border: none; color: var(--accent); cursor: pointer; font: inherit; padding: 0; }
+  .page-note button:hover { text-decoration: underline; }
+  .page-note button:disabled { color: var(--muted); cursor: default; text-decoration: none; }
+
+  /* TILES — click a tile to open its page */
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 12px; }
+  .tile {
+    display: block; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 16px 18px;
+    min-width: 0; color: inherit; text-decoration: none; position: relative;
+  }
+  a.tile { transition: border-color 0.15s; }
+  a.tile:hover { border-color: var(--accent); }
+  a.tile::after { content: '→'; position: absolute; top: 14px; right: 16px; color: var(--muted); font-size: 14px; }
+  a.tile:hover::after { color: var(--accent); }
+  .tile-label { font-size: 12px; color: var(--muted); margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 18px; }
+  .tile-value { font-family: 'Barlow Condensed', sans-serif; font-size: 40px; font-weight: 700; line-height: 1.05; color: var(--text); white-space: nowrap; }
+  .tile-value.accent { color: var(--accent); }
+  .tile-sub { font-size: 12px; color: var(--muted); margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tile.status { border-left-width: 3px; }
+  .tile.status.ok { border-left-color: var(--success); }
+  .tile.status.bad { border-left-color: var(--danger); background: rgba(224,82,82,0.06); }
+  .tile.status.bad .tile-value { color: var(--danger); }
+  .status-tag { display: inline-block; font-family: 'Barlow Condensed', sans-serif; font-size: 12px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; margin-left: 8px; vertical-align: 10px; }
+  .tile.status.ok .status-tag { color: var(--success); }
+  .tile.status.bad .status-tag { color: var(--danger); }
+
+  .section-title {
+    font-family: 'Barlow Condensed', sans-serif; font-size: 12px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase;
+    color: var(--muted); padding-bottom: 8px; border-bottom: 1px solid var(--border); margin: 24px 0 12px;
+  }
+  .soon-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+  .soon { background: var(--surface); border: 1px dashed var(--border); border-radius: 6px; padding: 14px 16px; }
+  .soon h3 { font-family: 'Barlow Condensed', sans-serif; font-size: 17px; font-weight: 700; letter-spacing: 0.5px; margin-bottom: 4px; }
+  .soon p { color: var(--muted); font-size: 12px; line-height: 1.45; }
+  .error-box { background: rgba(224,82,82,0.08); border: 1px solid rgba(224,82,82,0.4); color: #f0a0a0; border-radius: 6px; padding: 10px 12px; font-size: 13px; line-height: 1.5; margin-bottom: 12px; display: none; }
+
+  #loading { position: fixed; inset: 0; background: var(--bg); z-index: 100; display: flex; align-items: center; justify-content: center; color: var(--muted); font-family: 'Barlow Condensed', sans-serif; letter-spacing: 2px; text-transform: uppercase; }
+  #loading.hidden { display: none; }
+
+  @media (max-width: 1000px) { .grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 700px) {
+    header { padding: 0 12px; gap: 8px; }
+    .who, .header-wide { display: none !important; }
+    .header-right { gap: 6px; }
+    .header-right .btn-sm { padding: 5px 8px; font-size: 11px; letter-spacing: 0.5px; }
+    .page-tabs { margin-left: 4px; }
+    .page-tabs a { padding: 5px 7px; font-size: 13px; letter-spacing: 0.5px; }
+    .page-tabs { overflow-x: auto; scrollbar-width: none; flex-shrink: 1; min-width: 0; }   /* v319: 5 tabs — slide sideways if needed */
+    .page-tabs a { padding: 5px 6px; font-size: 12px; flex-shrink: 0; }
+    .logo { font-size: 20px; }
+    main { padding: 16px 16px 40px; }
+    .grid { grid-template-columns: 1fr; }
+    .tile-value { font-size: 34px; }
+  }
+
+  /* v321: MESSAGES — same controls as Orders */
+  .controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 14px; }
+  .seg { display: inline-flex; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 3px; gap: 2px; }
+  .seg button {
+    background: none; border: none; color: var(--muted); font-family: 'Barlow Condensed', sans-serif; font-size: 14px; font-weight: 700;
+    letter-spacing: 0.5px; text-transform: uppercase; padding: 6px 12px; border-radius: 4px; cursor: pointer;
+  }
+  .seg button:hover { color: var(--text); }
+  .seg button[aria-pressed="true"] { background: var(--accent); color: #000; }
+  .search {
+    flex: 1; min-width: 220px; background: var(--surface); border: 1px solid var(--border); color: var(--text); border-radius: 6px;
+    padding: 9px 12px; font-family: 'Barlow', sans-serif; font-size: 14px; outline: none;
+  }
+  .search:focus { border-color: var(--accent); }
+  .summary { color: var(--muted); font-size: 13px; margin-bottom: 10px; }
+
+  .mlist .empty { color: var(--muted); padding: 40px 0; text-align: center; }
+  .mwrap { display: grid; grid-template-columns: minmax(300px, 380px) 1fr; gap: 12px; align-items: start; }
+  .mlist { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; max-height: calc(100vh - 250px); min-height: 300px; overflow-y: auto; }
+  .mrow { display: block; width: 100%; text-align: left; background: none; border: none; border-bottom: 1px solid var(--border); color: var(--text2); padding: 10px 14px; cursor: pointer; font: inherit; }
+  .mrow:hover { background: var(--surface2); }
+  .mrow.on { background: var(--surface2); box-shadow: inset 3px 0 0 var(--accent); }
+  .mrow .m1 { display: flex; gap: 8px; align-items: baseline; }
+  .mrow .mwho { font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: none; font-size: 14px; }
+  .mrow .when { margin-left: auto; font-size: 12px; color: var(--muted); white-space: nowrap; }
+  .mrow .subj { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+  .mrow .item { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+  .mrow.unread .mwho, .mrow.unread .subj { color: var(--text); font-weight: 700; }
+  .mrow.unread .mwho::before { content: ''; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); margin-right: 6px; vertical-align: 1px; }
+  .tag { font-family: 'Barlow Condensed', sans-serif; font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--success); margin-left: 6px; }
+  .mview { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 16px 18px; min-height: 300px; }
+  .mview .empty { color: var(--muted); padding: 60px 0; text-align: center; }
+  .mv-subj { font-size: 18px; font-weight: 600; line-height: 1.35; margin-bottom: 6px; padding-right: 80px; }
+  .mv-meta { color: var(--muted); font-size: 13px; margin-bottom: 12px; }
+  .mv-meta b { color: var(--text2); font-weight: 600; }
+  .mv-item { display: flex; gap: 12px; align-items: center; background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; margin-bottom: 12px; color: var(--text); text-decoration: none; }
+  .mv-item:hover { border-color: var(--accent); }
+  .mv-item img { width: 48px; height: 48px; object-fit: cover; border-radius: 4px; background: var(--bg); flex-shrink: 0; }
+  .mv-item span { font-size: 13px; line-height: 1.35; }
+  .mv-body { width: 100%; border: 1px solid var(--border); border-radius: 6px; background: #fff; min-height: 160px; }
+  .mv-text { white-space: pre-wrap; line-height: 1.5; color: var(--text); background: var(--surface2); border-radius: 6px; padding: 12px; }
+  .reply { margin-top: 14px; }
+  .reply textarea { width: 100%; min-height: 110px; resize: vertical; background: var(--surface2); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 10px 12px; font-family: 'Barlow', sans-serif; font-size: 14px; line-height: 1.45; outline: none; }
+  .reply textarea:focus { border-color: var(--accent); }
+  .reply-row { display: flex; align-items: center; gap: 10px; margin-top: 8px; flex-wrap: wrap; }
+  .reply-row .count { color: var(--muted); font-size: 12px; margin-left: auto; }
+  .btn-primary { background: var(--accent); color: #000; }
+  .btn-primary:hover { background: var(--accent2); }
+  .mv-close { display: none; float: right; }
+  #toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: #0b0b0b; border: 1px solid #3a3a3a; border-left: 3px solid var(--success); padding: 12px 18px; border-radius: 6px; z-index: 200; display: none; max-width: calc(100% - 32px); }
+  #toast.show { display: block; }
+  #toast.error { border-left-color: var(--danger); }
+  @media (max-width: 800px) {
+    .mwrap { grid-template-columns: 1fr; }
+    .mlist { max-height: none; }
+    .mview { display: none; position: fixed; inset: 0; z-index: 60; border-radius: 0; border: none; overflow-y: auto; }
+    .mview.open { display: block; }
+    .mv-close { display: inline-flex; }
+    .seg button { padding: 6px 9px; font-size: 13px; }
+    .search { min-width: 0; width: 100%; flex-basis: 100%; }
+  }
+</style>
+</head>
+<body>
+<div id="loading">Loading…</div>
+<header>
+  <a href="/" class="logo-link" title="Home">
+    <div class="logo"><span>PARTS</span>LISTER</div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v322</span></div>
+  </a>
+  <nav class="page-tabs" aria-label="Pages">
+    <!-- v318: was Home / Sales / Listings (the active page)
+    <a href="/">Home</a>
+    <a href="/sales">Sales</a>
+    <a href="/listings" aria-current="page">Listings</a>
+    -->
+    <a href="/">Home</a>
+    <a href="/sales">Sales</a>
+    <a href="/orders">Orders</a>   <!-- v319 -->
+    <a href="/messages" aria-current="page">Messages</a>   <!-- v321 -->
+    <a href="/active">Active</a>
+    <a href="/list" title="Open the Listing Tool">Listings</a>   <!-- v318: the Listing Tool -->
+  </nav>
+  <div class="header-right">
+    <span class="who" id="who"></span>
+    <!-- <a href="/list" class="btn btn-secondary btn-sm header-wide">Listing Tool →</a>   v318: now the Listings tab -->
+    <a href="/sales?settings=1" class="btn btn-secondary btn-sm" title="Settings" aria-label="Settings">⚙</a>
+    <button class="btn btn-secondary btn-sm header-wide" onclick="logout()">Log Out</button>
+  </div>
+</header>
+
+<main>
+  <!-- <div class="page-title">Messages</div> -->
+  <div class="page-title">Messages <span style="font-size:16px;color:var(--muted);font-weight:400;">· classic view</span> <a href="/messages" style="font-size:14px;color:var(--accent);margin-left:8px;">← Back to conversations</a></div>   <!-- v322 -->
+  <div class="page-note" id="m-note">&nbsp;</div>
+  <div class="error-box" id="m-error"></div>
+
+  <div class="controls">
+    <div class="seg" role="group" aria-label="Folder" id="seg-folder">
+      <button type="button" data-folder="inbox">Inbox</button>
+      <button type="button" data-folder="sent">Sent</button>
+    </div>
+    <div class="seg" role="group" aria-label="Show" id="seg-show">
+      <button type="button" data-show="all">All</button>
+      <button type="button" data-show="unread">Unread</button>
+      <button type="button" data-show="noreply">Not replied</button>
+    </div>
+    <div class="seg" role="group" aria-label="Dates" id="seg-days">
+      <button type="button" data-days="30">30 days</button>
+      <button type="button" data-days="90">90 days</button>
+      <button type="button" data-days="365">Year</button>
+    </div>
+    <input type="search" class="search" id="m-search" placeholder="Search buyer, subject or item" autocomplete="off">
+  </div>
+  <div class="summary" id="m-summary">&nbsp;</div>
+
+  <div class="mwrap">
+    <div class="mlist" id="m-list"></div>
+    <div class="mview" id="m-view"><div class="empty">Pick a message to read it.</div></div>
+  </div>
+</main>
+<div id="toast"></div>
+
+<script>
+// ─── SHARED (same on Home and Listings) ─────────────────────────────────────
+const EBAY_TZ = 'America/Los_Angeles';   // eBay counts days in Pacific time
+const money0 = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+const money2 = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 });
+function setText(id, text) { document.getElementById(id).textContent = text; }
+function ebayTodayKey() { return new Intl.DateTimeFormat('en-CA', { timeZone: EBAY_TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()); }
+function keyPlus(key, n) { const [y, m, d] = key.split('-').map(Number); const t = new Date(y, m - 1, d + n); return t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0') + '-' + String(t.getDate()).padStart(2, '0'); }
+function timeAgo(iso) {
+  if (!iso) return 'never';
+  const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return mins + ' min ago';
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return hrs + ' hr ago';
+  return Math.round(hrs / 24) + ' days ago';
+}
+async function getJSON(url) {
+  try { const r = await fetch(url); if (r.status === 401) return { _signedOut: true }; return r.ok ? await r.json() : null; }
+  catch (e) { return null; }
+}
+async function logout() {
+  await fetch('/api/logout', { method: 'POST' }).catch(() => {});
+  location.href = '/sales';
+}
+// Not signed in → the sign-in screen on the Sales page, then back here
+async function loadMe() {
+  const me = await getJSON('/api/me');
+  if (!me || me._signedOut) { location.href = '/sales?next=' + encodeURIComponent(location.pathname); return null; }
+  setText('who', me.email + (me.isAdmin ? '  · admin' : ''));
+  return me;
+}
+
+// ─── MESSAGES ────────────────────────────────────────────────────────────────
+// v321: your eBay messages, read live from eBay. Opening one marks it read on
+// eBay. Questions about an item can be answered right here; anything else has
+// an "Open on eBay" link.
+let msgs = [], folder = 'inbox', show = 'all', days = 30, current = null;
+try { days = parseInt(localStorage.getItem('plp_msg_days'), 10) || 30; } catch (e) { /* default */ }
+
+function el(tag, cls, text) { const n = document.createElement(tag); if (cls) n.className = cls; if (text !== undefined) n.textContent = text; return n; }
+let toastTimer;
+function toast(msg, bad) { const t = document.getElementById('toast'); t.textContent = msg; t.className = 'show' + (bad ? ' error' : ''); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.className = '', bad ? 7000 : 4000); }
+function when(iso) {
+  if (!iso) return '';
+  const d = new Date(iso), now = new Date();
+  if (d.toDateString() === now.toDateString()) return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + (d.getFullYear() !== now.getFullYear() ? ', ' + d.getFullYear() : '');
+}
+const norm = (t) => String(t || '').toLowerCase();
+
+function renderList() {
+  document.querySelectorAll('#seg-folder button').forEach(b => b.setAttribute('aria-pressed', b.dataset.folder === folder ? 'true' : 'false'));
+  document.querySelectorAll('#seg-show button').forEach(b => b.setAttribute('aria-pressed', b.dataset.show === show ? 'true' : 'false'));
+  document.querySelectorAll('#seg-days button').forEach(b => b.setAttribute('aria-pressed', +b.dataset.days === days ? 'true' : 'false'));
+  const q = norm(document.getElementById('m-search').value).trim();
+  const list = msgs.filter(m => {
+    if (show === 'unread' && m.read) return false;
+    if (show === 'noreply' && (m.replied || !m.canReply)) return false;
+    if (q && !norm(m.from + ' ' + m.to + ' ' + m.subject + ' ' + m.itemTitle + ' ' + m.itemId).includes(q)) return false;
+    return true;
+  });
+  const unread = msgs.filter(m => !m.read).length;
+  setText('m-summary', list.length + ' message' + (list.length === 1 ? '' : 's') + (folder === 'inbox' ? ' · ' + unread + ' unread' : ''));
+  const box = document.getElementById('m-list');
+  box.textContent = '';
+  if (!list.length) { box.append(el('div', 'empty', msgs.length ? 'No messages match.' : 'No messages in these dates.')); return; }
+  list.forEach(m => {
+    const b = el('button', 'mrow' + (m.read ? '' : ' unread') + (current === m.id ? ' on' : ''));
+    b.type = 'button';
+    const l1 = el('div', 'm1');
+    const who = el('span', 'mwho', folder === 'sent' ? 'To ' + (m.to || '—') : (m.from || 'eBay'));
+    l1.append(who);
+    if (m.replied) l1.append(el('span', 'tag', 'Replied'));
+    l1.append(el('span', 'when', when(m.date)));
+    b.append(l1, el('div', 'subj', m.subject));
+    if (m.itemTitle) b.append(el('div', 'item', m.itemTitle));
+    b.addEventListener('click', () => openMsg(m.id));
+    box.append(b);
+  });
+}
+
+async function loadList() {
+  const me = await loadMe();
+  if (!me) return;
+  setText('m-note', 'Loading from eBay…');
+  const d = await getJSON('/api/messages?folder=' + folder + '&days=' + days);
+  document.getElementById('loading').classList.add('hidden');
+  const err = document.getElementById('m-error'); err.style.display = 'none';
+  if (!d) { err.textContent = 'Could not reach the server.'; err.style.display = 'block'; return; }
+  if (!d.connected) { setText('m-note', 'eBay isn\u2019t connected yet' + (me.isAdmin ? ' — connect it in Settings → Admin.' : '.')); msgs = []; renderList(); return; }
+  if (d.error) { err.textContent = d.error; err.style.display = 'block'; }
+  msgs = d.messages || [];
+  setText('m-note', 'From eBay · checked ' + new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) + ' · ');
+  const r = el('button', '', 'Refresh'); r.type = 'button'; r.onclick = loadList;
+  document.getElementById('m-note').append(r);
+  renderList();
+  const hm = /^#msg=(\d+)$/.exec(location.hash);
+  if (hm && current !== hm[1]) showMsg(hm[1]);
+}
+
+// Phones: the message opens full screen and Back closes it
+const phone = () => window.matchMedia('(max-width: 800px)').matches;
+function openMsg(id) { if (phone()) { if (location.hash !== '#msg=' + id) location.hash = 'msg=' + id; else showMsg(id); } else showMsg(id); }
+function closeMsg() { if (location.hash.startsWith('#msg=')) history.back(); else hideMsg(); }
+function hideMsg() { document.getElementById('m-view').classList.remove('open'); document.body.style.overflow = ''; }
+window.addEventListener('hashchange', () => { const m = /^#msg=(\d+)$/.exec(location.hash); if (m) showMsg(m[1]); else hideMsg(); });
+
+async function showMsg(id) {
+  current = id;
+  const v = document.getElementById('m-view');
+  if (phone()) { v.classList.add('open'); document.body.style.overflow = 'hidden'; }
+  v.textContent = '';
+  const close = el('button', 'btn btn-secondary btn-sm mv-close', '✕ Close'); close.type = 'button'; close.onclick = closeMsg;
+  v.append(close, el('div', 'empty', 'Loading the message from eBay…'));
+  renderList();
+  const d = await getJSON('/api/messages/' + id);
+  if (current !== id) return;
+  v.textContent = '';
+  v.append(close);
+  const m = d && d.message;
+  if (!m) { v.append(el('div', 'empty', (d && d.error) || 'Could not load that message.')); return; }
+  const inList = msgs.find(x => x.id === id);
+  if (inList && !inList.read) { inList.read = true; renderList(); }
+  v.append(el('div', 'mv-subj', m.subject));
+  const meta = el('div', 'mv-meta');
+  meta.append(document.createTextNode('From '), el('b', '', m.from || 'eBay'), document.createTextNode(' to '), el('b', '', m.to || 'you'),
+    document.createTextNode(' · ' + (m.date ? new Date(m.date).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '')));
+  v.append(meta);
+  if (m.itemId) {
+    const a = el('a', 'mv-item'); a.href = 'https://www.ebay.com/itm/' + encodeURIComponent(m.itemId); a.target = '_blank'; a.rel = 'noopener';
+    const img = el('img'); img.alt = ''; img.style.display = 'none';
+    img.onload = () => { img.style.display = ''; };
+    a.append(img, el('span', '', (m.itemTitle || 'Item') + ' · #' + m.itemId));
+    v.append(a);
+    getJSON('/api/items/thumbs?ids=' + encodeURIComponent(m.itemId)).then(t => { const u = t && t.thumbs && t.thumbs[m.itemId]; if (u) img.src = u; });
+  }
+  if (m.html) {
+    const f = el('iframe', 'mv-body');
+    f.setAttribute('sandbox', 'allow-same-origin allow-popups');
+    f.setAttribute('title', 'Message');
+    f.srcdoc = '<!doctype html><html><head><meta charset="utf-8"><base target="_blank"><style>body{margin:10px;font-family:Arial,sans-serif;color:#111;background:#fff}img{max-width:100%;height:auto}table{max-width:100%}</style></head><body>' + m.html + '</body></html>';
+    f.addEventListener('load', () => { try { f.style.height = (f.contentDocument.documentElement.scrollHeight + 4) + 'px'; } catch (e) { f.style.height = '500px'; } });
+    v.append(f);
+  } else v.append(el('div', 'mv-text', m.text || '(empty message)'));
+
+  // Reply — only for buyers' questions about an item (that's what eBay allows apps to answer)
+  const can = folder === 'inbox' && m.itemId && m.externalId && m.from && m.canReply !== false;
+  const rep = el('div', 'reply');
+  if (can) {
+    const ta = el('textarea'); ta.placeholder = 'Reply to ' + m.from + '…'; ta.maxLength = 2000;
+    const row = el('div', 'reply-row');
+    const send = el('button', 'btn btn-primary btn-sm', 'Send reply'); send.type = 'button';
+    const count = el('span', 'count', '0 / 2000');
+    ta.addEventListener('input', () => count.textContent = ta.value.length + ' / 2000');
+    send.onclick = async () => {
+      const text = ta.value.trim();
+      if (!text) { toast('Type a reply first.', true); return; }
+      if (!confirm('Send this reply to ' + m.from + ' on eBay?')) return;
+      send.disabled = true; send.textContent = 'Sending…';
+      try {
+        const r = await fetch('/api/messages/' + id + '/reply', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text, itemId: m.itemId, externalId: m.externalId, to: m.from }) });
+        const out = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(out.error || 'Reply failed');
+        ta.value = ''; count.textContent = '0 / 2000';
+        if (inList) { inList.replied = true; renderList(); }
+        toast('Reply sent to ' + m.from + '.');
+      } catch (e) { toast(e.message, true); }
+      finally { send.disabled = false; send.textContent = 'Send reply'; }
+    };
+    const open = el('a', 'btn btn-secondary btn-sm', 'Open on eBay'); open.target = '_blank'; open.rel = 'noopener';
+    open.href = m.replyUrl || 'https://mesg.ebay.com/mesgweb/ViewMessages/0';
+    row.append(send, open, count);
+    rep.append(ta, row);
+  } else {
+    const open = el('a', 'btn btn-secondary btn-sm', 'Reply on eBay'); open.target = '_blank'; open.rel = 'noopener';
+    open.href = m.replyUrl || 'https://mesg.ebay.com/mesgweb/ViewMessages/0';
+    rep.append(open);
+  }
+  v.append(rep);
+}
+
+document.querySelectorAll('#seg-folder button').forEach(b => b.addEventListener('click', () => { folder = b.dataset.folder; current = null; loadList(); }));
+document.querySelectorAll('#seg-show button').forEach(b => b.addEventListener('click', () => { show = b.dataset.show; renderList(); }));
+document.querySelectorAll('#seg-days button').forEach(b => b.addEventListener('click', () => {
+  days = +b.dataset.days;
+  try { localStorage.setItem('plp_msg_days', days); } catch (e) { /* not critical */ }
+  loadList();
+}));
+let st; document.getElementById('m-search').addEventListener('input', () => { clearTimeout(st); st = setTimeout(renderList, 120); });
+loadList();
+setInterval(() => { if (!document.hidden && !document.querySelector('.reply textarea:focus')) loadList(); }, 5 * 60000);
+</script>
+</body>
+</html>
