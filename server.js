@@ -1,4 +1,4 @@
-// PartsLister Pro server — v323
+// PartsLister Pro server — v324
 // v302: dashboard.html is the homepage (/). The listing tool moved to /list.
 // v305: eBay sales connection — real sold orders on the dashboard.
 // v306: asks eBay for two more permissions — fees/payouts and seller metrics.
@@ -25,6 +25,8 @@
 //       item (Negotiation API). Two new eBay permissions — Reconnect eBay once to approve them.
 // v323: delete / restore conversations + a Trash list; AI-drafted replies that read the
 //       conversation and the listing (uses the Anthropic key saved in your Listing Tool settings).
+// v324: Returns page — returns, "item not received" claims and cases (eBay Post-Order API):
+//       approve / decline / partial refund / refund a return; add tracking or refund a claim.
 // Accounts with email + password login. Each account's settings (including its
 // own API keys) and history are saved ENCRYPTED in Postgres, so you can log in
 // from any computer and everything is there. Also keeps a lifetime listing count.
@@ -2027,6 +2029,208 @@ app.post('/api/offers/:itemId/send', requireUser, express.json(), async (req, re
   }
 });
 
+// ─── v324: RETURNS, "NOT RECEIVED" CLAIMS, CASES (eBay Post-Order API) ──────
+// Read live from eBay — nothing saved here. Uses your normal eBay sign-in.
+async function poCall(userId, method, path, body) {
+  const token = await getAccessToken(userId);
+  const r = await fetch(EBAY_API_HOST + '/post-order/v2' + path, {
+    method,
+    headers: Object.assign({ 'Authorization': 'IAF ' + token, 'Accept': 'application/json', 'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US' },
+      body ? { 'Content-Type': 'application/json' } : {}),
+    body: body ? JSON.stringify(body) : undefined,
+    signal: AbortSignal.timeout(30000)
+  });
+  if (r.status === 204) return null;
+  const t = await r.text();
+  let d = null; try { d = t ? JSON.parse(t) : null; } catch (e) { /* not JSON */ }
+  if (!r.ok) {
+    const msg = (d && (d.error || d.errors) && [].concat(d.error || d.errors).map(e => e.longMessage || e.message).filter(Boolean).join('; ')) || t.slice(0, 200) || ('HTTP ' + r.status);
+    const err = new Error(msg); err.status = r.status; throw err;
+  }
+  return d;
+}
+const dval = (x) => (x && typeof x === 'object' ? (x.value !== undefined ? x.value : null) : (x || null));
+const amt = (x) => { const v = parseFloat(x && typeof x === 'object' ? x.value : x); return Number.isFinite(v) ? v : null; };
+const poId = (s) => /^[0-9]{3,20}$/.test(String(s || ''));
+
+function mapReturn(m) {
+  const ci = m.creationInfo || {};
+  const due = m.sellerResponseDue || {};
+  const refund = m.sellerTotalRefund || {};
+  return {
+    kind: 'return', id: String(m.returnId), state: m.state || '', status: m.status || '', type: m.currentType || '',
+    buyer: m.buyerLoginName || '', orderId: m.orderId || null,
+    itemId: ci.item && ci.item.itemId ? String(ci.item.itemId) : null, qty: ci.item && ci.item.returnQuantity || 1,
+    reason: ci.reason || '', comments: (ci.comments && (ci.comments.content || ci.comments)) || '',
+    created: dval(ci.creationDate), due: dval(due.respondByDate), todo: due.activityDue || '',
+    amount: amt(refund.actualRefundAmount) || amt(refund.estimatedRefundAmount),
+    refunded: amt(refund.actualRefundAmount),
+    options: (m.sellerAvailableOptions || []).map(o => o.actionType).filter(Boolean),
+    escalated: !!(m.escalationInfo && m.escalationInfo.caseId)
+  };
+}
+function mapInquiry(m) {
+  return {
+    kind: 'inquiry', id: String(m.inquiryId), status: m.inquiryStatusEnum || '', buyer: m.buyer || '',
+    itemId: m.itemId ? String(m.itemId) : null, amount: amt(m.claimAmount),
+    created: dval(m.creationDate), due: dval(m.respondByDate), updated: dval(m.lastModifiedDate)
+  };
+}
+function mapCase(m) {
+  return {
+    kind: 'case', id: String(m.caseId), status: m.caseStatusEnum || '', buyer: m.buyer || '',
+    itemId: m.itemId ? String(m.itemId) : null, amount: amt(m.claimAmount),
+    created: dval(m.creationDate), due: dval(m.respondByDate), updated: dval(m.lastModifiedDate)
+  };
+}
+
+// ?view=open|closed — closed shows the last 90 days
+async function loadReturns(userId, view) {
+  const out = [], errors = [];
+  const closed = view === 'closed';
+  const from = new Date(Date.now() - 90 * 86400000).toISOString();
+  try {
+    const q = new URLSearchParams({ role: 'SELLER', limit: '200', sort: '-FILING_DATE', return_state: closed ? 'CLOSED' : 'ALL_OPEN' });
+    if (closed) q.set('creation_date_range_from', from);
+    const d = await poCall(userId, 'GET', '/return/search?' + q);
+    ((d && d.members) || []).forEach(m => out.push(mapReturn(m)));
+  } catch (e) { errors.push('Returns: ' + e.message); }
+  try {
+    const d = await poCall(userId, 'GET', '/inquiry/search?' + new URLSearchParams({ limit: '200' }));
+    ((d && d.members) || []).map(mapInquiry)
+      .filter(x => (/CLOSED/i.test(x.status) === closed) && (!closed || !x.created || x.created >= from))
+      .forEach(x => out.push(x));
+  } catch (e) { errors.push('Not-received claims: ' + e.message); }
+  try {
+    const q = new URLSearchParams({ limit: '200' });
+    if (!closed) q.set('case_status_filter', 'OPEN'); else q.set('case_creation_date_range_from', from);
+    const d = await poCall(userId, 'GET', '/casemanagement/search?' + q);
+    ((d && d.members) || []).map(mapCase)
+      .filter(x => closed ? /CLOSED/i.test(x.status) : !/CLOSED/i.test(x.status))
+      .forEach(x => out.push(x));
+  } catch (e) { errors.push('Cases: ' + e.message); }
+  out.sort((a, b) => String(b.created || '').localeCompare(String(a.created || '')));
+  return { items: out, errors };
+}
+
+app.get('/api/returns', requireUser, async (req, res) => {
+  try {
+    const conn = await getConnection(req.user.id);
+    if (!conn || !conn.refresh_enc) return res.json({ connected: false });
+    const { items, errors } = await loadReturns(req.user.id, req.query.view === 'closed' ? 'closed' : 'open');
+    res.json({ connected: true, items, errors });
+  } catch (e) {
+    console.error('[returns]', e.message);
+    res.json({ connected: true, items: [], errors: [e.message] });
+  }
+});
+
+// Count for Home: open returns/claims/cases (asked at most every 5 minutes)
+const returnCounts = new Map();
+app.get('/api/returns/summary', requireUser, async (req, res) => {
+  try {
+    const conn = await getConnection(req.user.id);
+    if (!conn || !conn.refresh_enc) return res.json({ connected: false });
+    const c = returnCounts.get(req.user.id);
+    if (c && Date.now() - c.at < 300000) return res.json(c.data);
+    const { items, errors } = await loadReturns(req.user.id, 'open');
+    const data = { connected: true, open: items.length, needMe: items.filter(x => x.kind !== 'return' || /SELLER/i.test(x.todo || '') || (x.options || []).length).length, errors };
+    returnCounts.set(req.user.id, { at: Date.now(), data });
+    res.json(data);
+  } catch (e) { res.json({ connected: true, open: null, error: e.message }); }
+});
+
+// One return in full (history, notes) — shown as-is from eBay
+app.get('/api/returns/return/:id', requireUser, async (req, res) => {
+  if (!poId(req.params.id)) return res.status(400).json({ error: 'Bad return number' });
+  try {
+    const d = await poCall(req.user.id, 'GET', '/return/' + req.params.id + '?fieldgroups=FULL');
+    const det = (d && d.detail) || {};
+    const history = (det.responseHistory || []).map(h => ({
+      when: dval(h.creationDate), who: h.author || '', what: h.activity || '', note: (h.notes && (h.notes.content || h.notes)) || ''
+    }));
+    res.json({ summary: d && d.summary ? mapReturn(d.summary) : null, history });
+  } catch (e) {
+    console.error('[return]', e.message);
+    res.json({ error: 'eBay didn\u2019t give us that return: ' + e.message });
+  }
+});
+
+const clearReturnCount = (userId) => returnCounts.delete(userId);
+
+// Return: { decision: APPROVE | DECLINE | OFFER_PARTIAL_REFUND, amount?, comment?, keepItem? }
+app.post('/api/returns/return/:id/decide', requireUser, express.json(), async (req, res) => {
+  const b = req.body || {};
+  const decision = String(b.decision || '');
+  if (!poId(req.params.id) || !['APPROVE', 'DECLINE', 'OFFER_PARTIAL_REFUND'].includes(decision)) return res.status(400).json({ error: 'Bad request' });
+  const comment = String(b.comment || '').trim().slice(0, 1000);
+  const amount = parseFloat(b.amount);
+  if (decision === 'OFFER_PARTIAL_REFUND' && !(amount > 0)) return res.status(400).json({ error: 'Enter the partial refund amount.' });
+  if (decision === 'DECLINE' && !comment) return res.status(400).json({ error: 'eBay needs a reason to decline — type one in the note.' });
+  try {
+    const body = { decision };
+    if (comment) body.comments = { content: comment };
+    if (decision === 'OFFER_PARTIAL_REFUND') body.partialRefundAmount = { value: amount.toFixed(2), currency: 'USD' };
+    if (b.keepItem) body.keepOriginalItem = true;
+    await poCall(req.user.id, 'POST', '/return/' + req.params.id + '/decide', body);
+    clearReturnCount(req.user.id);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('[return decide]', e.message);
+    res.status(502).json({ error: 'eBay didn\u2019t accept that: ' + e.message });
+  }
+});
+
+// Return: refund the buyer { amount, comment? }
+app.post('/api/returns/return/:id/refund', requireUser, express.json(), async (req, res) => {
+  const amount = parseFloat((req.body || {}).amount);
+  const comment = String((req.body || {}).comment || '').trim().slice(0, 1000);
+  if (!poId(req.params.id) || !(amount > 0)) return res.status(400).json({ error: 'Enter the refund amount.' });
+  try {
+    const money = { value: amount.toFixed(2), currency: 'USD' };
+    const body = { refundDetail: { itemizedRefundDetail: [{ refundAmount: money, refundFeeType: 'PURCHASE_PRICE' }], totalAmount: money } };
+    if (comment) body.comments = { content: comment };
+    const d = await poCall(req.user.id, 'POST', '/return/' + req.params.id + '/issue_refund', body);
+    clearReturnCount(req.user.id);
+    res.json({ ok: true, status: (d && d.refundStatus) || null });
+  } catch (e) {
+    console.error('[return refund]', e.message);
+    res.status(502).json({ error: 'eBay didn\u2019t issue the refund: ' + e.message });
+  }
+});
+
+// "Not received" claim: refund in full { comment? }
+app.post('/api/returns/inquiry/:id/refund', requireUser, express.json(), async (req, res) => {
+  const comment = String((req.body || {}).comment || '').trim().slice(0, 1000);
+  if (!poId(req.params.id)) return res.status(400).json({ error: 'Bad claim number' });
+  try {
+    const d = await poCall(req.user.id, 'POST', '/inquiry/' + req.params.id + '/issue_refund', comment ? { comments: { content: comment } } : {});
+    clearReturnCount(req.user.id);
+    res.json({ ok: true, status: (d && d.refundResult && d.refundResult.refundStatus) || null });
+  } catch (e) {
+    console.error('[inquiry refund]', e.message);
+    res.status(502).json({ error: 'eBay didn\u2019t issue the refund: ' + e.message });
+  }
+});
+
+// "Not received" claim: add tracking { carrier, tracking, shipped (YYYY-MM-DD), comment? }
+app.post('/api/returns/inquiry/:id/tracking', requireUser, express.json(), async (req, res) => {
+  const b = req.body || {};
+  const carrier = String(b.carrier || '').trim().slice(0, 40), tracking = String(b.tracking || '').replace(/\s+/g, '').slice(0, 60);
+  const shipped = /^\d{4}-\d{2}-\d{2}$/.test(String(b.shipped || '')) ? String(b.shipped) : null;
+  if (!poId(req.params.id) || !carrier || !tracking || !shipped) return res.status(400).json({ error: 'Enter the carrier, tracking number and ship date.' });
+  try {
+    const body = { shippingCarrierName: carrier, trackingNumber: tracking, shippingDate: { value: shipped + 'T12:00:00.000Z' }, shippedWithTracking: true };
+    if (b.comment) body.sellerComments = { content: String(b.comment).trim().slice(0, 1000) };
+    await poCall(req.user.id, 'POST', '/inquiry/' + req.params.id + '/provide_shipment_info', body);
+    clearReturnCount(req.user.id);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('[inquiry tracking]', e.message);
+    res.status(502).json({ error: 'eBay didn\u2019t take the tracking: ' + e.message });
+  }
+});
+
 // ─── v316: ACTIVE LISTINGS ───────────────────────────────────────────────────
 // How many listings are live on eBay and what their asking prices add up to.
 // Uses the Trading API's GetMyeBaySelling (ActiveList), 200 listings per call.
@@ -2135,6 +2339,7 @@ const ACTIVE = path.join(__dirname, 'active.html');        // v318: was listings
 const ORDERS = path.join(__dirname, 'orders.html');        // v319
 const MESSAGES = path.join(__dirname, 'messages.html');    // v321
 const MESSAGES_CLASSIC = path.join(__dirname, 'messages-classic.html');   // v322: the v321 email-style view
+const RETURNS = path.join(__dirname, 'returns.html');      // v324
 
 // app.get('/', (req, res) => res.sendFile(DASHBOARD));
 // v316: Home is the landing page; the sales dashboard is /sales
@@ -2145,6 +2350,8 @@ app.get(['/active', '/active/'], (req, res) => res.sendFile(ACTIVE));           
 app.get(['/orders', '/orders/'], (req, res) => res.sendFile(ORDERS));                     // v319
 app.get(['/messages', '/messages/'], (req, res) => res.sendFile(MESSAGES));               // v321
 app.get(['/messages/classic'], (req, res) => res.sendFile(MESSAGES_CLASSIC));             // v322
+app.get(['/returns', '/returns/'], (req, res) => res.sendFile(RETURNS));                  // v324
+app.get(['/returns.html'], (req, res) => res.redirect(301, '/returns'));                  // v324
 app.get(['/listings', '/listings/'], (req, res) => res.redirect(301, '/active'));         // v318: old address
 app.get(['/list', '/list/'], (req, res) => res.sendFile(LISTING));
 // Old links and bookmarks to the file names still work
@@ -2169,5 +2376,5 @@ app.get('*', (req, res) => {
 });
 
 setupDatabase()
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v323 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v324 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });

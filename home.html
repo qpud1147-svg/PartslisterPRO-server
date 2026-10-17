@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Home v322</title>
+<title>PartsLister Pro Home v324</title>
 <!-- PartsLister Pro — Home page (v316: new; v317: cut to three tiles — Sales, Active listings, Needs attention; v318: tabs Home / Sales / Active / Listings). Shares the sign-in, account and
      eBay connection with the Sales page (/sales) and the listing tool (/list). -->
 <style>
@@ -119,7 +119,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v322</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v324</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -131,6 +131,7 @@
     <a href="/sales">Sales</a>
     <a href="/orders">Orders</a>   <!-- v319 -->
     <a href="/messages">Messages</a>   <!-- v321 -->
+    <a href="/returns">Returns</a>   <!-- v324 -->
     <a href="/active">Active</a>
     <a href="/list" title="Open the Listing Tool">Listings</a>   <!-- v318: the Listing Tool -->
   </nav>
@@ -236,6 +237,7 @@ async function loadHome() {
     getJSON('/api/sales?tz=' + tz), getJSON('/api/fees?tz=' + tz), getJSON('/api/listings/summary')
   ]);
   const msgs = await getJSON('/api/messages/summary');   // v321: unread eBay messages
+  const rets = await getJSON('/api/returns/summary');    // v324: open returns, claims, cases
   document.getElementById('loading').classList.add('hidden');
 
   const today = ebayTodayKey(), yesterday = keyPlus(today, -1);
@@ -322,6 +324,8 @@ async function loadHome() {
 
   // v321: unread messages
   if (msgs && msgs.unread > 0) attention.push([msgs.unread + ' unread message' + (msgs.unread === 1 ? '' : 's'), '/messages']);
+  // v324: open returns / not-received claims / cases
+  if (rets && rets.open > 0) attention.push([rets.open + ' open return' + (rets.open === 1 ? '' : 's') + ', claim' + (rets.open === 1 ? '' : 's') + ' or case' + (rets.open === 1 ? '' : 's'), '/returns']);
 
   // NEEDS ATTENTION
   const at = document.getElementById('h-attn-tile'), list = document.getElementById('h-attn-list');
@@ -342,7 +346,8 @@ async function loadHome() {
   const soon = document.createElement('div');
   soon.style.cssText = 'color:var(--muted);font-size:12px;margin-top:4px;';
   // soon.textContent = 'Returns and buyer messages aren’t connected yet — coming soon.';
-  soon.textContent = 'Returns and cases aren’t connected yet — coming soon.';   // v321: messages are
+  // soon.textContent = 'Returns and cases aren’t connected yet — coming soon.';   // v321: messages are
+  soon.textContent = '';   // v324: returns and cases are connected now
   list.appendChild(soon);
 
   // Keep it fresh while it's open
