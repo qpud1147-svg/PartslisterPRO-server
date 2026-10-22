@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Sales v326</title>
+<title>PartsLister Pro Sales v327</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@400;500;600&display=swap');
 
@@ -529,7 +529,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v326</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v327</span></div>
   </a>
   <!-- v316: switch pages -->
   <nav class="page-tabs" aria-label="Pages">
@@ -789,6 +789,13 @@
 
     <!-- ADMIN — only the admin account sees this tab -->
     <div class="settings-panel" id="panel-admin" role="tabpanel">
+      <!-- v327: one place to see what's working and what to do if something isn't -->
+      <div class="set-section">
+        <h3>Diagnostics</h3>
+        <p class="set-help">Checks every connection (eBay, AI, photos), shows which version of each file is live, recent errors in plain English, and what to do if something breaks.</p>
+        <div class="set-buttons"><a class="btn btn-primary btn-sm" href="/diagnostics">Open Diagnostics</a></div>
+      </div>
+      <hr class="set-divider">
       <div class="set-section">
         <h3>eBay Sales Connection</h3>
         <!-- <p class="set-help">Connects your eBay seller account so the dashboard shows your real sold orders. It uses the eBay Client ID and Client Secret already saved in your Listing Tool settings.</p> -->
@@ -872,6 +879,7 @@
 // v316: this page is now Sales (/sales). Home (/) and Listings (/listings) tabs in the header.
 // v318: tabs are Home / Sales / Active (/active) / Listings (the Listing Tool, /list).
 // v326: Download button saves the range you're looking at; Settings → Account now holds your keys.
+// v327: Download asks first; Admin links to the Diagnostics page.
 // Shares the same sign-in and account as the listing tool (/list).
 // v304: sales dashboard — big daily bar graph with a remembered date range.
 // The sales numbers are SAMPLE data for now; real eBay sales replace
@@ -1644,6 +1652,10 @@ function toggleKeyView(show) {
 function downloadSales() {
   if (salesMode !== 'live') { showToast('Connect eBay first — there are no real sales to download yet.', true); return; }
   if (!curInfo || !curInfo.start) return;
+  // v327: ask first, so a stray click doesn't download anything
+  const d = (k) => keyToDate(k).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  const n = shownDays.reduce((s, x) => s + x.orders, 0);
+  if (!confirm('Download your sales from ' + d(curInfo.start) + (curInfo.start !== curInfo.end ? ' to ' + d(curInfo.end) : '') + '?\n\n' + n.toLocaleString() + ' order' + (n === 1 ? '' : 's') + ', one row each, as a spreadsheet file.')) return;
   location.href = '/api/sales/export?from=' + curInfo.start + '&to=' + curInfo.end + '&tz=' + encodeURIComponent(EBAY_TZ);
 }
 

@@ -1,4 +1,4 @@
-// PartsLister Pro server — v326
+// PartsLister Pro server — v327
 // v302: dashboard.html is the homepage (/). The listing tool moved to /list.
 // v305: eBay sales connection — real sold orders on the dashboard.
 // v306: asks eBay for two more permissions — fees/payouts and seller metrics.
@@ -32,6 +32,8 @@
 // v326: Sales download (one row per order for any date range) + account keys (Anthropic,
 //       eBay, Cloudinary, SerpApi) are edited in the main Settings now, not the Listing Tool.
 //       The Listing Tool can no longer overwrite them when it saves.
+// v327: Diagnostics page (/diagnostics, admin) — file versions, connections, live checks of
+//       every eBay / AI / photo service, recent errors in plain English, and what to do.
 // Accounts with email + password login. Each account's settings (including its
 // own API keys) and history are saved ENCRYPTED in Postgres, so you can log in
 // from any computer and everything is there. Also keeps a lifetime listing count.
@@ -48,7 +50,22 @@
 const express = require('express');
 const crypto = require('crypto');
 const path = require('path');
+const fs = require('fs');   // v327: Diagnostics reads the version of each page file
 const { Pool } = require('pg');
+
+// v327: remember the last 100 server errors (time + message) for the Diagnostics page.
+// Kept in memory only — they disappear when the server restarts.
+const recentErrors = [];
+const SERVER_STARTED = new Date();
+const _consoleError = console.error;
+console.error = function (...args) {
+  try {
+    const text = args.map(x => (x instanceof Error ? (x.message || String(x)) : typeof x === 'string' ? x : JSON.stringify(x))).join(' ');
+    recentErrors.unshift({ at: new Date().toISOString(), text: text.slice(0, 600) });
+    if (recentErrors.length > 100) recentErrors.length = 100;
+  } catch (e) { /* never let logging break anything */ }
+  _consoleError.apply(console, args);
+};
 
 const app = express();
 app.set('trust proxy', 1); // Railway sits in front of us and handles HTTPS
@@ -2339,6 +2356,165 @@ app.post('/api/returns/inquiry/:id/tracking', requireUser, express.json(), async
   }
 });
 
+// ─── v327: DIAGNOSTICS (admin) ───────────────────────────────────────────────
+// One place to see what's working, what isn't, and what to do about it.
+const PAGE_FILES = ['home.html', 'dashboard.html', 'orders.html', 'messages.html', 'messages-classic.html', 'returns.html', 'active.html', 'index.html', 'diagnostics.html'];
+const PAGE_NAMES = { 'home.html': 'Home', 'dashboard.html': 'Sales', 'orders.html': 'Orders', 'messages.html': 'Messages', 'messages-classic.html': 'Messages (classic)',
+  'returns.html': 'Returns', 'active.html': 'Active', 'index.html': 'Listing Tool', 'diagnostics.html': 'Diagnostics' };
+function fileVersion(file) {
+  try {
+    const head = fs.readFileSync(path.join(__dirname, file), 'utf8').slice(0, 3000);
+    const m = /<title>[^<]*?v(\d+)[^<]*<\/title>/i.exec(head) || /PartsLister Pro server — v(\d+)/.exec(head);
+    return m ? 'v' + m[1] : '?';
+  } catch (e) { return null; }   // file missing
+}
+// Turn an error into what it means and what to do
+function explain(msg) {
+  const m = String(msg || '');
+  if (/invalid_grant|refresh token|not connected/i.test(m)) return 'eBay sign-in has expired or was removed. Fix: ⚙ Settings → Admin → Reconnect eBay.';
+  if (/missing.*(client id|client secret)|Client ID \/ Client Secret/i.test(m)) return 'Your eBay Client ID / Secret are missing. Fix: ⚙ Settings → Account, add them, Save keys.';
+  if (/\b401\b|unauthori[sz]ed|invalid.*token|IAF/i.test(m)) return 'The service didn\u2019t accept the sign-in. Fix: Reconnect eBay (or check the key in ⚙ Settings → Account).';
+  if (/\b403\b|scope|access denied|insufficient permission/i.test(m)) return 'eBay says the app doesn\u2019t have permission for this. Fix: Reconnect eBay and approve everything on eBay\u2019s screen.';
+  if (/\b429\b|rate limit|too many|call limit|exceeded/i.test(m)) return 'A daily call limit was hit. It resets on its own — try again in a few hours.';
+  if (/timeout|timed out|aborted|ETIMEDOUT|ECONNRESET|ENOTFOUND|fetch failed|socket/i.test(m)) return 'Couldn\u2019t reach the service — it may be down for a bit. Try again in a few minutes.';
+  if (/\b5\d\d\b|internal server error|service unavailable/i.test(m)) return 'The other service had a problem on its end. Usually temporary — try again later.';
+  if (/credit balance|billing|insufficient.*credit/i.test(m)) return 'Your Anthropic account is out of credit. Fix: add credit at console.anthropic.com.';
+  return null;
+}
+const daysUntil = (d) => (d ? Math.round((new Date(d).getTime() - Date.now()) / 86400000) : null);
+
+app.get('/api/diag', requireUser, requireAdmin, async (req, res) => {
+  try {
+    const conn = await getConnection(req.user.id);
+    const settings = await getUserSettings(req.user.id);
+    let db = { ok: true };
+    const t0 = Date.now();
+    try { await pool.query('SELECT 1'); db.ms = Date.now() - t0; } catch (e) { db = { ok: false, error: e.message }; }
+    const counts = await pool.query(
+      `SELECT (SELECT COUNT(*) FROM ebay_orders WHERE user_id = $1)::int AS orders,
+              (SELECT MAX(created_at) FROM ebay_orders WHERE user_id = $1) AS newest,
+              (SELECT COUNT(*) FROM ebay_fee_lines WHERE user_id = $1)::int AS fee_lines,
+              (SELECT COUNT(*) FROM ebay_items WHERE user_id = $1)::int AS items_saved`, [req.user.id]).catch(() => ({ rows: [{}] }));
+    const c = counts.rows[0] || {};
+    let serverVersion = '?';
+    try { serverVersion = 'v' + (/v(\d+)/.exec(fs.readFileSync(__filename, 'utf8').slice(0, 200)) || [])[1]; } catch (e) { /* ? */ }
+    let pkgVersion = '?';
+    try { pkgVersion = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8')).version; } catch (e) { /* ? */ }
+    res.json({
+      server: { version: serverVersion, packageVersion: pkgVersion, started: SERVER_STARTED, node: process.version, db },
+      pages: PAGE_FILES.map(f => ({ file: f, name: PAGE_NAMES[f], version: fileVersion(f) })),
+      ebay: conn && conn.refresh_enc ? {
+        connected: true, connectedAt: conn.connected_at, signInDaysLeft: daysUntil(conn.refresh_expires),
+        permissions: EBAY_SCOPES.map(x => ({ label: x.label, granted: grantedScopes(conn).split(' ').includes(x.scope) })),
+        lastSync: conn.last_sync, syncError: conn.last_error || null, syncErrorHelp: explain(conn.last_error),
+        feesSync: conn.fees_sync, feesError: conn.fees_error || null, feesErrorHelp: explain(conn.fees_error),
+        activeCheck: conn.active_sync, activeError: conn.active_error || null, activeErrorHelp: explain(conn.active_error),
+        orders: c.orders || 0, newestOrder: c.newest || null, feeLines: c.fee_lines || 0, itemsSaved: c.items_saved || 0
+      } : { connected: false },
+      keys: {
+        anthropic: !!String(settings.apiKey || '').trim(), model: settings.claudeModel || 'claude-sonnet-4-5',
+        ebayApp: !!(String(settings.ebayClientId || '').trim() && String(settings.ebayClientSecret || '').trim()),
+        listingToken: !!String(settings.ebayUserToken || '').trim(), listingTokenDaysLeft: daysUntil(settings.ebayTokenExpiry),
+        cloudinary: !!(settings.cloudinaryCloudName && settings.cloudinaryApiKey && settings.cloudinaryApiSecret),
+        serpapi: !!String(settings.serpApiKey || '').trim()
+      },
+      errors: recentErrors.slice(0, 50).map(e => ({ at: e.at, text: e.text, help: explain(e.text) }))
+    });
+  } catch (e) {
+    console.error('[diag]', e);
+    res.status(500).json({ error: 'Could not load diagnostics: ' + e.message });
+  }
+});
+
+// Live checks — each one makes one small, free request to the service
+app.post('/api/diag/run', requireUser, requireAdmin, async (req, res) => {
+  const uid = req.user.id;
+  const conn = await getConnection(uid).catch(() => null);
+  const settings = await getUserSettings(uid).catch(() => ({}));
+  const results = [];
+  async function check(name, what, fn) {
+    const t0 = Date.now();
+    try {
+      const r = await fn();
+      if (r && r.skip) results.push({ name, what, status: 'skip', detail: r.skip, ms: 0 });
+      else results.push({ name, what, status: (r && r.warn) ? 'warn' : 'ok', detail: (r && (r.warn || r.detail)) || 'Working', ms: Date.now() - t0 });
+    } catch (e) {
+      results.push({ name, what, status: 'bad', detail: String(e.message || e).slice(0, 300), help: explain(e.message), ms: Date.now() - t0 });
+    }
+  }
+  const ebayOn = !!(conn && conn.refresh_enc);
+  const need = (scope) => (!ebayOn ? { skip: 'eBay isn\u2019t connected' } : !hasScope(conn, scope) ? { skip: 'Permission not approved yet — Reconnect eBay' } : null);
+  const get = async (url, headers) => {
+    const r = await fetch(url, { headers, signal: AbortSignal.timeout(20000) });
+    if (!r.ok && r.status !== 204) { const t = await r.text().catch(() => ''); throw new Error('HTTP ' + r.status + ' ' + t.slice(0, 200)); }
+    return r.status === 204 ? null : r.json().catch(() => null);
+  };
+
+  await check('Database', 'Your saved settings, orders and fees', async () => { await pool.query('SELECT 1'); });
+  await check('eBay sign-in', 'Everything eBay', async () => {
+    if (!ebayOn) return { skip: 'eBay isn\u2019t connected — ⚙ Settings → Admin' };
+    await getAccessToken(uid);
+    const d = daysUntil(conn.refresh_expires);
+    if (d !== null && d < 30) return { warn: 'Works, but the eBay sign-in runs out in ' + d + ' days — Reconnect eBay soon' };
+    return { detail: 'Working' + (d !== null ? ' · good for about ' + d + ' more days' : '') };
+  });
+  await check('eBay orders', 'Sales, Orders, Home', async () => {
+    const s = need('https://api.ebay.com/oauth/api_scope/sell.fulfillment.readonly'); if (s) return s;
+    const tok = await getAccessToken(uid);
+    await get(EBAY_API_HOST + '/sell/fulfillment/v1/order?limit=1', { Authorization: 'Bearer ' + tok });
+  });
+  await check('eBay fees', 'Fees and penalty tiles', async () => {
+    const s = need(FIN_SCOPE); if (s) return s;
+    const tok = await getAccessToken(uid);
+    await get(EBAY_FIN_HOST + '/sell/finances/v1/transaction?limit=1', { Authorization: 'Bearer ' + tok });
+  });
+  await check('eBay listings', 'Active page, photos, classic messages, offers', async () => {
+    if (!ebayOn) return { skip: 'eBay isn\u2019t connected' };
+    const id = await myEbayUser(uid);
+    if (!id) throw new Error('eBay didn\u2019t say who you are (GetUser failed)');
+    return { detail: 'Working · signed in as ' + id };
+  });
+  await check('eBay message threads', 'Messages page', async () => {
+    const s = need(MSG_SCOPE); if (s) return s;
+    await restCall(uid, 'GET', '/commerce/message/v1/conversation?conversation_type=FROM_MEMBERS&limit=1');
+  });
+  await check('eBay returns', 'Returns page', async () => {
+    if (!ebayOn) return { skip: 'eBay isn\u2019t connected' };
+    await poCall(uid, 'GET', '/return/search?role=SELLER&limit=1');
+  });
+  await check('Anthropic (AI)', 'Photo scans, titles, Identify Part, AI drafts', async () => {
+    const key = String(settings.apiKey || '').trim();
+    if (!key) return { skip: 'No key saved — ⚙ Settings → Account' };
+    await get('https://api.anthropic.com/v1/models?limit=1', { 'x-api-key': key, 'anthropic-version': '2023-06-01' });
+    return { detail: 'Key works · model set to ' + (settings.claudeModel || 'claude-sonnet-4-5') };
+  });
+  await check('Listing Tool eBay token', 'Launch and Save Draft in the Listing Tool', async () => {
+    if (!String(settings.ebayUserToken || '').trim()) return { warn: 'No User Token saved — the Listing Tool can\u2019t launch. Add it in ⚙ Settings → Account' };
+    const d = daysUntil(settings.ebayTokenExpiry);
+    if (d !== null && d < 0) throw new Error('The User Token expired ' + (-d) + ' days ago — get a new one and paste it in ⚙ Settings → Account');
+    if (d !== null && d < 30) return { warn: 'Runs out in ' + d + ' days — get a new one soon' };
+    return { detail: 'Saved' + (d !== null ? ' · good for about ' + d + ' more days' : '') };
+  });
+  await check('Cloudinary (photos)', 'Uploading listing photos', async () => {
+    const { cloudinaryCloudName: cn, cloudinaryApiKey: k, cloudinaryApiSecret: sec } = settings;
+    if (!(cn && k && sec)) return { skip: 'Not set up — ⚙ Settings → Account' };
+    const d = await get('https://api.cloudinary.com/v1_1/' + encodeURIComponent(cn) + '/usage', { Authorization: 'Basic ' + Buffer.from(k + ':' + sec).toString('base64') });
+    const st = d && d.storage, cr = d && d.credits;
+    const pct = cr && typeof cr.used_percent === 'number' ? cr.used_percent : (st && typeof st.used_percent === 'number' ? st.used_percent : null);
+    if (pct !== null && pct >= 90) return { warn: 'Works, but ' + pct.toFixed(0) + '% of your Cloudinary allowance is used — uploads will stop when it\u2019s full' };
+    return { detail: 'Working' + (pct !== null ? ' · ' + pct.toFixed(0) + '% of allowance used' : '') };
+  });
+  await check('SerpApi', 'Identify Part (Google Lens)', async () => {
+    const key = String(settings.serpApiKey || '').trim();
+    if (!key) return { skip: 'Not set up (optional)' };
+    const d = await get('https://serpapi.com/account?api_key=' + encodeURIComponent(key));
+    const left = d && (d.total_searches_left ?? d.plan_searches_left);
+    if (typeof left === 'number' && left <= 10) return { warn: 'Works, but only ' + left + ' searches left this month' };
+    return { detail: 'Working' + (typeof left === 'number' ? ' · ' + left + ' searches left this month' : '') };
+  });
+  res.json({ ran: new Date().toISOString(), results });
+});
+
 // ─── v316: ACTIVE LISTINGS ───────────────────────────────────────────────────
 // How many listings are live on eBay and what their asking prices add up to.
 // Uses the Trading API's GetMyeBaySelling (ActiveList), 200 listings per call.
@@ -2448,6 +2624,7 @@ const ORDERS = path.join(__dirname, 'orders.html');        // v319
 const MESSAGES = path.join(__dirname, 'messages.html');    // v321
 const MESSAGES_CLASSIC = path.join(__dirname, 'messages-classic.html');   // v322: the v321 email-style view
 const RETURNS = path.join(__dirname, 'returns.html');      // v324
+const DIAGNOSTICS = path.join(__dirname, 'diagnostics.html');   // v327
 
 // app.get('/', (req, res) => res.sendFile(DASHBOARD));
 // v316: Home is the landing page; the sales dashboard is /sales
@@ -2460,6 +2637,8 @@ app.get(['/messages', '/messages/'], (req, res) => res.sendFile(MESSAGES));     
 app.get(['/messages/classic'], (req, res) => res.sendFile(MESSAGES_CLASSIC));             // v322
 app.get(['/returns', '/returns/'], (req, res) => res.sendFile(RETURNS));                  // v324
 app.get(['/returns.html'], (req, res) => res.redirect(301, '/returns'));                  // v324
+app.get(['/diagnostics', '/diagnostics/'], (req, res) => res.sendFile(DIAGNOSTICS));      // v327 (the page itself checks you're the admin)
+app.get(['/diagnostics.html'], (req, res) => res.redirect(301, '/diagnostics'));          // v327
 app.get(['/listings', '/listings/'], (req, res) => res.redirect(301, '/active'));         // v318: old address
 app.get(['/list', '/list/'], (req, res) => res.sendFile(LISTING));
 // Old links and bookmarks to the file names still work
@@ -2484,5 +2663,5 @@ app.get('*', (req, res) => {
 });
 
 setupDatabase()
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v326 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v327 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });
