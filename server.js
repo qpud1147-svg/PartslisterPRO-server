@@ -1,4 +1,4 @@
-// PartsLister Pro server — v325
+// PartsLister Pro server — v326
 // v302: dashboard.html is the homepage (/). The listing tool moved to /list.
 // v305: eBay sales connection — real sold orders on the dashboard.
 // v306: asks eBay for two more permissions — fees/payouts and seller metrics.
@@ -29,6 +29,9 @@
 //       approve / decline / partial refund / refund a return; add tracking or refund a claim.
 // v325: keep eBay's own link for each return action, so "Open on eBay" lands on that return
 //       at whatever stage it's in (eBay picks the right page).
+// v326: Sales download (one row per order for any date range) + account keys (Anthropic,
+//       eBay, Cloudinary, SerpApi) are edited in the main Settings now, not the Listing Tool.
+//       The Listing Tool can no longer overwrite them when it saves.
 // Accounts with email + password login. Each account's settings (including its
 // own API keys) and history are saved ENCRYPTED in Postgres, so you can log in
 // from any computer and everything is there. Also keeps a lifetime listing count.
@@ -349,12 +352,33 @@ app.get('/api/data', requireUser, async (req, res) => {
   }
 });
 
+// v326: account keys — edited only in the main Settings (/api/account/keys). When the
+// Listing Tool saves its settings, the saved keys are kept, so a Listing Tool tab that
+// was opened before you changed a key can't put the old one back.
+const ACCOUNT_KEYS = ['apiKey', 'claudeModel', 'ebayClientId', 'ebayClientSecret', 'ebayUserToken', 'ebayTokenExpiry',
+  'ebayUsername', 'cloudinaryCloudName', 'cloudinaryApiKey', 'cloudinaryApiSecret', 'serpApiKey'];
+async function readUserData(userId) {
+  const r = await pool.query('SELECT data_enc FROM user_data WHERE user_id = $1', [userId]);
+  return r.rows.length ? JSON.parse(decrypt(r.rows[0].data_enc)) : null;
+}
+async function writeUserData(userId, data) {
+  await pool.query(
+    `INSERT INTO user_data (user_id, data_enc, updated_at) VALUES ($1, $2, now())
+     ON CONFLICT (user_id) DO UPDATE SET data_enc = EXCLUDED.data_enc, updated_at = now()`,
+    [userId, encrypt(JSON.stringify(data))]
+  );
+}
+
 // POST so the page can also save with sendBeacon when the tab closes
 app.post('/api/data', requireUser, express.json({ limit: '10mb' }), async (req, res) => {
   try {
     const b = req.body || {};
     if (!b.settings || typeof b.settings !== 'object') return res.status(400).json({ error: 'Missing settings' });
     const history = (b.history && typeof b.history === 'object') ? b.history : { pigtail: [], otherside: [] };
+    // v326: keep the saved account keys (see ACCOUNT_KEYS above)
+    const saved = await readUserData(req.user.id).catch(() => null);
+    const prev = (saved && saved.settings) || {};
+    ACCOUNT_KEYS.forEach(k => { if (prev[k] !== undefined) b.settings[k] = prev[k]; });
     const blob = encrypt(JSON.stringify({ settings: b.settings, history }));
     await pool.query(
       `INSERT INTO user_data (user_id, data_enc, updated_at) VALUES ($1, $2, now())
@@ -365,6 +389,83 @@ app.post('/api/data', requireUser, express.json({ limit: '10mb' }), async (req, 
   } catch (e) {
     console.error('[data:save]', e);
     res.status(500).json({ error: 'Could not save' });
+  }
+});
+
+// v326: ACCOUNT KEYS — for Settings → Account on the main pages
+app.get('/api/account/keys', requireUser, async (req, res) => {
+  try {
+    const d = await readUserData(req.user.id);
+    const s = (d && d.settings) || {};
+    const out = {};
+    ACCOUNT_KEYS.forEach(k => { out[k] = s[k] === undefined || s[k] === null ? '' : String(s[k]); });
+    res.json({ keys: out });
+  } catch (e) {
+    console.error('[keys:get]', e);
+    res.status(500).json({ error: 'Could not load your keys' });
+  }
+});
+
+app.post('/api/account/keys', requireUser, express.json(), async (req, res) => {
+  try {
+    const b = (req.body && req.body.keys) || {};
+    const d = (await readUserData(req.user.id)) || { settings: {}, history: { pigtail: [], otherside: [] } };
+    d.settings = d.settings || {};
+    ACCOUNT_KEYS.filter(k => k !== 'ebayTokenExpiry').forEach(k => {
+      if (b[k] === undefined) return;
+      const v = String(b[k] || '').trim().slice(0, 4000);
+      if (k === 'ebayUserToken' && v && v !== d.settings.ebayUserToken) {
+        d.settings.ebayTokenExpiry = new Date(Date.now() + 548 * 86400000).toISOString();   // Auth'n'Auth tokens last 18 months
+      }
+      d.settings[k] = k === 'claudeModel' ? (v || 'claude-sonnet-4-5') : v;
+    });
+    await writeUserData(req.user.id, d);
+    accessTokens.delete(req.user.id);   // eBay keys may have changed
+    res.json({ ok: true, tokenExpiry: d.settings.ebayTokenExpiry || null });
+  } catch (e) {
+    console.error('[keys:save]', e);
+    res.status(500).json({ error: 'Could not save your keys' });
+  }
+});
+
+// v326: SALES DOWNLOAD — one row per order for any dates, for every account
+app.get('/api/sales/export', requireUser, async (req, res) => {
+  try {
+    const from = isoDate(req.query.from), to = isoDate(req.query.to);
+    if (!from || !to || from > to) return res.status(400).send('Pick a start and end date');
+    const tz = safeTimeZone(String(req.query.tz || 'UTC'));
+    const r = await pool.query(
+      `SELECT o.order_id, to_char(o.created_at AT TIME ZONE $2, 'YYYY-MM-DD HH24:MI') AS sold_at,
+              o.total::float, o.tax::float, o.refunded::float, o.refunded_tax::float, o.fees::float, o.counted, o.status,
+              COALESCE(string_agg(i.title, ' | ' ORDER BY i.line_item_id), '') AS titles,
+              COALESCE(string_agg(i.sku, ' | ' ORDER BY i.line_item_id), '') AS skus,
+              COALESCE(SUM(i.qty), o.item_count)::int AS qty
+         FROM ebay_orders o
+         LEFT JOIN ebay_order_items i ON i.user_id = o.user_id AND i.order_id = o.order_id
+        WHERE o.user_id = $1 AND (o.created_at AT TIME ZONE $2)::date BETWEEN $3::date AND $4::date
+        GROUP BY o.order_id, o.created_at, o.total, o.tax, o.refunded, o.refunded_tax, o.fees, o.counted, o.status, o.item_count
+        ORDER BY o.created_at`,
+      [req.user.id, tz, from, to]
+    );
+    const f = (n) => (Math.round((n || 0) * 100) / 100).toFixed(2);
+    const q = (t) => '"' + String(t || '').replace(/"/g, '""') + '"';
+    const lines = [['Sold (eBay time)', 'Order Number', 'Items', 'SKU', 'Qty', 'Item + Shipping', 'Sales Tax', 'Refunded (incl. tax)', 'Total (like eBay)', 'eBay Fees', 'Net', 'Status'].join(',')];
+    const sum = { total: 0, tax: 0, ref: 0, eb: 0, fees: 0, net: 0, qty: 0, n: 0 };
+    for (const x of r.rows) {
+      const refunded = (x.refunded || 0) + (x.refunded_tax || 0);
+      const ebayTotal = x.counted ? x.total + x.tax - refunded : 0;
+      const fees = x.fees || 0;
+      const net = x.counted ? x.total - (x.refunded || 0) - fees : 0;
+      lines.push([x.sold_at, x.order_id, q(x.titles), q(x.skus), x.qty, f(x.total), f(x.tax), f(refunded), f(ebayTotal), f(fees), f(net), q(x.status)].join(','));
+      sum.total += x.total; sum.tax += x.tax; sum.ref += refunded; sum.eb += ebayTotal; sum.fees += fees; sum.net += net; sum.qty += x.qty || 0; sum.n++;
+    }
+    lines.push(['TOTAL', sum.n + ' orders', '', '', sum.qty, f(sum.total), f(sum.tax), f(sum.ref), f(sum.eb), f(sum.fees), f(sum.net), ''].join(','));
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="partslister-sales-${from}-to-${to}.csv"`);
+    res.send('\uFEFF' + lines.join('\r\n') + '\r\n');   // the mark at the start helps Excel read it right
+  } catch (e) {
+    console.error('[sales export]', e);
+    res.status(500).send('Could not build the download');
   }
 });
 
@@ -703,7 +804,8 @@ async function getAccessToken(userId) {
   const conn = await getConnection(userId);
   if (!conn || !conn.refresh_enc) throw new Error('eBay is not connected');
   const keys = await getEbayKeys(userId);
-  if (!keys.clientId || !keys.clientSecret) throw new Error('Your eBay Client ID / Client Secret are missing from Listing Tool settings');
+  // if (!keys.clientId || !keys.clientSecret) throw new Error('Your eBay Client ID / Client Secret are missing from Listing Tool settings');
+  if (!keys.clientId || !keys.clientSecret) throw new Error('Your eBay Client ID / Client Secret are missing — add them in Settings → Account');   // v326
   let d;
   try {
     // d = await ebayToken(keys, { grant_type: 'refresh_token', refresh_token: decrypt(conn.refresh_enc), scope: SALES_SCOPES });
@@ -977,7 +1079,8 @@ app.get('/api/ebay/connect', requireUser, requireAdmin, async (req, res) => {
     const keys = await getEbayKeys(req.user.id);
     if (!conn || !conn.runame) return res.redirect('/sales?ebay=error&msg=' + encodeURIComponent('Save your RuName first'));   // v316: was /
     if (!keys.clientId || !keys.clientSecret) {
-      return res.redirect('/sales?ebay=error&msg=' + encodeURIComponent('Add your eBay Client ID and Client Secret in Listing Tool settings first'));
+      // return res.redirect('/sales?ebay=error&msg=' + encodeURIComponent('Add your eBay Client ID and Client Secret in Listing Tool settings first'));
+      return res.redirect('/sales?ebay=error&msg=' + encodeURIComponent('Add your eBay Client ID and Client Secret in Settings → Account first'));   // v326
     }
     const state = crypto.randomBytes(24).toString('base64url');
     oauthStates.set(state, { userId: req.user.id, expires: Date.now() + 10 * 60 * 1000 });
@@ -1875,7 +1978,8 @@ app.post('/api/threads/:id/draft', requireUser, express.json(), async (req, res)
   try {
     const settings = await getUserSettings(req.user.id);
     const apiKey = String(settings.apiKey || '').trim();
-    if (!apiKey) return res.status(400).json({ error: 'Add your Anthropic API key in the Listing Tool → ⚙ Settings first.' });
+    // if (!apiKey) return res.status(400).json({ error: 'Add your Anthropic API key in the Listing Tool → ⚙ Settings first.' });
+    if (!apiKey) return res.status(400).json({ error: 'Add your Anthropic API key in ⚙ Settings → Account first.' });   // v326
     const model = String(settings.claudeModel || '').trim() || 'claude-sonnet-4-5';
     const conn = await getConnection(req.user.id);
     const blocked = threadsBlocked(conn); if (blocked) return res.status(400).json({ error: 'Reconnect eBay to approve message threads first.' });
@@ -2380,5 +2484,5 @@ app.get('*', (req, res) => {
 });
 
 setupDatabase()
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v325 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v326 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });

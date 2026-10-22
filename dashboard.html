@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Sales v324</title>
+<title>PartsLister Pro Sales v326</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@400;500;600&display=swap');
 
@@ -529,7 +529,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v324</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v326</span></div>
   </a>
   <!-- v316: switch pages -->
   <nav class="page-tabs" aria-label="Pages">
@@ -588,6 +588,8 @@
         <input type="date" id="range-from" aria-label="Start date"> to <input type="date" id="range-to" aria-label="End date">
         <button type="button" class="custom-btn" onclick="applyCustom()">Show</button>
       </span>
+      <!-- v326: save the dates you're looking at as a spreadsheet file -->
+      <button type="button" class="custom-btn" id="sales-download-btn" onclick="downloadSales()" title="Download every order in this date range (opens in Excel or Numbers)">Download</button>
     </div>
   </div>
 
@@ -743,10 +745,45 @@
         <div class="set-info">
           Signed in as <strong id="set-email" style="color:var(--text)">—</strong><span id="set-role"></span>
         </div>
-        <p class="set-help" style="margin-top:10px;">Your listing settings — eBay keys, prompts, shipping and description presets — are in the <a href="/list" style="color:var(--accent)">Listing Tool</a> under ⚙.</p>
+        <!-- <p class="set-help" style="margin-top:10px;">Your listing settings — eBay keys, prompts, shipping and description presets — are in the <a href="/list" style="color:var(--accent)">Listing Tool</a> under ⚙.</p> -->
+        <p class="set-help" style="margin-top:10px;">Your keys are below. Listing settings — prompts, policies, shipping and description presets — stay in the <a href="/list" style="color:var(--accent)">Listing Tool</a> under ⚙.</p>   <!-- v326 -->
         <div class="set-buttons">
           <button class="btn btn-secondary btn-sm" onclick="logout()">Log Out</button>
         </div>
+      </div>
+
+      <!-- v326: ACCOUNT KEYS — moved here from the Listing Tool. Saved encrypted to your account. -->
+      <hr class="set-divider">
+      <div class="set-section" id="keys-section">
+        <h3>Anthropic (AI)</h3>
+        <p class="set-help">Used for photo scanning, titles, Identify Part and AI message drafts. Sent only to Anthropic.</p>
+        <div class="set-row"><label for="k-apiKey">Anthropic API key</label><div class="set-input-row"><input id="k-apiKey" type="password" placeholder="sk-ant-..." autocomplete="off"></div></div>
+        <div class="set-row"><label for="k-claudeModel">Claude model</label><div class="set-input-row"><input id="k-claudeModel" type="text" placeholder="claude-sonnet-4-5" autocomplete="off"></div></div>
+      </div>
+      <div class="set-section">
+        <h3>eBay</h3>
+        <p class="set-help">From <strong>developer.ebay.com</strong> → Application Keys → Production. The User Token (User Tokens → Auth'n'Auth) is what the Listing Tool lists with; it lasts 18 months.</p>
+        <div class="set-row"><label for="k-ebayClientId">Client ID (App ID)</label><div class="set-input-row"><input id="k-ebayClientId" type="text" autocomplete="off"></div></div>
+        <div class="set-row"><label for="k-ebayClientSecret">Client Secret (Cert ID)</label><div class="set-input-row"><input id="k-ebayClientSecret" type="password" autocomplete="off"></div></div>
+        <div class="set-row"><label for="k-ebayUsername">eBay username</label><div class="set-input-row"><input id="k-ebayUsername" type="text" placeholder="your eBay login name" autocomplete="off"></div></div>
+        <div class="set-row"><label for="k-ebayUserToken">User Token (Auth'n'Auth)</label><div class="set-input-row"><textarea id="k-ebayUserToken" rows="3" autocomplete="off" style="flex:1;min-width:0;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:4px;font-family:ui-monospace,Menlo,monospace;font-size:11.5px;resize:vertical;"></textarea></div>
+          <div class="set-help" id="k-token-status" style="margin-top:4px;"></div></div>
+      </div>
+      <div class="set-section">
+        <h3>Photo hosting (Cloudinary)</h3>
+        <div class="set-row"><label for="k-cloudinaryCloudName">Cloud name</label><div class="set-input-row"><input id="k-cloudinaryCloudName" type="text" autocomplete="off"></div></div>
+        <div class="set-row"><label for="k-cloudinaryApiKey">API key</label><div class="set-input-row"><input id="k-cloudinaryApiKey" type="text" autocomplete="off"></div></div>
+        <div class="set-row"><label for="k-cloudinaryApiSecret">API secret</label><div class="set-input-row"><input id="k-cloudinaryApiSecret" type="password" autocomplete="off"></div></div>
+      </div>
+      <div class="set-section">
+        <h3>Part identification (SerpApi)</h3>
+        <p class="set-help">Optional — Google Lens lookups for Identify Part.</p>
+        <div class="set-row"><label for="k-serpApiKey">SerpApi key</label><div class="set-input-row"><input id="k-serpApiKey" type="password" autocomplete="off"></div></div>
+        <div class="set-buttons">
+          <button class="btn btn-primary btn-sm" id="keys-save-btn" onclick="saveKeys()">Save keys</button>
+          <label style="font-size:12px;color:var(--muted);display:inline-flex;gap:6px;align-items:center;"><input type="checkbox" onchange="toggleKeyView(this.checked)"> Show keys</label>
+        </div>
+        <p class="set-help" style="margin-top:8px;">If the Listing Tool is open in another tab, reload it after saving so it picks up the new keys.</p>
       </div>
     </div>
 
@@ -754,7 +791,8 @@
     <div class="settings-panel" id="panel-admin" role="tabpanel">
       <div class="set-section">
         <h3>eBay Sales Connection</h3>
-        <p class="set-help">Connects your eBay seller account so the dashboard shows your real sold orders. It uses the eBay Client ID and Client Secret already saved in your Listing Tool settings.</p>
+        <!-- <p class="set-help">Connects your eBay seller account so the dashboard shows your real sold orders. It uses the eBay Client ID and Client Secret already saved in your Listing Tool settings.</p> -->
+        <p class="set-help">Connects your eBay seller account so the dashboard shows your real sold orders. It uses the eBay Client ID and Client Secret saved in Settings → Account.</p>   <!-- v326 -->
         <div id="ebay-status-box" class="set-info">Loading…</div>
         <div id="ebay-error" class="set-error" style="display:none;"></div>
         <div class="set-buttons" id="ebay-connected-buttons" style="display:none;">
@@ -833,6 +871,7 @@
 // v315: This month / Last month / any month / custom dates; penalty fees this year (last year under it).
 // v316: this page is now Sales (/sales). Home (/) and Listings (/listings) tabs in the header.
 // v318: tabs are Home / Sales / Active (/active) / Listings (the Listing Tool, /list).
+// v326: Download button saves the range you're looking at; Settings → Account now holds your keys.
 // Shares the same sign-in and account as the listing tool (/list).
 // v304: sales dashboard — big daily bar graph with a remembered date range.
 // The sales numbers are SAMPLE data for now; real eBay sales replace
@@ -1558,6 +1597,54 @@ function showSettingsTab(tab) {
     document.getElementById('panel-' + t).classList.toggle('active', t === tab);
   });
   if (tab === 'admin') loadEbayStatus();
+  if (tab === 'account') loadKeys();   // v326
+}
+
+// ─── v326: ACCOUNT KEYS ──────────────────────────────────────────────────────
+const KEY_FIELDS = ['apiKey', 'claudeModel', 'ebayClientId', 'ebayClientSecret', 'ebayUsername', 'ebayUserToken', 'cloudinaryCloudName', 'cloudinaryApiKey', 'cloudinaryApiSecret', 'serpApiKey'];
+let keysLoaded = false;
+async function loadKeys() {
+  try {
+    const r = await fetch('/api/account/keys');
+    if (!r.ok) throw new Error();
+    const k = (await r.json()).keys || {};
+    KEY_FIELDS.forEach(f => { const el = document.getElementById('k-' + f); if (el) el.value = k[f] || ''; });
+    showTokenStatus(k.ebayUserToken, k.ebayTokenExpiry);
+    keysLoaded = true;
+  } catch (e) { showToast('Could not load your keys.', true); }
+}
+function showTokenStatus(token, expiry) {
+  const el = document.getElementById('k-token-status');
+  if (!token) { el.textContent = 'No User Token saved — the Listing Tool can\u2019t launch listings without it.'; el.style.color = 'var(--danger)'; return; }
+  if (expiry && new Date(expiry) < new Date()) { el.textContent = 'This token expired ' + new Date(expiry).toLocaleDateString() + ' — paste a new one.'; el.style.color = 'var(--danger)'; return; }
+  el.textContent = expiry ? 'Token good until about ' + new Date(expiry).toLocaleDateString() : 'Token saved.';
+  el.style.color = 'var(--success)';
+}
+async function saveKeys() {
+  if (!keysLoaded) { showToast('Keys are still loading — try again in a second.', true); return; }
+  const keys = {};
+  KEY_FIELDS.forEach(f => { const el = document.getElementById('k-' + f); if (el) keys[f] = el.value.trim(); });
+  const btn = document.getElementById('keys-save-btn');
+  btn.disabled = true;
+  try {
+    const r = await fetch('/api/account/keys', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ keys }) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || 'Could not save');
+    showTokenStatus(keys.ebayUserToken, d.tokenExpiry);
+    showToast('Keys saved to your account.');
+  } catch (e) { showToast(e.message, true); }
+  finally { btn.disabled = false; }
+}
+function toggleKeyView(show) {
+  ['apiKey', 'ebayClientSecret', 'cloudinaryApiSecret', 'serpApiKey'].forEach(f => { document.getElementById('k-' + f).type = show ? 'text' : 'password'; });
+}
+
+// ─── v326: SALES DOWNLOAD ────────────────────────────────────────────────────
+// Every order in the dates you're looking at, as a .csv file (opens in Excel/Numbers).
+function downloadSales() {
+  if (salesMode !== 'live') { showToast('Connect eBay first — there are no real sales to download yet.', true); return; }
+  if (!curInfo || !curInfo.start) return;
+  location.href = '/api/sales/export?from=' + curInfo.start + '&to=' + curInfo.end + '&tz=' + encodeURIComponent(EBAY_TZ);
 }
 
 let ebayStatus = null;
@@ -1605,7 +1692,7 @@ async function loadEbayStatus() {
     }
   } else {
     line('Status:', 'Not connected', 'bad');
-    line('eBay keys from Listing Tool:', st.hasKeys ? '✓ Found' : '✗ Missing', st.hasKeys ? 'ok' : 'bad');
+    line('eBay keys (Settings → Account):', st.hasKeys ? '✓ Found' : '✗ Missing', st.hasKeys ? 'ok' : 'bad');
     line('RuName:', st.ruName ? '✓ Saved' : '✗ Not saved yet', st.ruName ? 'ok' : 'bad');
   }
   const err = document.getElementById('ebay-error');
@@ -1626,7 +1713,8 @@ async function loadEbayStatus() {
   btn.textContent = st.connected ? 'Reconnect eBay' : 'Connect eBay';
   const missing = st.connected && (st.permissions || []).some(pm => !pm.granted);   // v306
   btn.disabled = !st.hasKeys || !st.ruName;
-  if (!st.hasKeys) help.textContent = 'First add your eBay Client ID and Client Secret in the Listing Tool → ⚙ Settings → Account.';
+  // if (!st.hasKeys) help.textContent = 'First add your eBay Client ID and Client Secret in the Listing Tool → ⚙ Settings → Account.';
+  if (!st.hasKeys) help.textContent = 'First add your eBay Client ID and Client Secret in the Account tab, then Save keys.';   // v326
   else if (!st.ruName) help.textContent = 'Save your RuName above first.';
   else if (missing) help.textContent = 'New permissions were added. Click Reconnect eBay and approve them on eBay\u2019s screen — your sales keep working in the meantime.';   // v306
   else help.textContent = st.connected

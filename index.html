@@ -9,7 +9,7 @@
   // refresh, overriding anything init does.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 </script>
-<title>PartsLister Pro v303</title>
+<title>PartsLister Pro v326</title>
 <!-- auth removed -->
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@400;500;600&display=swap');
@@ -904,7 +904,7 @@
     <!-- v302: logo goes to the dashboard -->
     <a href="/" title="Dashboard" style="text-decoration:none;color:inherit;">
       <div class="logo"><span>PARTS</span>LISTER</div>
-      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v303</span></div>
+      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v326</span></div>
     </a>
     <!-- v303: removed — the logo is the dashboard button
     <a href="/" class="btn btn-secondary btn-sm" title="Back to your dashboard" style="font-size:11px;padding:4px 10px;text-decoration:none;margin-left:6px;">⌂ Dashboard</a>
@@ -1461,16 +1461,25 @@
     <div class="modal-body">
       <!-- Settings Tabs -->
       <div id="settings-tabs" style="display:flex;gap:2px;border-bottom:2px solid var(--border);margin-bottom:18px;flex-wrap:wrap;">
+        <!-- v326: Account moved to Settings on the main pages
         <button id="stab-account"  onclick="switchSettingsTab('account')"  style="font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;padding:7px 14px;border:none;cursor:pointer;border-radius:4px 4px 0 0;transition:background 0.15s,color 0.15s;background:var(--accent);color:#000;">Account</button>
+        -->
         <button id="stab-policies" onclick="switchSettingsTab('policies')" style="font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;padding:7px 14px;border:none;cursor:pointer;border-radius:4px 4px 0 0;transition:background 0.15s,color 0.15s;background:var(--surface);color:var(--muted);">Policies</button>
         <button id="stab-scanning" onclick="switchSettingsTab('scanning')" style="font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;padding:7px 14px;border:none;cursor:pointer;border-radius:4px 4px 0 0;transition:background 0.15s,color 0.15s;background:var(--surface);color:var(--muted);">Scanning</button>
         <button id="stab-prompts"  onclick="switchSettingsTab('prompts')"  style="font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;padding:7px 14px;border:none;cursor:pointer;border-radius:4px 4px 0 0;transition:background 0.15s,color 0.15s;background:var(--surface);color:var(--muted);">Prompts</button>
         <button id="stab-options"  onclick="switchSettingsTab('options')"  style="font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;padding:7px 14px;border:none;cursor:pointer;border-radius:4px 4px 0 0;transition:background 0.15s,color 0.15s;background:var(--surface);color:var(--muted);">Listing</button>
       </div>
 
-      <!-- TAB: ACCOUNT -->
+      <!-- v326: your keys (Anthropic, eBay, Cloudinary, SerpApi) and Log Out moved to Settings on the main pages -->
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:10px 12px;margin-bottom:14px;font-size:12px;color:var(--text);">
+        Your <strong>keys</strong> (Anthropic, eBay, Cloudinary, SerpApi) and <strong>Log Out</strong> are now in Settings on the main pages.
+        <a href="/sales?settings=1" style="color:var(--accent);font-weight:600;">Open Account settings →</a>
+        <span style="display:block;color:var(--muted);margin-top:3px;">After changing a key there, reload this page so the Listing Tool uses it.</span>
+      </div>
+      <!-- v326: the Account tab, kept for reference (not shown)
+      [ TAB: ACCOUNT ]
       <div id="spanel-account" class="settings-panel">
-        <!-- v301: ACCOUNT -->
+        [ v301: ACCOUNT ]
         <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;">
           <div style="flex:1;min-width:0;">
             <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;">Signed in as</div>
@@ -1554,6 +1563,7 @@
       <hr>
       </div>
 
+      -->
       <!-- TAB: POLICIES -->
       <div id="spanel-policies" class="settings-panel" style="display:none;">
         <div class="field">
@@ -2199,6 +2209,7 @@ function init() {
 function showApiWarning() {
   const w = document.getElementById('api-key-warning');
   if (w) w.style.display = 'flex';
+  else showNotif('⚠ Add your Anthropic API key in Settings → Account on the main pages', true);   // v326
 }
 
 // ─── DRAG AND DROP ───────────────────────────────────────────────────────────
@@ -4479,9 +4490,15 @@ function updateEbayAuthStatus() {
   const disconnectBtn = document.getElementById('ebay-disconnect-btn');
   const launchBtn = document.getElementById('launch-btn');
   const draftBtn = document.getElementById('draft-btn');
-  if (!status) return;
+  // if (!status) return;
   const hasToken = settings.ebayUserToken && settings.ebayTokenExpiry;
   const tokenValid = hasToken && new Date(settings.ebayTokenExpiry) > new Date();
+  // v326: the status box moved out with the Account tab — still turn Launch / Save Draft on or off
+  if (!status) {
+    if (launchBtn) launchBtn.disabled = !tokenValid;
+    if (draftBtn) draftBtn.disabled = !tokenValid;
+    return;
+  }
   if (tokenValid) {
     status.style.cssText = 'margin-bottom:10px;padding:8px 12px;border-radius:4px;font-size:12px;background:rgba(76,175,130,0.1);border:1px solid var(--success);color:var(--success);';
     status.textContent = '✓ Connected to eBay — token valid until ' + new Date(settings.ebayTokenExpiry).toLocaleDateString();
@@ -5550,7 +5567,8 @@ function switchSettingsTab(tab) {
 }
 
 function openSettings() {
-  switchSettingsTab('account');
+  // switchSettingsTab('account');
+  switchSettingsTab('policies');   // v326: Account tab moved to the main Settings
   // Restore sticker example previews
   ['sku','bin','vehicle'].forEach(type => {
     const b64 = settings.stickerExamples && settings.stickerExamples[type];
@@ -5569,14 +5587,18 @@ function openSettings() {
       zone.style.borderColor = '';
     }
   });
-  document.getElementById('api-key-input').value = settings.apiKey;
+  // document.getElementById('api-key-input').value = settings.apiKey;
+  if (document.getElementById('api-key-input')) document.getElementById('api-key-input').value = settings.apiKey;   // v326: only if the field exists
   if(document.getElementById('cloudinary-cloud-name')) document.getElementById('cloudinary-cloud-name').value = settings.cloudinaryCloudName || '';
   if(document.getElementById('cloudinary-api-key')) document.getElementById('cloudinary-api-key').value = settings.cloudinaryApiKey || '';
   if(document.getElementById('cloudinary-api-secret')) document.getElementById('cloudinary-api-secret').value = settings.cloudinaryApiSecret || '';
   if(document.getElementById('serpapi-key')) document.getElementById('serpapi-key').value = settings.serpApiKey || '';
-  document.getElementById('ebay-client-id').value = settings.ebayClientId || '';
-  document.getElementById('ebay-username-input').value = settings.ebayUsername || '';
-  document.getElementById('ebay-client-secret').value = settings.ebayClientSecret || '';
+  // document.getElementById('ebay-client-id').value = settings.ebayClientId || '';
+  // document.getElementById('ebay-username-input').value = settings.ebayUsername || '';
+  // document.getElementById('ebay-client-secret').value = settings.ebayClientSecret || '';
+  if (document.getElementById('ebay-client-id')) document.getElementById('ebay-client-id').value = settings.ebayClientId || '';            // v326
+  if (document.getElementById('ebay-username-input')) document.getElementById('ebay-username-input').value = settings.ebayUsername || '';  // v326
+  if (document.getElementById('ebay-client-secret')) document.getElementById('ebay-client-secret').value = settings.ebayClientSecret || ''; // v326
   if (document.getElementById('ebay-zip-code')) document.getElementById('ebay-zip-code').value = settings.zipCode || '';
   if (document.getElementById('distance-sort-toggle')) document.getElementById('distance-sort-toggle').checked = !!settings.distanceSort;
   if (document.getElementById('visual-match-prompt')) document.getElementById('visual-match-prompt').value = settings.visualMatchPrompt || '';
@@ -5591,7 +5613,8 @@ function openSettings() {
     const _roundEl = document.getElementById('dim-round-' + (settings.dimRounding || 'none'));
     if (_roundEl) _roundEl.checked = true;
   }
-  document.getElementById('ebay-user-token-input').value = settings.ebayUserToken || '';
+  // document.getElementById('ebay-user-token-input').value = settings.ebayUserToken || '';
+  if (document.getElementById('ebay-user-token-input')) document.getElementById('ebay-user-token-input').value = settings.ebayUserToken || '';   // v326
   updateEbayAuthStatus();
   document.getElementById('oem-partnum-toggle').checked = settings.oemPartNumber !== false;
   document.getElementById('oem-nopart-toggle').checked = settings.oemNoPartNumber !== false;
@@ -5623,7 +5646,8 @@ function openSettings() {
   if (document.getElementById('prompt-title-edit-input')) document.getElementById('prompt-title-edit-input').value = settings.promptTitleEdit || '';
   if (document.getElementById('prompt-identify-input')) document.getElementById('prompt-identify-input').value = settings.promptIdentify || '';
   const w = document.getElementById('api-key-warning');
-  w.style.display = settings.apiKey ? 'none' : 'flex';
+  // w.style.display = settings.apiKey ? 'none' : 'flex';
+  if (w) w.style.display = settings.apiKey ? 'none' : 'flex';   // v326
   document.getElementById('settings-modal').classList.add('open');
   setupStickerDropZones();
 }
@@ -5633,14 +5657,15 @@ function closeSettings() {
 }
 
 function saveSettings() {
-  settings.apiKey      = document.getElementById('api-key-input').value.trim();
+  // v326: account keys are saved in the main Settings now — the server also keeps them safe
+  // settings.apiKey      = document.getElementById('api-key-input').value.trim();
   if(document.getElementById('cloudinary-cloud-name')) settings.cloudinaryCloudName = document.getElementById('cloudinary-cloud-name').value.trim();
   if(document.getElementById('cloudinary-api-key')) settings.cloudinaryApiKey = document.getElementById('cloudinary-api-key').value.trim();
   if(document.getElementById('cloudinary-api-secret')) settings.cloudinaryApiSecret = document.getElementById('cloudinary-api-secret').value.trim();
   if(document.getElementById('serpapi-key')) settings.serpApiKey = document.getElementById('serpapi-key').value.trim();
-  settings.ebayClientId     = document.getElementById('ebay-client-id').value.trim();
-  settings.ebayUsername     = document.getElementById('ebay-username-input').value.trim();
-  settings.ebayClientSecret = document.getElementById('ebay-client-secret').value.trim();
+  // settings.ebayClientId     = document.getElementById('ebay-client-id').value.trim();
+  // settings.ebayUsername     = document.getElementById('ebay-username-input').value.trim();
+  // settings.ebayClientSecret = document.getElementById('ebay-client-secret').value.trim();
   settings.zipCode          = document.getElementById('ebay-zip-code') ? document.getElementById('ebay-zip-code').value.trim() : '';
   settings.distanceSort     = document.getElementById('distance-sort-toggle') ? document.getElementById('distance-sort-toggle').checked : false;
   settings.visualMatchPrompt = document.getElementById('visual-match-prompt') ? document.getElementById('visual-match-prompt').value.trim() : '';
@@ -5651,7 +5676,8 @@ function saveSettings() {
   settings.dimPadding       = document.getElementById('dim-padding-input') ? parseInt(document.getElementById('dim-padding-input').value) : 20;
   const _selRound = document.querySelector('input[name="dim-rounding"]:checked');
   settings.dimRounding = _selRound ? _selRound.value : 'none';
-  const newToken = document.getElementById('ebay-user-token-input').value.trim();
+  // const newToken = document.getElementById('ebay-user-token-input').value.trim();
+  const newToken = document.getElementById('ebay-user-token-input') ? document.getElementById('ebay-user-token-input').value.trim() : '';   // v326
   if (newToken) {
     settings.ebayUserToken = newToken;
     // Auth'n'Auth tokens last 18 months
@@ -5677,7 +5703,8 @@ function saveSettings() {
   settings.descStripWords = _descStripRaw.split(',').map(w => w.trim()).filter(Boolean);
   const _intStripRaw = document.getElementById('interchange-strip-words-input') ? document.getElementById('interchange-strip-words-input').value : '';
   settings.interchangeStripWords = _intStripRaw.split(',').map(w => w.trim()).filter(Boolean);
-  settings.claudeModel = (document.getElementById('claude-model-input') ? document.getElementById('claude-model-input').value.trim() : '') || 'claude-sonnet-4-5';
+  // settings.claudeModel = (document.getElementById('claude-model-input') ? document.getElementById('claude-model-input').value.trim() : '') || 'claude-sonnet-4-5';
+  if (document.getElementById('claude-model-input')) settings.claudeModel = document.getElementById('claude-model-input').value.trim() || 'claude-sonnet-4-5';   // v326: model is set in the main Settings
   settings.interchangeMode = (document.getElementById('interchange-mode-template') && document.getElementById('interchange-mode-template').dataset.activeMode) || 'template';
   settings.interchangeTemplate = document.getElementById('interchange-template-input') ? document.getElementById('interchange-template-input').value.trim() : '';
   settings.interchangePrompt = document.getElementById('interchange-prompt-input') ? document.getElementById('interchange-prompt-input').value.trim() : '';
