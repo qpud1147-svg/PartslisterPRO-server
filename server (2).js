@@ -1,4 +1,4 @@
-// PartsLister Pro server — v345
+// PartsLister Pro server — v347
 // v302: dashboard.html is the homepage (/). The listing tool moved to /list.
 // v305: eBay sales connection — real sold orders on the dashboard.
 // v306: asks eBay for two more permissions — fees/payouts and seller metrics.
@@ -99,6 +99,15 @@
 //       by…" wording. New answer choices: changed mind / bought the wrong one, change my address,
 //       faster shipping, sell part of it, radio / anti-theft code, local pickup. Download messages
 //       also removes names in quoted email replies and "-Name" sign-offs.
+// v346: Admin → Download messages with drafts: 7 / 14 / 30 / 90 / 365 days, 50 / 100 / 300
+//       conversations, optional "AI drafts only" (found by your sign-off), progress bar, and a
+//       "Facts now" line per conversation (price, shipping, part #, live status, returns, this
+//       buyer's order) so drafts can be checked against the real facts.
+// v347: "Write sandbox AI replies" (replaces "AI drafts only"): the download also writes an AI reply
+//       for each conversation with your Anthropic key — the same draft code and settings as the
+//       Messages page — into the FILE ONLY. Nothing is sent, no offer is sent, nothing is added to
+//       Waiting on me. If you already answered, the AI answers as of that moment (it only sees the
+//       conversation up to your reply) and your actual reply is shown under it to compare.
 // Accounts with email + password login. Each account's settings (including its
 // own API keys) and history are saved ENCRYPTED in Postgres, so you can log in
 // from any computer and everything is there. Also keeps a lifetime listing count.
@@ -2729,7 +2738,8 @@ app.post('/api/threads/:id/translate', requireUser, express.json({ limit: '200kb
   }
 });
 
-app.post('/api/threads/:id/draft', requireUser, express.json(), async (req, res) => {
+// app.post('/api/threads/:id/draft', requireUser, express.json(), async (req, res) => {
+const draftHandler = async (req, res) => {   // v347: named, so the sandbox download can run the same code
   const id = String(req.params.id || '');
   const b = req.body || {};
   const itemId = /^\d{6,20}$/.test(String(b.itemId || '')) ? String(b.itemId) : null;
@@ -2756,6 +2766,9 @@ app.post('/api/threads/:id/draft', requireUser, express.json(), async (req, res)
       if (!data || !data.next || ((data && data.messages) || []).length < 50) break;
     }
     msgs.sort((x, y) => String(x.date).localeCompare(String(y.date)));
+    // v347: sandbox — only the conversation before your actual reply
+    if (req._sandbox && req._sandbox.before) { const keep = msgs.filter(m => String(m.date) < req._sandbox.before); msgs.length = 0; keep.forEach(m => msgs.push(m)); }
+    if (req._sandbox) req._sandbox.msgs = msgs;
     const convo = msgs.slice(-30).map(m => (m.mine ? 'SELLER (me)' : 'BUYER (' + m.from + ')') + ' [' + String(m.date).slice(0, 10) + ']: ' + m.text).join('\n');
     if (!convo) return res.status(400).json({ error: 'There\u2019s no message to answer yet.' });
     // v341: nothing to answer → say so instead of drafting (a note in the box still writes a follow-up)
@@ -2952,7 +2965,8 @@ app.post('/api/threads/:id/draft', requireUser, express.json(), async (req, res)
     console.error('[draft]', e.message);
     res.status(500).json({ error: 'Could not draft a reply: ' + e.message });
   }
-});
+};
+app.post('/api/threads/:id/draft', requireUser, express.json(), draftHandler);   // v347
 
 // ─── v338: ADMIN — DOWNLOAD MESSAGES (development) ──────────────────────────
 // (v338 redactMsg — replaced in v339)
@@ -2982,7 +2996,7 @@ function redactMsg(text, names) {   // v339
   // v345: names in quoted email replies ("Name <email> wrote / escribió") and "-Name" sign-offs
   t = t.replace(/[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2}\s*<\[email\]>/g, '[name] <[email]>');
   t = t.replace(/(^|[\s,])-\s?[A-Z][a-z]+\s*$/, '$1-[name]');
-  t = t.replace(/\b([Mm]y name is|[Nn]ame's|[Ii]'?m|[Tt]his is)\s+([A-Z][a-z]+)(\s+[A-Z][a-z]+)?\b(?=[\s.,!])/g, (m, a, b) => (/^(interested|looking|wondering|trying|not|sorry|good|the|a|in)$/i.test(b) ? m : a + ' [name]'));
+  t = t.replace(/\b([Mm]y name is|[Nn]ame's|[Ii]'?m|[Tt]his is)\s+([A-Z][a-z]+)(\s+[A-Z][a-z]+)?\b(?=[\s.,!]|$)/g, (m, a, b) => (/^(interested|looking|wondering|trying|not|sorry|good|the|a|in)$/i.test(b) ? m : a + ' [name]'));
   // a sign-off at the end: " / Name", "Thanks, Name", " / COMPANY INC." lines
   t = t.replace(/((?:thanks|thank you|regards|cheers|best)[,!.]?\s*(?:\/\s*)?)([A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z.]*){0,2})\s*$/i, '$1[name]');
   t = t.split(/\r?\n/).map((seg, i, arr) => ((i > 0 || (arr.length === 1 && /^[A-Z][a-z]+(\s+[A-Z][a-z]+){1,2}$/.test(seg.trim()))) && /^[A-Z][A-Za-z.&']*(\s+[A-Z][A-Za-z.&']*){0,3}\.?$/.test(seg.trim()) && seg.trim().length < 40 && !/^(Thank|Thanks|Hi|Hello|Ok|Okay|Yes|No)\b/.test(seg.trim()) ? '[name]' : seg)).join('\n');
@@ -3042,6 +3056,225 @@ app.get('/api/admin/messages-export', requireUser, requireAdmin, async (req, res
     console.error('[messages export]', e.message);
     res.status(500).send('Could not download messages: ' + e.message);
   }
+});
+
+// ─── v346: ADMIN — DOWNLOAD MESSAGES WITH DRAFTS (development) ───────────────
+// Like Download messages, plus one line per conversation with the listing and order facts the AI
+// sees (price, shipping, part number, live status, return policy, this buyer's order), so drafts can
+// be checked against the real facts. Runs in the background with progress; kept in memory only.
+const msgExports = new Map();   // jobId → { userId, target, checked, found, started, finished, error, text }
+
+async function exportFactsLine(userId, itemId, buyer) {
+  const bits = [];
+  try {
+    const xml = await tradingCall(userId, 'GetItem', `<ItemID>${itemId}</ItemID><DetailLevel>ReturnAll</DetailLevel><IncludeItemSpecifics>true</IncludeItemSpecifics>`);
+    const item = xmlTag(xml, 'Item') || '';
+    const ss = xmlTag(item, 'SellingStatus') || '';
+    const sd = xmlTag(item, 'ShippingDetails') || '';
+    const price = parseFloat(xmlTag(ss, 'CurrentPrice') || '');
+    const opt = xmlAll(sd, 'ShippingServiceOptions')[0] || '';
+    const free = opt && xmlTag(opt, 'FreeShipping') === 'true';
+    const shipCost = parseFloat(xmlTag(opt, 'ShippingServiceCost') || '');
+    const calc = /Calculated/i.test(xmlTag(sd, 'ShippingType') || '');
+    bits.push((price ? '$' + price.toFixed(2) : 'price ?') + (free ? ' + free ship' : calc ? ' + calculated ship' : !isNaN(shipCost) ? ' + $' + shipCost.toFixed(2) + ' ship' : ''));
+    const specifics = xmlAll(xmlTag(item, 'ItemSpecifics') || '', 'NameValueList').map(nv => ({ name: xmlDecode(xmlTag(nv, 'Name')), value: xmlAll(nv, 'Value').map(xmlDecode).join(', ') }));
+    const pn = partNumbersOf(specifics);
+    bits.push(pn.length ? 'part # ' + pn.slice(0, 3).map(x => x.value).join(', ') + (pn.length > 3 ? ' (+' + (pn.length - 3) + ' more)' : '') : 'no part #');
+    const st = xmlTag(ss, 'ListingStatus') || '';
+    const qty = parseInt(xmlTag(item, 'Quantity') || '', 10);
+    const sold = parseInt(xmlTag(ss, 'QuantitySold') || '0', 10) || 0;
+    const left = qty >= 0 ? Math.max(0, qty - sold) : null;
+    bits.push(st && st !== 'Active' ? 'ENDED' + (sold ? ' (sold)' : '') : left === 0 ? 'SOLD OUT' : 'active' + (left !== null ? ' (' + left + ' left)' : ''));
+    const rp = xmlTag(item, 'ReturnPolicy') || '';
+    if (/NotAccepted/i.test(xmlTag(rp, 'ReturnsAcceptedOption') || '')) bits.push('no returns');
+    else if (rp) { const days = parseInt((/(\d+)/.exec(xmlTag(rp, 'ReturnsWithinOption') || '') || [])[1], 10); const payer = xmlTag(rp, 'ShippingCostPaidByOption') || ''; bits.push('returns ' + (days ? days + ' days' : '?') + (payer ? ', ' + payer.toLowerCase() + ' pays return ship' : '')); }
+  } catch (e) { bits.push('listing info unavailable (' + String(e.message).slice(0, 60) + ')'); }
+  try {
+    const fo = await findBuyerOrder(userId, itemId, buyer);
+    const fmt = (x) => new Date(x).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/Los_Angeles' });
+    if (fo.otherBuyer) bits.push('this buyer did NOT buy it (sold to someone else)');
+    else if (fo.row) {
+      const o = fo.row, sh = fo.ship || {};
+      bits.push((fo.matched ? 'this buyer bought it ' : 'sold ') + fmt(o.created_at)
+        + (!o.counted ? ', cancelled/refunded' : '')
+        + (sh.shippedTime ? ', shipped ' + fmt(sh.shippedTime) : o.ship_status === 'FULFILLED' ? ', shipped' : ', not shipped')
+        + (sh.deliveredTime ? ', delivered ' + fmt(sh.deliveredTime) : sh.expectedMax && sh.shippedTime ? ', expected by ' + fmt(sh.expectedMax) : '')
+        + ((sh.tracks || [])[0] && sh.tracks[0].carrier ? ' (' + sh.tracks[0].carrier + ')' : ''));
+    } else bits.push('this buyer hasn\'t bought it');
+  } catch (e) { bits.push('order info unavailable'); }
+  return 'Facts now: ' + bits.join(' · ');
+}
+
+// (v346 runMsgExport — replaced in v347)
+// async function runMsgExport(job, user, days, count, draftsOnly) {
+//   try {
+//     const conn = await getConnection(user.id);
+//     if (threadsBlocked(conn)) throw new Error('Connect eBay (with message permission) first.');
+//     const me = await myEbayUser(user.id);
+//     const signoff = msgSettingsOf(await getUserSettings(user.id)).signoff;   // used to spot your AI drafts
+//     if (draftsOnly && !signoff) throw new Error('"AI drafts only" finds your drafts by your sign-off — set one in Settings → Messages first.');
+//     const cutoff = Date.now() - days * 86400000;
+//     const convs = [];
+//     for (let offset = 0; offset < 2000; offset += 50) {
+//       const q = new URLSearchParams({ conversation_type: 'FROM_MEMBERS', limit: '50', offset: String(offset) });
+//       const { data } = await restCall(user.id, 'GET', '/commerce/message/v1/conversation?' + q);
+//       const list = (data && data.conversations) || [];
+//       list.forEach(c => {
+//         const lm = c.latestMessage || {};
+//         const when = Date.parse(lm.createdDate || c.createdDate || '') || 0;
+//         if (when >= cutoff) convs.push({ id: c.conversationId, title: c.conversationTitle || '', itemId: c.referenceType === 'LISTING' ? (c.referenceId || '') : '', when });
+//       });
+//       if (!data || !data.next || list.length < 50) break;
+//     }
+//     convs.sort((a, b) => b.when - a.when);
+//     job.candidates = convs.length;
+//     job.target = draftsOnly ? count : Math.min(count, convs.length);
+//     const picked = [];   // { i, text }
+//     let next = 0;
+//     async function worker() {
+//       while (next < convs.length && picked.length < count) {
+//         const i = next++, c = convs[i];
+//         try {
+//           const q = new URLSearchParams({ conversation_type: 'FROM_MEMBERS', limit: '50', offset: '0' });
+//           const { data } = await restCall(user.id, 'GET', '/commerce/message/v1/conversation/' + encodeURIComponent(c.id) + '?' + q);
+//           const msgs = ((data && data.messages) || []).slice().sort((x, y) => String(x.createdDate).localeCompare(String(y.createdDate)));
+//           job.checked++;
+//           const isDraft = (m) => !!signoff && m.senderUsername === me && String(m.messageBody || '').trim().endsWith(signoff);
+//           if (draftsOnly && !msgs.some(isDraft)) continue;
+//           if (picked.length >= count) break;
+//           const others = [...new Set(msgs.map(m => m.senderUsername).filter(u => u && u !== me))];
+//           const names = [{ name: me, as: 'Seller' }].concat(others.map((u, k) => ({ name: u, as: others.length > 1 ? 'Buyer' + (k + 1) : 'Buyer' })));
+//           const facts = c.itemId ? await exportFactsLine(user.id, c.itemId, others[0] || '') : 'Facts now: no listing attached';
+//           const lines = msgs.map(m => {
+//             const who = m.senderUsername === me ? (isDraft(m) ? 'Seller (AI draft)' : 'Seller') : 'Buyer' + (others.length > 1 ? (others.indexOf(m.senderUsername) + 1) : '');
+//             const media = (m.messageMedia || []).length ? ' [' + (m.messageMedia || []).length + ' photo/attachment]' : '';
+//             return '[' + String(m.createdDate || '').slice(0, 16).replace('T', ' ') + '] ' + who + ': ' + redactMsg(m.messageBody || '', names).replace(/\r?\n+/g, ' / ') + media;
+//           });
+//           picked.push({ i, text: (c.itemId ? ' · item ' + c.itemId : '') + (c.title ? ' · ' + redactMsg(c.title, names) : '') + ' ===\n' + facts + '\n' + (lines.join('\n') || '(no messages)') });
+//           job.found = picked.length;
+//         } catch (e) { job.checked++; }
+//       }
+//     }
+//     await Promise.all([1, 2, 3, 4].map(worker));
+//     picked.sort((a, b) => a.i - b.i);
+//     job.text = 'PartsLister Pro — buyer messages with listing & order facts, last ' + days + ' days — ' + picked.length + ' conversation' + (picked.length === 1 ? '' : 's') + (draftsOnly ? ' answered with an AI draft' : '') + '\n'
+//       + 'Downloaded ' + new Date().toISOString().slice(0, 16).replace('T', ' ') + ' UTC. "Facts now" is the listing and this buyer\'s order as of the download (not when the message was sent). Usernames, emails, phone numbers, addresses and VINs are removed.\n\n'
+//       + picked.map((p, k) => '=== Conversation ' + (k + 1) + p.text).join('\n\n') + '\n';
+//   } catch (e) { job.error = e.message; }
+//   job.finished = Date.now();
+// }
+// v347: + sandbox AI replies (written into the file only — never sent)
+async function runMsgExport(job, user, days, count, sandbox) {
+  try {
+    const conn = await getConnection(user.id);
+    if (threadsBlocked(conn)) throw new Error('Connect eBay (with message permission) first.');
+    const me = await myEbayUser(user.id);
+    const settings = await getUserSettings(user.id);
+    const signoff = msgSettingsOf(settings).signoff;   // used to label replies you sent from an AI draft
+    if (sandbox && !String(settings.apiKey || '').trim()) throw new Error('Sandbox AI replies use your Anthropic key — add it in ⚙ Settings → Account first.');
+    const cutoff = Date.now() - days * 86400000;
+    const convs = [];
+    for (let offset = 0; offset < 2000; offset += 50) {
+      const q = new URLSearchParams({ conversation_type: 'FROM_MEMBERS', limit: '50', offset: String(offset) });
+      const { data } = await restCall(user.id, 'GET', '/commerce/message/v1/conversation?' + q);
+      const list = (data && data.conversations) || [];
+      list.forEach(c => {
+        const lm = c.latestMessage || {};
+        const when = Date.parse(lm.createdDate || c.createdDate || '') || 0;
+        if (when >= cutoff) convs.push({ id: c.conversationId, title: c.conversationTitle || '', itemId: c.referenceType === 'LISTING' ? (c.referenceId || '') : '', when });
+      });
+      if (!data || !data.next || list.length < 50) break;
+    }
+    convs.sort((a, b) => b.when - a.when);
+    const pick = convs.slice(0, count);
+    job.candidates = convs.length;
+    job.target = pick.length;
+    const out = new Array(pick.length);
+    let next = 0;
+    async function worker() {
+      while (next < pick.length) {
+        const i = next++, c = pick[i];
+        try {
+          const q = new URLSearchParams({ conversation_type: 'FROM_MEMBERS', limit: '50', offset: '0' });
+          const { data } = await restCall(user.id, 'GET', '/commerce/message/v1/conversation/' + encodeURIComponent(c.id) + '?' + q);
+          const msgs = ((data && data.messages) || []).slice().sort((x, y) => String(x.createdDate).localeCompare(String(y.createdDate)));
+          const isDraft = (m) => !!signoff && m.senderUsername === me && String(m.messageBody || '').trim().endsWith(signoff);
+          const others = [...new Set(msgs.map(m => m.senderUsername).filter(u => u && u !== me))];
+          const names = [{ name: me, as: 'Seller' }].concat(others.map((u, k) => ({ name: u, as: others.length > 1 ? 'Buyer' + (k + 1) : 'Buyer' })));
+          const facts = c.itemId ? await exportFactsLine(user.id, c.itemId, others[0] || '') : 'Facts now: no listing attached';
+          const line = (m) => {
+            const who = m.senderUsername === me ? (isDraft(m) ? 'Seller (AI draft)' : 'Seller') : 'Buyer' + (others.length > 1 ? (others.indexOf(m.senderUsername) + 1) : '');
+            const media = (m.messageMedia || []).length ? ' [' + (m.messageMedia || []).length + ' photo/attachment]' : '';
+            return '[' + String(m.createdDate || '').slice(0, 16).replace('T', ' ') + '] ' + who + ': ' + redactMsg(m.messageBody || '', names).replace(/\r?\n+/g, ' / ') + media;
+          };
+          let body;
+          if (!sandbox) body = msgs.map(line).join('\n') || '(no messages)';
+          else {
+            // the AI answers the buyer's newest message — if you already replied, as of just before your reply
+            let lb = -1; msgs.forEach((m, k) => { if (m.senderUsername !== me) lb = k; });
+            if (lb < 0) body = (msgs.map(line).join('\n') || '(no messages)') + '\n>>> Sandbox AI reply: (no buyer message to answer)';
+            else {
+              const s = msgs.findIndex((m, k) => k > lb && m.senderUsername === me);
+              const before = s >= 0 ? msgs.slice(0, s) : msgs;
+              const after = s >= 0 ? msgs.slice(s) : [];
+              let status = 200, res = null;
+              const sb = { before: s >= 0 ? String(msgs[s].createdDate || '') : null };
+              const fakeReq = { user, params: { id: c.id }, body: { itemId: c.itemId || null }, _sandbox: sb };
+              const fakeRes = { status(x) { status = x; return this; }, json(o) { res = o; return this; } };
+              await draftHandler(fakeReq, fakeRes);   // the same code as AI draft on the Messages page — it only returns text
+              let ai;
+              if (status !== 200 || !res) ai = '(error: ' + ((res && res.error) || ('HTTP ' + status)) + ')';
+              else if (res.noReply) ai = '(no reply — ' + (res.reason || 'nothing to answer') + ')';
+              else {
+                ai = redactMsg(res.draft || '', names).replace(/\r?\n+/g, ' / ');
+                if (res.english) ai += '\n    (English: ' + redactMsg(res.english, names).replace(/\r?\n+/g, ' / ') + ')';
+                if (res.discount) ai += '\n    (would send a ' + res.discount.percent + '% offer: $' + Number(res.discount.offerPrice).toFixed(2) + ' — NOT sent)';
+                if (res.followUp) ai += '\n    (would add to Waiting on me: ' + redactMsg(res.followUp, names) + ')';
+              }
+              body = (before.map(line).join('\n') || '(no messages)')
+                + '\n>>> Sandbox AI reply' + (s >= 0 ? ' (as of ' + String(msgs[s].createdDate || '').slice(0, 16).replace('T', ' ') + ')' : '') + ': ' + ai
+                + (after.length ? '\n--- Your actual reply and what came after:\n' + after.map(line).join('\n') : '\n--- (you haven\'t replied yet)');
+            }
+          }
+          out[i] = (c.itemId ? ' · item ' + c.itemId : '') + (c.title ? ' · ' + redactMsg(c.title, names) : '') + ' ===\n' + facts + '\n' + body;
+        } catch (e) { out[i] = ' ===\n(couldn\'t load: ' + e.message + ')'; }
+        job.found++;
+        job.checked = job.found;
+      }
+    }
+    await Promise.all((sandbox ? [1, 2, 3] : [1, 2, 3, 4]).map(worker));
+    job.text = 'PartsLister Pro — buyer messages with listing & order facts' + (sandbox ? ' + SANDBOX AI replies' : '') + ', last ' + days + ' days — ' + out.filter(Boolean).length + ' conversations\n'
+      + 'Downloaded ' + new Date().toISOString().slice(0, 16).replace('T', ' ') + ' UTC. "Facts now" is the listing and this buyer\'s order as of the download (not when the message was sent).'
+      + (sandbox ? ' Sandbox AI replies were written for this file only — nothing was sent to buyers. If you had already replied, the AI only saw the conversation up to your reply (but the listing/order facts are as of now).' : '')
+      + ' Usernames, emails, phone numbers, addresses and VINs are removed.\n\n'
+      + out.map((t, k) => '=== Conversation ' + (k + 1) + (t || ' ===\n(missing)')).join('\n\n') + '\n';
+  } catch (e) { job.error = e.message; }
+  job.finished = Date.now();
+}
+
+app.post('/api/admin/messages-export2', requireUser, requireAdmin, express.json(), (req, res) => {
+  const b = req.body || {};
+  const days = [7, 14, 30, 90, 365].includes(parseInt(b.days, 10)) ? parseInt(b.days, 10) : 14;
+  const count = [50, 100, 300].includes(parseInt(b.count, 10)) ? parseInt(b.count, 10) : 100;
+  for (const j of msgExports.values()) if (j.userId === req.user.id && !j.finished) return res.status(409).json({ error: 'A download is already being prepared.' });
+  for (const [k, j] of msgExports) if (j.finished && Date.now() - j.finished > 3600000) msgExports.delete(k);   // keep an hour
+  const id = crypto.randomBytes(8).toString('hex');
+  const job = { userId: req.user.id, days, target: count, candidates: null, checked: 0, found: 0, started: Date.now(), finished: null, error: null, text: '' };
+  msgExports.set(id, job);
+  // runMsgExport(job, req.user, days, count, !!b.draftsOnly);
+  runMsgExport(job, req.user, days, count, !!b.sandbox);   // v347
+  res.json({ id });
+});
+app.get('/api/admin/messages-export2/:id', requireUser, requireAdmin, (req, res) => {
+  const job = msgExports.get(String(req.params.id));
+  if (!job || job.userId !== req.user.id) return res.status(404).json({ error: 'Download not found (the server may have restarted) — start it again.' });
+  if (req.query.download === '1') {
+    if (!job.finished || !job.text) return res.status(409).send(job.error || 'Not ready yet.');
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="partslister-messages-' + (job.text.includes('SANDBOX') ? 'sandbox-' : 'facts-') + job.days + 'd-' + new Date(job.started).toISOString().slice(0, 10) + '.txt"');
+    return res.send(job.text);
+  }
+  res.json({ target: job.target, candidates: job.candidates, checked: job.checked, found: job.found, finished: !!job.finished, error: job.error });
 });
 
 // ─── v337: LISTING + ORDER STRIP for a conversation ─────────────────────────
@@ -3782,5 +4015,5 @@ app.get('*', (req, res) => {
 });
 
 setupDatabase()
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v345 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v347 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });
