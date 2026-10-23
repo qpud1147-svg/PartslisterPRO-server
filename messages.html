@@ -3,14 +3,16 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Messages v329</title>
+<title>PartsLister Pro Messages v330</title>
 <!-- PartsLister Pro — Messages page (v321: new; v322: conversation threads — the whole back-and-forth
      with each buyer, chat style, from eBay's Message API. Offers from a conversation. The v321
      email-style view is still at /messages/classic). Nothing about your messages is saved on the server.
      v323: delete a conversation + Trash (restore from there); "AI draft" writes a reply from the
      conversation and the listing — you edit it and press Send.
      v329: "Ships to" box checks whether this listing can ship to a country (eBay checked live), and the
-     AI draft uses that answer — or checks any country the buyer names on its own. -->
+     AI draft uses that answer — or checks any country the buyer names on its own.
+     v330: buyer messages in other languages are translated to English automatically (See original to
+     switch back); a Settings link opens Settings → Messages. -->
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@400;500;600&display=swap');
 
@@ -177,6 +179,9 @@
   /* v329: ships-to check */
   .th-ai select { background: var(--surface2); border: 1px solid var(--border); color: var(--text); border-radius: 4px; padding: 6px 8px; font: inherit; font-size: 13px; color-scheme: dark; max-width: 170px; }
   .ship-res { font-size: 12.5px; padding: 6px 12px 0; line-height: 1.45; }
+  /* v330: translations */
+  .bub .tr { display: block; font-size: 11px; color: var(--muted); margin-top: 4px; }
+  .bub .tr a { color: var(--accent); cursor: pointer; text-decoration: underline; }
   .ship-res.yes { color: var(--success); } .ship-res.no { color: var(--danger); } .ship-res.maybe { color: var(--accent); }
   .th-ai + .th-compose { border-top: none; }
   .btn-danger { background: var(--surface2); color: var(--danger); border-color: rgba(224,82,82,0.5); }
@@ -221,7 +226,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v329</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v330</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -246,7 +251,7 @@
 </header>
 
 <main>
-  <div class="page-title">Messages <a href="/messages/classic" style="font-size:14px;color:var(--accent);margin-left:8px;font-family:'Barlow',sans-serif;font-weight:400;letter-spacing:0;">Classic view</a></div>
+  <div class="page-title">Messages <a href="/messages/classic" style="font-size:14px;color:var(--accent);margin-left:8px;font-family:'Barlow',sans-serif;font-weight:400;letter-spacing:0;">Classic view</a> <a href="/sales?settings=messages" style="font-size:14px;color:var(--accent);margin-left:8px;font-family:'Barlow',sans-serif;font-weight:400;letter-spacing:0;">Settings</a></div>   <!-- v330: + Settings -->
   <div class="page-note" id="t-note">&nbsp;</div>
   <div class="error-box" id="t-error"></div>
   <div class="scope-box" id="t-scope"></div>
@@ -404,7 +409,9 @@ window.addEventListener('hashchange', () => { const m = /^#c=(.+)$/.exec(locatio
 
 function bubble(m) {
   const b = el('div', 'bub ' + (m.mine ? 'me' : 'them'));
-  b.append(document.createTextNode(m.text || ''));
+  // b.append(document.createTextNode(m.text || ''));
+  b.append(el('span', 'btext', m.text || ''));   // v330: in its own span so a translation can swap in
+  if (m.id) b.dataset.mid = m.id;
   (m.media || []).forEach(x => {
     if (x.type === 'IMAGE') { const a = el('a'); a.href = x.url; a.target = '_blank'; a.rel = 'noopener'; const im = el('img'); im.src = x.url; im.alt = x.name || 'Photo'; a.append(im); b.append(a); }
     else { const a = el('a', '', '\n' + (x.name || 'Attachment')); a.href = x.url; a.target = '_blank'; a.rel = 'noopener'; b.append(a); }
@@ -457,6 +464,7 @@ async function showThread(id) {
   });
   if (!(d.messages || []).length) body.append(el('div', 'empty', 'No messages in this conversation.'));
   body.scrollTop = body.scrollHeight;
+  translateThread(id, body, d.messages || []);   // v330: only if Auto-translate is on (Settings → Messages)
   // compose — buyers only (eBay's own messages can't be answered)
   if (type === 'ebay') { v.append(el('div', 'th-note', 'Messages from eBay can’t be answered.')); return; }
   if (inTrash) { v.append(el('div', 'th-note', 'This conversation is in the Trash. Restore it to reply.')); return; }   // v323
@@ -502,6 +510,10 @@ async function showThread(id) {
       // aiMsg.textContent = 'Draft ready — check it, edit if needed, then Send.';
       const sc = (out.shipChecks || []).map(x => x.country + ': ' + ({ yes: 'ships', no: 'can\u2019t ship', probably: 'probably ships', unknown: 'unclear' }[x.verdict])).join(', ');
       aiMsg.textContent = 'Draft ready — check it, edit if needed, then Send.' + (sc ? ' (Checked shipping — ' + sc + ')' : '');   // v329
+      // v330: show what the AI was told about the sale + return window (hover for all of it)
+      const rw = /Return window: (INSIDE|ENDED)[^(]*/.exec(out.orderFacts || '');
+      if (rw) aiMsg.textContent += ' (Return window: ' + rw[0].replace('Return window: ', '').replace(/ counting.*$/, '').trim() + ')';
+      aiMsg.title = out.orderFacts || 'No order found for this item';
     } catch (e) { aiMsg.textContent = ''; toast(e.message, true); }
     finally { aiBtn.disabled = false; aiBtn.textContent = 'AI draft'; }
   };
@@ -530,6 +542,33 @@ async function showThread(id) {
   v.append(ai, shipRes);
   v.append(comp);
   if (!phone()) ta.focus();
+}
+
+// ─── v330: AUTO-TRANSLATE ────────────────────────────────────────────────────
+let msgPrefsP = null;
+function msgPrefs() { if (!msgPrefsP) msgPrefsP = getJSON('/api/msg-settings').then(d => d || {}); return msgPrefsP; }
+async function translateThread(id, body, messages) {
+  const prefs = await msgPrefs();
+  if (prefs.autoTranslate === false) return;
+  const theirs = messages.filter(m => !m.mine && m.id && m.text).map(m => ({ id: m.id, text: m.text }));
+  if (!theirs.length) return;
+  const r = await fetch('/api/threads/' + encodeURIComponent(id) + '/translate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages: theirs }) })
+    .then(x => x.json()).catch(() => null);
+  if (!r || current !== id) return;
+  if (r.error) toast(r.error, true);
+  Object.entries(r.translations || {}).forEach(([mid, t]) => {
+    const b = body.querySelector('.bub[data-mid="' + CSS.escape(mid) + '"]');
+    if (!b) return;
+    const span = b.querySelector('.btext');
+    const original = span.textContent;
+    let showingOriginal = false;
+    span.textContent = t.english;
+    const note = el('span', 'tr');
+    const link = el('a', '', 'See original');
+    note.append(document.createTextNode('Translated from ' + t.lang + ' · '), link);
+    link.onclick = () => { showingOriginal = !showingOriginal; span.textContent = showingOriginal ? original : t.english; link.textContent = showingOriginal ? 'See English' : 'See original'; };
+    b.insertBefore(note, b.querySelector('.bt'));
+  });
 }
 
 // v329: country list for the Ships-to box (asked once)

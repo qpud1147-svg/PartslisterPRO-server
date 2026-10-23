@@ -1,4 +1,4 @@
-// PartsLister Pro server — v329
+// PartsLister Pro server — v330
 // v302: dashboard.html is the homepage (/). The listing tool moved to /list.
 // v305: eBay sales connection — real sold orders on the dashboard.
 // v306: asks eBay for two more permissions — fees/payouts and seller metrics.
@@ -40,6 +40,9 @@
 // v329: "Can you ship to my country?" — checks a listing for a country two ways (eBay's shopper
 //       view for that country + your listing's ship-to / excluded lists) and gives the answer to
 //       the AI draft. Also a Ships-to check box in Messages.
+// v330: Settings → Messages (your AI reply instructions + Use default, how to answer problems,
+//       auto-translate). AI drafts now get the real sale date, the listing's return policy and the
+//       days left — worked out here, not guessed by the AI. Buyer messages auto-translate to English.
 // Accounts with email + password login. Each account's settings (including its
 // own API keys) and history are saved ENCRYPTED in Postgres, so you can log in
 // from any computer and everything is there. Also keeps a lifetime listing count.
@@ -401,7 +404,8 @@ app.post('/api/data', requireUser, express.json({ limit: '10mb' }), async (req, 
     // v326: keep the saved account keys (see ACCOUNT_KEYS above)
     const saved = await readUserData(req.user.id).catch(() => null);
     const prev = (saved && saved.settings) || {};
-    ACCOUNT_KEYS.forEach(k => { if (prev[k] !== undefined) b.settings[k] = prev[k]; });
+    // ACCOUNT_KEYS.forEach(k => { if (prev[k] !== undefined) b.settings[k] = prev[k]; });
+    ACCOUNT_KEYS.concat(['msgSettings']).forEach(k => { if (prev[k] !== undefined) b.settings[k] = prev[k]; });   // v330: + Messages settings
     const blob = encrypt(JSON.stringify({ settings: b.settings, history }));
     await pool.query(
       `INSERT INTO user_data (user_id, data_enc, updated_at) VALUES ($1, $2, now())
@@ -2112,6 +2116,150 @@ app.get('/api/shipcheck/:itemId', requireUser, async (req, res) => {
   }
 });
 
+// ─── v330: MESSAGES SETTINGS ─────────────────────────────────────────────────
+const DEFAULT_MSG_INSTRUCTIONS = [
+  'You draft replies for a small eBay seller of used auto parts (pulled from salvage vehicles) to buyer messages.',
+  'Write the reply the seller will send, answering the buyer\'s latest message.',
+  'Fitment questions: if the buyer\'s vehicle is in the fitment list, say it is listed as fitting and suggest they match the part number to their original part. If it is not listed or there is no fitment list, say you can\'t confirm it and ask them to compare the part number on their original part (or send the VIN). Never promise fit.',
+  'Price/offer questions: don\'t invent a price; if the seller gave instructions, follow them, otherwise suggest they send an offer through the listing.',
+  'Keep it short (1–4 sentences), friendly and plain.'
+].join(' ');
+// What the AI offers when a buyer has a problem (inside the return window)
+const PROBLEM_POLICIES = {
+  return_or_refund: { label: 'Offer a return for a refund', ai: 'apologize and offer a return for a full refund through eBay\'s return process.' },
+  exchange_or_refund: { label: 'Offer an exchange or a refund (buyer picks)', ai: 'apologize and offer either an exchange for a replacement part (if one is available) or a return for a refund — the buyer can choose.' },
+  refund_no_return: { label: 'Refund without asking for the part back', ai: 'apologize and say the seller will issue a refund and the buyer does not need to send the part back.' },
+  photos_first: { label: 'Ask for photos first, then decide', ai: 'apologize and ask the buyer to send clear photos of the part and the problem so the seller can make it right; don\'t promise a refund or return yet.' },
+  open_return: { label: 'Ask them to open a return on eBay', ai: 'politely ask the buyer to open a return request on eBay so it can be handled there.' }
+};
+function msgSettingsOf(settings) {
+  const m = (settings && settings.msgSettings) || {};
+  return {
+    instructions: String(m.instructions || '').trim(),
+    problemPolicy: PROBLEM_POLICIES[m.problemPolicy] ? m.problemPolicy : 'return_or_refund',
+    autoTranslate: m.autoTranslate !== false
+  };
+}
+app.get('/api/msg-settings', requireUser, async (req, res) => {
+  try {
+    const ms = msgSettingsOf(await getUserSettings(req.user.id));
+    res.json({ ...ms, defaultInstructions: DEFAULT_MSG_INSTRUCTIONS,
+      problemPolicies: Object.keys(PROBLEM_POLICIES).map(k => ({ value: k, label: PROBLEM_POLICIES[k].label })) });
+  } catch (e) { res.status(500).json({ error: 'Could not load Messages settings' }); }
+});
+app.post('/api/msg-settings', requireUser, express.json(), async (req, res) => {
+  try {
+    const b = req.body || {};
+    const d = (await readUserData(req.user.id)) || { settings: {}, history: { pigtail: [], otherside: [] } };
+    d.settings = d.settings || {};
+    const instr = String(b.instructions || '').trim().slice(0, 4000);
+    d.settings.msgSettings = {
+      instructions: instr === DEFAULT_MSG_INSTRUCTIONS ? '' : instr,   // the default is stored as "use default"
+      problemPolicy: PROBLEM_POLICIES[b.problemPolicy] ? b.problemPolicy : 'return_or_refund',
+      autoTranslate: b.autoTranslate !== false
+    };
+    await writeUserData(req.user.id, d);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('[msg-settings]', e);
+    res.status(500).json({ error: 'Could not save Messages settings' });
+  }
+});
+
+// v330: the facts the AI gets about the sale and the return window — all worked out here
+async function returnFacts(userId, itemId) {
+  const lines = [];
+  let sold = null;
+  try {
+    const r = await pool.query(
+      `SELECT o.order_id, o.created_at, o.status, o.counted, o.ship_status FROM ebay_order_items i
+         JOIN ebay_orders o ON o.user_id = i.user_id AND o.order_id = i.order_id
+        WHERE i.user_id = $1 AND i.item_id = $2 ORDER BY o.created_at DESC LIMIT 1`, [userId, itemId]);
+    if (r.rows.length) {
+      sold = new Date(r.rows[0].created_at);
+      const ago = Math.floor((Date.now() - sold.getTime()) / 86400000);
+      lines.push('Sold on ' + sold.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'America/Los_Angeles' }) + ' (' + ago + ' day' + (ago === 1 ? '' : 's') + ' ago), order ' + r.rows[0].order_id + '.'
+        + (r.rows[0].ship_status === 'FULFILLED' ? ' It has shipped.' : r.rows[0].ship_status ? ' Not marked shipped yet.' : '')
+        + (!r.rows[0].counted ? ' This order was cancelled or refunded (' + r.rows[0].status + ').' : ''));
+    }
+  } catch (e) { /* no order info */ }
+  try {
+    const xml = await tradingCall(userId, 'GetItem', `<ItemID>${itemId}</ItemID><DetailLevel>ReturnAll</DetailLevel>`);
+    const rp = xmlTag(xmlTag(xml, 'Item') || '', 'ReturnPolicy') || '';
+    const accepted = xmlTag(rp, 'ReturnsAcceptedOption') || '';
+    if (/NotAccepted/i.test(accepted)) lines.push('Return policy: the listing does NOT accept returns (eBay\'s Money Back Guarantee still covers items not as described).');
+    else if (rp) {
+      const within = xmlTag(rp, 'ReturnsWithinOption') || '';
+      const days = parseInt((/(\d+)/.exec(within) || [])[1], 10);
+      const payer = xmlTag(rp, 'ShippingCostPaidByOption') || '';
+      lines.push('Return policy: returns accepted' + (days ? ' within ' + days + ' days' : '') + (payer ? '; return shipping paid by the ' + payer.toLowerCase() : '') + '.');
+      if (days && sold) {
+        const left = days - Math.floor((Date.now() - sold.getTime()) / 86400000);
+        lines.push(left >= 0
+          ? 'Return window: INSIDE — about ' + left + ' day' + (left === 1 ? '' : 's') + ' left counting from the sale date (eBay counts from delivery, so the buyer may have a few days more).'
+          : 'Return window: ENDED — about ' + (-left) + ' day' + (left === -1 ? '' : 's') + ' ago counting from the sale date (eBay counts from delivery, so if it was very recent, the seller should double-check).');
+      }
+    }
+  } catch (e) { lines.push('The listing\'s return policy could not be loaded.'); }
+  return lines.join('\n');
+}
+
+// v330: AUTO-TRANSLATE — only messages that don't look English are sent to the AI; answers are
+// remembered in memory so reopening a conversation doesn't spend tokens again.
+const translateCache = new Map();   // messageId → { lang, english } or null (already English)
+// (no 'a', 'no', 'me' — they're also Spanish/Italian words)
+const EN_WORDS = new Set('the an and or is are was it this that to for of in on with you your my we have has do does can will would not yes please thanks thank hi hello what when where how if part fit fits car truck shipping ship price'.split(' '));
+function looksEnglish(text) {
+  const words = String(text || '').toLowerCase().match(/[a-z\u00c0-\u024f\u0400-\u04ff']+/g) || [];
+  if (/[^\u0000-\u024f\s\d.,!?;:'"()\-\/$%&@#*+=]/.test(text)) return false;   // other alphabets (Cyrillic, Chinese, Arabic…)
+  if (words.length < 3) return true;
+  const hits = words.filter(w => EN_WORDS.has(w)).length;
+  return hits / words.length >= 0.12;
+}
+app.post('/api/threads/:id/translate', requireUser, express.json({ limit: '200kb' }), async (req, res) => {
+  try {
+    const list = ((req.body && req.body.messages) || []).slice(0, 60)
+      .map(m => ({ id: String(m.id || '').slice(0, 80), text: String(m.text || '').slice(0, 3000) })).filter(m => m.id && m.text);
+    const out = {};
+    const todo = [];
+    list.forEach(m => {
+      if (translateCache.has(m.id)) { const c = translateCache.get(m.id); if (c) out[m.id] = c; }
+      else if (looksEnglish(m.text)) translateCache.set(m.id, null);
+      else todo.push(m);
+    });
+    if (todo.length) {
+      const settings = await getUserSettings(req.user.id);
+      const apiKey = String(settings.apiKey || '').trim();
+      if (!apiKey) return res.json({ translations: out, error: 'Add your Anthropic API key in ⚙ Settings → Account to translate.' });
+      const model = String(settings.claudeModel || '').trim() || 'claude-sonnet-4-5';
+      const r = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+        body: JSON.stringify({ model, max_tokens: 2500,
+          system: 'Translate eBay buyer messages to English. Reply with ONLY a JSON array, one object per message: {"id": "...", "lang": "language name in English", "english": "the translation"}. If a message is already English, use "lang": "English" and "english": "". Keep part numbers, names and numbers exactly as written.',
+          messages: [{ role: 'user', content: JSON.stringify(todo) }] }),
+        signal: AbortSignal.timeout(60000)
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) return res.json({ translations: out, error: 'Translation failed: ' + ((d.error && d.error.message) || ('HTTP ' + r.status)) });
+      const txt = ((d.content || []).filter(c => c.type === 'text').map(c => c.text).join('') || '');
+      let arr = [];
+      try { arr = JSON.parse((/\[[\s\S]*\]/.exec(txt) || ['[]'])[0]); } catch (e) { arr = []; }
+      arr.forEach(x => {
+        if (!x || !x.id) return;
+        const val = x.english && !/^english$/i.test(x.lang || '') ? { lang: String(x.lang || 'another language'), english: String(x.english) } : null;
+        translateCache.set(String(x.id), val);
+        if (val) out[x.id] = val;
+      });
+      if (translateCache.size > 5000) translateCache.clear();
+    }
+    res.json({ translations: out });
+  } catch (e) {
+    console.error('[translate]', e.message);
+    res.json({ translations: {}, error: 'Translation failed: ' + e.message });
+  }
+});
+
 app.post('/api/threads/:id/draft', requireUser, express.json(), async (req, res) => {
   const id = String(req.params.id || '');
   const b = req.body || {};
@@ -2162,6 +2310,9 @@ app.post('/api/threads/:id/draft', requireUser, express.json(), async (req, res)
       } else listing = 'The listing details could not be loaded (' + (it.error || 'unknown') + ').';
     }
 
+    // v330: ORDER & RETURNS — the sale date and return window, calculated here (the AI never does date math)
+    const orderFacts = itemId ? await returnFacts(req.user.id, itemId) : '';
+
     // v329: shipping-to-a-country answers — the country picked in Messages, or ones the buyer named
     let shipping = '';
     const shipChecks = [];
@@ -2174,6 +2325,7 @@ app.post('/api/threads/:id/draft', requireUser, express.json(), async (req, res)
       if (shipChecks.length) shipping = shipChecks.map(shipCheckText).join('\n');
     }
 
+    /*
     const system = [
       'You draft replies for a small eBay seller of used auto parts (pulled from salvage vehicles) to buyer messages.',
       'Write the reply the seller will send, answering the buyer\'s latest message.',
@@ -2184,8 +2336,22 @@ app.post('/api/threads/:id/draft', requireUser, express.json(), async (req, res)
       'Keep it short (1–4 sentences), friendly and plain. Plain text only: no markdown, no subject line, no placeholders like [Name], no signature.',
       'Reply with only the message text.'
     ].join(' ');
+    */
+    // v330: your own instructions (⚙ Settings → Messages) or the default, plus fixed safety rules
+    // that always apply — so a custom prompt can't make it invent policies, dates or fitment.
+    const ms = msgSettingsOf(settings);
+    const system = [
+      ms.instructions || DEFAULT_MSG_INSTRUCTIONS,
+      'RULES THAT ALWAYS APPLY:',
+      'Use ONLY facts from the LISTING, ORDER & RETURNS, SHIPPING CHECK and CONVERSATION sections. Never invent part numbers, fitment, measurements, condition details, dates, deadlines, shipping times, or policies.',
+      'Shipping-to-a-country questions: use only the SHIPPING CHECK section. YES: say it can ship there (you may mention the cost shown). NO: say that unfortunately eBay doesn\'t allow this item to ship to their country. PROBABLY or UNKNOWN, or no check given: say they can see the shipping options for their country by entering their address on the listing page.',
+      'Returns, refunds, problems (wrong part, damaged, not working, not as described): use only the ORDER & RETURNS section — never calculate dates yourself. If it says the buyer is INSIDE the return window, respond as the seller\'s problem policy says: ' + PROBLEM_POLICIES[ms.problemPolicy].ai + ' If it says the window has ENDED, politely say the return window has passed, without being rude. If no order or return policy is given, don\'t mention any time limit; say the seller will look into it.',
+      'Write in English. Plain text only: no markdown, no subject line, no placeholders like [Name], no signature.',
+      'Reply with only the message text.'
+    ].join(' ');
     // const user = 'LISTING\n' + listing + '\n\nCONVERSATION (oldest first)\n' + convo + (hint ? '\n\nSELLER\'S INSTRUCTIONS FOR THIS REPLY\n' + hint : '') + '\n\nWrite the seller\'s reply now.';
-    const user = 'LISTING\n' + listing + (shipping ? '\n\nSHIPPING CHECK (checked with eBay just now)\n' + shipping : '') + '\n\nCONVERSATION (oldest first)\n' + convo + (hint ? '\n\nSELLER\'S INSTRUCTIONS FOR THIS REPLY\n' + hint : '') + '\n\nWrite the seller\'s reply now.';   // v329: + shipping check
+    // const user = 'LISTING\n' + listing + (shipping ? '\n\nSHIPPING CHECK (checked with eBay just now)\n' + shipping : '') + '\n\nCONVERSATION (oldest first)\n' + convo + (hint ? '\n\nSELLER\'S INSTRUCTIONS FOR THIS REPLY\n' + hint : '') + '\n\nWrite the seller\'s reply now.';   // v329: + shipping check
+    const user = 'LISTING\n' + listing + '\n\nORDER & RETURNS (worked out by the app from eBay)\n' + (orderFacts || 'No order found for this item yet (the buyer may not have bought it).') + (shipping ? '\n\nSHIPPING CHECK (checked with eBay just now)\n' + shipping : '') + '\n\nCONVERSATION (oldest first)\n' + convo + (hint ? '\n\nSELLER\'S INSTRUCTIONS FOR THIS REPLY\n' + hint : '') + '\n\nWrite the seller\'s reply now.';   // v330: + order & returns
 
     const r = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -2198,7 +2364,8 @@ app.post('/api/threads/:id/draft', requireUser, express.json(), async (req, res)
     const text = ((d.content || []).filter(c => c.type === 'text').map(c => c.text).join('\n') || '').trim();
     if (!text) return res.status(502).json({ error: 'Claude returned an empty draft — try again.' });
     // res.json({ draft: text.slice(0, 2000), usedListing: !!itemId });
-    res.json({ draft: text.slice(0, 2000), usedListing: !!itemId, shipChecks: shipChecks.map(sc => ({ country: sc.country, verdict: sc.verdict })) });   // v329
+    // res.json({ draft: text.slice(0, 2000), usedListing: !!itemId, shipChecks: shipChecks.map(sc => ({ country: sc.country, verdict: sc.verdict })) });   // v329
+    res.json({ draft: text.slice(0, 2000), usedListing: !!itemId, shipChecks: shipChecks.map(sc => ({ country: sc.country, verdict: sc.verdict })), orderFacts: orderFacts || null });   // v330
   } catch (e) {
     console.error('[draft]', e.message);
     res.status(500).json({ error: 'Could not draft a reply: ' + e.message });
@@ -2862,5 +3029,5 @@ app.get('*', (req, res) => {
 });
 
 setupDatabase()
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v329 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v330 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });

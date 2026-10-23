@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Sales v327</title>
+<title>PartsLister Pro Sales v330</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@400;500;600&display=swap');
 
@@ -529,7 +529,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v327</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v330</span></div>
   </a>
   <!-- v316: switch pages -->
   <nav class="page-tabs" aria-label="Pages">
@@ -735,6 +735,7 @@
     </div>
     <div class="settings-tabs" role="tablist">
       <button role="tab" id="tab-account" aria-selected="true" onclick="showSettingsTab('account')">Account</button>
+      <button role="tab" id="tab-messages" aria-selected="false" onclick="showSettingsTab('messages')">Messages</button>   <!-- v330 -->
       <button role="tab" id="tab-admin" aria-selected="false" onclick="showSettingsTab('admin')" style="display:none;">Admin</button>
     </div>
 
@@ -784,6 +785,27 @@
           <label style="font-size:12px;color:var(--muted);display:inline-flex;gap:6px;align-items:center;"><input type="checkbox" onchange="toggleKeyView(this.checked)"> Show keys</label>
         </div>
         <p class="set-help" style="margin-top:8px;">If the Listing Tool is open in another tab, reload it after saving so it picks up the new keys.</p>
+      </div>
+    </div>
+
+    <!-- v330: MESSAGES — how the AI drafts replies and translates -->
+    <div class="settings-panel" id="panel-messages" role="tabpanel">
+      <div class="set-section">
+        <h3>AI reply instructions</h3>
+        <p class="set-help">What the AI is told when you click <strong>AI draft</strong> on a message. Write it however you like. These rules are always added on top, whatever you write: use only facts from the listing, the order and the conversation; never make up dates, deadlines, fitment or policies; plain text, in English.</p>
+        <textarea id="ms-instructions" rows="9" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:10px 12px;border-radius:4px;font-family:'Barlow',sans-serif;font-size:13.5px;line-height:1.5;resize:vertical;"></textarea>
+        <div class="set-buttons"><button class="btn btn-secondary btn-sm" onclick="useDefaultInstructions()">Use default</button> <span class="set-help" id="ms-instr-note" style="margin:0;"></span></div>
+      </div>
+      <div class="set-section">
+        <h3>When a buyer has a problem</h3>
+        <p class="set-help">Wrong part, damaged, not working, not as described — and the buyer is still inside your return window. (If the window has ended, the AI says so politely. The app works out the dates from the sale and your listing's return policy.)</p>
+        <div class="set-row"><select id="ms-problem" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:4px;font-family:'Barlow',sans-serif;font-size:14px;"></select></div>
+      </div>
+      <div class="set-section">
+        <h3>Translate</h3>
+        <label style="display:flex;gap:8px;align-items:center;font-size:14px;color:var(--text);cursor:pointer;"><input type="checkbox" id="ms-translate"> Auto-translate buyer messages to English</label>
+        <p class="set-help" style="margin-top:6px;">Only messages that aren't already in English are translated, each one once. Every translated message has a <strong>See original</strong> link. Uses your Anthropic key.</p>
+        <div class="set-buttons"><button class="btn btn-primary btn-sm" id="ms-save-btn" onclick="saveMsgSettings()">Save</button></div>
       </div>
     </div>
 
@@ -880,6 +902,7 @@
 // v318: tabs are Home / Sales / Active (/active) / Listings (the Listing Tool, /list).
 // v326: Download button saves the range you're looking at; Settings → Account now holds your keys.
 // v327: Download asks first; Admin links to the Diagnostics page.
+// v330: Settings → Messages tab (AI reply instructions, problem replies, auto-translate).
 // Shares the same sign-in and account as the listing tool (/list).
 // v304: sales dashboard — big daily bar graph with a remembered date range.
 // The sales numbers are SAMPLE data for now; real eBay sales replace
@@ -1590,7 +1613,8 @@ function openSettings(tab) {
   document.getElementById('set-role').textContent = me && me.isAdmin ? '  · admin' : '';
   document.getElementById('tab-admin').style.display = me && me.isAdmin ? '' : 'none';
   document.getElementById('settings-overlay').classList.add('open');
-  showSettingsTab(tab === 'admin' && me && me.isAdmin ? 'admin' : 'account');
+  // showSettingsTab(tab === 'admin' && me && me.isAdmin ? 'admin' : 'account');
+  showSettingsTab(tab === 'admin' && me && me.isAdmin ? 'admin' : tab === 'messages' ? 'messages' : 'account');   // v330
 }
 
 function closeSettings() {
@@ -1600,12 +1624,14 @@ function closeSettings() {
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeSettings(); });
 
 function showSettingsTab(tab) {
-  ['account', 'admin'].forEach(t => {
+  // ['account', 'admin'].forEach(t => {
+  ['account', 'messages', 'admin'].forEach(t => {   // v330: + messages
     document.getElementById('tab-' + t).setAttribute('aria-selected', t === tab ? 'true' : 'false');
     document.getElementById('panel-' + t).classList.toggle('active', t === tab);
   });
   if (tab === 'admin') loadEbayStatus();
   if (tab === 'account') loadKeys();   // v326
+  if (tab === 'messages') loadMsgSettings();   // v330
 }
 
 // ─── v326: ACCOUNT KEYS ──────────────────────────────────────────────────────
@@ -1645,6 +1671,39 @@ async function saveKeys() {
 }
 function toggleKeyView(show) {
   ['apiKey', 'ebayClientSecret', 'cloudinaryApiSecret', 'serpApiKey'].forEach(f => { document.getElementById('k-' + f).type = show ? 'text' : 'password'; });
+}
+
+// ─── v330: MESSAGES SETTINGS ─────────────────────────────────────────────────
+let msDefault = '';
+async function loadMsgSettings() {
+  try {
+    const r = await fetch('/api/msg-settings');
+    if (!r.ok) throw new Error();
+    const d = await r.json();
+    msDefault = d.defaultInstructions || '';
+    document.getElementById('ms-instructions').value = d.instructions || msDefault;
+    setText('ms-instr-note', d.instructions ? 'Using your own instructions.' : 'Using the default.');
+    const sel = document.getElementById('ms-problem');
+    sel.textContent = '';
+    (d.problemPolicies || []).forEach(p => sel.append(new Option(p.label, p.value)));
+    sel.value = d.problemPolicy;
+    document.getElementById('ms-translate').checked = d.autoTranslate !== false;
+  } catch (e) { showToast('Could not load Messages settings.', true); }
+}
+function useDefaultInstructions() {
+  document.getElementById('ms-instructions').value = msDefault;
+  setText('ms-instr-note', 'Default filled in — click Save to keep it.');
+}
+async function saveMsgSettings() {
+  const btn = document.getElementById('ms-save-btn'); btn.disabled = true;
+  try {
+    const body = { instructions: document.getElementById('ms-instructions').value, problemPolicy: document.getElementById('ms-problem').value, autoTranslate: document.getElementById('ms-translate').checked };
+    const r = await fetch('/api/msg-settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'Could not save');
+    setText('ms-instr-note', body.instructions.trim() === msDefault.trim() || !body.instructions.trim() ? 'Using the default.' : 'Using your own instructions.');
+    showToast('Messages settings saved.');
+  } catch (e) { showToast(e.message, true); }
+  finally { btn.disabled = false; }
 }
 
 // ─── v326: SALES DOWNLOAD ────────────────────────────────────────────────────
