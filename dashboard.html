@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Sales v346</title>
+<title>PartsLister Pro Sales v347</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@400;500;600&display=swap');
 
@@ -529,7 +529,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v346</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v347</span></div>
   </a>
   <!-- v316: switch pages -->
   <nav class="page-tabs" aria-label="Pages">
@@ -909,11 +909,11 @@
       <!-- v346: development — messages + the listing/order facts, for checking AI drafts -->
       <div class="set-section">
         <h3>Download messages with drafts</h3>
-        <p class="set-help">Same as Download messages, plus a "Facts now" line on each conversation: price, shipping, part number, whether the listing is active or sold, the return policy, and this buyer's order (bought / shipped / delivered). With <strong>AI drafts only</strong>, it keeps just the conversations you answered with an AI draft (found by your sign-off). Takes longer — a few eBay lookups per conversation. Doesn't use your Anthropic key.</p>
+        <p class="set-help">Same as Download messages, plus a "Facts now" line on each conversation: price, shipping, part number, whether the listing is active or sold, the return policy, and this buyer's order (bought / shipped / delivered). With <strong>Write sandbox AI replies</strong>, the AI also writes a reply to each conversation (same rules and settings as AI draft on the Messages page) — into the file only. <strong>Nothing is sent to buyers</strong>, no offers are sent, nothing goes on Waiting on me. If you already answered, the AI answers as of then and your actual reply is shown under it. Sandbox replies use your Anthropic key (one AI call per conversation). Takes a few minutes.</p>
         <div class="set-buttons">
           <select id="mx2-days" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:6px 8px;border-radius:4px;font-family:'Barlow',sans-serif;font-size:14px;"><option value="7">Last 7 days</option><option value="14" selected>Last 14 days</option><option value="30">Last 30 days</option><option value="90">Last 90 days</option><option value="365">Last 365 days</option></select>
           <select id="mx2-count" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:6px 8px;border-radius:4px;font-family:'Barlow',sans-serif;font-size:14px;"><option value="50">Up to 50</option><option value="100" selected>Up to 100</option><option value="300">Up to 300</option></select>
-          <label style="display:inline-flex;gap:6px;align-items:center;font-size:14px;color:var(--text);cursor:pointer;"><input type="checkbox" id="mx2-drafts"> AI drafts only</label>
+          <label style="display:inline-flex;gap:6px;align-items:center;font-size:14px;color:var(--text);cursor:pointer;"><input type="checkbox" id="mx2-sandbox" checked> Write sandbox AI replies</label>
           <button class="btn btn-primary btn-sm" id="mx2-start" onclick="startMsgExport2()">Prepare download</button>
           <a class="btn btn-secondary btn-sm" id="mx2-dl" style="display:none">Download</a>
         </div>
@@ -1015,6 +1015,7 @@
 // v341: "Do you test your parts?" (no / yes / some); the warranty answer is its own choice.
 // v345: more Common questions (changed mind, address change, faster shipping, part of the item, radio code, pickup).
 // v346: Admin → Download messages with drafts (listing & order facts per conversation, progress bar).
+// v347: "Write sandbox AI replies" replaces "AI drafts only" — AI replies written into the file only, never sent.
 // Shares the same sign-in and account as the listing tool (/list).
 // v304: sales dashboard — big daily bar graph with a remembered date range.
 // The sales numbers are SAMPLE data for now; real eBay sales replace
@@ -1886,12 +1887,12 @@ function downloadSales() {
 // v346: Admin → Download messages with drafts (background job + progress bar)
 let mx2Timer = null;
 async function startMsgExport2() {
-  const days = document.getElementById('mx2-days').value, count = document.getElementById('mx2-count').value, draftsOnly = document.getElementById('mx2-drafts').checked;
-  if (!confirm('Prepare your buyer messages from the last ' + days + ' days (up to ' + count + (draftsOnly ? ', AI drafts only' : '') + ') with listing and order facts?\n\nNames, emails, phone numbers and addresses are removed. It can take several minutes.')) return;
+  const days = document.getElementById('mx2-days').value, count = document.getElementById('mx2-count').value, sandbox = document.getElementById('mx2-sandbox').checked;   // v347
+  if (!confirm('Prepare your buyer messages from the last ' + days + ' days (up to ' + count + ') with listing and order facts' + (sandbox ? ' and a sandbox AI reply for each' : '') + '?\n\n' + (sandbox ? 'NOTHING is sent to buyers — the AI replies go into the file only. Uses your Anthropic key (one AI call per conversation).\n\n' : '') + 'Names, emails, phone numbers and addresses are removed. It can take several minutes.')) return;
   const btn = document.getElementById('mx2-start'); btn.disabled = true;
   document.getElementById('mx2-dl').style.display = 'none';
   try {
-    const r = await fetch('/api/admin/messages-export2', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ days, count, draftsOnly }) });
+    const r = await fetch('/api/admin/messages-export2', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ days, count, sandbox }) });
     const d = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(d.error || 'Could not start');
     pollMsgExport2(d.id);
@@ -1903,9 +1904,7 @@ function pollMsgExport2(id) {
   fetch('/api/admin/messages-export2/' + id).then(r => r.json()).then(d => {
     if (d.error && !d.finished && d.target === undefined) { st.textContent = d.error; document.getElementById('mx2-start').disabled = false; bar.style.display = 'none'; return; }
     bar.style.display = '';
-    const draftsOnly = document.getElementById('mx2-drafts').checked;
-    // progress: conversations found out of the target (AI drafts only: conversations looked at out of all of them)
-    const pct = d.finished ? 100 : draftsOnly && d.candidates ? Math.round(100 * d.checked / d.candidates) : d.target ? Math.round(100 * d.found / d.target) : 0;
+    const pct = d.finished ? 100 : d.target ? Math.round(100 * d.found / d.target) : 0;   // v347
     bar.value = Math.min(100, pct);
     if (d.finished) {
       document.getElementById('mx2-start').disabled = false;
@@ -1914,7 +1913,6 @@ function pollMsgExport2(id) {
       const a = document.getElementById('mx2-dl'); a.href = '/api/admin/messages-export2/' + id + '?download=1'; a.style.display = '';
     } else {
       st.textContent = d.candidates === null ? 'Getting your conversation list from eBay…'
-        : draftsOnly ? 'Looked at ' + d.checked + ' of ' + d.candidates + ' conversations · ' + d.found + ' with AI drafts so far…'
         : d.found + ' of ' + d.target + ' conversations…';
       mx2Timer = setTimeout(() => pollMsgExport2(id), 2000);
     }
