@@ -1,4 +1,4 @@
-// PartsLister Pro server — v334
+// PartsLister Pro server — v335
 // v302: dashboard.html is the homepage (/). The listing tool moved to /list.
 // v305: eBay sales connection — real sold orders on the dashboard.
 // v306: asks eBay for two more permissions — fees/payouts and seller metrics.
@@ -57,6 +57,11 @@
 //       the listing photos. Drafts answer the question directly (no condition filler).
 // v334: whenever a draft offers a return or asks the buyer to open one, it says how many days
 //       they have left and the last day (the app works out the date; the AI never does).
+// v335: "Didn't arrive" drafts always give the carrier + tracking number and never send the buyer
+//       to open a case first. New Messages settings: delivered-but-missing (check around first /
+//       open a request now), modules (ask if it was programmed first), tone (friendly / short),
+//       and your sign-off (added by the app, word for word). Drafts must answer every question
+//       the buyer asks or say the seller doesn't have that information.
 // Accounts with email + password login. Each account's settings (including its
 // own API keys) and history are saved ENCRYPTED in Postgres, so you can log in
 // from any computer and everything is there. Also keeps a lifetime listing count.
@@ -2154,10 +2159,15 @@ const PROBLEM_POLICIES = {
 const PROBLEM_TYPES = [
   { key: 'notReceived', label: 'Didn\u2019t arrive', when: 'the buyer says the item hasn\u2019t arrived / was lost / tracking hasn\u2019t moved', def: 'nr_tracking', options: {
     // nr_tracking: { label: 'Check tracking first, refund if it\u2019s lost', ai: 'say you\u2019re sorry and will check the tracking right away, and that if it\u2019s lost they\u2019ll get a full refund. Never ask for photos.' },
-    nr_tracking: { label: 'Check tracking first, refund if it\u2019s lost', ai: 'use the SHIPMENT facts in ORDER & RETURNS: give the carrier and tracking number. If eBay shows it delivered, give the delivery date and kindly ask them to check around the delivery spot and with neighbors, and to let you know if it still doesn\u2019t turn up. If it\u2019s not delivered and the expected date hasn\u2019t passed, say when it\u2019s expected. If the expected date has passed, apologize, say you\u2019ll look into it, and that if it\u2019s lost they\u2019ll get a full refund. If there\u2019s no tracking info, say you\u2019ll check on it right away and refund in full if it\u2019s lost. Never ask for photos.' },   // v332
+    // nr_tracking: { label: 'Check tracking first, refund if it\u2019s lost', ai: 'use the SHIPMENT facts in ORDER & RETURNS: give the carrier and tracking number. If eBay shows it delivered, give the delivery date and kindly ask them to check around the delivery spot and with neighbors, and to let you know if it still doesn\u2019t turn up. If it\u2019s not delivered and the expected date hasn\u2019t passed, say when it\u2019s expected. If the expected date has passed, apologize, say you\u2019ll look into it, and that if it\u2019s lost they\u2019ll get a full refund. If there\u2019s no tracking info, say you\u2019ll check on it right away and refund in full if it\u2019s lost. Never ask for photos.' },   // v332
     // nr_refund: { label: 'Refund right away', ai: 'say you\u2019re sorry and that you\u2019ll issue a full refund. Never ask for photos.' },
-    nr_refund: { label: 'Refund right away', ai: 'say you\u2019re sorry and that you\u2019ll issue a full refund (you may also give the tracking number from SHIPMENT). Never ask for photos.' },   // v332
-    nr_open: { label: 'Ask them to open an \u201citem not received\u201d request on eBay', ai: 'say you\u2019re sorry and ask them to open an \u201citem not received\u201d request on eBay so it can be sorted out there. Never ask for photos.' } } },
+    // nr_refund: { label: 'Refund right away', ai: 'say you\u2019re sorry and that you\u2019ll issue a full refund (you may also give the tracking number from SHIPMENT). Never ask for photos.' },   // v332
+    // nr_open: { label: 'Ask them to open an \u201citem not received\u201d request on eBay', ai: 'say you\u2019re sorry and ask them to open an \u201citem not received\u201d request on eBay so it can be sorted out there. Never ask for photos.' }   (v331)
+    // v335: these cover a package eBay does NOT show delivered. Delivered-but-missing follows the
+    //       separate "delivered" setting. Every option gives the carrier + tracking number first.
+    nr_tracking: { label: 'Check tracking first, refund if it’s lost', ai: 'if the expected date hasn’t passed, say when it’s expected. If it has passed, apologize, say you’ll look into it, and that if it’s lost they’ll get a full refund. If there’s no tracking info, say you’ll check on it right away and refund in full if it’s lost.' },
+    nr_refund: { label: 'Refund right away', ai: 'apologize and say you’ll issue a full refund.' },
+    nr_open: { label: 'Ask them to open an “item not received” request (once it’s late)', ai: 'if the expected date hasn’t passed, say when it’s expected and ask them to wait until then, and if it still hasn’t come by then, to open an “item not received” request on eBay. If the expected date has passed, apologize and ask them to open an “item not received” request on eBay so it can be sorted out there.' } } },
   { key: 'damaged', label: 'Arrived damaged', when: 'the buyer says the item arrived broken, cracked, bent or damaged in shipping', def: 'photos_first', options: {} },
   { key: 'defective', label: 'Defective / not working', when: 'the buyer says the part doesn\u2019t work, is faulty, or throws codes', def: 'return_or_refund', options: {} },
   { key: 'wrongPart', label: 'Wrong part / doesn\u2019t fit', when: 'the buyer says it\u2019s the wrong part or doesn\u2019t fit their vehicle', def: 'wp_compare', options: {
@@ -2167,6 +2177,16 @@ const PROBLEM_TYPES = [
 ];
 // damaged / defective use the general choices (PROBLEM_POLICIES); every type can also use them
 PROBLEM_TYPES.forEach(t => { Object.keys(PROBLEM_POLICIES).forEach(k => { if (!t.options[k] && t.key !== 'notReceived') t.options[k] = PROBLEM_POLICIES[k]; }); });
+
+// v335: more Messages settings
+const DELIVERED_MISSING = {
+  check_first: { label: 'Ask them to check around and with neighbors first', ai: 'ask them to check around the door, mailbox and porch, with neighbors, and with anyone else at the address, and to let you know if it still doesn’t turn up' },
+  open_now: { label: 'Tell them to open an “item not received” request right away', ai: 'ask them to open an “item not received” request on eBay so it can be sorted out there' }
+};
+const TONES = {
+  friendly: { label: 'Friendly', ai: 'Tone: warm and friendly. If the buyer sounds worried or upset, briefly acknowledge it.' },
+  short: { label: 'Short and to the point', ai: 'Tone: polite but short and to the point. No small talk.' }
+};
 
 function msgSettingsOf(settings) {
   const m = (settings && settings.msgSettings) || {};
@@ -2184,7 +2204,12 @@ function msgSettingsOf(settings) {
     autoTranslate: m.autoTranslate !== false,
     problems,   // v331
     discount: { enabled: !!(m.discount && m.discount.enabled), percent: pct > 0 && pct < 90 ? pct : 5 },   // v331
-    fitment: { askVin: !!(m.fitment && m.fitment.askVin) }   // v333: off until VIN checking exists
+    fitment: { askVin: !!(m.fitment && m.fitment.askVin) },   // v333: off until VIN checking exists
+    // v335
+    deliveredMissing: DELIVERED_MISSING[m.deliveredMissing] ? m.deliveredMissing : 'check_first',
+    modules: { askProgrammed: !(m.modules && m.modules.askProgrammed === false) },
+    tone: TONES[m.tone] ? m.tone : 'friendly',
+    signoff: String(m.signoff || '').trim().slice(0, 120)
   };
 }
 // v331: does the buyer's latest message ask for a lower price?
@@ -2198,7 +2223,9 @@ app.get('/api/msg-settings', requireUser, async (req, res) => {
     const ms = msgSettingsOf(await getUserSettings(req.user.id));
     res.json({ ...ms, defaultInstructions: DEFAULT_MSG_INSTRUCTIONS,
       problemPolicies: Object.keys(PROBLEM_POLICIES).map(k => ({ value: k, label: PROBLEM_POLICIES[k].label })),
-      problemTypes: PROBLEM_TYPES.map(t => ({ key: t.key, label: t.label, when: t.when, options: Object.keys(t.options).map(k => ({ value: k, label: t.options[k].label })) })) });   // v331
+      problemTypes: PROBLEM_TYPES.map(t => ({ key: t.key, label: t.label, when: t.when, options: Object.keys(t.options).map(k => ({ value: k, label: t.options[k].label })) })),   // v331
+      deliveredOptions: Object.keys(DELIVERED_MISSING).map(k => ({ value: k, label: DELIVERED_MISSING[k].label })),   // v335
+      toneOptions: Object.keys(TONES).map(k => ({ value: k, label: TONES[k].label })) });
   } catch (e) { res.status(500).json({ error: 'Could not load Messages settings' }); }
 });
 app.post('/api/msg-settings', requireUser, express.json(), async (req, res) => {
@@ -2217,7 +2244,12 @@ app.post('/api/msg-settings', requireUser, express.json(), async (req, res) => {
       autoTranslate: b.autoTranslate !== false,
       problems,
       discount: { enabled: !!(b.discount && b.discount.enabled), percent: pct > 0 && pct < 90 ? Math.round(pct * 10) / 10 : 5 },
-      fitment: { askVin: !!(b.fitment && b.fitment.askVin) }   // v333
+      fitment: { askVin: !!(b.fitment && b.fitment.askVin) },   // v333
+      // v335
+      deliveredMissing: DELIVERED_MISSING[b.deliveredMissing] ? b.deliveredMissing : 'check_first',
+      modules: { askProgrammed: !(b.modules && b.modules.askProgrammed === false) },
+      tone: TONES[b.tone] ? b.tone : 'friendly',
+      signoff: String(b.signoff || '').trim().slice(0, 120)
     };
     await writeUserData(req.user.id, d);
     res.json({ ok: true });
@@ -2540,12 +2572,17 @@ app.post('/api/threads/:id/draft', requireUser, express.json(), async (req, res)
       'PART NUMBER rule: use only the PART NUMBER line. If it gives a number, ask the buyer to compare it with the number on their original part and write the number out in the reply. If it says NONE or unknown, never mention comparing part numbers or say the listing has one — say this listing doesn\'t have a part number, so please compare their original part with the listing photos.'
         + (ms.fitment.askVin ? ' You may also ask for their VIN so the seller can check fitment.' : ' Never ask for a VIN or offer to check one.'),
       'If the buyer asks which vehicle the part came from (year, model, mileage, VIN of the donor vehicle) and the LISTING doesn\'t say, say plainly that you don\'t have that information for this part — don\'t skip the question.',
+      // v335
+      'Answer EVERY question in the buyer\'s latest message. If the facts given don\'t answer one, say plainly that you don\'t have that information — never skip a question.',
+      'Package not arrived: always start with the carrier and tracking number from SHIPMENT (if there is one). Never ask for photos. If eBay shows it DELIVERED: give the delivery date; if they ask who received it, say the tracking only shows it was delivered, not who received it; then ' + DELIVERED_MISSING[ms.deliveredMissing].ai + '. Otherwise follow the seller\'s choice for packages that didn\'t arrive.',
+      ms.modules.askProgrammed ? 'Computer modules (TCM, PCM, ECM, BCM, ABS module and other control modules): if the buyer says the module doesn\'t work, first ask whether it was programmed to their vehicle — used modules often need programming — and say that if it was programmed and still doesn\'t work, they can return it (with the return-window time left). This comes before the seller\'s defective choice.' : '',
+      TONES[ms.tone].ai,
       // v334
       'Whenever the reply offers a return or asks the buyer to open a return request, also tell them how long they have, using the Return window line in ORDER & RETURNS (days left and the last day, exactly as given). If the window hasn\'t started, say they\'ll have the stated number of days from delivery. If there\'s no Return window line, don\'t mention a time limit.',
       'Tracking and delivery: use only the SHIPMENT facts. You may give the carrier, tracking number, shipped date, expected date and delivered date shown there. Never describe where the package is or make up a delivery date.',
       'Write in English. Plain text only: no markdown, no subject line, no placeholders like [Name], no signature.',
       'Reply with only the message text.'
-    ].join(' ');
+    ].filter(Boolean).join(' ');   // v335: filter — the modules rule can be off
     // const user = 'LISTING\n' + listing + '\n\nCONVERSATION (oldest first)\n' + convo + (hint ? '\n\nSELLER\'S INSTRUCTIONS FOR THIS REPLY\n' + hint : '') + '\n\nWrite the seller\'s reply now.';
     // const user = 'LISTING\n' + listing + (shipping ? '\n\nSHIPPING CHECK (checked with eBay just now)\n' + shipping : '') + '\n\nCONVERSATION (oldest first)\n' + convo + (hint ? '\n\nSELLER\'S INSTRUCTIONS FOR THIS REPLY\n' + hint : '') + '\n\nWrite the seller\'s reply now.';   // v329: + shipping check
     const discountText = discount ? 'The buyer asked for a lower price. The seller\'s best is ' + discount.percent + '% off: $' + discount.offerPrice.toFixed(2) + ' (listed at $' + discount.price.toFixed(2) + '). Say that the best you can do is ' + discount.percent + '% off and that you\'ve sent them an offer for $' + discount.offerPrice.toFixed(2) + ' — if they don\'t receive it, they should let you know. Don\'t offer any other price.' : '';
@@ -2559,7 +2596,9 @@ app.post('/api/threads/:id/draft', requireUser, express.json(), async (req, res)
     });
     const d = await r.json().catch(() => ({}));
     if (!r.ok) return res.status(502).json({ error: 'Claude didn\u2019t answer: ' + ((d.error && d.error.message) || ('HTTP ' + r.status)) });
-    const text = ((d.content || []).filter(c => c.type === 'text').map(c => c.text).join('\n') || '').trim();
+    // const text = ((d.content || []).filter(c => c.type === 'text').map(c => c.text).join('\n') || '').trim();
+    let text = ((d.content || []).filter(c => c.type === 'text').map(c => c.text).join('\n') || '').trim();
+    if (text && ms.signoff && !text.endsWith(ms.signoff)) text += '\n\n' + ms.signoff;   // v335: your sign-off, word for word
     if (!text) return res.status(502).json({ error: 'Claude returned an empty draft — try again.' });
     // res.json({ draft: text.slice(0, 2000), usedListing: !!itemId });
     // res.json({ draft: text.slice(0, 2000), usedListing: !!itemId, shipChecks: shipChecks.map(sc => ({ country: sc.country, verdict: sc.verdict })) });   // v329
@@ -3228,5 +3267,5 @@ app.get('*', (req, res) => {
 });
 
 setupDatabase()
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v334 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v335 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });

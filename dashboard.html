@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Sales v333</title>
+<title>PartsLister Pro Sales v335</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@400;500;600&display=swap');
 
@@ -529,7 +529,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v333</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v335</span></div>
   </a>
   <!-- v316: switch pages -->
   <nav class="page-tabs" aria-label="Pages">
@@ -803,6 +803,21 @@
         <div id="ms-problem-types"></div>   <!-- v331: one choice per problem type -->
         <div class="set-row"><label for="ms-problem">Anything else (not as described, missing pieces…)</label>
         <select id="ms-problem" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:4px;font-family:'Barlow',sans-serif;font-size:14px;"></select></div>
+        <!-- v335 -->
+        <div class="set-row"><label for="ms-delivered">Tracking says delivered, buyer says it never came</label>
+        <select id="ms-delivered" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:4px;font-family:'Barlow',sans-serif;font-size:14px;"></select></div>
+        <p class="set-help">The "Didn't arrive" choice above is for packages eBay doesn't show delivered yet. Either way, the draft starts with the carrier and tracking number, and if the buyer asks who received it, it says tracking only shows it was delivered, not who.</p>
+        <label style="display:flex;gap:8px;align-items:center;font-size:14px;color:var(--text);cursor:pointer;margin-top:10px;"><input type="checkbox" id="ms-modules"> Computer modules that don't work: ask if it was programmed first</label>
+        <p class="set-help" style="margin-top:6px;">For TCMs, PCMs, ECMs, BCMs and other modules, the draft first asks whether it was programmed to their vehicle, then offers the return if it was and still doesn't work.</p>
+      </div>
+      <!-- v335: STYLE -->
+      <div class="set-section">
+        <h3>Tone and sign-off</h3>
+        <div class="set-row"><label for="ms-tone">Tone</label>
+        <select id="ms-tone" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:4px;font-family:'Barlow',sans-serif;font-size:14px;"></select></div>
+        <div class="set-row"><label for="ms-signoff">Sign-off (optional)</label>
+        <input type="text" id="ms-signoff" maxlength="120" placeholder="e.g. Thanks, Peter" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:4px;font-family:'Barlow',sans-serif;font-size:14px;"></div>
+        <p class="set-help">The app adds your sign-off to the end of every draft, word for word. Leave it empty for none.</p>
       </div>
       <!-- v333: FITMENT -->
       <div class="set-section">
@@ -920,6 +935,7 @@
 // v330: Settings → Messages tab (AI reply instructions, problem replies, auto-translate).
 // v331: a reply choice for each problem type + discount offers.
 // v333: Fitment questions — optional "Also ask for the buyer's VIN".
+// v335: delivered-but-missing choice, modules (ask if programmed), tone, sign-off.
 // Shares the same sign-in and account as the listing tool (/list).
 // v304: sales dashboard — big daily bar graph with a remembered date range.
 // The sales numbers are SAMPLE data for now; real eBay sales replace
@@ -1720,6 +1736,15 @@ async function loadMsgSettings() {
     document.getElementById('ms-disc-on').checked = !!(d.discount && d.discount.enabled);
     document.getElementById('ms-disc-pct').value = (d.discount && d.discount.percent) || 5;
     document.getElementById('ms-fit-vin').checked = !!(d.fitment && d.fitment.askVin);   // v333
+    // v335
+    const dsel = document.getElementById('ms-delivered'); dsel.textContent = '';
+    (d.deliveredOptions || []).forEach(o => dsel.append(new Option(o.label, o.value)));
+    dsel.value = d.deliveredMissing || 'check_first';
+    const tsel = document.getElementById('ms-tone'); tsel.textContent = '';
+    (d.toneOptions || []).forEach(o => tsel.append(new Option(o.label, o.value)));
+    tsel.value = d.tone || 'friendly';
+    document.getElementById('ms-modules').checked = !(d.modules && d.modules.askProgrammed === false);
+    document.getElementById('ms-signoff').value = d.signoff || '';
   } catch (e) { showToast('Could not load Messages settings.', true); }
 }
 function useDefaultInstructions() {
@@ -1734,7 +1759,10 @@ async function saveMsgSettings() {
     document.querySelectorAll('#ms-problem-types select').forEach(x => { problems[x.dataset.key] = x.value; });
     const body = { instructions: document.getElementById('ms-instructions').value, problemPolicy: document.getElementById('ms-problem').value, autoTranslate: document.getElementById('ms-translate').checked,
       problems, discount: { enabled: document.getElementById('ms-disc-on').checked, percent: parseFloat(document.getElementById('ms-disc-pct').value) || 5 },   // v331
-      fitment: { askVin: document.getElementById('ms-fit-vin').checked } };   // v333
+      fitment: { askVin: document.getElementById('ms-fit-vin').checked },   // v333
+      // v335
+      deliveredMissing: document.getElementById('ms-delivered').value, modules: { askProgrammed: document.getElementById('ms-modules').checked },
+      tone: document.getElementById('ms-tone').value, signoff: document.getElementById('ms-signoff').value };
     const r = await fetch('/api/msg-settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'Could not save');
     setText('ms-instr-note', body.instructions.trim() === msDefault.trim() || !body.instructions.trim() ? 'Using the default.' : 'Using your own instructions.');
