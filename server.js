@@ -1,4 +1,4 @@
-// PartsLister Pro server — v338
+// PartsLister Pro server — v340
 // v302: dashboard.html is the homepage (/). The listing tool moved to /list.
 // v305: eBay sales connection — real sold orders on the dashboard.
 // v306: asks eBay for two more permissions — fees/payouts and seller metrics.
@@ -75,6 +75,14 @@
 // v338: Admin → Download messages (for tuning AI drafts): buyer conversations from the last 30 / 90 /
 //       365 days (up to 300) as one text file, built live and never stored. Usernames, emails,
 //       phone numbers and street addresses are removed.
+// v339: from 106 real conversations — the AI now decides whether the buyer is asking for a lower
+//       price (the word list missed 13 of 29), and new answer choices in Settings → Messages →
+//       Common questions: tested / warranty, programming, donor vehicle, "has it shipped / when",
+//       ships-to-my-country, your shipping days, and replying in the buyer's language (with English
+//       shown to you). Download messages removes more: VINs, names signed in messages, more street
+//       types — and no longer mistakes part numbers for phone numbers.
+// v340: "tested?" answers never claim the part was tested or checked working — even if the listing
+//       description says "good working condition" (that's the condition, not a test).
 // Accounts with email + password login. Each account's settings (including its
 // own API keys) and history are saved ENCRYPTED in Postgres, so you can log in
 // from any computer and everything is there. Also keeps a lifetime listing count.
@@ -2213,6 +2221,29 @@ const PHOTO_REQUESTS = {
   more_photos: { label: 'Say you\u2019ll take more photos and send them', ai: 'say you\u2019ll take the photos they asked for and send them' },
   listing_photos: { label: 'Say all the photos are in the listing', ai: 'politely say all the photos you have are in the listing — give no reason or excuse' }
 };
+// v339: common questions
+const TESTED_ANSWERS = {
+  warranty_return: { label: 'Not tested \u2014 the warranty is the return policy in the listing', ai: 'say plainly that the part has not been tested, and that it\u2019s covered by a warranty, which is the return policy in the listing (give the days from the Return policy line)' },
+  return_only: { label: 'Not tested \u2014 they can return it under the listing\u2019s return policy', ai: 'say plainly that the part has not been tested, and that they can return it under the listing\u2019s return policy (give the days from the Return policy line)' },
+  both: { label: 'Not tested \u2014 mention the warranty and the return policy', ai: 'say plainly that the part has not been tested, and that it comes with a warranty and the listing\u2019s return policy (give the days from the Return policy line)' }
+};
+const PROGRAMMING_ANSWERS = {
+  may_need: { label: 'Some need programming, some don\u2019t \u2014 check with a mechanic or dealer', ai: 'say that some parts like this need to be programmed to the vehicle and some don\u2019t, so you can\u2019t say for sure, and that it\u2019s worth checking with their mechanic or dealer before installing' },
+  usually: { label: 'Used modules usually need programming by a shop or dealer', ai: 'say that used modules like this usually need to be programmed to the vehicle by a shop or dealer' }
+};
+const DONOR_ANSWERS = {
+  dont_have: { label: 'Say you don\u2019t have the donor vehicle info', ai: 'say you don\u2019t have the donor vehicle information for this part (unless the LISTING gives it)' },
+  check_back: { label: 'Say you\u2019ll check and get back to them', ai: 'unless the LISTING gives it, say you\u2019ll check and get back to them' }
+};
+const SHIP_WHEN = {
+  ship_days: { label: 'Give your shipping days', ai: 'say it will ship on the seller\u2019s next shipping day, using the shipping days given' },
+  handling: { label: 'Say it ships within the listing\u2019s handling time', ai: 'say it will ship within the listing\u2019s handling time (from the Handling time line)' }
+};
+const INTL_NO = {
+  ebay_no: { label: 'Say eBay doesn\u2019t allow it to ship there', ai: 'say that unfortunately eBay doesn\u2019t allow this item to ship to their country' },
+  us_only: { label: 'Say you only ship within the US', ai: 'say that sorry, you only ship within the US' },
+  check_back: { label: 'Say you\u2019ll look into it and get back to them', ai: 'say you\u2019ll look into shipping to their country and get back to them' }
+};
 const TONES = {
   friendly: { label: 'Friendly', ai: 'Tone: warm and friendly. If the buyer sounds worried or upset, briefly acknowledge it.' },
   short: { label: 'Short and to the point', ai: 'Tone: polite but short and to the point. No small talk.' }
@@ -2242,7 +2273,16 @@ function msgSettingsOf(settings) {
     signoff: String(m.signoff || '').trim().slice(0, 120),
     // v336
     photoRequests: PHOTO_REQUESTS[m.photoRequests] ? m.photoRequests : 'check_back',
-    availability: String(m.availability || '').trim().slice(0, 200)
+    availability: String(m.availability || '').trim().slice(0, 200),
+    // v339
+    tested: TESTED_ANSWERS[m.tested] ? m.tested : 'warranty_return',
+    programming: PROGRAMMING_ANSWERS[m.programming] ? m.programming : 'may_need',
+    offersProgramming: !!m.offersProgramming,
+    donor: DONOR_ANSWERS[m.donor] ? m.donor : 'dont_have',
+    shipWhen: SHIP_WHEN[m.shipWhen] ? m.shipWhen : 'ship_days',
+    shipDays: String(m.shipDays || '').trim().slice(0, 200),
+    intlNo: INTL_NO[m.intlNo] ? m.intlNo : 'ebay_no',
+    buyerLanguage: !!m.buyerLanguage
   };
 }
 // v331: does the buyer's latest message ask for a lower price?
@@ -2262,7 +2302,13 @@ app.get('/api/msg-settings', requireUser, async (req, res) => {
       problemTypes: PROBLEM_TYPES.map(t => ({ key: t.key, label: t.label, when: t.when, options: Object.keys(t.options).map(k => ({ value: k, label: t.options[k].label })) })),   // v331
       deliveredOptions: Object.keys(DELIVERED_MISSING).map(k => ({ value: k, label: DELIVERED_MISSING[k].label })),   // v335
       toneOptions: Object.keys(TONES).map(k => ({ value: k, label: TONES[k].label })),
-      photoOptions: Object.keys(PHOTO_REQUESTS).map(k => ({ value: k, label: PHOTO_REQUESTS[k].label })) });   // v336
+      photoOptions: Object.keys(PHOTO_REQUESTS).map(k => ({ value: k, label: PHOTO_REQUESTS[k].label })),   // v336
+      // v339
+      testedOptions: Object.keys(TESTED_ANSWERS).map(k => ({ value: k, label: TESTED_ANSWERS[k].label })),
+      programmingOptions: Object.keys(PROGRAMMING_ANSWERS).map(k => ({ value: k, label: PROGRAMMING_ANSWERS[k].label })),
+      donorOptions: Object.keys(DONOR_ANSWERS).map(k => ({ value: k, label: DONOR_ANSWERS[k].label })),
+      shipWhenOptions: Object.keys(SHIP_WHEN).map(k => ({ value: k, label: SHIP_WHEN[k].label })),
+      intlOptions: Object.keys(INTL_NO).map(k => ({ value: k, label: INTL_NO[k].label })) });
   } catch (e) { res.status(500).json({ error: 'Could not load Messages settings' }); }
 });
 app.post('/api/msg-settings', requireUser, express.json(), async (req, res) => {
@@ -2289,7 +2335,16 @@ app.post('/api/msg-settings', requireUser, express.json(), async (req, res) => {
       signoff: String(b.signoff || '').trim().slice(0, 120),
       // v336
       photoRequests: PHOTO_REQUESTS[b.photoRequests] ? b.photoRequests : 'check_back',
-      availability: String(b.availability || '').trim().slice(0, 200)
+      availability: String(b.availability || '').trim().slice(0, 200),
+      // v339
+      tested: TESTED_ANSWERS[b.tested] ? b.tested : 'warranty_return',
+      programming: PROGRAMMING_ANSWERS[b.programming] ? b.programming : 'may_need',
+      offersProgramming: !!b.offersProgramming,
+      donor: DONOR_ANSWERS[b.donor] ? b.donor : 'dont_have',
+      shipWhen: SHIP_WHEN[b.shipWhen] ? b.shipWhen : 'ship_days',
+      shipDays: String(b.shipDays || '').trim().slice(0, 200),
+      intlNo: INTL_NO[b.intlNo] ? b.intlNo : 'ebay_no',
+      buyerLanguage: !!b.buyerLanguage
     };
     await writeUserData(req.user.id, d);
     res.json({ ok: true });
@@ -2483,6 +2538,8 @@ async function returnFacts(userId, itemId, buyer) {
   try {
     const xml = await tradingCall(userId, 'GetItem', `<ItemID>${itemId}</ItemID><DetailLevel>ReturnAll</DetailLevel>`);
     const rp = xmlTag(xmlTag(xml, 'Item') || '', 'ReturnPolicy') || '';
+    const ht = parseInt(xmlTag(xmlTag(xml, 'Item') || '', 'DispatchTimeMax') || '', 10);   // v339
+    if (ht >= 0) lines.push('Handling time (listing): ships within ' + ht + ' business day' + (ht === 1 ? '' : 's') + ' of payment.');
     const accepted = xmlTag(rp, 'ReturnsAcceptedOption') || '';
     if (/NotAccepted/i.test(accepted)) lines.push('Return policy: the listing does NOT accept returns (eBay\'s Money Back Guarantee still covers items not as described).');
     else if (rp) {
@@ -2644,9 +2701,11 @@ app.post('/api/threads/:id/draft', requireUser, express.json(), async (req, res)
       const lastBuyer = msgs.filter(m => !m.mine).slice(-1)[0];
       const it0 = await getItemData(req.user.id, itemId);
       const price = it0.data && it0.data.price;
-      if (lastBuyer && price && asksForDiscount(lastBuyer.text)) {
+      // if (lastBuyer && price && asksForDiscount(lastBuyer.text)) {
+      // v339: the AI decides whether the buyer is asking for a lower price (it says OFFER: yes)
+      if (lastBuyer && price) {
         const offer = Math.round(price * (1 - ms0.discount.percent / 100) * 100) / 100;
-        discount = { percent: ms0.discount.percent, price, offerPrice: offer };
+        discount = { percent: ms0.discount.percent, price, offerPrice: offer, wordMatch: asksForDiscount(lastBuyer.text) };
       }
     }
 
@@ -2709,19 +2768,32 @@ app.post('/api/threads/:id/draft', requireUser, express.json(), async (req, res)
       'Never make up anything about the seller or the part that isn\'t in the sections given: where the part is, whether the seller has it on hand, the seller\'s schedule, or reasons why something can\'t be done. If you don\'t know, say less.',
       'Requests for more photos, measurements or a closer look at the part: ' + PHOTO_REQUESTS[ms.photoRequests].ai + '.',
       ms.availability ? 'When the reply says the seller will check something, take photos or get back to them, use the seller\'s availability for when: "' + ms.availability + '". Never promise a sooner time.' : 'When the reply says the seller will check something or get back to them, don\'t name a day or time.',
-      'Write in English. Plain text only: no markdown, no subject line, no placeholders like [Name], no signature.',
+      // v339: common questions
+      // 'Tested / working / warranty questions: ' + TESTED_ANSWERS[ms.tested].ai + '. Never claim it was tested or works unless the LISTING says so.',
+      'Tested / working / warranty questions (including "did you test it before you removed it?", "is it working?", "was it checked?"): ' + TESTED_ANSWERS[ms.tested].ai + '. The seller does NOT test parts: never say or suggest it was tested, checked, verified working or came from a running vehicle — even if the listing description says things like "good working condition" or "tested" (that is boilerplate, not a test). You may say the listing describes its condition as stated.',   // v340
+      'Programming questions (does it need programming / coding to the VIN): ' + PROGRAMMING_ANSWERS[ms.programming].ai + '. If they ask the seller to program it: ' + (ms.offersProgramming ? 'say you can and they should message you to arrange it.' : 'say you don\'t offer programming.'),
+      'Donor vehicle questions (what year/model/VIN/mileage/engine it came from, right-hand drive, etc.): ' + DONOR_ANSWERS[ms.donor].ai + '.',
+      'Has it shipped / when will it ship: use ORDER & RETURNS and SHIPMENT. If it has shipped, give the shipped date, carrier and tracking number. If it hasn\'t shipped: ' + SHIP_WHEN[ms.shipWhen].ai + (ms.shipDays ? ' (the seller ships: ' + ms.shipDays + ')' : '') + '. Never promise a specific day you weren\'t given.',
+      'If the SHIPPING CHECK says NO for the buyer\'s country (or they ask you to enable shipping to their country): ' + INTL_NO[ms.intlNo].ai + '.',
+      // 'Write in English. Plain text only: no markdown, no subject line, no placeholders like [Name], no signature.',
+      ms.buyerLanguage
+        ? 'Write the reply in the same language as the buyer\'s latest message. Plain text only: no markdown, no subject line, no placeholders like [Name], no signature. If that language is not English, after the reply add a line "ENGLISH:" followed by an English translation of your reply (one paragraph).'
+        : 'Write in English. Plain text only: no markdown, no subject line, no placeholders like [Name], no signature.',
+      discount ? 'After the reply, add a line "OFFER: yes" if you followed the DISCOUNT section (the buyer asked about price), otherwise "OFFER: no".' : '',
       // 'Reply with only the message text.'
       'Reply with only the message text, then one last line: "FOLLOWUP: " plus a short to-do for the seller (under 12 words, e.g. "Check level sensor opening for cracks, send photos") if the reply promises the seller will check, look, measure, take photos or get back to the buyer — otherwise "FOLLOWUP: none".'
     ].filter(Boolean).join(' ');   // v335: filter — the modules rule can be off
     // const user = 'LISTING\n' + listing + '\n\nCONVERSATION (oldest first)\n' + convo + (hint ? '\n\nSELLER\'S INSTRUCTIONS FOR THIS REPLY\n' + hint : '') + '\n\nWrite the seller\'s reply now.';
     // const user = 'LISTING\n' + listing + (shipping ? '\n\nSHIPPING CHECK (checked with eBay just now)\n' + shipping : '') + '\n\nCONVERSATION (oldest first)\n' + convo + (hint ? '\n\nSELLER\'S INSTRUCTIONS FOR THIS REPLY\n' + hint : '') + '\n\nWrite the seller\'s reply now.';   // v329: + shipping check
-    const discountText = discount ? 'The buyer asked for a lower price. The seller\'s best is ' + discount.percent + '% off: $' + discount.offerPrice.toFixed(2) + ' (listed at $' + discount.price.toFixed(2) + '). Say that the best you can do is ' + discount.percent + '% off and that you\'ve sent them an offer for $' + discount.offerPrice.toFixed(2) + ' — if they don\'t receive it, they should let you know. Don\'t offer any other price.' : '';
+    // const discountText = discount ? 'The buyer asked for a lower price. The seller\'s best is ' + discount.percent + '% off: $' + discount.offerPrice.toFixed(2) + ' (listed at $' + discount.price.toFixed(2) + '). Say that the best you can do is ' + discount.percent + '% off and that you\'ve sent them an offer for $' + discount.offerPrice.toFixed(2) + ' — if they don\'t receive it, they should let you know. Don\'t offer any other price.' : '';
+    // v339: only IF the buyer is asking for a lower price / making an offer
+    const discountText = discount ? 'IF the buyer\'s latest message asks for a lower price, makes an offer or names their own price (e.g. "150$?", "can I have it for 160", "would you take anything less?", "is the price firm?"): say that the best you can do is ' + discount.percent + '% off and that you\'ve sent them an offer for $' + discount.offerPrice.toFixed(2) + ' (listed at $' + discount.price.toFixed(2) + ') — if they don\'t receive it, they should let you know. Don\'t offer any other price. If they are NOT asking about price, ignore this section.' : '';
     const user = 'LISTING\n' + listing + '\n\nORDER & RETURNS (worked out by the app from eBay)\n' + (orderFacts || 'No order found for this item yet (the buyer may not have bought it).') + (shipping ? '\n\nSHIPPING CHECK (checked with eBay just now)\n' + shipping : '') + (discountText ? '\n\nDISCOUNT\n' + discountText : '') + '\n\nCONVERSATION (oldest first)\n' + convo + (hint ? '\n\nSELLER\'S INSTRUCTIONS FOR THIS REPLY\n' + hint : '') + '\n\nWrite the seller\'s reply now.';   // v330: + order & returns, v331: + discount
 
     const r = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({ model, max_tokens: 600, system, messages: [{ role: 'user', content: user }] }),
+      body: JSON.stringify({ model, max_tokens: 900, system, messages: [{ role: 'user', content: user }] }),   // v339: 600 → 900 (room for the English copy)
       signal: AbortSignal.timeout(60000)
     });
     const d = await r.json().catch(() => ({}));
@@ -2732,13 +2804,25 @@ app.post('/api/threads/:id/draft', requireUser, express.json(), async (req, res)
     let followUp = null;
     const fu = /\n?\s*FOLLOWUP:\s*(.*)\s*$/i.exec(text);
     if (fu) { text = text.slice(0, fu.index).trim(); const task = fu[1].trim().replace(/^["']|["']$/g, ''); if (task && !/^none\.?$/i.test(task)) followUp = task.slice(0, 140); }
+    // v339: OFFER: yes/no (the AI decided whether it's a price question) and ENGLISH: (buyer's-language replies)
+    let offerUsed = null;
+    const om = /\n?\s*OFFER:\s*(yes|no)\b\.?\s*/i.exec(text);
+    if (om) { offerUsed = /yes/i.test(om[1]); text = (text.slice(0, om.index) + '\n' + text.slice(om.index + om[0].length)).trim(); }
+    let english = null;
+    const em = /\n?\s*ENGLISH:\s*([\s\S]*)$/i.exec(text);
+    if (em) { english = em[1].trim().slice(0, 2000) || null; text = text.slice(0, em.index).trim(); }
+    if (discount) {
+      const used = offerUsed === null ? discount.wordMatch : offerUsed;   // no OFFER line → fall back to the word list
+      if (!used) discount = null; else delete discount.wordMatch;
+    }
     if (text && ms.signoff && !text.endsWith(ms.signoff)) text += '\n\n' + ms.signoff;   // v335: your sign-off, word for word
     if (!text) return res.status(502).json({ error: 'Claude returned an empty draft — try again.' });
     // res.json({ draft: text.slice(0, 2000), usedListing: !!itemId });
     // res.json({ draft: text.slice(0, 2000), usedListing: !!itemId, shipChecks: shipChecks.map(sc => ({ country: sc.country, verdict: sc.verdict })) });   // v329
     // res.json({ draft: text.slice(0, 2000), usedListing: !!itemId, shipChecks: shipChecks.map(sc => ({ country: sc.country, verdict: sc.verdict })), orderFacts: orderFacts || null });   // v330
     // res.json({ draft: text.slice(0, 2000), usedListing: !!itemId, shipChecks: shipChecks.map(sc => ({ country: sc.country, verdict: sc.verdict })), orderFacts: orderFacts || null, discount });   // v331: + discount
-    res.json({ draft: text.slice(0, 2000), usedListing: !!itemId, shipChecks: shipChecks.map(sc => ({ country: sc.country, verdict: sc.verdict })), orderFacts: orderFacts || null, discount, followUp });   // v336: + followUp
+    // res.json({ draft: …, discount, followUp });   // v336: + followUp
+    res.json({ draft: text.slice(0, 2000), usedListing: !!itemId, shipChecks: shipChecks.map(sc => ({ country: sc.country, verdict: sc.verdict })), orderFacts: orderFacts || null, discount, followUp, english });   // v339: + english
   } catch (e) {
     console.error('[draft]', e.message);
     res.status(500).json({ error: 'Could not draft a reply: ' + e.message });
@@ -2746,15 +2830,34 @@ app.post('/api/threads/:id/draft', requireUser, express.json(), async (req, res)
 });
 
 // ─── v338: ADMIN — DOWNLOAD MESSAGES (development) ──────────────────────────
-function redactMsg(text, names) {
+// (v338 redactMsg — replaced in v339)
+// function redactMsg(text, names) {
+//   let t = String(text || '');
+//   names.forEach(n => { if (n.name) t = t.replace(new RegExp(n.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), n.as); });
+//   t = t.replace(/[\w.+-]+@[\w-]+\.[\w.-]+/g, '[email]');
+//   t = t.replace(/(\+?1[\s.-]?)?\(?\b\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}\b/g, '[phone]');
+//   t = t.replace(/\b(p\.?\s?o\.?\s?box)\s*\d+/gi, '[address]');
+//   t = t.replace(/\b\d{1,6}\s+(?:[A-Za-z0-9.'-]+\s+){0,4}(?:st|street|ave|avenue|rd|road|blvd|boulevard|dr|drive|ln|lane|ct|court|way|pl|place|cir|circle|pkwy|parkway|hwy|highway|ter|terrace|trl|trail)\b\.?(?:,?\s*(?:apt|unit|suite|ste|#)\s*[\w-]+)?/gi, '[address]');
+//   t = t.replace(/\b[A-Z]{2}\s+\d{5}(?:-\d{4})?\b/g, '[state zip]');
+//   t = t.replace(/\b(my name is|name's)\s+[A-Z][a-z]+(\s+[A-Z][a-z]+)?/gi, '$1 [name]');
+//   return t;
+// }
+function redactMsg(text, names) {   // v339
   let t = String(text || '');
   names.forEach(n => { if (n.name) t = t.replace(new RegExp(n.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), n.as); });
   t = t.replace(/[\w.+-]+@[\w-]+\.[\w.-]+/g, '[email]');
-  t = t.replace(/(\+?1[\s.-]?)?\(?\b\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}\b/g, '[phone]');
+  t = t.replace(/\b[A-HJ-NPR-Z0-9]{17}\b/gi, m => (/\d/.test(m) && /[a-z]/i.test(m) ? '[VIN]' : m));
+  // phone numbers only when written like one (separators / brackets / +1), or after call/text/phone
+  t = t.replace(/(\+?1[\s.-])?\(\d{3}\)\s*\d{3}[\s.-]?\d{4}\b|(\+?1[\s.-])?\b\d{3}[.-]\d{3}[.-]\d{4}\b/g, '[phone]');
+  t = t.replace(/\b(call|text|phone|cell|tel)(\s*(me|at|#|:|number))*\s*\+?1?\s*\d{10}\b/gi, '$1 [phone]');
   t = t.replace(/\b(p\.?\s?o\.?\s?box)\s*\d+/gi, '[address]');
-  t = t.replace(/\b\d{1,6}\s+(?:[A-Za-z0-9.'-]+\s+){0,4}(?:st|street|ave|avenue|rd|road|blvd|boulevard|dr|drive|ln|lane|ct|court|way|pl|place|cir|circle|pkwy|parkway|hwy|highway|ter|terrace|trl|trail)\b\.?(?:,?\s*(?:apt|unit|suite|ste|#)\s*[\w-]+)?/gi, '[address]');
+  t = t.replace(/\b\d{1,6}\s+(?:[A-Za-z0-9.'-]+\s+){0,4}(?:st|street|ave|avenue|rd|road|blvd|boulevard|dr|drive|ln|lane|ct|court|way|pl|plz|plaza|place|cir|circle|pkwy|parkway|hwy|highway|ter|terrace|trl|trail|loop|sq|square|pike|run|xing|crossing|row|aly|alley)\b\.?(?:,?\s*(?:apt|unit|suite|ste|#)\.?\s*[\w-]+)?/gi, '[address]');
+  t = t.replace(/\b(apt|unit|suite|ste)\.?\s*#?\s*\d+\w*/gi, '[address]');
   t = t.replace(/\b[A-Z]{2}\s+\d{5}(?:-\d{4})?\b/g, '[state zip]');
-  t = t.replace(/\b(my name is|name's)\s+[A-Z][a-z]+(\s+[A-Z][a-z]+)?/gi, '$1 [name]');
+  t = t.replace(/\b([Mm]y name is|[Nn]ame's|[Ii]'?m|[Tt]his is)\s+([A-Z][a-z]+)(\s+[A-Z][a-z]+)?\b(?=[\s.,!])/g, (m, a, b) => (/^(interested|looking|wondering|trying|not|sorry|good|the|a|in)$/i.test(b) ? m : a + ' [name]'));
+  // a sign-off at the end: " / Name", "Thanks, Name", " / COMPANY INC." lines
+  t = t.replace(/((?:thanks|thank you|regards|cheers|best)[,!.]?\s*(?:\/\s*)?)([A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z.]*){0,2})\s*$/i, '$1[name]');
+  t = t.split(/\r?\n/).map((seg, i, arr) => ((i > 0 || (arr.length === 1 && /^[A-Z][a-z]+(\s+[A-Z][a-z]+){1,2}$/.test(seg.trim()))) && /^[A-Z][A-Za-z.&']*(\s+[A-Z][A-Za-z.&']*){0,3}\.?$/.test(seg.trim()) && seg.trim().length < 40 && !/^(Thank|Thanks|Hi|Hello|Ok|Okay|Yes|No)\b/.test(seg.trim()) ? '[name]' : seg)).join('\n');
   return t;
 }
 app.get('/api/admin/messages-export', requireUser, requireAdmin, async (req, res) => {
@@ -3551,5 +3654,5 @@ app.get('*', (req, res) => {
 });
 
 setupDatabase()
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v338 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v340 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });
