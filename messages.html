@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Messages v336</title>
+<title>PartsLister Pro Messages v337</title>
 <!-- PartsLister Pro — Messages page (v321: new; v322: conversation threads — the whole back-and-forth
      with each buyer, chat style, from eBay's Message API. Offers from a conversation. The v321
      email-style view is still at /messages/classic). Nothing about your messages is saved on the server.
@@ -16,7 +16,9 @@
      v331: when a draft offers your discount, a checked box sends that offer when you press Send.
      v336: "Waiting on me" is now your follow-up list (conversations you promised to get back to —
      added automatically when you send a draft that promises it, until you mark it complete). The old
-     "Waiting on me" (buyer wrote last, no answer yet) is renamed "Needs reply". -->
+     "Waiting on me" (buyer wrote last, no answer yet) is renamed "Needs reply".
+     v337: a listing + order strip under each conversation's header: title, price + shipping, and for
+     this buyer — not bought / bought / shipped with tracking / delivered. -->
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@400;500;600&display=swap');
 
@@ -190,6 +192,14 @@
   .disc-row { font-size: 13px; padding: 6px 12px 0; color: var(--accent); display: none; }
   .disc-row.on { display: block; }
   .disc-row label { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
+  /* v337: listing + order strip */
+  .th-info { padding: 8px 16px; border-bottom: 1px solid var(--border); font-size: 13px; line-height: 1.55; color: var(--muted); }
+  .th-info .ti-title { color: var(--text); font-weight: 600; }
+  .th-info .ti-price { color: var(--accent); font-weight: 600; }
+  .th-info .ti-ord { color: var(--text); }
+  .th-info .ti-ord.good { color: var(--success); }
+  .th-info .ti-trk { font-family: ui-monospace, Menlo, monospace; color: var(--text); user-select: all; }
+  .th-info button { background: none; border: 1px solid var(--border); color: var(--accent); border-radius: 4px; font: inherit; font-size: 11px; padding: 1px 6px; cursor: pointer; margin-left: 4px; }
   /* v336: Waiting on me */
   .fu-row { font-size: 13px; padding: 6px 12px 0; color: var(--accent); display: none; }
   .fu-row.on { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
@@ -244,7 +254,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v336</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v337</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -473,7 +483,8 @@ async function showThread(id) {
   head.append(close, el('div', 'th-who', t.other || 'Conversation'));
   if (t.itemId) {
     const a = el('a', 'th-item'); a.href = 'https://www.ebay.com/itm/' + encodeURIComponent(t.itemId); a.target = '_blank'; a.rel = 'noopener';
-    const im = el('img'); im.alt = ''; a.append(im, el('span', '', t.title || ('Item #' + t.itemId)));
+    // const im = el('img'); im.alt = ''; a.append(im, el('span', '', t.title || ('Item #' + t.itemId)));
+    const im = el('img'); im.alt = ''; var headTitle = el('span', '', t.title || ('Item #' + t.itemId)); a.append(im, headTitle);   // v337: filled in from the strip
     head.append(a);
     getJSON('/api/items/thumbs?ids=' + encodeURIComponent(t.itemId)).then(x => { const u = x && x.thumbs && x.thumbs[t.itemId]; if (u) im.src = u; });
     if (type === 'members') {
@@ -512,7 +523,11 @@ async function showThread(id) {
   };
   drawFuBar();
   // v.append(head, offers, body);
-  v.append(head, fuBar, offers, body);   // v336: + Waiting on me bar
+  // v.append(head, fuBar, offers, body);   // v336: + Waiting on me bar
+  // v337: listing + order strip
+  const info = el('div', 'th-info'); info.style.display = 'none';
+  if (t.itemId && type === 'members') { info.style.display = 'block'; info.textContent = 'Loading the listing and order…'; loadInfo(t, id, info, typeof headTitle !== 'undefined' ? headTitle : null); }
+  v.append(head, info, fuBar, offers, body);
   renderList();
   const d = await getJSON('/api/threads/' + encodeURIComponent(id) + '?type=' + type + (t.unread ? '&markRead=1' : ''));
   if (current !== id) return;
@@ -645,6 +660,51 @@ async function showThread(id) {
   v.append(ai, shipRes, discRow, fuRow);   // v336: + Waiting on me box
   v.append(comp);
   if (!phone()) ta.focus();
+}
+
+// ─── v337: LISTING + ORDER STRIP ─────────────────────────────────────────────
+const fmtDay = (iso) => iso ? new Date(iso).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : '';
+async function loadInfo(t, id, box, headTitle) {
+  const d = await getJSON('/api/threads/' + encodeURIComponent(id) + '/info?itemId=' + encodeURIComponent(t.itemId) + '&buyer=' + encodeURIComponent(t.other || ''));
+  if (current !== id) return;
+  box.textContent = '';
+  if (!d || d.error) { box.textContent = (d && d.error) || 'Couldn\u2019t load the listing info.'; return; }
+  if (d.title && headTitle) headTitle.textContent = d.title;
+  // line 1: listing
+  const l1 = el('div');
+  if (d.title) l1.append(el('span', 'ti-title', d.title), document.createTextNode(' \u00b7 '));
+  if (d.price !== null) l1.append(el('span', 'ti-price', money2.format(d.price)));
+  const sh = d.shipping;
+  l1.append(document.createTextNode(!sh ? '' : sh.free ? ' + free shipping' : sh.calculated ? ' + calculated shipping' : sh.cost !== null ? ' + ' + money2.format(sh.cost) + ' shipping' : ''));
+  if (sh && !sh.free && !sh.calculated && sh.cost !== null && d.price !== null) l1.append(document.createTextNode(' = ' + money2.format(d.price + sh.cost)));
+  if (d.listingStatus) l1.append(document.createTextNode(' \u00b7 listing ' + (d.listingStatus === 'Active' ? 'active' : d.listingStatus === 'Completed' || d.listingStatus === 'Ended' ? 'ended' : d.listingStatus.toLowerCase())));
+  box.append(l1);
+  // line 2: this buyer's order
+  const o = d.order || { status: 'not_bought' };
+  const l2 = el('div');
+  const who = t.other || 'This buyer';
+  if (o.status === 'not_bought') l2.append(el('span', 'ti-ord', who + ' hasn\u2019t bought it'));
+  else if (o.status === 'other_buyer') l2.append(el('span', 'ti-ord', who + ' hasn\u2019t bought it \u2014 it sold to a different buyer'));
+  else {
+    const head2 = { cancelled: '\u2716 Cancelled / refunded', bought: '\u2713 Bought \u00b7 not shipped yet', shipped: '\ud83d\ude9a Shipped', delivered: '\ud83d\udce6 Delivered' }[o.status] || o.status;
+    l2.append(el('span', 'ti-ord' + (o.status === 'delivered' || o.status === 'shipped' ? ' good' : ''), head2));
+    const bits = [];
+    if (o.delivered) bits.push(fmtDay(o.delivered));
+    else if (o.shipped) bits.push(fmtDay(o.shipped) + (o.expected ? ' \u00b7 expected by ' + fmtDay(o.expected) : ''));
+    bits.push('bought ' + fmtDay(o.sold));
+    if (o.total !== null) bits.push(money2.format(o.total));
+    bits.push('order ' + o.orderId);
+    l2.append(document.createTextNode(' \u00b7 ' + bits.join(' \u00b7 ')));
+    (o.tracks || []).forEach(tr => {
+      l2.append(document.createTextNode(' \u00b7 ' + (tr.carrier ? tr.carrier + ' ' : '')));
+      l2.append(el('span', 'ti-trk', tr.number));
+      const c = el('button', '', 'Copy'); c.type = 'button';
+      c.onclick = () => { navigator.clipboard.writeText(tr.number).then(() => toast('Tracking number copied.'), () => toast('Couldn\u2019t copy.', true)); };
+      l2.append(c);
+    });
+    if ((o.status === 'shipped' || o.status === 'delivered') && !(o.tracks || []).length) l2.append(document.createTextNode(o.shipError ? ' \u00b7 tracking couldn\u2019t be loaded' : ' \u00b7 no tracking number'));
+  }
+  box.append(l2);
 }
 
 // ─── v330: AUTO-TRANSLATE ────────────────────────────────────────────────────

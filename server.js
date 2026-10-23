@@ -1,4 +1,4 @@
-// PartsLister Pro server — v336
+// PartsLister Pro server — v337
 // v302: dashboard.html is the homepage (/). The listing tool moved to /list.
 // v305: eBay sales connection — real sold orders on the dashboard.
 // v306: asks eBay for two more permissions — fees/payouts and seller metrics.
@@ -68,6 +68,10 @@
 //       to them). "Waiting on me" follow-up list: when a draft promises a follow-up, sending it adds
 //       the conversation to the list (msg_followups: conversation id, item, your to-do — never the
 //       buyer's messages) until you mark it complete.
+// v337: discount detection also catches "would you consider $65?", "below your asking price",
+//       "my offer" etc. Messages shows a listing + order strip on each conversation (title, price,
+//       shipping, and for THIS buyer: not bought / bought / shipped + tracking / delivered). Order
+//       facts for drafts now use the order this buyer placed, not another buyer's.
 // Accounts with email + password login. Each account's settings (including its
 // own API keys) and history are saved ENCRYPTED in Postgres, so you can log in
 // from any computer and everything is there. Also keeps a lifetime listing count.
@@ -2242,7 +2246,10 @@ function msgSettingsOf(settings) {
 function asksForDiscount(text) {
   const t = String(text || '').toLowerCase();
   // careful with part names: "lower control arm", "less" in "wireless", "offer free shipping?"
-  return /\bdiscount|\bcoupon|best price|lowest price|lower (the |your )?price|go (any )?lower|any lower|(price|it) (is )?(firm|negotiable)|negotiat|cheaper|knock (some|anything|it) off|wiggle room|(make|cut|give) (me )?(a|any) deal|best you can do|(would|will|can) you (do|take|accept) \$?\d|(take|do) \$\d|\$\d+(\.\d\d)? (and|&) (i'?ll|i will) buy|for less\b/.test(t);
+  // return /\bdiscount|…|for less\b/.test(t);   (v331)
+  if (/\bdiscount|\bcoupon|best price|lowest price|lower (the |your )?price|go (any )?lower|any lower|(price|it) (is )?(firm|negotiable)|negotiat|cheaper|knock (some|anything|it) off|wiggle room|(make|cut|give) (me )?(a|any) deal|best you can do|(would|will|can) you (do|take|accept) \$?\d|(take|do) \$\d|\$\d+(\.\d\d)? (and|&) (i'?ll|i will) buy|for less\b/.test(t)) return true;
+  // v337: more ways buyers ask
+  return /\b(would|will|could|can) you (please )?(consider|do|take|accept|let (it|this) go for|sell (it |this )?for|go) (\w+ )?\$?\d|\b(consider|accept|take) (an |my )?offer|\bmy offer\b|\bmake (you )?an offer|\b(below|under|less than) (your |the )?(asking|list(ed|ing)?) ?price|\bbelow (your |the )?asking\b|\bfor \$\d+(\.\d\d)?\s*\?|\$\d+(\.\d\d)? (shipped|firm|cash)\b.*\?|\bcounter ?offer|\boffer (you )?\$\d|\bbudget is\b|\byou'?d (go|take|do|accept|consider) \$?\d/.test(t);
 }
 app.get('/api/msg-settings', requireUser, async (req, res) => {
   try {
@@ -2328,13 +2335,59 @@ app.post('/api/msg-settings', requireUser, express.json(), async (req, res) => {
 //   return lines.join('\n');
 // }
 
+// (v332–v336 shipmentFacts / returnFacts start — replaced in v337, kept for reference)
+// // v332: SHIPMENT — tracking, carrier and delivery dates for one order, from Trading GetOrders
+// // (ShipmentTrackingDetails + ShippingPackageInfo). Read live, never stored.
+// async function shipmentFacts(userId, orderId) {
+//   const xml = await tradingCall(userId, 'GetOrders',
+//     `<OrderIDArray><OrderID>${xmlEsc(orderId)}</OrderID></OrderIDArray><DetailLevel>ReturnAll</DetailLevel>`);
+//   const order = xmlTag(xml, 'Order') || '';
+//   if (!order) return null;
+//   const firstOf = (tag) => xmlAll(order, tag).map(v => xmlDecode(v).trim()).find(Boolean) || null;
+//   const tracks = [];
+//   xmlAll(order, 'ShipmentTrackingDetails').forEach(t => {
+//     const num = xmlDecode(xmlTag(t, 'ShipmentTrackingNumber') || '').trim();
+//     const car = xmlDecode(xmlTag(t, 'ShippingCarrierUsed') || '').trim();
+//     if (num && !tracks.some(x => x.number === num)) tracks.push({ number: num, carrier: car });
+//   });
+//   return {
+//     tracks,
+//     shippedTime: firstOf('ShippedTime'),
+//     deliveredTime: firstOf('ActualDeliveryTime'),
+//     expectedMax: firstOf('ScheduledDeliveryTimeMax') || firstOf('EstimatedDeliveryTimeMax')
+//   };
+// }
+// const dayText = (d) => new Date(d).toLocaleDateString('en-US', { weekday: 'short', month: 'long', day: 'numeric', year: 'numeric', timeZone: 'America/Los_Angeles' });
+// const daysSince = (d) => Math.floor((Date.now() - new Date(d).getTime()) / 86400000);
+
+// // v330: the facts the AI gets about the sale and the return window — all worked out here
+// // v332: + SHIPMENT (tracking / delivered), and the return window counts from delivery like eBay
+// async function returnFacts(userId, itemId) {
+//   const lines = [];
+//   let sold = null, ship = null, shipErr = null;
+//   try {
+//     const r = await pool.query(
+//       `SELECT o.order_id, o.created_at, o.status, o.counted, o.ship_status FROM ebay_order_items i
+//          JOIN ebay_orders o ON o.user_id = i.user_id AND o.order_id = i.order_id
+//         WHERE i.user_id = $1 AND i.item_id = $2 ORDER BY o.created_at DESC LIMIT 1`, [userId, itemId]);
+//     if (r.rows.length) {
+//       const o = r.rows[0];
+//       sold = new Date(o.created_at);
+//       const ago = daysSince(sold);
+//       lines.push('Sold on ' + sold.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'America/Los_Angeles' }) + ' (' + ago + ' day' + (ago === 1 ? '' : 's') + ' ago), order ' + o.order_id + '.'
+//         + (o.ship_status === 'FULFILLED' ? ' It has shipped.' : o.ship_status ? ' Not marked shipped yet.' : '')
+//         + (!o.counted ? ' This order was cancelled or refunded (' + o.status + ').' : ''));
+//       try { ship = await shipmentFacts(userId, o.order_id); } catch (e) { shipErr = e.message; }
+//     }
+//   } catch (e) { /* no order info */ }
+
+//   // SHIPMENT
+
 // v332: SHIPMENT — tracking, carrier and delivery dates for one order, from Trading GetOrders
 // (ShipmentTrackingDetails + ShippingPackageInfo). Read live, never stored.
-async function shipmentFacts(userId, orderId) {
-  const xml = await tradingCall(userId, 'GetOrders',
-    `<OrderIDArray><OrderID>${xmlEsc(orderId)}</OrderID></OrderIDArray><DetailLevel>ReturnAll</DetailLevel>`);
-  const order = xmlTag(xml, 'Order') || '';
-  if (!order) return null;
+// v337: split so one GetOrders call can read several orders; also reads the buyer's user ID
+//       (only to match the order to the conversation — never stored).
+function parseOrderShip(order) {
   const firstOf = (tag) => xmlAll(order, tag).map(v => xmlDecode(v).trim()).find(Boolean) || null;
   const tracks = [];
   xmlAll(order, 'ShipmentTrackingDetails').forEach(t => {
@@ -2343,35 +2396,72 @@ async function shipmentFacts(userId, orderId) {
     if (num && !tracks.some(x => x.number === num)) tracks.push({ number: num, carrier: car });
   });
   return {
+    orderId: xmlDecode(xmlTag(order, 'OrderID') || '').trim(),
+    buyer: xmlDecode(xmlTag(order, 'BuyerUserID') || '').trim(),
     tracks,
+    paidTime: firstOf('PaidTime'),
     shippedTime: firstOf('ShippedTime'),
     deliveredTime: firstOf('ActualDeliveryTime'),
     expectedMax: firstOf('ScheduledDeliveryTimeMax') || firstOf('EstimatedDeliveryTimeMax')
   };
+}
+async function ordersShipInfo(userId, orderIds) {
+  if (!orderIds.length) return [];
+  const xml = await tradingCall(userId, 'GetOrders',
+    `<OrderIDArray>${orderIds.map(id => `<OrderID>${xmlEsc(id)}</OrderID>`).join('')}</OrderIDArray><DetailLevel>ReturnAll</DetailLevel>`);
+  return xmlAll(xmlTag(xml, 'OrderArray') || xml, 'Order').map(parseOrderShip);
+}
+// async function shipmentFacts(userId, orderId) { … }   (v332 — now ordersShipInfo)
+async function shipmentFacts(userId, orderId) {
+  const list = await ordersShipInfo(userId, [orderId]);
+  return list[0] || null;
+}
+
+// v337: the order for THIS conversation's buyer (an item can sell more than once). Without a buyer
+//       name, the latest order. Returns { row, ship, shipErr, otherBuyer }.
+async function findBuyerOrder(userId, itemId, buyer) {
+  const out = { row: null, ship: null, shipErr: null, otherBuyer: false };
+  let rows = [];
+  try {
+    rows = (await pool.query(
+      `SELECT o.order_id, o.created_at, o.status, o.counted, o.ship_status, o.total FROM ebay_order_items i
+         JOIN ebay_orders o ON o.user_id = i.user_id AND o.order_id = i.order_id
+        WHERE i.user_id = $1 AND i.item_id = $2 ORDER BY o.created_at DESC LIMIT 5`, [userId, itemId])).rows;
+  } catch (e) { return out; }
+  if (!rows.length) return out;
+  let infos = [];
+  try { infos = await ordersShipInfo(userId, rows.map(r => r.order_id)); } catch (e) { out.shipErr = e.message; }
+  if (buyer && infos.some(x => x.buyer)) {   // only when eBay gave buyer IDs
+    const hit = infos.find(x => x.buyer && x.buyer.toLowerCase() === String(buyer).toLowerCase());
+    if (!hit) { out.otherBuyer = true; return out; }
+    out.ship = hit;
+    out.row = rows.find(r => r.order_id === hit.orderId) || rows[0];
+    return out;
+  }
+  out.row = rows[0];
+  out.ship = infos.find(x => x.orderId === rows[0].order_id) || infos[0] || null;
+  return out;
 }
 const dayText = (d) => new Date(d).toLocaleDateString('en-US', { weekday: 'short', month: 'long', day: 'numeric', year: 'numeric', timeZone: 'America/Los_Angeles' });
 const daysSince = (d) => Math.floor((Date.now() - new Date(d).getTime()) / 86400000);
 
 // v330: the facts the AI gets about the sale and the return window — all worked out here
 // v332: + SHIPMENT (tracking / delivered), and the return window counts from delivery like eBay
-async function returnFacts(userId, itemId) {
+// v337: + buyer — uses the order this buyer placed (not another buyer's)
+async function returnFacts(userId, itemId, buyer) {
   const lines = [];
   let sold = null, ship = null, shipErr = null;
-  try {
-    const r = await pool.query(
-      `SELECT o.order_id, o.created_at, o.status, o.counted, o.ship_status FROM ebay_order_items i
-         JOIN ebay_orders o ON o.user_id = i.user_id AND o.order_id = i.order_id
-        WHERE i.user_id = $1 AND i.item_id = $2 ORDER BY o.created_at DESC LIMIT 1`, [userId, itemId]);
-    if (r.rows.length) {
-      const o = r.rows[0];
-      sold = new Date(o.created_at);
-      const ago = daysSince(sold);
-      lines.push('Sold on ' + sold.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'America/Los_Angeles' }) + ' (' + ago + ' day' + (ago === 1 ? '' : 's') + ' ago), order ' + o.order_id + '.'
-        + (o.ship_status === 'FULFILLED' ? ' It has shipped.' : o.ship_status ? ' Not marked shipped yet.' : '')
-        + (!o.counted ? ' This order was cancelled or refunded (' + o.status + ').' : ''));
-      try { ship = await shipmentFacts(userId, o.order_id); } catch (e) { shipErr = e.message; }
-    }
-  } catch (e) { /* no order info */ }
+  const fo = await findBuyerOrder(userId, itemId, buyer);
+  if (fo.otherBuyer) lines.push('This buyer has NOT bought this item (it was sold to someone else).');
+  else if (fo.row) {
+    const o = fo.row;
+    sold = new Date(o.created_at);
+    const ago = daysSince(sold);
+    lines.push('Sold on ' + sold.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'America/Los_Angeles' }) + ' (' + ago + ' day' + (ago === 1 ? '' : 's') + ' ago), order ' + o.order_id + '.'
+      + (o.ship_status === 'FULFILLED' ? ' It has shipped.' : o.ship_status ? ' Not marked shipped yet.' : '')
+      + (!o.counted ? ' This order was cancelled or refunded (' + o.status + ').' : ''));
+    ship = fo.ship; shipErr = fo.shipErr;
+  }
 
   // SHIPMENT
   if (ship) {
@@ -2558,7 +2648,9 @@ app.post('/api/threads/:id/draft', requireUser, express.json(), async (req, res)
     }
 
     // v330: ORDER & RETURNS — the sale date and return window, calculated here (the AI never does date math)
-    const orderFacts = itemId ? await returnFacts(req.user.id, itemId) : '';
+    // const orderFacts = itemId ? await returnFacts(req.user.id, itemId) : '';
+    const buyerName = (msgs.find(m => !m.mine && m.from) || {}).from || '';   // v337: this conversation's buyer
+    const orderFacts = itemId ? await returnFacts(req.user.id, itemId, buyerName) : '';
 
     // v329: shipping-to-a-country answers — the country picked in Messages, or ones the buyer named
     let shipping = '';
@@ -2647,6 +2739,54 @@ app.post('/api/threads/:id/draft', requireUser, express.json(), async (req, res)
   } catch (e) {
     console.error('[draft]', e.message);
     res.status(500).json({ error: 'Could not draft a reply: ' + e.message });
+  }
+});
+
+// ─── v337: LISTING + ORDER STRIP for a conversation ─────────────────────────
+// Title, price, shipping (live GetItem) and, for this conversation's buyer, whether they bought it,
+// shipped / tracking / delivered (live GetOrders). Nothing new is stored.
+app.get('/api/threads/:id/info', requireUser, async (req, res) => {
+  const itemId = String(req.query.itemId || '');
+  const buyer = String(req.query.buyer || '').slice(0, 80);
+  if (!/^\d{6,20}$/.test(itemId)) return res.status(400).json({ error: 'Bad item number' });
+  try {
+    const out = { itemId, title: null, price: null, shipping: null, listingStatus: null, url: 'https://www.ebay.com/itm/' + itemId, order: null };
+    try {
+      const xml = await tradingCall(req.user.id, 'GetItem', `<ItemID>${itemId}</ItemID><DetailLevel>ReturnAll</DetailLevel>`);
+      const item = xmlTag(xml, 'Item') || '';
+      const ss = xmlTag(item, 'SellingStatus') || '';
+      const sd = xmlTag(item, 'ShippingDetails') || '';
+      out.title = xmlDecode(xmlTag(item, 'Title')) || null;
+      out.price = parseFloat(xmlTag(ss, 'CurrentPrice') || '') || null;
+      out.listingStatus = xmlTag(ss, 'ListingStatus') || null;
+      out.quantitySold = parseInt(xmlTag(ss, 'QuantitySold') || '0', 10) || 0;
+      const opt = xmlAll(sd, 'ShippingServiceOptions')[0] || '';
+      const stype = xmlTag(sd, 'ShippingType') || '';
+      if (opt) {
+        const free = xmlTag(opt, 'FreeShipping') === 'true';
+        const cost = parseFloat(xmlTag(opt, 'ShippingServiceCost') || '');
+        out.shipping = { service: xmlDecode(xmlTag(opt, 'ShippingService') || ''), free, cost: free ? 0 : (isNaN(cost) ? null : cost), calculated: /Calculated/i.test(stype) && !free };
+      } else if (/Calculated/i.test(stype)) out.shipping = { calculated: true, cost: null, free: false, service: '' };
+    } catch (e) {
+      const it = await getItemData(req.user.id, itemId).catch(() => ({}));
+      if (it && it.data) { out.title = it.data.title; out.price = it.data.price; out.listingStatus = it.data.listingStatus; }
+      out.itemError = e.message;
+    }
+    const fo = await findBuyerOrder(req.user.id, itemId, buyer);
+    if (fo.otherBuyer) out.order = { status: 'other_buyer' };
+    else if (fo.row) {
+      const o = fo.row, sh = fo.ship || {};
+      out.order = {
+        status: !o.counted ? 'cancelled' : sh.deliveredTime ? 'delivered' : (sh.shippedTime || o.ship_status === 'FULFILLED') ? 'shipped' : 'bought',
+        orderId: o.order_id, sold: o.created_at, total: o.total !== null ? Number(o.total) : null, rawStatus: o.status,
+        shipped: sh.shippedTime || null, delivered: sh.deliveredTime || null, expected: sh.expectedMax || null,
+        tracks: sh.tracks || [], shipError: fo.shipErr || null
+      };
+    } else out.order = { status: 'not_bought' };
+    res.json(out);
+  } catch (e) {
+    console.error('[thread info]', e.message);
+    res.status(500).json({ error: 'Could not load the listing info' });
   }
 });
 
@@ -3340,5 +3480,5 @@ app.get('*', (req, res) => {
 });
 
 setupDatabase()
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v336 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v337 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });
