@@ -1,4 +1,4 @@
-// PartsLister Pro server — v341
+// PartsLister Pro server — v342
 // v302: dashboard.html is the homepage (/). The listing tool moved to /list.
 // v305: eBay sales connection — real sold orders on the dashboard.
 // v306: asks eBay for two more permissions — fees/payouts and seller metrics.
@@ -88,6 +88,8 @@
 //       (it tells you instead; type a note in the box to write a follow-up). New setting "Do you test
 //       your parts?" (no / yes / some — only when the listing says that part was tested); the
 //       warranty choice is now separate from it.
+// v342: drafts speak as the seller ("the listing", never "your listing"), and know live whether the
+//       listing has ended / sold out — if this buyer didn't buy it, the draft says it has sold.
 // Accounts with email + password login. Each account's settings (including its
 // own API keys) and history are saved ENCRYPTED in Postgres, so you can log in
 // from any computer and everything is there. Also keeps a lifetime listing count.
@@ -2557,6 +2559,17 @@ async function returnFacts(userId, itemId, buyer) {
     const xml = await tradingCall(userId, 'GetItem', `<ItemID>${itemId}</ItemID><DetailLevel>ReturnAll</DetailLevel>`);
     const rp = xmlTag(xmlTag(xml, 'Item') || '', 'ReturnPolicy') || '';
     const ht = parseInt(xmlTag(xmlTag(xml, 'Item') || '', 'DispatchTimeMax') || '', 10);   // v339
+    // v342: live listing status — ended / sold out matters for buyers who haven't bought it
+    {
+      const it = xmlTag(xml, 'Item') || '';
+      const st = xmlTag(xmlTag(it, 'SellingStatus') || '', 'ListingStatus') || '';
+      const qty = parseInt(xmlTag(it, 'Quantity') || '', 10);
+      const sold = parseInt(xmlTag(xmlTag(it, 'SellingStatus') || '', 'QuantitySold') || '0', 10) || 0;
+      const left = qty >= 0 ? Math.max(0, qty - sold) : null;
+      if (st && st !== 'Active') lines.push('LISTING STATUS (live): ENDED' + (sold > 0 ? ' \u2014 sold' : '') + '. It is no longer available to buy.');
+      else if (left === 0) lines.push('LISTING STATUS (live): SOLD OUT \u2014 none left to buy.');
+      else if (st) lines.push('LISTING STATUS (live): active' + (left !== null ? ', ' + left + ' available' : '') + '.');
+    }
     if (ht >= 0) lines.push('Handling time (listing): ships within ' + ht + ' business day' + (ht === 1 ? '' : 's') + ' of payment.');
     const accepted = xmlTag(rp, 'ReturnsAcceptedOption') || '';
     if (/NotAccepted/i.test(accepted)) lines.push('Return policy: the listing does NOT accept returns (eBay\'s Money Back Guarantee still covers items not as described).');
@@ -2707,7 +2720,7 @@ app.post('/api/threads/:id/draft', requireUser, express.json(), async (req, res)
           d.price ? 'Price: $' + d.price : '',
           d.condition ? 'Condition: ' + d.condition + (d.conditionNote ? ' — ' + d.conditionNote : '') : '',
           d.category ? 'Category: ' + d.category : '',
-          d.listingStatus ? 'Listing status: ' + d.listingStatus : '',
+          // d.listingStatus ? 'Listing status: ' + d.listingStatus : '',   (v342: saved copy can be old — the live status is in ORDER & RETURNS)
           (d.specifics || []).length ? 'Item specifics:\n' + d.specifics.map(s => '- ' + s.name + ': ' + s.value).join('\n') : '',
           // v332: say plainly whether there is a part number
           (() => { const pn = partNumbersOf(d.specifics); return pn.length ? 'PART NUMBER: ' + pn.map(x => x.value + ' (' + x.name + ')').join('; ') : 'PART NUMBER: NONE — this listing has no part number.'; })(),
@@ -2787,6 +2800,9 @@ app.post('/api/threads/:id/draft', requireUser, express.json(), async (req, res)
       'Whenever the reply offers a return or asks the buyer to open a return request, also tell them how long they have, using the Return window line in ORDER & RETURNS (days left and the last day, exactly as given). If the window hasn\'t started, say they\'ll have the stated number of days from delivery. If there\'s no Return window line, don\'t mention a time limit.',
       'Tracking and delivery: use only the SHIPMENT facts. You may give the carrier, tracking number, shipped date, expected date and delivered date shown there. Never describe where the package is or make up a delivery date.',
       // v336
+      // v342
+      'You ARE the seller, writing to the buyer. Call it "the listing" or "my listing" \u2014 never "your listing". "Your" means the buyer\'s vehicle or part.',
+      'If LISTING STATUS says ENDED or SOLD OUT and this buyer has not bought the item: start by saying sorry, this one has sold / is no longer available. Don\'t walk them through fitment or part numbers for it, but still answer any simple question briefly if the facts allow.',
       'Never make up anything about the seller or the part that isn\'t in the sections given: where the part is, whether the seller has it on hand, the seller\'s schedule, or reasons why something can\'t be done. If you don\'t know, say less.',
       'Requests for more photos, measurements or a closer look at the part: ' + PHOTO_REQUESTS[ms.photoRequests].ai + '.',
       ms.availability ? 'When the reply says the seller will check something, take photos or get back to them, use the seller\'s availability for when: "' + ms.availability + '". Never promise a sooner time.' : 'When the reply says the seller will check something or get back to them, don\'t name a day or time.',
@@ -3680,5 +3696,5 @@ app.get('*', (req, res) => {
 });
 
 setupDatabase()
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v341 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v342 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });
