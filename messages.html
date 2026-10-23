@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Messages v339</title>
+<title>PartsLister Pro Messages v341</title>
 <!-- PartsLister Pro — Messages page (v321: new; v322: conversation threads — the whole back-and-forth
      with each buyer, chat style, from eBay's Message API. Offers from a conversation. The v321
      email-style view is still at /messages/classic). Nothing about your messages is saved on the server.
@@ -19,7 +19,9 @@
      "Waiting on me" (buyer wrote last, no answer yet) is renamed "Needs reply".
      v337: a listing + order strip under each conversation's header: title, price + shipping, and for
      this buyer — not bought / bought / shipped with tracking / delivered.
-     v339: when a draft is written in the buyer's language, the English version shows under it. -->
+     v339: when a draft is written in the buyer's language, the English version shows under it.
+     v341: "Needs reply" skips conversations you answered last or where the buyer only said "ok thanks";
+     AI draft says when there's nothing to answer instead of writing a note into the reply box. -->
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@400;500;600&display=swap');
 
@@ -259,7 +261,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v339</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v341</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -352,6 +354,9 @@ async function loadMe() {
 // about an item, "Offers" lets you answer the buyer's Best Offer or send an
 // offer to everyone interested in the item.
 let threads = [], type = 'members', show = 'all', current = null, me = null, isAdmin = false;
+// v341: a buyer message that doesn't need an answer (same test as the server)
+const isCloser = (text) => /^\s*(ok(ay)?|k+|kk|thanks?( you)?( so much| a lot)?|thank u|thx|ty|tysm|got it|gotcha|cool|great|perfect|awesome|sounds good|will do|no worries|no problem|np|understood|alright|all right|appreciate it|much appreciated)([\s,.!]+(ok(ay)?|thanks?( you)?|thx|ty|again|man|bro|buddy|sir|so much|a lot|appreciate it))*[\s.!,]*[\u{1F44D}\u{1F64F}\u{1F642}\u{1F60A}\u{263A}️]*\s*$/iu.test(String(text || '')) || /^\s*([\u{1F44D}\u{1F64F}\u{1F642}\u{1F60A}\u{263A}]\uFE0F?\s*)+$/u.test(String(text || ''));
+const needsReply = (t) => (t.needsReply !== undefined ? t.needsReply : !t.last.mine) && !(t.last && t.last.mine);
 let followups = [];   // v336: Waiting on me — { id, conversationId, itemId, title, task, since }
 const openFollowup = (convId) => followups.find(f => f.conversationId === convId) || null;
 async function loadFollowups() {
@@ -397,7 +402,8 @@ function renderList() {
     if (show !== 'trash' && /DELET/i.test(t.status || '')) return false;   // v323: deleted ones only show in the Trash
     if (show === 'unread' && !t.unread) return false;
     // if (show === 'waiting' && (t.last.mine || type === 'ebay')) return false;
-    if (show === 'needs' && (t.last.mine || type === 'ebay')) return false;   // v336: renamed
+    // if (show === 'needs' && (t.last.mine || type === 'ebay')) return false;   // v336: renamed
+    if (show === 'needs' && (type === 'ebay' || !needsReply(t))) return false;   // v341: not if you wrote last or they only said "ok thanks"
     if (show === 'followup' && (type === 'ebay' || !openFollowup(t.id))) return false;   // v336
     if (q && !norm(t.other + ' ' + t.title + ' ' + t.last.text + ' ' + (t.itemId || '')).includes(q)) return false;
     return true;
@@ -539,6 +545,9 @@ async function showThread(id) {
   body.textContent = '';
   if (!d || d.error || d.needScope) { body.append(el('div', 'empty', (d && d.error) || 'Could not load that conversation.')); return; }
   if (t.unread) { t.unread = 0; renderList(); }
+  // v341: eBay's list can lag behind — use the newest message we just loaded
+  const newest = (d.messages || []).slice().sort((x, y) => String(x.date).localeCompare(String(y.date))).pop();
+  if (newest && t.last) { t.last = { text: newest.text || '', date: newest.date, mine: !!newest.mine }; t.needsReply = !newest.mine && !isCloser(newest.text); renderList(); }
   let lastDay = '';
   (d.messages || []).forEach(m => {
     const day = m.date ? new Date(m.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }) : '';
@@ -605,6 +614,7 @@ async function showThread(id) {
       const out = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(out.error || 'No draft');
       if (current !== id) return;
+      if (out.noReply) { aiMsg.textContent = out.reason || 'Nothing to answer.'; return; }   // v341: nothing to answer — leave the box alone
       ta.value = out.draft; ta.focus();
       ta.style.height = Math.min(180, ta.scrollHeight + 2) + 'px';   // grow to fit the draft
       // aiMsg.textContent = 'Draft ready — check it, edit if needed, then Send.';

@@ -1,4 +1,4 @@
-// PartsLister Pro server — v340
+// PartsLister Pro server — v341
 // v302: dashboard.html is the homepage (/). The listing tool moved to /list.
 // v305: eBay sales connection — real sold orders on the dashboard.
 // v306: asks eBay for two more permissions — fees/payouts and seller metrics.
@@ -83,6 +83,11 @@
 //       types — and no longer mistakes part numbers for phone numbers.
 // v340: "tested?" answers never claim the part was tested or checked working — even if the listing
 //       description says "good working condition" (that's the condition, not a test).
+// v341: "Needs reply" leaves out conversations where you wrote last or the buyer's last message is
+//       just "ok thanks" / "got it" etc. AI draft won't write a reply when there's nothing to answer
+//       (it tells you instead; type a note in the box to write a follow-up). New setting "Do you test
+//       your parts?" (no / yes / some — only when the listing says that part was tested); the
+//       warranty choice is now separate from it.
 // Accounts with email + password login. Each account's settings (including its
 // own API keys) and history are saved ENCRYPTED in Postgres, so you can log in
 // from any computer and everything is there. Also keeps a lifetime listing count.
@@ -1930,7 +1935,8 @@ app.get('/api/threads', requireUser, async (req, res) => {
           id: c.conversationId, title: c.conversationTitle || '', status: c.conversationStatus || '', unread: c.unreadCount || 0,
           itemId: c.referenceType === 'LISTING' ? (c.referenceId || null) : null,
           other: type === 'FROM_EBAY' ? 'eBay' : (other || ''),
-          last: { text: lm.messageBody || '', from: lm.senderUsername || '', date: lm.createdDate || c.createdDate || null, mine: !!(me && lm.senderUsername === me) }
+          last: { text: lm.messageBody || '', from: lm.senderUsername || '', date: lm.createdDate || c.createdDate || null, mine: !!(me && lm.senderUsername === me) },
+          needsReply: type !== 'FROM_EBAY' && !(me && lm.senderUsername === me) && !isCloser(lm.messageBody)   // v341
         });
       });
       if (!data || !data.next || list.length < 50) break;
@@ -2223,9 +2229,16 @@ const PHOTO_REQUESTS = {
 };
 // v339: common questions
 const TESTED_ANSWERS = {
-  warranty_return: { label: 'Not tested \u2014 the warranty is the return policy in the listing', ai: 'say plainly that the part has not been tested, and that it\u2019s covered by a warranty, which is the return policy in the listing (give the days from the Return policy line)' },
-  return_only: { label: 'Not tested \u2014 they can return it under the listing\u2019s return policy', ai: 'say plainly that the part has not been tested, and that they can return it under the listing\u2019s return policy (give the days from the Return policy line)' },
-  both: { label: 'Not tested \u2014 mention the warranty and the return policy', ai: 'say plainly that the part has not been tested, and that it comes with a warranty and the listing\u2019s return policy (give the days from the Return policy line)' }
+  // (v339 labels said "Not tested — …"; v341: testing is its own setting, this is just the warranty part)
+  warranty_return: { label: 'The warranty is the return policy in the listing', ai: 'say it\u2019s covered by a warranty, which is the return policy in the listing (give the days from the Return policy line)' },
+  return_only: { label: 'They can return it under the listing\u2019s return policy', ai: 'say they can return it under the listing\u2019s return policy (give the days from the Return policy line)' },
+  both: { label: 'Mention the warranty and the return policy', ai: 'say it comes with a warranty and the listing\u2019s return policy (give the days from the Return policy line)' }
+};
+// v341: does the seller test parts?
+const TESTS_PARTS = {
+  no: { label: 'No', ai: 'Say plainly that the part has not been tested. Never say or suggest it was tested, checked, verified working or came from a running vehicle \u2014 even if the listing description says "good working condition" or "tested" (that is standard wording, not a test).' },
+  yes: { label: 'Yes, I test my parts', ai: 'Say the part was tested before it was listed (unless the LISTING says it was not).' },
+  some: { label: 'Some \u2014 only when the listing says that part was tested', ai: 'Only say it was tested if the LISTING clearly says this part was tested (e.g. "tested", "tested working", "tested good"). Otherwise say plainly that it has not been tested. "Good working condition" alone does NOT mean tested.' }
 };
 const PROGRAMMING_ANSWERS = {
   may_need: { label: 'Some need programming, some don\u2019t \u2014 check with a mechanic or dealer', ai: 'say that some parts like this need to be programmed to the vehicle and some don\u2019t, so you can\u2019t say for sure, and that it\u2019s worth checking with their mechanic or dealer before installing' },
@@ -2276,6 +2289,7 @@ function msgSettingsOf(settings) {
     availability: String(m.availability || '').trim().slice(0, 200),
     // v339
     tested: TESTED_ANSWERS[m.tested] ? m.tested : 'warranty_return',
+    testsParts: TESTS_PARTS[m.testsParts] ? m.testsParts : 'no',   // v341
     programming: PROGRAMMING_ANSWERS[m.programming] ? m.programming : 'may_need',
     offersProgramming: !!m.offersProgramming,
     donor: DONOR_ANSWERS[m.donor] ? m.donor : 'dont_have',
@@ -2285,6 +2299,8 @@ function msgSettingsOf(settings) {
     buyerLanguage: !!m.buyerLanguage
   };
 }
+// v341: a buyer message that doesn't need an answer ("ok thanks", "got it", "👍")
+const isCloser = (text) => /^\s*(ok(ay)?|k+|kk|thanks?( you)?( so much| a lot)?|thank u|thx|ty|tysm|got it|gotcha|cool|great|perfect|awesome|sounds good|will do|no worries|no problem|np|understood|alright|all right|appreciate it|much appreciated)([\s,.!]+(ok(ay)?|thanks?( you)?|thx|ty|again|man|bro|buddy|sir|so much|a lot|appreciate it))*[\s.!,]*[\u{1F44D}\u{1F64F}\u{1F642}\u{1F60A}\u{263A}️]*\s*$/iu.test(String(text || '')) || /^\s*([\u{1F44D}\u{1F64F}\u{1F642}\u{1F60A}\u{263A}]\uFE0F?\s*)+$/u.test(String(text || ''));
 // v331: does the buyer's latest message ask for a lower price?
 function asksForDiscount(text) {
   const t = String(text || '').toLowerCase();
@@ -2305,6 +2321,7 @@ app.get('/api/msg-settings', requireUser, async (req, res) => {
       photoOptions: Object.keys(PHOTO_REQUESTS).map(k => ({ value: k, label: PHOTO_REQUESTS[k].label })),   // v336
       // v339
       testedOptions: Object.keys(TESTED_ANSWERS).map(k => ({ value: k, label: TESTED_ANSWERS[k].label })),
+      testsPartsOptions: Object.keys(TESTS_PARTS).map(k => ({ value: k, label: TESTS_PARTS[k].label })),   // v341
       programmingOptions: Object.keys(PROGRAMMING_ANSWERS).map(k => ({ value: k, label: PROGRAMMING_ANSWERS[k].label })),
       donorOptions: Object.keys(DONOR_ANSWERS).map(k => ({ value: k, label: DONOR_ANSWERS[k].label })),
       shipWhenOptions: Object.keys(SHIP_WHEN).map(k => ({ value: k, label: SHIP_WHEN[k].label })),
@@ -2338,6 +2355,7 @@ app.post('/api/msg-settings', requireUser, express.json(), async (req, res) => {
       availability: String(b.availability || '').trim().slice(0, 200),
       // v339
       tested: TESTED_ANSWERS[b.tested] ? b.tested : 'warranty_return',
+      testsParts: TESTS_PARTS[b.testsParts] ? b.testsParts : 'no',   // v341
       programming: PROGRAMMING_ANSWERS[b.programming] ? b.programming : 'may_need',
       offersProgramming: !!b.offersProgramming,
       donor: DONOR_ANSWERS[b.donor] ? b.donor : 'dont_have',
@@ -2670,6 +2688,10 @@ app.post('/api/threads/:id/draft', requireUser, express.json(), async (req, res)
     msgs.sort((x, y) => String(x.date).localeCompare(String(y.date)));
     const convo = msgs.slice(-30).map(m => (m.mine ? 'SELLER (me)' : 'BUYER (' + m.from + ')') + ' [' + String(m.date).slice(0, 10) + ']: ' + m.text).join('\n');
     if (!convo) return res.status(400).json({ error: 'There\u2019s no message to answer yet.' });
+    // v341: nothing to answer → say so instead of drafting (a note in the box still writes a follow-up)
+    const lastMsg = msgs[msgs.length - 1];
+    if (!hint && lastMsg && lastMsg.mine) return res.json({ noReply: true, reason: 'You sent the last message, so there\u2019s nothing new to answer. To send a follow-up, type what you want to say in the box next to AI draft and click AI draft again.' });
+    if (!hint && lastMsg && isCloser(lastMsg.text)) return res.json({ noReply: true, reason: 'The buyer\u2019s last message (\u201c' + String(lastMsg.text).trim().slice(0, 60) + '\u201d) doesn\u2019t need an answer. To reply anyway, type what you want to say in the box next to AI draft.' });
 
     // the listing
     // let listing = 'No listing is attached to this conversation.';
@@ -2770,7 +2792,8 @@ app.post('/api/threads/:id/draft', requireUser, express.json(), async (req, res)
       ms.availability ? 'When the reply says the seller will check something, take photos or get back to them, use the seller\'s availability for when: "' + ms.availability + '". Never promise a sooner time.' : 'When the reply says the seller will check something or get back to them, don\'t name a day or time.',
       // v339: common questions
       // 'Tested / working / warranty questions: ' + TESTED_ANSWERS[ms.tested].ai + '. Never claim it was tested or works unless the LISTING says so.',
-      'Tested / working / warranty questions (including "did you test it before you removed it?", "is it working?", "was it checked?"): ' + TESTED_ANSWERS[ms.tested].ai + '. The seller does NOT test parts: never say or suggest it was tested, checked, verified working or came from a running vehicle — even if the listing description says things like "good working condition" or "tested" (that is boilerplate, not a test). You may say the listing describes its condition as stated.',   // v340
+      // 'Tested / working / warranty questions (including …): ' + TESTED_ANSWERS[ms.tested].ai + '. The seller does NOT test parts: …',   // v340
+      'Tested / working / warranty questions (including "did you test it before you removed it?", "is it working?", "was it checked?"): ' + TESTS_PARTS[ms.testsParts].ai + ' Then ' + TESTED_ANSWERS[ms.tested].ai + '.',   // v341
       'Programming questions (does it need programming / coding to the VIN): ' + PROGRAMMING_ANSWERS[ms.programming].ai + '. If they ask the seller to program it: ' + (ms.offersProgramming ? 'say you can and they should message you to arrange it.' : 'say you don\'t offer programming.'),
       'Donor vehicle questions (what year/model/VIN/mileage/engine it came from, right-hand drive, etc.): ' + DONOR_ANSWERS[ms.donor].ai + '.',
       'Has it shipped / when will it ship: use ORDER & RETURNS and SHIPMENT. If it has shipped, give the shipped date, carrier and tracking number. If it hasn\'t shipped: ' + SHIP_WHEN[ms.shipWhen].ai + (ms.shipDays ? ' (the seller ships: ' + ms.shipDays + ')' : '') + '. Never promise a specific day you weren\'t given.',
@@ -2781,6 +2804,8 @@ app.post('/api/threads/:id/draft', requireUser, express.json(), async (req, res)
         : 'Write in English. Plain text only: no markdown, no subject line, no placeholders like [Name], no signature.',
       discount ? 'After the reply, add a line "OFFER: yes" if you followed the DISCOUNT section (the buyer asked about price), otherwise "OFFER: no".' : '',
       // 'Reply with only the message text.'
+      // v341
+      hint ? '' : 'If the buyer\'s latest message doesn\'t need an answer (it\'s only thanks / ok / goodbye), reply with exactly NO_REPLY_NEEDED and nothing else. Never write notes to the seller in place of a reply.',
       'Reply with only the message text, then one last line: "FOLLOWUP: " plus a short to-do for the seller (under 12 words, e.g. "Check level sensor opening for cracks, send photos") if the reply promises the seller will check, look, measure, take photos or get back to the buyer — otherwise "FOLLOWUP: none".'
     ].filter(Boolean).join(' ');   // v335: filter — the modules rule can be off
     // const user = 'LISTING\n' + listing + '\n\nCONVERSATION (oldest first)\n' + convo + (hint ? '\n\nSELLER\'S INSTRUCTIONS FOR THIS REPLY\n' + hint : '') + '\n\nWrite the seller\'s reply now.';
@@ -2800,6 +2825,7 @@ app.post('/api/threads/:id/draft', requireUser, express.json(), async (req, res)
     if (!r.ok) return res.status(502).json({ error: 'Claude didn\u2019t answer: ' + ((d.error && d.error.message) || ('HTTP ' + r.status)) });
     // const text = ((d.content || []).filter(c => c.type === 'text').map(c => c.text).join('\n') || '').trim();
     let text = ((d.content || []).filter(c => c.type === 'text').map(c => c.text).join('\n') || '').trim();
+    if (/^\s*NO_REPLY_NEEDED\b/.test(text)) return res.json({ noReply: true, reason: 'The buyer\u2019s last message doesn\u2019t need an answer. To reply anyway, type what you want to say in the box next to AI draft.' });   // v341
     // v336: the follow-up to-do line (removed from the draft)
     let followUp = null;
     const fu = /\n?\s*FOLLOWUP:\s*(.*)\s*$/i.exec(text);
@@ -3654,5 +3680,5 @@ app.get('*', (req, res) => {
 });
 
 setupDatabase()
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v340 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v341 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });
