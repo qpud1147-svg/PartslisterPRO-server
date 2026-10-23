@@ -1,4 +1,4 @@
-// PartsLister Pro server — v333
+// PartsLister Pro server — v334
 // v302: dashboard.html is the homepage (/). The listing tool moved to /list.
 // v305: eBay sales connection — real sold orders on the dashboard.
 // v306: asks eBay for two more permissions — fees/payouts and seller metrics.
@@ -55,6 +55,8 @@
 //       no VIN checking yet). Off: the draft never asks for a VIN; it asks the buyer to compare
 //       the listing's part number, or, with no part number, to compare their original part with
 //       the listing photos. Drafts answer the question directly (no condition filler).
+// v334: whenever a draft offers a return or asks the buyer to open one, it says how many days
+//       they have left and the last day (the app works out the date; the AI never does).
 // Accounts with email + password login. Each account's settings (including its
 // own API keys) and history are saved ENCRYPTED in Postgres, so you can log in
 // from any computer and everything is there. Also keeps a lifetime listing count.
@@ -2336,15 +2338,20 @@ async function returnFacts(userId, itemId) {
       if (days && ship && ship.deliveredTime) {
         // eBay counts the return window from delivery
         const left = days - daysSince(ship.deliveredTime);
+        const lastDay = dayText(new Date(new Date(ship.deliveredTime).getTime() + days * 86400000));   // v334
         lines.push(left >= 0
-          ? 'Return window: INSIDE — ' + left + ' day' + (left === 1 ? '' : 's') + ' left, counting from the delivery date.'
+          // ? 'Return window: INSIDE — ' + left + ' day' + (left === 1 ? '' : 's') + ' left, counting from the delivery date.'
+          ? 'Return window: INSIDE — ' + left + ' day' + (left === 1 ? '' : 's') + ' left, counting from the delivery date. Last day to open a return: ' + lastDay + '.'   // v334
           : 'Return window: ENDED — ' + (-left) + ' day' + (left === -1 ? '' : 's') + ' ago, counting from the delivery date.');
       } else if (days && ship && ship.shippedTime) {
-        lines.push('Return window: INSIDE — it hasn\'t started yet (eBay doesn\'t show the package delivered).');
+        // lines.push('Return window: INSIDE — it hasn\'t started yet (eBay doesn\'t show the package delivered).');
+        lines.push('Return window: INSIDE — it hasn\'t started yet (eBay doesn\'t show the package delivered). The buyer will have ' + days + ' days from delivery to open a return.');   // v334
       } else if (days && sold) {
         const left = days - daysSince(sold);
+        const lastDay = dayText(new Date(sold.getTime() + days * 86400000));   // v334
         lines.push(left >= 0
-          ? 'Return window: INSIDE — about ' + left + ' day' + (left === 1 ? '' : 's') + ' left counting from the sale date (eBay counts from delivery, so the buyer may have a few days more).'
+          // ? 'Return window: INSIDE — about ' + left + ' day' + (left === 1 ? '' : 's') + ' left counting from the sale date (eBay counts from delivery, so the buyer may have a few days more).'
+          ? 'Return window: INSIDE — at least ' + left + ' day' + (left === 1 ? '' : 's') + ' left (counted from the sale date; eBay counts from delivery, so the buyer may have a few days more). Say they have until at least ' + lastDay + '.'   // v334
           : 'Return window: ENDED — about ' + (-left) + ' day' + (left === -1 ? '' : 's') + ' ago counting from the sale date (eBay counts from delivery, so if it was very recent, the seller should double-check).');
       }
     }
@@ -2533,6 +2540,8 @@ app.post('/api/threads/:id/draft', requireUser, express.json(), async (req, res)
       'PART NUMBER rule: use only the PART NUMBER line. If it gives a number, ask the buyer to compare it with the number on their original part and write the number out in the reply. If it says NONE or unknown, never mention comparing part numbers or say the listing has one — say this listing doesn\'t have a part number, so please compare their original part with the listing photos.'
         + (ms.fitment.askVin ? ' You may also ask for their VIN so the seller can check fitment.' : ' Never ask for a VIN or offer to check one.'),
       'If the buyer asks which vehicle the part came from (year, model, mileage, VIN of the donor vehicle) and the LISTING doesn\'t say, say plainly that you don\'t have that information for this part — don\'t skip the question.',
+      // v334
+      'Whenever the reply offers a return or asks the buyer to open a return request, also tell them how long they have, using the Return window line in ORDER & RETURNS (days left and the last day, exactly as given). If the window hasn\'t started, say they\'ll have the stated number of days from delivery. If there\'s no Return window line, don\'t mention a time limit.',
       'Tracking and delivery: use only the SHIPMENT facts. You may give the carrier, tracking number, shipped date, expected date and delivered date shown there. Never describe where the package is or make up a delivery date.',
       'Write in English. Plain text only: no markdown, no subject line, no placeholders like [Name], no signature.',
       'Reply with only the message text.'
@@ -3219,5 +3228,5 @@ app.get('*', (req, res) => {
 });
 
 setupDatabase()
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v333 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v334 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });
