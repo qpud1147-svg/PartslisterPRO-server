@@ -1,4 +1,4 @@
-// PartsLister Pro server — v327
+// PartsLister Pro server — v328
 // v302: dashboard.html is the homepage (/). The listing tool moved to /list.
 // v305: eBay sales connection — real sold orders on the dashboard.
 // v306: asks eBay for two more permissions — fees/payouts and seller metrics.
@@ -34,6 +34,9 @@
 //       The Listing Tool can no longer overwrite them when it saves.
 // v327: Diagnostics page (/diagnostics, admin) — file versions, connections, live checks of
 //       every eBay / AI / photo service, recent errors in plain English, and what to do.
+// v328: every Diagnostics check now really tests the service (no "a key is saved, so OK"):
+//       the Listing Tool's eBay token is tried with eBay exactly the way Launch uses it, the eBay
+//       sign-in is refreshed fresh, the AI key sends a 1-word test, offers + claims are tested too.
 // Accounts with email + password login. Each account's settings (including its
 // own API keys) and history are saved ENCRYPTED in Postgres, so you can log in
 // from any computer and everything is there. Also keeps a lifetime listing count.
@@ -2371,6 +2374,8 @@ function fileVersion(file) {
 // Turn an error into what it means and what to do
 function explain(msg) {
   const m = String(msg || '');
+  // v328: the Listing Tool's own token (Auth'n'Auth) — reconnecting eBay doesn't fix this one
+  if (/Listing Tool\u2019s User Token|hard expired|regenerate a new token/i.test(m)) return 'The Listing Tool\u2019s eBay User Token was cancelled or ran out. Fix: developer.ebay.com → User Tokens → Auth\u2019n\u2019Auth → Sign in to Production → copy the token → ⚙ Settings → Account → paste → Save keys → reload the Listing Tool.';
   if (/invalid_grant|refresh token|not connected/i.test(m)) return 'eBay sign-in has expired or was removed. Fix: ⚙ Settings → Admin → Reconnect eBay.';
   if (/missing.*(client id|client secret)|Client ID \/ Client Secret/i.test(m)) return 'Your eBay Client ID / Secret are missing. Fix: ⚙ Settings → Account, add them, Save keys.';
   if (/\b401\b|unauthori[sz]ed|invalid.*token|IAF/i.test(m)) return 'The service didn\u2019t accept the sign-in. Fix: Reconnect eBay (or check the key in ⚙ Settings → Account).';
@@ -2453,6 +2458,8 @@ app.post('/api/diag/run', requireUser, requireAdmin, async (req, res) => {
   await check('Database', 'Your saved settings, orders and fees', async () => { await pool.query('SELECT 1'); });
   await check('eBay sign-in', 'Everything eBay', async () => {
     if (!ebayOn) return { skip: 'eBay isn\u2019t connected — ⚙ Settings → Admin' };
+    // await getAccessToken(uid);
+    accessTokens.delete(uid);   // v328: don't trust the saved copy — ask eBay for a fresh one
     await getAccessToken(uid);
     const d = daysUntil(conn.refresh_expires);
     if (d !== null && d < 30) return { warn: 'Works, but the eBay sign-in runs out in ' + d + ' days — Reconnect eBay soon' };
@@ -2470,7 +2477,10 @@ app.post('/api/diag/run', requireUser, requireAdmin, async (req, res) => {
   });
   await check('eBay listings', 'Active page, photos, classic messages, offers', async () => {
     if (!ebayOn) return { skip: 'eBay isn\u2019t connected' };
-    const id = await myEbayUser(uid);
+    // const id = await myEbayUser(uid);
+    // v328: ask eBay every time (myEbayUser remembers the answer, so it couldn't catch a new problem)
+    const xml = await tradingCall(uid, 'GetUser', '<DetailLevel>ReturnSummary</DetailLevel>');
+    const id = xmlDecode(xmlTag(xmlTag(xml, 'User') || '', 'UserID')) || null;
     if (!id) throw new Error('eBay didn\u2019t say who you are (GetUser failed)');
     return { detail: 'Working · signed in as ' + id };
   });
@@ -2481,19 +2491,69 @@ app.post('/api/diag/run', requireUser, requireAdmin, async (req, res) => {
   await check('eBay returns', 'Returns page', async () => {
     if (!ebayOn) return { skip: 'eBay isn\u2019t connected' };
     await poCall(uid, 'GET', '/return/search?role=SELLER&limit=1');
+    // v328: also the "not received" claims and cases lists the Returns page shows
+    await poCall(uid, 'GET', '/inquiry/search?limit=1');
+    await poCall(uid, 'GET', '/casemanagement/search?limit=1');
+    return { detail: 'Working · returns, not-received claims and cases all answered' };
+  });
+  // v328: offers (Messages → Offers) — Best Offers use the eBay listings check above; this is "send an offer"
+  await check('eBay offers', 'Send an offer (Messages → Offers)', async () => {
+    const s = need(INV_SCOPE); if (s) return s;
+    await restCall(uid, 'GET', '/sell/negotiation/v1/find_eligible_items?limit=1', null, { 'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US' });
   });
   await check('Anthropic (AI)', 'Photo scans, titles, Identify Part, AI drafts', async () => {
     const key = String(settings.apiKey || '').trim();
     if (!key) return { skip: 'No key saved — ⚙ Settings → Account' };
-    await get('https://api.anthropic.com/v1/models?limit=1', { 'x-api-key': key, 'anthropic-version': '2023-06-01' });
-    return { detail: 'Key works · model set to ' + (settings.claudeModel || 'claude-sonnet-4-5') };
+    // await get('https://api.anthropic.com/v1/models?limit=1', { 'x-api-key': key, 'anthropic-version': '2023-06-01' });
+    // v328: listing the models only proved the key exists. Send a 1-word test with your model instead —
+    // that also catches "credit balance too low" and a retired model name. Costs a tiny fraction of a cent.
+    const model = String(settings.claudeModel || '').trim() || 'claude-sonnet-4-5';
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({ model, max_tokens: 1, messages: [{ role: 'user', content: 'Hi' }] }),
+      signal: AbortSignal.timeout(30000)
+    });
+    if (!r.ok) {
+      const d = await r.json().catch(() => ({}));
+      const msg = (d.error && d.error.message) || ('HTTP ' + r.status);
+      if (/model/i.test(msg) && r.status === 404) throw new Error('The model name "' + model + '" isn\u2019t available — change it in ⚙ Settings → Account (' + msg + ')');
+      throw new Error('HTTP ' + r.status + ' ' + msg);
+    }
+    return { detail: 'Working · test message answered by ' + model };
   });
   await check('Listing Tool eBay token', 'Launch and Save Draft in the Listing Tool', async () => {
-    if (!String(settings.ebayUserToken || '').trim()) return { warn: 'No User Token saved — the Listing Tool can\u2019t launch. Add it in ⚙ Settings → Account' };
+    const token = String(settings.ebayUserToken || '').trim();
+    if (!token) return { warn: 'No User Token saved — the Listing Tool can\u2019t launch. Add it in ⚙ Settings → Account' };
+    // v328: the old check only looked at the saved date — it said OK even after eBay cancelled the
+    // token. Now it asks eBay with the token, the same way Launch does (same headers, eBay Motors site).
+    const body = '<?xml version="1.0" encoding="utf-8"?><GetUserRequest xmlns="urn:ebay:apis:eBLBaseComponents">'
+      + '<RequesterCredentials><eBayAuthToken>' + xmlEsc(token) + '</eBayAuthToken></RequesterCredentials></GetUserRequest>';
+    const r = await fetch('https://api.ebay.com/ws/api.dll', {
+      method: 'POST',
+      headers: {
+        'X-EBAY-API-CALL-NAME': 'GetUser', 'X-EBAY-API-APP-NAME': settings.ebayClientId || '', 'X-EBAY-API-DEV-NAME': '',
+        'X-EBAY-API-CERT-NAME': settings.ebayClientSecret || '', 'X-EBAY-API-SITEID': '100', 'X-EBAY-API-COMPATIBILITY-LEVEL': '967', 'Content-Type': 'text/xml'
+      },
+      body, signal: AbortSignal.timeout(20000)
+    });
+    const xml = await r.text();
+    if (xmlTag(xml, 'Ack') === 'Failure' || !r.ok) {
+      const code = xmlTag(xml, 'ErrorCode') || '';
+      const msg = xmlDecode(xmlTag(xml, 'LongMessage') || xmlTag(xml, 'ShortMessage') || ('HTTP ' + r.status));
+      if (/^(931|932|16110|17470|21916984)$/.test(code) || /token/i.test(msg)) {
+        throw new Error('eBay rejected the Listing Tool\u2019s User Token: ' + msg);   // the fix is added by explain()
+      }
+      throw new Error(msg);
+    }
+    const who = xmlDecode(xmlTag(xmlTag(xml, 'User') || '', 'UserID')) || '';
+    const oauthUser = ebayOn ? await myEbayUser(uid).catch(() => null) : null;
+    if (who && oauthUser && who.toLowerCase() !== oauthUser.toLowerCase()) {
+      return { warn: 'Token works, but it\u2019s for eBay account "' + who + '" while your sales connection is "' + oauthUser + '" — listings would go to ' + who };
+    }
     const d = daysUntil(settings.ebayTokenExpiry);
-    if (d !== null && d < 0) throw new Error('The User Token expired ' + (-d) + ' days ago — get a new one and paste it in ⚙ Settings → Account');
-    if (d !== null && d < 30) return { warn: 'Runs out in ' + d + ' days — get a new one soon' };
-    return { detail: 'Saved' + (d !== null ? ' · good for about ' + d + ' more days' : '') };
+    if (d !== null && d < 30) return { warn: 'Works (account ' + who + '), but runs out in about ' + d + ' days — get a new one soon' };
+    return { detail: 'Working · eBay accepted it' + (who ? ' (account ' + who + ')' : '') + (d !== null ? ' · good for about ' + d + ' more days' : '') };
   });
   await check('Cloudinary (photos)', 'Uploading listing photos', async () => {
     const { cloudinaryCloudName: cn, cloudinaryApiKey: k, cloudinaryApiSecret: sec } = settings;
@@ -2663,5 +2723,5 @@ app.get('*', (req, res) => {
 });
 
 setupDatabase()
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v327 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v328 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });
