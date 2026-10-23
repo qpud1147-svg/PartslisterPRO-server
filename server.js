@@ -1,4 +1,4 @@
-// PartsLister Pro server — v337
+// PartsLister Pro server — v338
 // v302: dashboard.html is the homepage (/). The listing tool moved to /list.
 // v305: eBay sales connection — real sold orders on the dashboard.
 // v306: asks eBay for two more permissions — fees/payouts and seller metrics.
@@ -72,6 +72,9 @@
 //       "my offer" etc. Messages shows a listing + order strip on each conversation (title, price,
 //       shipping, and for THIS buyer: not bought / bought / shipped + tracking / delivered). Order
 //       facts for drafts now use the order this buyer placed, not another buyer's.
+// v338: Admin → Download messages (for tuning AI drafts): buyer conversations from the last 30 / 90 /
+//       365 days (up to 300) as one text file, built live and never stored. Usernames, emails,
+//       phone numbers and street addresses are removed.
 // Accounts with email + password login. Each account's settings (including its
 // own API keys) and history are saved ENCRYPTED in Postgres, so you can log in
 // from any computer and everything is there. Also keeps a lifetime listing count.
@@ -2742,6 +2745,74 @@ app.post('/api/threads/:id/draft', requireUser, express.json(), async (req, res)
   }
 });
 
+// ─── v338: ADMIN — DOWNLOAD MESSAGES (development) ──────────────────────────
+function redactMsg(text, names) {
+  let t = String(text || '');
+  names.forEach(n => { if (n.name) t = t.replace(new RegExp(n.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), n.as); });
+  t = t.replace(/[\w.+-]+@[\w-]+\.[\w.-]+/g, '[email]');
+  t = t.replace(/(\+?1[\s.-]?)?\(?\b\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}\b/g, '[phone]');
+  t = t.replace(/\b(p\.?\s?o\.?\s?box)\s*\d+/gi, '[address]');
+  t = t.replace(/\b\d{1,6}\s+(?:[A-Za-z0-9.'-]+\s+){0,4}(?:st|street|ave|avenue|rd|road|blvd|boulevard|dr|drive|ln|lane|ct|court|way|pl|place|cir|circle|pkwy|parkway|hwy|highway|ter|terrace|trl|trail)\b\.?(?:,?\s*(?:apt|unit|suite|ste|#)\s*[\w-]+)?/gi, '[address]');
+  t = t.replace(/\b[A-Z]{2}\s+\d{5}(?:-\d{4})?\b/g, '[state zip]');
+  t = t.replace(/\b(my name is|name's)\s+[A-Z][a-z]+(\s+[A-Z][a-z]+)?/gi, '$1 [name]');
+  return t;
+}
+app.get('/api/admin/messages-export', requireUser, requireAdmin, async (req, res) => {
+  const days = [30, 90, 365].includes(parseInt(req.query.days, 10)) ? parseInt(req.query.days, 10) : 90;
+  const CAP = 300;
+  try {
+    const conn = await getConnection(req.user.id);
+    const blocked = threadsBlocked(conn); if (blocked) return res.status(400).send('Connect eBay (with message permission) first.');
+    const me = await myEbayUser(req.user.id);
+    const cutoff = Date.now() - days * 86400000;
+    // 1) the conversation list (up to 2,000 looked at), newest first, within the date range
+    const convs = [];
+    for (let offset = 0; offset < 2000; offset += 50) {
+      const q = new URLSearchParams({ conversation_type: 'FROM_MEMBERS', limit: '50', offset: String(offset) });
+      const { data } = await restCall(req.user.id, 'GET', '/commerce/message/v1/conversation?' + q);
+      const list = (data && data.conversations) || [];
+      list.forEach(c => {
+        const lm = c.latestMessage || {};
+        const when = Date.parse(lm.createdDate || c.createdDate || '') || 0;
+        if (when >= cutoff) convs.push({ id: c.conversationId, title: c.conversationTitle || '', itemId: c.referenceType === 'LISTING' ? (c.referenceId || '') : '', when });
+      });
+      if (!data || !data.next || list.length < 50) break;
+    }
+    convs.sort((a, b) => b.when - a.when);
+    const pick = convs.slice(0, CAP);
+    // 2) each conversation's messages (a few at a time)
+    const texts = new Array(pick.length);
+    let next = 0;
+    async function worker() {
+      while (next < pick.length) {
+        const i = next++, c = pick[i];
+        try {
+          const q = new URLSearchParams({ conversation_type: 'FROM_MEMBERS', limit: '50', offset: '0' });
+          const { data } = await restCall(req.user.id, 'GET', '/commerce/message/v1/conversation/' + encodeURIComponent(c.id) + '?' + q);
+          const msgs = ((data && data.messages) || []).slice().sort((x, y) => String(x.createdDate).localeCompare(String(y.createdDate)));
+          const others = [...new Set(msgs.map(m => m.senderUsername).filter(u => u && u !== me))];
+          const names = [{ name: me, as: 'Seller' }].concat(others.map((u, k) => ({ name: u, as: others.length > 1 ? 'Buyer' + (k + 1) : 'Buyer' })));
+          const lines = msgs.map(m => {
+            const who = m.senderUsername === me ? 'Seller' : 'Buyer' + (others.length > 1 ? (others.indexOf(m.senderUsername) + 1) : '');
+            const media = (m.messageMedia || []).length ? ' [' + (m.messageMedia || []).length + ' photo/attachment]' : '';
+            return '[' + String(m.createdDate || '').slice(0, 16).replace('T', ' ') + '] ' + who + ': ' + redactMsg(m.messageBody || '', names).replace(/\r?\n+/g, ' / ') + media;
+          });
+          texts[i] = '=== Conversation ' + (i + 1) + (c.itemId ? ' · item ' + c.itemId : '') + (c.title ? ' · ' + redactMsg(c.title, names) : '') + ' ===\n' + (lines.join('\n') || '(no messages)');
+        } catch (e) { texts[i] = '=== Conversation ' + (i + 1) + ' ===\n(couldn\'t load: ' + e.message + ')'; }
+      }
+    }
+    await Promise.all([1, 2, 3, 4, 5].map(worker));
+    const head = 'PartsLister Pro — buyer messages, last ' + days + ' days — ' + pick.length + ' conversation' + (pick.length === 1 ? '' : 's') + (convs.length > CAP ? ' (newest ' + CAP + ' of ' + convs.length + ')' : '') + '\n'
+      + 'Downloaded ' + new Date().toISOString().slice(0, 16).replace('T', ' ') + ' UTC. Usernames, emails, phone numbers and street addresses are removed (names written inside a message may remain).\n\n';
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="partslister-messages-' + days + 'd-' + new Date().toISOString().slice(0, 10) + '.txt"');
+    res.send(head + texts.join('\n\n') + '\n');
+  } catch (e) {
+    console.error('[messages export]', e.message);
+    res.status(500).send('Could not download messages: ' + e.message);
+  }
+});
+
 // ─── v337: LISTING + ORDER STRIP for a conversation ─────────────────────────
 // Title, price, shipping (live GetItem) and, for this conversation's buyer, whether they bought it,
 // shipped / tracking / delivered (live GetOrders). Nothing new is stored.
@@ -3480,5 +3551,5 @@ app.get('*', (req, res) => {
 });
 
 setupDatabase()
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v337 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v338 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });

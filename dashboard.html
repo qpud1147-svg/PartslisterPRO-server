@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Sales v336</title>
+<title>PartsLister Pro Sales v338</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@400;500;600&display=swap');
 
@@ -529,7 +529,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v336</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v338</span></div>
   </a>
   <!-- v316: switch pages -->
   <nav class="page-tabs" aria-label="Pages">
@@ -857,6 +857,18 @@
         <div class="set-buttons"><a class="btn btn-primary btn-sm" href="/diagnostics">Open Diagnostics</a></div>
       </div>
       <hr class="set-divider">
+      <!-- v338: development — messages for tuning the AI drafts -->
+      <div class="set-section">
+        <h3>Download messages</h3>
+        <p class="set-help">For improving the AI drafts: your buyer conversations as one text file you can send to Claude. Usernames, emails, phone numbers and street addresses are removed (a name a buyer typed inside a message may remain). Up to 300 conversations, newest first. Nothing is saved on the server.</p>
+        <div class="set-buttons">
+          <select id="msgx-days" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:6px 8px;border-radius:4px;font-family:'Barlow',sans-serif;font-size:14px;">
+            <option value="30">Last 30 days</option><option value="90" selected>Last 90 days</option><option value="365">Last 365 days</option>
+          </select>
+          <button class="btn btn-primary btn-sm" onclick="downloadMessages()">Download messages</button>
+        </div>
+      </div>
+      <hr class="set-divider">
       <div class="set-section">
         <h3>eBay Sales Connection</h3>
         <!-- <p class="set-help">Connects your eBay seller account so the dashboard shows your real sold orders. It uses the eBay Client ID and Client Secret already saved in your Listing Tool settings.</p> -->
@@ -946,6 +958,7 @@
 // v333: Fitment questions — optional "Also ask for the buyer's VIN".
 // v335: delivered-but-missing choice, modules (ask if programmed), tone, sign-off.
 // v336: more-photos choice + your availability (used when a draft says you'll get back to them).
+// v338: Admin → Download messages (development: buyer conversations as a text file, names removed).
 // Shares the same sign-in and account as the listing tool (/list).
 // v304: sales dashboard — big daily bar graph with a remembered date range.
 // The sales numbers are SAMPLE data for now; real eBay sales replace
@@ -1797,6 +1810,14 @@ function downloadSales() {
   const n = shownDays.reduce((s, x) => s + x.orders, 0);
   if (!confirm('Download your sales from ' + d(curInfo.start) + (curInfo.start !== curInfo.end ? ' to ' + d(curInfo.end) : '') + '?\n\n' + n.toLocaleString() + ' order' + (n === 1 ? '' : 's') + ', one row each, as a spreadsheet file.')) return;
   location.href = '/api/sales/export?from=' + curInfo.start + '&to=' + curInfo.end + '&tz=' + encodeURIComponent(EBAY_TZ);
+}
+
+// v338: Admin → Download messages
+function downloadMessages() {
+  const days = document.getElementById('msgx-days').value;
+  if (!confirm('Download your buyer messages from the last ' + days + ' days?\n\nUp to 300 conversations as a text file, with usernames, emails, phone numbers and street addresses removed. It can take a minute or two.')) return;
+  showToast('Getting your messages from eBay — the file downloads when it\u2019s ready (up to a couple of minutes).');
+  location.href = '/api/admin/messages-export?days=' + encodeURIComponent(days);
 }
 
 let ebayStatus = null;
