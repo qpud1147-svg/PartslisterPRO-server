@@ -1,4 +1,4 @@
-// PartsLister Pro server — v331
+// PartsLister Pro server — v332
 // v302: dashboard.html is the homepage (/). The listing tool moved to /list.
 // v305: eBay sales connection — real sold orders on the dashboard.
 // v306: asks eBay for two more permissions — fees/payouts and seller metrics.
@@ -46,6 +46,11 @@
 // v331: a separate reply choice for each problem type (didn't arrive / damaged / defective / wrong
 //       part), and an optional discount: when a buyer asks for a lower price, the draft offers your
 //       % off and the app can send that offer when you press Send.
+// v332: AI drafts know whether the listing HAS a part number (and write it out for the buyer to
+//       compare; if there's none, they don't ask the buyer to compare). Drafts also get the
+//       tracking number, carrier, shipped date, eBay's expected delivery date and the delivered
+//       date (Trading GetOrders) — and the return window now counts from the delivery date.
+//       Buyer asks which vehicle the part came from and the listing doesn't say → it says so.
 // Accounts with email + password login. Each account's settings (including its
 // own API keys) and history are saved ENCRYPTED in Postgres, so you can log in
 // from any computer and everything is there. Also keeps a lifetime listing count.
@@ -2123,7 +2128,8 @@ app.get('/api/shipcheck/:itemId', requireUser, async (req, res) => {
 const DEFAULT_MSG_INSTRUCTIONS = [
   'You draft replies for a small eBay seller of used auto parts (pulled from salvage vehicles) to buyer messages.',
   'Write the reply the seller will send, answering the buyer\'s latest message.',
-  'Fitment questions: if the buyer\'s vehicle is in the fitment list, say it is listed as fitting and suggest they match the part number to their original part. If it is not listed or there is no fitment list, say you can\'t confirm it and ask them to compare the part number on their original part (or send the VIN). Never promise fit.',
+  // 'Fitment questions: if the buyer\'s vehicle is in the fitment list, say it is listed as fitting and suggest they match the part number to their original part. If it is not listed or there is no fitment list, say you can\'t confirm it and ask them to compare the part number on their original part (or send the VIN). Never promise fit.',
+  'Fitment questions: if the buyer\'s vehicle is in the fitment list, say it is listed as fitting. If it is not listed or there is no fitment list, say you can\'t confirm it and ask for their VIN. Follow the PART NUMBER rule for comparing part numbers. Never promise fit.',   // v332
   // 'Price/offer questions: don\'t invent a price; if the seller gave instructions, follow them, otherwise suggest they send an offer through the listing.',
   'Price/discount questions: if a DISCOUNT section is given, follow it exactly. Otherwise don\'t offer or invent a discount — politely say the price is as listed (unless the seller\'s instructions say otherwise).',   // v331
   'Keep it short (1–4 sentences), friendly and plain.'
@@ -2139,13 +2145,16 @@ const PROBLEM_POLICIES = {
 // v331: each kind of problem gets its own choice. The AI works out which kind the buyer has.
 const PROBLEM_TYPES = [
   { key: 'notReceived', label: 'Didn\u2019t arrive', when: 'the buyer says the item hasn\u2019t arrived / was lost / tracking hasn\u2019t moved', def: 'nr_tracking', options: {
-    nr_tracking: { label: 'Check tracking first, refund if it\u2019s lost', ai: 'say you\u2019re sorry and will check the tracking right away, and that if it\u2019s lost they\u2019ll get a full refund. Never ask for photos.' },
-    nr_refund: { label: 'Refund right away', ai: 'say you\u2019re sorry and that you\u2019ll issue a full refund. Never ask for photos.' },
+    // nr_tracking: { label: 'Check tracking first, refund if it\u2019s lost', ai: 'say you\u2019re sorry and will check the tracking right away, and that if it\u2019s lost they\u2019ll get a full refund. Never ask for photos.' },
+    nr_tracking: { label: 'Check tracking first, refund if it\u2019s lost', ai: 'use the SHIPMENT facts in ORDER & RETURNS: give the carrier and tracking number. If eBay shows it delivered, give the delivery date and kindly ask them to check around the delivery spot and with neighbors, and to let you know if it still doesn\u2019t turn up. If it\u2019s not delivered and the expected date hasn\u2019t passed, say when it\u2019s expected. If the expected date has passed, apologize, say you\u2019ll look into it, and that if it\u2019s lost they\u2019ll get a full refund. If there\u2019s no tracking info, say you\u2019ll check on it right away and refund in full if it\u2019s lost. Never ask for photos.' },   // v332
+    // nr_refund: { label: 'Refund right away', ai: 'say you\u2019re sorry and that you\u2019ll issue a full refund. Never ask for photos.' },
+    nr_refund: { label: 'Refund right away', ai: 'say you\u2019re sorry and that you\u2019ll issue a full refund (you may also give the tracking number from SHIPMENT). Never ask for photos.' },   // v332
     nr_open: { label: 'Ask them to open an \u201citem not received\u201d request on eBay', ai: 'say you\u2019re sorry and ask them to open an \u201citem not received\u201d request on eBay so it can be sorted out there. Never ask for photos.' } } },
   { key: 'damaged', label: 'Arrived damaged', when: 'the buyer says the item arrived broken, cracked, bent or damaged in shipping', def: 'photos_first', options: {} },
   { key: 'defective', label: 'Defective / not working', when: 'the buyer says the part doesn\u2019t work, is faulty, or throws codes', def: 'return_or_refund', options: {} },
   { key: 'wrongPart', label: 'Wrong part / doesn\u2019t fit', when: 'the buyer says it\u2019s the wrong part or doesn\u2019t fit their vehicle', def: 'wp_compare', options: {
-    wp_compare: { label: 'Ask them to compare part numbers, then offer a return', ai: 'ask them to compare the part number on the listing with the one on their original part; if it was listed wrong or doesn\u2019t match the listing, offer a return for a refund.' },
+    // wp_compare: { label: 'Ask them to compare part numbers, then offer a return', ai: 'ask them to compare the part number on the listing with the one on their original part; if it was listed wrong or doesn\u2019t match the listing, offer a return for a refund.' },
+    wp_compare: { label: 'Ask them to compare part numbers, then offer a return', ai: 'if the PART NUMBER line has a number, write it out and ask them to compare it with the number on their original part; if it has none, ask them to compare their original part with the listing photos instead. If it was listed wrong or doesn\u2019t match the listing, offer a return for a refund.' },   // v332
     wp_fitment: { label: 'Check the fitment list, then offer a return', ai: 'check the fitment list in the LISTING: if their vehicle is listed, say so and ask them to compare part numbers; either way, offer a return for a refund if it truly doesn\u2019t fit.' } } }
 ];
 // damaged / defective use the general choices (PROBLEM_POLICIES); every type can also use them
@@ -2208,23 +2217,104 @@ app.post('/api/msg-settings', requireUser, express.json(), async (req, res) => {
   }
 });
 
+// (v330 returnFacts — replaced in v332, kept for reference)
+// // v330: the facts the AI gets about the sale and the return window — all worked out here
+// async function returnFacts(userId, itemId) {
+//   const lines = [];
+//   let sold = null;
+//   try {
+//     const r = await pool.query(
+//       `SELECT o.order_id, o.created_at, o.status, o.counted, o.ship_status FROM ebay_order_items i
+//          JOIN ebay_orders o ON o.user_id = i.user_id AND o.order_id = i.order_id
+//         WHERE i.user_id = $1 AND i.item_id = $2 ORDER BY o.created_at DESC LIMIT 1`, [userId, itemId]);
+//     if (r.rows.length) {
+//       sold = new Date(r.rows[0].created_at);
+//       const ago = Math.floor((Date.now() - sold.getTime()) / 86400000);
+//       lines.push('Sold on ' + sold.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'America/Los_Angeles' }) + ' (' + ago + ' day' + (ago === 1 ? '' : 's') + ' ago), order ' + r.rows[0].order_id + '.'
+//         + (r.rows[0].ship_status === 'FULFILLED' ? ' It has shipped.' : r.rows[0].ship_status ? ' Not marked shipped yet.' : '')
+//         + (!r.rows[0].counted ? ' This order was cancelled or refunded (' + r.rows[0].status + ').' : ''));
+//     }
+//   } catch (e) { /* no order info */ }
+//   try {
+//     const xml = await tradingCall(userId, 'GetItem', `<ItemID>${itemId}</ItemID><DetailLevel>ReturnAll</DetailLevel>`);
+//     const rp = xmlTag(xmlTag(xml, 'Item') || '', 'ReturnPolicy') || '';
+//     const accepted = xmlTag(rp, 'ReturnsAcceptedOption') || '';
+//     if (/NotAccepted/i.test(accepted)) lines.push('Return policy: the listing does NOT accept returns (eBay\'s Money Back Guarantee still covers items not as described).');
+//     else if (rp) {
+//       const within = xmlTag(rp, 'ReturnsWithinOption') || '';
+//       const days = parseInt((/(\d+)/.exec(within) || [])[1], 10);
+//       const payer = xmlTag(rp, 'ShippingCostPaidByOption') || '';
+//       lines.push('Return policy: returns accepted' + (days ? ' within ' + days + ' days' : '') + (payer ? '; return shipping paid by the ' + payer.toLowerCase() : '') + '.');
+//       if (days && sold) {
+//         const left = days - Math.floor((Date.now() - sold.getTime()) / 86400000);
+//         lines.push(left >= 0
+//           ? 'Return window: INSIDE — about ' + left + ' day' + (left === 1 ? '' : 's') + ' left counting from the sale date (eBay counts from delivery, so the buyer may have a few days more).'
+//           : 'Return window: ENDED — about ' + (-left) + ' day' + (left === -1 ? '' : 's') + ' ago counting from the sale date (eBay counts from delivery, so if it was very recent, the seller should double-check).');
+//       }
+//     }
+//   } catch (e) { lines.push('The listing\'s return policy could not be loaded.'); }
+//   return lines.join('\n');
+// }
+
+// v332: SHIPMENT — tracking, carrier and delivery dates for one order, from Trading GetOrders
+// (ShipmentTrackingDetails + ShippingPackageInfo). Read live, never stored.
+async function shipmentFacts(userId, orderId) {
+  const xml = await tradingCall(userId, 'GetOrders',
+    `<OrderIDArray><OrderID>${xmlEsc(orderId)}</OrderID></OrderIDArray><DetailLevel>ReturnAll</DetailLevel>`);
+  const order = xmlTag(xml, 'Order') || '';
+  if (!order) return null;
+  const firstOf = (tag) => xmlAll(order, tag).map(v => xmlDecode(v).trim()).find(Boolean) || null;
+  const tracks = [];
+  xmlAll(order, 'ShipmentTrackingDetails').forEach(t => {
+    const num = xmlDecode(xmlTag(t, 'ShipmentTrackingNumber') || '').trim();
+    const car = xmlDecode(xmlTag(t, 'ShippingCarrierUsed') || '').trim();
+    if (num && !tracks.some(x => x.number === num)) tracks.push({ number: num, carrier: car });
+  });
+  return {
+    tracks,
+    shippedTime: firstOf('ShippedTime'),
+    deliveredTime: firstOf('ActualDeliveryTime'),
+    expectedMax: firstOf('ScheduledDeliveryTimeMax') || firstOf('EstimatedDeliveryTimeMax')
+  };
+}
+const dayText = (d) => new Date(d).toLocaleDateString('en-US', { weekday: 'short', month: 'long', day: 'numeric', year: 'numeric', timeZone: 'America/Los_Angeles' });
+const daysSince = (d) => Math.floor((Date.now() - new Date(d).getTime()) / 86400000);
+
 // v330: the facts the AI gets about the sale and the return window — all worked out here
+// v332: + SHIPMENT (tracking / delivered), and the return window counts from delivery like eBay
 async function returnFacts(userId, itemId) {
   const lines = [];
-  let sold = null;
+  let sold = null, ship = null, shipErr = null;
   try {
     const r = await pool.query(
       `SELECT o.order_id, o.created_at, o.status, o.counted, o.ship_status FROM ebay_order_items i
          JOIN ebay_orders o ON o.user_id = i.user_id AND o.order_id = i.order_id
         WHERE i.user_id = $1 AND i.item_id = $2 ORDER BY o.created_at DESC LIMIT 1`, [userId, itemId]);
     if (r.rows.length) {
-      sold = new Date(r.rows[0].created_at);
-      const ago = Math.floor((Date.now() - sold.getTime()) / 86400000);
-      lines.push('Sold on ' + sold.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'America/Los_Angeles' }) + ' (' + ago + ' day' + (ago === 1 ? '' : 's') + ' ago), order ' + r.rows[0].order_id + '.'
-        + (r.rows[0].ship_status === 'FULFILLED' ? ' It has shipped.' : r.rows[0].ship_status ? ' Not marked shipped yet.' : '')
-        + (!r.rows[0].counted ? ' This order was cancelled or refunded (' + r.rows[0].status + ').' : ''));
+      const o = r.rows[0];
+      sold = new Date(o.created_at);
+      const ago = daysSince(sold);
+      lines.push('Sold on ' + sold.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'America/Los_Angeles' }) + ' (' + ago + ' day' + (ago === 1 ? '' : 's') + ' ago), order ' + o.order_id + '.'
+        + (o.ship_status === 'FULFILLED' ? ' It has shipped.' : o.ship_status ? ' Not marked shipped yet.' : '')
+        + (!o.counted ? ' This order was cancelled or refunded (' + o.status + ').' : ''));
+      try { ship = await shipmentFacts(userId, o.order_id); } catch (e) { shipErr = e.message; }
     }
   } catch (e) { /* no order info */ }
+
+  // SHIPMENT
+  if (ship) {
+    const s = [];
+    if (ship.tracks.length) s.push('Tracking: ' + ship.tracks.map(t => (t.carrier ? t.carrier + ' ' : '') + t.number).join(', ') + '.');
+    else s.push('Tracking: no tracking number on the order.');
+    if (ship.shippedTime) s.push('Shipped ' + dayText(ship.shippedTime) + '.');
+    if (ship.deliveredTime) s.push('eBay shows it DELIVERED on ' + dayText(ship.deliveredTime) + ' (' + daysSince(ship.deliveredTime) + ' days ago).');
+    else if (ship.expectedMax) {
+      const late = daysSince(ship.expectedMax);
+      s.push('eBay does not show it delivered yet. Expected by ' + dayText(ship.expectedMax) + (late > 0 ? ' — that date PASSED ' + late + ' day' + (late === 1 ? '' : 's') + ' ago.' : '.'));
+    } else s.push('eBay does not show it delivered yet.');
+    lines.push('SHIPMENT: ' + s.join(' ') + ' (eBay doesn\'t give the carrier\'s scan-by-scan status — don\'t describe where the package is.)');
+  } else if (shipErr) lines.push('SHIPMENT: tracking info could not be loaded.');
+
   try {
     const xml = await tradingCall(userId, 'GetItem', `<ItemID>${itemId}</ItemID><DetailLevel>ReturnAll</DetailLevel>`);
     const rp = xmlTag(xmlTag(xml, 'Item') || '', 'ReturnPolicy') || '';
@@ -2235,8 +2325,16 @@ async function returnFacts(userId, itemId) {
       const days = parseInt((/(\d+)/.exec(within) || [])[1], 10);
       const payer = xmlTag(rp, 'ShippingCostPaidByOption') || '';
       lines.push('Return policy: returns accepted' + (days ? ' within ' + days + ' days' : '') + (payer ? '; return shipping paid by the ' + payer.toLowerCase() : '') + '.');
-      if (days && sold) {
-        const left = days - Math.floor((Date.now() - sold.getTime()) / 86400000);
+      if (days && ship && ship.deliveredTime) {
+        // eBay counts the return window from delivery
+        const left = days - daysSince(ship.deliveredTime);
+        lines.push(left >= 0
+          ? 'Return window: INSIDE — ' + left + ' day' + (left === 1 ? '' : 's') + ' left, counting from the delivery date.'
+          : 'Return window: ENDED — ' + (-left) + ' day' + (left === -1 ? '' : 's') + ' ago, counting from the delivery date.');
+      } else if (days && ship && ship.shippedTime) {
+        lines.push('Return window: INSIDE — it hasn\'t started yet (eBay doesn\'t show the package delivered).');
+      } else if (days && sold) {
+        const left = days - daysSince(sold);
         lines.push(left >= 0
           ? 'Return window: INSIDE — about ' + left + ' day' + (left === 1 ? '' : 's') + ' left counting from the sale date (eBay counts from delivery, so the buyer may have a few days more).'
           : 'Return window: ENDED — about ' + (-left) + ' day' + (left === -1 ? '' : 's') + ' ago counting from the sale date (eBay counts from delivery, so if it was very recent, the seller should double-check).');
@@ -2244,6 +2342,20 @@ async function returnFacts(userId, itemId) {
     }
   } catch (e) { lines.push('The listing\'s return policy could not be loaded.'); }
   return lines.join('\n');
+}
+
+// v332: the listing's part number(s), from item specifics. "Does not apply" etc. count as none.
+function partNumbersOf(specifics) {
+  const out = [];
+  (specifics || []).forEach(sp => {
+    if (!/part\s*number|^mpn$|interchange/i.test(sp.name || '')) return;
+    String(sp.value || '').split(/\s*,\s*/).forEach(v => {
+      v = v.trim();
+      if (!v || /^(does not apply|not applicable|n\/?a|na|none|unknown|unbranded|-+|\.)$/i.test(v)) return;
+      if (!out.some(x => x.value.toLowerCase() === v.toLowerCase())) out.push({ name: sp.name, value: v });
+    });
+  });
+  return out;
 }
 
 // v330: AUTO-TRANSLATE — only messages that don't look English are sent to the AI; answers are
@@ -2333,7 +2445,8 @@ app.post('/api/threads/:id/draft', requireUser, express.json(), async (req, res)
     if (!convo) return res.status(400).json({ error: 'There\u2019s no message to answer yet.' });
 
     // the listing
-    let listing = 'No listing is attached to this conversation.';
+    // let listing = 'No listing is attached to this conversation.';
+    let listing = 'No listing is attached to this conversation.\nPART NUMBER: unknown (no listing).';   // v332
     if (itemId) {
       const it = await getItemData(req.user.id, itemId);
       const fit = await getFitment(req.user.id, itemId);
@@ -2347,6 +2460,8 @@ app.post('/api/threads/:id/draft', requireUser, express.json(), async (req, res)
           d.category ? 'Category: ' + d.category : '',
           d.listingStatus ? 'Listing status: ' + d.listingStatus : '',
           (d.specifics || []).length ? 'Item specifics:\n' + d.specifics.map(s => '- ' + s.name + ': ' + s.value).join('\n') : '',
+          // v332: say plainly whether there is a part number
+          (() => { const pn = partNumbersOf(d.specifics); return pn.length ? 'PART NUMBER: ' + pn.map(x => x.value + ' (' + x.name + ')').join('; ') : 'PART NUMBER: NONE — this listing has no part number.'; })(),
           fit.length ? 'Fitment list (vehicles the listing says it fits' + (fit.length >= 200 ? ', first 200' : '') + '):\n' + fit.map(f => '- ' + f).join('\n') : 'Fitment list: none on the listing.',
           'Description:\n' + htmlToText(d.description).slice(0, 6000)
         ].filter(Boolean).join('\n');
@@ -2404,6 +2519,10 @@ app.post('/api/threads/:id/draft', requireUser, express.json(), async (req, res)
       // v331: work out which kind of problem it is, then follow the seller's choice for that kind
       'Problems: first decide which kind the buyer has, then follow the seller\'s choice for that kind. ' + PROBLEM_TYPES.map(t => 'If ' + t.when + ': ' + t.options[ms.problems[t.key]].ai).join(' ') + ' Any other problem (not as described, missing pieces): ' + PROBLEM_POLICIES[ms.problemPolicy].ai,
       'Return windows: use only the ORDER & RETURNS section — never calculate dates yourself. For damaged, defective or wrong-part problems: if it says the buyer is INSIDE the return window, follow the choice above; if the window has ENDED, politely say the return window has passed. A package that never arrived is not limited by the return window. If no order or return policy is given, don\'t mention any time limit.',
+      // v332
+      'PART NUMBER rule: use only the PART NUMBER line. If it gives a number, write the number out in the reply whenever you suggest comparing, so the buyer has it right there. If it says NONE or unknown, never ask the buyer to compare part numbers with the listing or say the listing has one — ask for their VIN, or suggest comparing their original part with the listing photos.',
+      'If the buyer asks which vehicle the part came from (year, model, mileage, VIN of the donor vehicle) and the LISTING doesn\'t say, say plainly that you don\'t have that information for this part — don\'t skip the question.',
+      'Tracking and delivery: use only the SHIPMENT facts. You may give the carrier, tracking number, shipped date, expected date and delivered date shown there. Never describe where the package is or make up a delivery date.',
       'Write in English. Plain text only: no markdown, no subject line, no placeholders like [Name], no signature.',
       'Reply with only the message text.'
     ].join(' ');
@@ -3089,5 +3208,5 @@ app.get('*', (req, res) => {
 });
 
 setupDatabase()
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v331 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v332 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });
