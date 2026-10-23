@@ -1,0 +1,2112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PartsLister Pro Sales v339</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@400;500;600&display=swap');
+
+  /* Same palette as the listing tool so both pages feel like one app */
+  :root {
+    --bg: #0f0f0f;
+    --surface: #1a1a1a;
+    --surface2: #222222;
+    --border: #2e2e2e;
+    --grid: #2a2a2a;
+    --accent: #f5a623;
+    --accent2: #e8912a;
+    --bar-dim: #7a5a24;       /* bars outside the hovered one, while hovering */
+    --text: #e8e8e8;
+    --text2: #b8b8b8;
+    --muted: #888;
+    --success: #4caf82;
+    --danger: #e05252;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Barlow', sans-serif;
+    font-size: 14px;
+    min-height: 100vh;
+  }
+
+  /* HEADER — same height, border and logo as the listing tool */
+  header {
+    background: var(--surface);
+    border-bottom: 2px solid var(--accent);
+    padding: 0 24px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    height: 56px;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+  .logo-link { text-decoration: none; color: inherit; }
+  .logo {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 26px;
+    font-weight: 900;
+    letter-spacing: -0.5px;
+    line-height: 1;
+  }
+  .logo span { color: var(--accent); }
+  .logo-sub {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 3px;
+    color: var(--accent);
+    text-transform: uppercase;
+    margin-top: -2px;
+  }
+  /* v316: Home / Sales / Listings tabs — same on all three pages */
+  .page-tabs { display: flex; gap: 2px; margin-left: 12px; }
+  .page-tabs a {
+    font-family: 'Barlow Condensed', sans-serif; font-size: 15px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;
+    color: var(--muted); text-decoration: none; padding: 6px 12px; border-radius: 4px;
+  }
+  .page-tabs a:hover { color: var(--text); background: var(--surface2); }
+  .page-tabs a[aria-current="page"] { color: #000; background: var(--accent); }
+  @media (max-width: 700px) { .page-tabs { margin-left: 4px; } .page-tabs a { padding: 5px 7px; font-size: 13px; letter-spacing: 0.5px; } .logo { font-size: 20px; } }
+  @media (max-width: 700px) { .page-tabs { overflow-x: auto; scrollbar-width: none; flex-shrink: 1; min-width: 0; } .page-tabs a { padding: 5px 6px; font-size: 12px; flex-shrink: 0; } }   /* v319: 5 tabs */
+  .header-right { margin-left: auto; display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .who {
+    font-size: 12px;
+    color: var(--muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 260px;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 9px 18px;
+    border-radius: 4px;
+    border: 1px solid transparent;
+    cursor: pointer;
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    text-decoration: none;
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
+  }
+  .btn-primary { background: var(--accent); color: #000; }
+  .btn-primary:hover { background: var(--accent2); }
+  .btn-secondary { background: var(--surface2); color: var(--text); border-color: var(--border); }
+  .btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
+  .btn-sm { padding: 5px 12px; font-size: 12px; }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn { white-space: nowrap; }
+
+  /* MAIN */
+  main { max-width: 1200px; margin: 0 auto; padding: 24px 24px 48px; }
+
+  /* SALES — title row with the range picker */
+  .sales-top {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+  .sales-title {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 30px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+  }
+  .sample-badge {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--text2);
+    border: 1px solid var(--border);
+    background: var(--surface2);
+    border-radius: 3px;
+    padding: 3px 8px;
+  }
+  .range-picker {
+    margin-left: auto;
+    display: inline-flex;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 3px;
+    gap: 2px;
+  }
+  .range-picker button {
+    background: none;
+    border: none;
+    color: var(--muted);
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    padding: 7px 14px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+  }
+  .range-picker button:hover { color: var(--text); }
+  .range-picker button[aria-pressed="true"] { background: var(--accent); color: #000; }
+  .range-picker button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* v315: MONTH + CUSTOM DATES, next to the range buttons */
+  .range-extra { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .range-extra select, .range-extra input[type="date"] {
+    background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 6px;
+    font-family: 'Barlow', sans-serif; font-size: 13px; padding: 7px 8px; color-scheme: dark;
+  }
+  .range-extra select.active { border-color: var(--accent); color: var(--accent); }
+  .range-extra .custom-btn {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 6px; color: var(--muted); cursor: pointer;
+    font-family: 'Barlow Condensed', sans-serif; font-size: 14px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; padding: 7px 12px;
+  }
+  .range-extra .custom-btn:hover { color: var(--text); }
+  .range-extra .custom-btn[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #000; }
+  .range-custom { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; }
+  .range-custom[hidden] { display: none; }
+
+  /* v309: SALES TAX TOGGLE */
+  .tax-toggle {
+    display: inline-flex; align-items: center; gap: 8px; background: none; border: none; cursor: pointer;
+    color: var(--text2); font-family: 'Barlow', sans-serif; font-size: 13px; padding: 6px 4px;
+  }
+  .tax-toggle:disabled { cursor: not-allowed; opacity: 0.5; }
+  .tax-toggle .track { width: 34px; height: 20px; border-radius: 10px; background: var(--surface2); border: 1px solid var(--border); position: relative; transition: background 0.15s; flex-shrink: 0; }
+  .tax-toggle .knob { position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--muted); transition: left 0.15s, background 0.15s; }
+  .tax-toggle[aria-checked="true"] .track { background: var(--accent); border-color: var(--accent); }
+  .tax-toggle[aria-checked="true"] .knob { left: 16px; background: #000; }
+  .tax-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+
+  /* FIGURES — one hero number, then supporting tiles */
+  .figures {
+    display: grid;
+    grid-template-columns: 1.6fr repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+  .tile {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 16px 18px;
+    min-width: 0;
+  }
+  .tile-label {
+    font-size: 12px;
+    color: var(--muted);
+    margin-bottom: 6px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .tile-value {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 30px;
+    font-weight: 700;
+    line-height: 1.05;
+    color: var(--text);
+    white-space: nowrap;
+  }
+  .tile-sub { font-size: 12px; color: var(--muted); margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tile.hero .tile-value { font-size: 56px; color: var(--accent); }
+
+  /* v307: FEES */
+  /* .fees-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; } */
+  .fees-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 12px; }   /* v315: + penalty this year */
+  .tile.penalty { border-left-width: 3px; }
+  .tile.penalty.ok { border-left-color: var(--success); }
+  .tile.penalty.bad { border-left-color: var(--danger); background: rgba(224,82,82,0.06); }
+  .tile.penalty.bad .tile-value { color: var(--danger); }
+  .tile .status-tag { display: inline-block; font-family: 'Barlow Condensed', sans-serif; font-size: 12px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; margin-left: 8px; vertical-align: 6px; }
+  .tile.penalty.ok .status-tag { color: var(--success); }
+  .tile.penalty.bad .status-tag { color: var(--danger); }
+
+  /* CHART */
+  .chart-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 18px 18px 10px;
+    margin-bottom: 12px;
+  }
+  .chart-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 8px;
+  }
+  .chart-title { font-size: 13px; color: var(--text2); }
+  .chart-note { font-size: 12px; color: var(--muted); }
+  #chart-wrap { position: relative; height: 380px; }
+  #chart { display: block; width: 100%; height: 100%; touch-action: pan-y; }
+  #chart .gridline { stroke: var(--grid); stroke-width: 1; shape-rendering: crispEdges; }
+  #chart .baseline { stroke: #3a3a3a; stroke-width: 1; shape-rendering: crispEdges; }
+  #chart .tick { fill: var(--muted); font-family: 'Barlow', sans-serif; font-size: 11px; }
+  #chart .bar { fill: var(--accent); transition: fill 0.12s; }
+  #chart.hovering .bar { fill: var(--bar-dim); }
+  #chart.hovering .bar.active { fill: var(--accent); }
+  #chart .bar-label { fill: var(--text); font-family: 'Barlow Condensed', sans-serif; font-size: 16px; font-weight: 700; }
+  #chart .today-ring { fill: none; stroke: var(--text2); stroke-width: 1; stroke-dasharray: none; }
+
+  .tooltip {
+    position: absolute;
+    pointer-events: none;
+    background: #0b0b0b;
+    border: 1px solid #3a3a3a;
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 12px;
+    color: var(--text2);
+    white-space: nowrap;
+    opacity: 0;
+    transform: translate(-50%, -100%);
+    transition: opacity 0.08s;
+    z-index: 5;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.5);
+  }
+  .tooltip.show { opacity: 1; }
+  .tooltip .tt-value { display: block; font-family: 'Barlow Condensed', sans-serif; font-size: 22px; font-weight: 700; color: var(--text); line-height: 1.1; }
+
+  details.table-view { margin: 6px 0 4px; }
+  details.table-view summary { cursor: pointer; font-size: 12px; color: var(--muted); padding: 4px 0; }
+  details.table-view summary:hover { color: var(--text); }
+  .table-scroll { max-height: 280px; overflow: auto; margin-top: 8px; border: 1px solid var(--border); border-radius: 4px; }
+  .table-scroll table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .table-scroll th, .table-scroll td { padding: 6px 12px; text-align: left; border-bottom: 1px solid var(--border); }
+  .table-scroll th { position: sticky; top: 0; background: var(--surface2); color: var(--muted); font-weight: 600; font-size: 12px; }
+  .table-scroll td.num, .table-scroll th.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+  /* BELOW THE CHART */
+  .lower {
+    display: grid;
+    grid-template-columns: 1fr 3fr;
+    gap: 12px;
+    margin-top: 24px;
+  }
+  .section-title {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--muted);
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 12px;
+  }
+  .soon-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 12px;
+  }
+  .soon {
+    background: var(--surface);
+    border: 1px dashed var(--border);
+    border-radius: 6px;
+    padding: 14px 16px;
+  }
+  .soon h3 {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 17px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+  }
+  .soon p { color: var(--muted); font-size: 12px; line-height: 1.45; }
+
+  /* SIGN-IN — same look as the listing tool's sign-in screen */
+  #auth-overlay {
+    position: fixed;
+    inset: 0;
+    background: var(--bg);
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+  }
+  #auth-overlay.hidden { display: none; }
+  .auth-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 36px 32px;
+    width: 100%;
+    max-width: 380px;
+    text-align: center;
+  }
+  .auth-logo {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 32px;
+    font-weight: 900;
+    margin-bottom: 2px;
+  }
+  .auth-logo span { color: var(--accent); }
+  .auth-sub {
+    font-size: 12px;
+    color: var(--muted);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 24px;
+  }
+  #auth-form { display: none; flex-direction: column; gap: 10px; text-align: left; }
+  #auth-form label {
+    display: block;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 5px;
+  }
+  #auth-form input {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 10px 12px;
+    border-radius: 4px;
+    font-family: 'Barlow', sans-serif;
+    font-size: 15px;
+    outline: none;
+  }
+  #auth-form input:focus { border-color: var(--accent); }
+  #auth-form .btn { width: 100%; }
+  .auth-error { color: var(--danger); font-size: 13px; margin-top: 12px; display: none; }
+  .auth-note { font-size: 11px; color: var(--muted); text-align: center; display: none; }
+
+  /* v305: data-source badge states */
+  button.sample-badge { cursor: pointer; }
+  button.sample-badge:hover { border-color: var(--accent); color: var(--text); }
+  .sample-badge.live { color: var(--text); }
+  .sample-badge .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--success); margin-right: 6px; vertical-align: 1px; }
+  .sample-badge.warn .dot { background: var(--danger); }
+  .sample-badge.busy .dot { background: var(--accent); animation: pulse 1s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: 0.3; } }
+
+  /* v305: SETTINGS */
+  #settings-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 50;
+    display: none; align-items: flex-start; justify-content: center; padding: 56px 16px 16px; overflow-y: auto;
+  }
+  #settings-overlay.open { display: flex; }
+  .settings-box {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    width: 100%; max-width: 680px; box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+  }
+  .settings-head { display: flex; align-items: center; padding: 16px 20px 0; gap: 12px; }
+  .settings-head h2 { font-family: 'Barlow Condensed', sans-serif; font-size: 24px; font-weight: 700; letter-spacing: 0.5px; }
+  .settings-close { margin-left: auto; background: none; border: none; color: var(--muted); font-size: 22px; cursor: pointer; padding: 4px 8px; line-height: 1; }
+  .settings-close:hover { color: var(--text); }
+  .settings-tabs { display: flex; gap: 4px; padding: 12px 20px 0; border-bottom: 1px solid var(--border); }
+  .settings-tabs button {
+    background: none; border: none; border-bottom: 2px solid transparent; color: var(--muted);
+    font-family: 'Barlow Condensed', sans-serif; font-size: 15px; font-weight: 700; letter-spacing: 1px;
+    text-transform: uppercase; padding: 8px 12px; cursor: pointer; margin-bottom: -1px;
+  }
+  .settings-tabs button:hover { color: var(--text); }
+  .settings-tabs button[aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); }
+  .settings-panel { display: none; padding: 20px; }
+  .settings-panel.active { display: block; }
+  .set-section { margin-bottom: 22px; }
+  .set-section:last-child { margin-bottom: 0; }
+  .set-section h3 { font-family: 'Barlow Condensed', sans-serif; font-size: 18px; font-weight: 700; letter-spacing: 0.5px; margin-bottom: 6px; }
+  .set-step { font-family: 'Barlow Condensed', sans-serif; font-size: 12px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--accent); margin-bottom: 2px; }
+  .set-help { color: var(--muted); font-size: 13px; line-height: 1.5; margin-bottom: 10px; }
+  .set-help strong { color: var(--text2); font-weight: 600; }
+  .set-row { margin-bottom: 10px; }
+  .set-row label { display: block; font-size: 11px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); margin-bottom: 5px; }
+  .set-input-row { display: flex; gap: 8px; }
+  .set-input-row input {
+    flex: 1; min-width: 0; background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+    padding: 8px 10px; border-radius: 4px; font-family: 'Barlow', sans-serif; font-size: 14px; outline: none;
+  }
+  .set-input-row input:focus { border-color: var(--accent); }
+  .set-input-row input[readonly] { color: var(--text2); font-family: ui-monospace, Menlo, monospace; font-size: 12.5px; }
+  .set-info { background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: 12px 14px; font-size: 13px; color: var(--text2); line-height: 1.7; }
+  .set-info .ok { color: var(--success); font-weight: 600; }
+  .set-info .bad { color: var(--danger); font-weight: 600; }
+  .set-error { background: rgba(224,82,82,0.08); border: 1px solid rgba(224,82,82,0.4); color: #f0a0a0; border-radius: 6px; padding: 10px 12px; font-size: 13px; margin-top: 10px; line-height: 1.5; }
+  .set-buttons { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .set-divider { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
+
+  /* v308: FEE CHECK */
+  .fc-dates { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; margin-bottom: 12px; }
+  .fc-dates label { display: block; font-size: 11px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); margin-bottom: 5px; }
+  .fc-dates input { background: var(--surface2); border: 1px solid var(--border); color: var(--text); padding: 7px 9px; border-radius: 4px; font-family: 'Barlow', sans-serif; font-size: 14px; color-scheme: dark; }
+  .fc-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .fc-table th, .fc-table td { padding: 7px 8px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
+  .fc-table th { color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; }
+  .fc-table td.num, .fc-table th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .fc-table .code { display: block; color: var(--muted); font-size: 11px; font-family: ui-monospace, Menlo, monospace; }
+  .fc-table tr.total td { font-weight: 700; color: var(--text); border-bottom: none; }
+  .fc-counts { margin-top: 12px; font-size: 13px; color: var(--text2); line-height: 1.7; }
+  .fc-scroll { overflow-x: auto; }
+
+  /* v305: TOAST */
+  #toast {
+    position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%) translateY(20px);
+    background: #0b0b0b; border: 1px solid #3a3a3a; border-left: 3px solid var(--success);
+    color: var(--text); padding: 12px 18px; border-radius: 6px; font-size: 14px; z-index: 200;
+    max-width: calc(100% - 32px); opacity: 0; pointer-events: none; transition: opacity 0.2s, transform 0.2s;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  #toast.error { border-left-color: var(--danger); }
+
+  /* TABLET */
+  @media (max-width: 1000px) {
+    .figures { grid-template-columns: repeat(2, 1fr); }
+    .tile.hero { grid-column: 1 / -1; }
+    .fees-row { grid-template-columns: 1fr; }   /* v307 */
+    .lower { grid-template-columns: 1fr; }
+  }
+  /* PHONE */
+  @media (max-width: 700px) {
+    header { padding: 0 12px; gap: 8px; }
+    .who { display: none; }
+    .header-right { gap: 6px; }
+    .header-right .btn-sm { padding: 5px 8px; font-size: 11px; letter-spacing: 0.5px; }
+    .chart-note { display: none; }
+    .header-logout { display: none !important; }   /* v305: Log Out is in ⚙ → Account on phones */
+    .settings-panel { padding: 16px; }
+    .settings-head, .settings-tabs { padding-left: 16px; padding-right: 16px; }
+    #settings-overlay { padding-top: 12px; }
+    main { padding: 16px 16px 40px; }
+    .range-picker { margin-left: 0; width: 100%; }
+    .range-picker button { flex: 1; padding: 8px 4px; font-size: 13px; }
+    .tile.hero .tile-value { font-size: 48px; }
+    .tile-value { font-size: 26px; }
+    #chart-wrap { height: 260px; }
+    .chart-card { padding: 14px 10px 8px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- SIGN-IN -->
+<div id="auth-overlay">
+  <div class="auth-box">
+    <div class="auth-logo"><span>PARTS</span>LISTER</div>
+    <div class="auth-sub">Pro</div>
+    <div id="auth-loading" style="color:var(--muted);font-size:13px;">Loading…</div>
+    <form id="auth-form" onsubmit="event.preventDefault();authSubmit('login');">
+      <div>
+        <label for="auth-email">Email</label>
+        <input type="email" id="auth-email" autocomplete="username" required>
+      </div>
+      <div>
+        <label for="auth-password">Password</label>
+        <input type="password" id="auth-password" autocomplete="current-password" required minlength="8">
+      </div>
+      <button type="submit" class="btn btn-primary" id="auth-login-btn" style="margin-top:4px;">Sign In</button>
+      <button type="button" class="btn btn-secondary" id="auth-signup-btn" onclick="authSubmit('signup')" style="display:none;">Create Account</button>
+      <div class="auth-note" id="auth-signup-note">No account yet? Enter an email and a password (8+ characters), then Create Account.</div>
+    </form>
+    <div class="auth-error" id="auth-error"></div>
+  </div>
+</div>
+
+<!-- HEADER -->
+<header>
+  <a href="/" class="logo-link" title="Home">
+    <div class="logo"><span>PARTS</span>LISTER</div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v339</span></div>
+  </a>
+  <!-- v316: switch pages -->
+  <nav class="page-tabs" aria-label="Pages">
+    <!-- v318: was Home / Sales / Listings (the active page)
+    <a href="/">Home</a>
+    <a href="/sales" aria-current="page">Sales</a>
+    <a href="/listings">Listings</a>
+    -->
+    <a href="/">Home</a>
+    <a href="/sales" aria-current="page">Sales</a>
+    <a href="/orders">Orders</a>   <!-- v319 -->
+    <a href="/messages">Messages</a>   <!-- v321 -->
+    <a href="/returns">Returns</a>   <!-- v324 -->
+    <a href="/active">Active</a>
+    <a href="/list" title="Open the Listing Tool">Listings</a>   <!-- v318: the Listing Tool -->
+  </nav>
+  <div class="header-right">
+    <span class="who" id="who"></span>
+    <!-- <a href="/list" class="btn btn-secondary btn-sm">Listing Tool →</a>   v318: now the Listings tab -->
+    <button class="btn btn-secondary btn-sm" onclick="openSettings()" title="Settings" aria-label="Settings">⚙</button>   <!-- v305 -->
+    <button class="btn btn-secondary btn-sm header-logout" onclick="logout()">Log Out</button>
+  </div>
+</header>
+
+<!-- DASHBOARD -->
+<main>
+
+  <!-- SALES -->
+  <div class="sales-top">
+    <div class="sales-title">Sales</div>
+    <!-- v304: shown until real eBay sales are connected
+    <div class="sample-badge" id="sample-badge" title="These numbers are made up so you can see the layout. Real eBay sales come next.">Sample data</div>
+    -->
+    <!-- v305: says where the numbers come from — sample, or eBay with last update -->
+    <button type="button" class="sample-badge" id="sample-badge" onclick="badgeClick()">Sample data</button>
+    <!-- v309: sales tax on/off -->
+    <button type="button" class="tax-toggle" id="tax-toggle" role="switch" aria-checked="false" onclick="setTax(!taxOn, true)" style="display:none;">
+      <span class="track"><span class="knob"></span></span><span id="tax-toggle-label">Include sales tax</span>
+    </button>
+    <div class="range-picker" role="group" aria-label="Date range">
+      <button type="button" data-range="today">Today</button>
+      <button type="button" data-range="week">Week</button>
+      <button type="button" data-range="31">31 Day</button>
+      <button type="button" data-range="90">90 Day</button>
+      <button type="button" data-range="year">Year</button>
+      <button type="button" data-range="thismonth">This month</button>   <!-- v315 -->
+      <button type="button" data-range="lastmonth">Last month</button>   <!-- v315 -->
+    </div>
+    <!-- v315: any month, or your own start and end dates -->
+    <div class="range-extra">
+      <select id="range-month" aria-label="Show one month" onchange="if (this.value) setRange(this.value, true)">
+        <option value="">Month…</option>
+      </select>
+      <button type="button" class="custom-btn" id="range-custom-btn" aria-pressed="false" onclick="toggleCustom()">Custom</button>
+      <span class="range-custom" id="range-custom" hidden>
+        <input type="date" id="range-from" aria-label="Start date"> to <input type="date" id="range-to" aria-label="End date">
+        <button type="button" class="custom-btn" onclick="applyCustom()">Show</button>
+      </span>
+      <!-- v326: save the dates you're looking at as a spreadsheet file -->
+      <button type="button" class="custom-btn" id="sales-download-btn" onclick="downloadSales()" title="Download every order in this date range (opens in Excel or Numbers)">Download</button>
+    </div>
+  </div>
+
+  <div class="figures">
+    <div class="tile hero">
+      <div class="tile-label" id="fig-total-label">Sales</div>
+      <div class="tile-value" id="fig-total">—</div>
+      <div class="tile-sub" id="fig-total-sub">&nbsp;</div>
+    </div>
+    <div class="tile">
+      <div class="tile-label">Today</div>
+      <div class="tile-value" id="fig-today">—</div>
+      <div class="tile-sub" id="fig-today-sub">&nbsp;</div>
+    </div>
+    <div class="tile">
+      <div class="tile-label">Orders</div>
+      <div class="tile-value" id="fig-orders">—</div>
+      <div class="tile-sub" id="fig-orders-sub">&nbsp;</div>
+    </div>
+    <div class="tile">
+      <div class="tile-label">Average per day</div>
+      <div class="tile-value" id="fig-avg">—</div>
+      <div class="tile-sub" id="fig-avg-sub">&nbsp;</div>
+    </div>
+    <div class="tile">
+      <div class="tile-label">Best day</div>
+      <div class="tile-value" id="fig-best">—</div>
+      <div class="tile-sub" id="fig-best-sub">&nbsp;</div>
+    </div>
+  </div>
+
+  <!-- v307: FEES — what eBay charged you, and how much of it is penalty -->
+  <div class="fees-row">
+    <div class="tile">
+      <div class="tile-label" id="fig-fees-label">eBay fees</div>
+      <div class="tile-value" id="fig-fees">—</div>
+      <div class="tile-sub" id="fig-fees-sub">&nbsp;</div>
+    </div>
+    <div class="tile penalty" id="penalty-tile">
+      <div class="tile-label" id="fig-penalty-label">Penalty fees</div>
+      <div class="tile-value"><span id="fig-penalty">—</span><span class="status-tag" id="penalty-tag"></span></div>
+      <div class="tile-sub" id="fig-penalty-sub">&nbsp;</div>
+    </div>
+    <!-- v315: penalty fees paid this calendar year, last year underneath -->
+    <div class="tile penalty" id="penalty-year-tile">
+      <div class="tile-label" id="fig-penalty-year-label">Penalty fees · This year</div>
+      <div class="tile-value"><span id="fig-penalty-year">—</span><span class="status-tag" id="penalty-year-tag"></span></div>
+      <div class="tile-sub" id="fig-penalty-year-sub">&nbsp;</div>
+    </div>
+  </div>
+
+  <div class="chart-card">
+    <div class="chart-head">
+      <div class="chart-title" id="chart-title">Sales per day</div>
+      <div class="chart-note">Each bar is one day (eBay time, Pacific) · hover for details</div>
+    </div>
+    <div id="chart-wrap">
+      <svg id="chart" role="img" aria-labelledby="chart-title"></svg>
+      <div class="tooltip" id="tooltip"></div>
+    </div>
+    <details class="table-view">
+      <summary>View as table</summary>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Date</th><th class="num">Sales</th><th class="num">Orders</th></tr></thead>
+          <tbody id="table-body"></tbody>
+        </table>
+      </div>
+    </details>
+  </div>
+
+  <!-- BELOW: lifetime listed (real) + what's coming -->
+  <div class="lower">
+    <div>
+      <div class="section-title">Listing</div>
+      <div class="tile">
+        <div class="tile-label">Items listed — lifetime</div>
+        <div class="tile-value" id="listed-count" style="font-size:40px;">—</div>
+        <div class="tile-sub">Every Launch and Scheduled Listing</div>
+      </div>
+    </div>
+    <div>
+      <div class="section-title">Coming Next</div>
+      <div class="soon-grid">
+        <!-- v305: done — real sales are connected in ⚙ Settings → Admin
+        <div class="soon">
+          <h3>Real eBay Sales</h3>
+          <p>Swap the sample numbers above for your actual sold orders.</p>
+        </div>
+        -->
+        <div class="soon">
+          <h3>eBay Funds</h3>
+          <p>Money available, on hold, and on its way to your bank.</p>
+        </div>
+        <div class="soon">
+          <h3>Listing Stats</h3>
+          <p>Items listed per day, with monthly and quarterly totals including value and shipping.</p>
+        </div>
+        <!-- v316: now on the Listings page
+        <div class="soon">
+          <h3>Active Listings</h3>
+          <p>Your live eBay listings at a glance.</p>
+        </div>
+        -->
+        <a class="soon" href="/active" style="text-decoration:none;color:inherit;border-style:solid;">
+          <h3>Active Listings →</h3>
+          <p>Live on the Listings page: how many are up and their total value.</p>
+        </a>
+        <div class="soon">
+          <h3>Seller Metrics</h3>
+          <p>Defect rate, late shipments and Top Rated status from eBay.</p>
+        </div>
+        <div class="soon">
+          <h3>Drafts</h3>
+          <p>Save a listing in progress and finish it later on any computer.</p>
+        </div>
+        <div class="soon">
+          <h3>eBay Shortcuts</h3>
+          <p>One-click links to the eBay pages you use most.</p>
+        </div>
+        <div class="soon">
+          <h3>Messages &amp; Returns</h3>
+          <p>Buyer messages and return requests in one place.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- v302 hero row, replaced in v304 by the sales dashboard above:
+  <div class="hero">
+    <div class="card"> Items Listed — Lifetime ... </div>
+    <div class="card launch-card"> Listing Tool ... Start Listing → </div>
+  </div>
+  -->
+</main>
+
+<!-- v305: SETTINGS -->
+<div id="settings-overlay" onclick="if (event.target === this) closeSettings()">
+  <div class="settings-box" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+    <div class="settings-head">
+      <h2 id="settings-title">Settings</h2>
+      <button class="settings-close" onclick="closeSettings()" aria-label="Close settings">×</button>
+    </div>
+    <div class="settings-tabs" role="tablist">
+      <button role="tab" id="tab-account" aria-selected="true" onclick="showSettingsTab('account')">Account</button>
+      <button role="tab" id="tab-messages" aria-selected="false" onclick="showSettingsTab('messages')">Messages</button>   <!-- v330 -->
+      <button role="tab" id="tab-admin" aria-selected="false" onclick="showSettingsTab('admin')" style="display:none;">Admin</button>
+    </div>
+
+    <!-- ACCOUNT — everyone -->
+    <div class="settings-panel active" id="panel-account" role="tabpanel">
+      <div class="set-section">
+        <h3>Your Account</h3>
+        <div class="set-info">
+          Signed in as <strong id="set-email" style="color:var(--text)">—</strong><span id="set-role"></span>
+        </div>
+        <!-- <p class="set-help" style="margin-top:10px;">Your listing settings — eBay keys, prompts, shipping and description presets — are in the <a href="/list" style="color:var(--accent)">Listing Tool</a> under ⚙.</p> -->
+        <p class="set-help" style="margin-top:10px;">Your keys are below. Listing settings — prompts, policies, shipping and description presets — stay in the <a href="/list" style="color:var(--accent)">Listing Tool</a> under ⚙.</p>   <!-- v326 -->
+        <div class="set-buttons">
+          <button class="btn btn-secondary btn-sm" onclick="logout()">Log Out</button>
+        </div>
+      </div>
+
+      <!-- v326: ACCOUNT KEYS — moved here from the Listing Tool. Saved encrypted to your account. -->
+      <hr class="set-divider">
+      <div class="set-section" id="keys-section">
+        <h3>Anthropic (AI)</h3>
+        <p class="set-help">Used for photo scanning, titles, Identify Part and AI message drafts. Sent only to Anthropic.</p>
+        <div class="set-row"><label for="k-apiKey">Anthropic API key</label><div class="set-input-row"><input id="k-apiKey" type="password" placeholder="sk-ant-..." autocomplete="off"></div></div>
+        <div class="set-row"><label for="k-claudeModel">Claude model</label><div class="set-input-row"><input id="k-claudeModel" type="text" placeholder="claude-sonnet-4-5" autocomplete="off"></div></div>
+      </div>
+      <div class="set-section">
+        <h3>eBay</h3>
+        <p class="set-help">From <strong>developer.ebay.com</strong> → Application Keys → Production. The User Token (User Tokens → Auth'n'Auth) is what the Listing Tool lists with; it lasts 18 months.</p>
+        <div class="set-row"><label for="k-ebayClientId">Client ID (App ID)</label><div class="set-input-row"><input id="k-ebayClientId" type="text" autocomplete="off"></div></div>
+        <div class="set-row"><label for="k-ebayClientSecret">Client Secret (Cert ID)</label><div class="set-input-row"><input id="k-ebayClientSecret" type="password" autocomplete="off"></div></div>
+        <div class="set-row"><label for="k-ebayUsername">eBay username</label><div class="set-input-row"><input id="k-ebayUsername" type="text" placeholder="your eBay login name" autocomplete="off"></div></div>
+        <div class="set-row"><label for="k-ebayUserToken">User Token (Auth'n'Auth)</label><div class="set-input-row"><textarea id="k-ebayUserToken" rows="3" autocomplete="off" style="flex:1;min-width:0;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:4px;font-family:ui-monospace,Menlo,monospace;font-size:11.5px;resize:vertical;"></textarea></div>
+          <div class="set-help" id="k-token-status" style="margin-top:4px;"></div></div>
+      </div>
+      <div class="set-section">
+        <h3>Photo hosting (Cloudinary)</h3>
+        <div class="set-row"><label for="k-cloudinaryCloudName">Cloud name</label><div class="set-input-row"><input id="k-cloudinaryCloudName" type="text" autocomplete="off"></div></div>
+        <div class="set-row"><label for="k-cloudinaryApiKey">API key</label><div class="set-input-row"><input id="k-cloudinaryApiKey" type="text" autocomplete="off"></div></div>
+        <div class="set-row"><label for="k-cloudinaryApiSecret">API secret</label><div class="set-input-row"><input id="k-cloudinaryApiSecret" type="password" autocomplete="off"></div></div>
+      </div>
+      <div class="set-section">
+        <h3>Part identification (SerpApi)</h3>
+        <p class="set-help">Optional — Google Lens lookups for Identify Part.</p>
+        <div class="set-row"><label for="k-serpApiKey">SerpApi key</label><div class="set-input-row"><input id="k-serpApiKey" type="password" autocomplete="off"></div></div>
+        <div class="set-buttons">
+          <button class="btn btn-primary btn-sm" id="keys-save-btn" onclick="saveKeys()">Save keys</button>
+          <label style="font-size:12px;color:var(--muted);display:inline-flex;gap:6px;align-items:center;"><input type="checkbox" onchange="toggleKeyView(this.checked)"> Show keys</label>
+        </div>
+        <p class="set-help" style="margin-top:8px;">If the Listing Tool is open in another tab, reload it after saving so it picks up the new keys.</p>
+      </div>
+    </div>
+
+    <!-- v330: MESSAGES — how the AI drafts replies and translates -->
+    <div class="settings-panel" id="panel-messages" role="tabpanel">
+      <div class="set-section">
+        <h3>AI reply instructions</h3>
+        <p class="set-help">What the AI is told when you click <strong>AI draft</strong> on a message. Write it however you like. These rules are always added on top, whatever you write: use only facts from the listing, the order and the conversation; never make up dates, deadlines, fitment or policies; plain text, in English.</p>
+        <textarea id="ms-instructions" rows="9" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:10px 12px;border-radius:4px;font-family:'Barlow',sans-serif;font-size:13.5px;line-height:1.5;resize:vertical;"></textarea>
+        <div class="set-buttons"><button class="btn btn-secondary btn-sm" onclick="useDefaultInstructions()">Use default</button> <span class="set-help" id="ms-instr-note" style="margin:0;"></span></div>
+      </div>
+      <div class="set-section">
+        <h3>When a buyer has a problem</h3>
+        <!-- <p class="set-help">Wrong part, damaged, not working, not as described — and the buyer is still inside your return window. …</p> -->
+        <p class="set-help">The AI works out which kind of problem the buyer has, then answers the way you pick here. For damaged, defective and wrong-part problems the return window applies — if it has ended, the AI says so politely. (The app works out the dates from the sale and your listing's return policy.)</p>   <!-- v331 -->
+        <div id="ms-problem-types"></div>   <!-- v331: one choice per problem type -->
+        <div class="set-row"><label for="ms-problem">Anything else (not as described, missing pieces…)</label>
+        <select id="ms-problem" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:4px;font-family:'Barlow',sans-serif;font-size:14px;"></select></div>
+        <!-- v335 -->
+        <div class="set-row"><label for="ms-delivered">Tracking says delivered, buyer says it never came</label>
+        <select id="ms-delivered" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:4px;font-family:'Barlow',sans-serif;font-size:14px;"></select></div>
+        <p class="set-help">The "Didn't arrive" choice above is for packages eBay doesn't show delivered yet. Either way, the draft starts with the carrier and tracking number, and if the buyer asks who received it, it says tracking only shows it was delivered, not who.</p>
+        <label style="display:flex;gap:8px;align-items:center;font-size:14px;color:var(--text);cursor:pointer;margin-top:10px;"><input type="checkbox" id="ms-modules"> Computer modules that don't work: ask if it was programmed first</label>
+        <p class="set-help" style="margin-top:6px;">For TCMs, PCMs, ECMs, BCMs and other modules, the draft first asks whether it was programmed to their vehicle, then offers the return if it was and still doesn't work.</p>
+      </div>
+      <!-- v339: COMMON QUESTIONS (from 106 real conversations) -->
+      <div class="set-section">
+        <h3>Common questions</h3>
+        <p class="set-help">How the AI answers the questions buyers ask most.</p>
+        <div class="set-row"><label for="ms-tested">Is it tested / does it work / warranty?</label>
+        <select id="ms-tested" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:4px;font-family:'Barlow',sans-serif;font-size:14px;"></select></div>
+        <div class="set-row"><label for="ms-programming">Does it need programming?</label>
+        <select id="ms-programming" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:4px;font-family:'Barlow',sans-serif;font-size:14px;"></select></div>
+        <label style="display:flex;gap:8px;align-items:center;font-size:14px;color:var(--text);cursor:pointer;margin-top:10px;"><input type="checkbox" id="ms-offers-prog"> I offer programming (if a buyer asks me to program it)</label>
+        <div class="set-row"><label for="ms-donor">What vehicle did it come from? (year, VIN, mileage…)</label>
+        <select id="ms-donor" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:4px;font-family:'Barlow',sans-serif;font-size:14px;"></select></div>
+        <div class="set-row"><label for="ms-shipwhen">Has it shipped / when will it ship? (when it hasn’t shipped yet)</label>
+        <select id="ms-shipwhen" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:4px;font-family:'Barlow',sans-serif;font-size:14px;"></select></div>
+        <div class="set-row"><label for="ms-shipdays">Your shipping days</label>
+        <input type="text" id="ms-shipdays" maxlength="200" placeholder="e.g. Monday, Wednesday and Friday" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:4px;font-family:'Barlow',sans-serif;font-size:14px;"></div>
+        <div class="set-row"><label for="ms-intl">Can you ship to my country? (when eBay won’t let it ship there)</label>
+        <select id="ms-intl" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:4px;font-family:'Barlow',sans-serif;font-size:14px;"></select></div>
+        <label style="display:flex;gap:8px;align-items:center;font-size:14px;color:var(--text);cursor:pointer;margin-top:10px;"><input type="checkbox" id="ms-buyer-lang"> Reply in the buyer's language</label>
+        <p class="set-help" style="margin-top:6px;">When a buyer writes in Spanish, Russian etc., the draft is written in their language and the English version is shown under it for you to check.</p>
+      </div>
+      <!-- v336: PHOTOS + FOLLOW-UPS -->
+      <div class="set-section">
+        <h3>Photos and getting back to buyers</h3>
+        <div class="set-row"><label for="ms-photos">Buyer asks for more photos or a closer look</label>
+        <select id="ms-photos" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:4px;font-family:'Barlow',sans-serif;font-size:14px;"></select></div>
+        <div class="set-row"><label for="ms-avail">When you're available</label>
+        <input type="text" id="ms-avail" maxlength="200" placeholder="e.g. Monday, Wednesday and Friday afternoons" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:4px;font-family:'Barlow',sans-serif;font-size:14px;"></div>
+        <p class="set-help">When a draft says you'll check something or get back to the buyer, it uses this for when (for example "I'll take a look Monday afternoon"). Leave it empty and drafts won't name a day. Sending a reply like that adds the conversation to <strong>Waiting on me</strong> in Messages until you mark it complete.</p>
+      </div>
+      <!-- v335: STYLE -->
+      <div class="set-section">
+        <h3>Tone and sign-off</h3>
+        <div class="set-row"><label for="ms-tone">Tone</label>
+        <select id="ms-tone" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:4px;font-family:'Barlow',sans-serif;font-size:14px;"></select></div>
+        <div class="set-row"><label for="ms-signoff">Sign-off (optional)</label>
+        <input type="text" id="ms-signoff" maxlength="120" placeholder="e.g. Thanks, Peter" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:4px;font-family:'Barlow',sans-serif;font-size:14px;"></div>
+        <p class="set-help">The app adds your sign-off to the end of every draft, word for word. Leave it empty for none.</p>
+      </div>
+      <!-- v333: FITMENT -->
+      <div class="set-section">
+        <h3>Fitment questions</h3>
+        <label style="display:flex;gap:8px;align-items:center;font-size:14px;color:var(--text);cursor:pointer;"><input type="checkbox" id="ms-fit-vin"> Also ask for the buyer's VIN</label>
+        <p class="set-help" style="margin-top:6px;">When a buyer asks if a part fits, the AI says whether their vehicle is in the listing's fitment list (it never promises fit). If the listing has a part number, it asks them to compare it with the number on their original part and writes the number in the message. If there's no part number, it says so and asks them to compare their original part with the listing photos. Leave the VIN box off until you have a way to check VINs; when it's off, the AI never asks for one.</p>
+      </div>
+      <!-- v331: DISCOUNTS -->
+      <div class="set-section">
+        <h3>When a buyer asks for a discount</h3>
+        <label style="display:flex;gap:8px;align-items:center;font-size:14px;color:var(--text);cursor:pointer;"><input type="checkbox" id="ms-disc-on"> Offer <input type="number" id="ms-disc-pct" min="1" max="50" step="0.5" style="width:64px;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:4px 6px;border-radius:4px;font:inherit;"> % off</label>
+        <p class="set-help" style="margin-top:6px;">When it's on and the buyer asks for a lower price, the AI draft says that's the best you can do and that you've sent an offer. The offer is sent when you press <strong>Send</strong> (there's a checkbox to skip it), so a draft you throw away never sends a discount. eBay only lets apps send an offer to everyone watching the item or with it in their cart, so the draft also says "if you don't receive it, let me know". When it's off, the AI says the price is as listed.</p>
+      </div>
+      <div class="set-section">
+        <h3>Translate</h3>
+        <label style="display:flex;gap:8px;align-items:center;font-size:14px;color:var(--text);cursor:pointer;"><input type="checkbox" id="ms-translate"> Auto-translate buyer messages to English</label>
+        <p class="set-help" style="margin-top:6px;">Only messages that aren't already in English are translated, each one once. Every translated message has a <strong>See original</strong> link. Uses your Anthropic key.</p>
+        <div class="set-buttons"><button class="btn btn-primary btn-sm" id="ms-save-btn" onclick="saveMsgSettings()">Save</button></div>
+      </div>
+    </div>
+
+    <!-- ADMIN — only the admin account sees this tab -->
+    <div class="settings-panel" id="panel-admin" role="tabpanel">
+      <!-- v327: one place to see what's working and what to do if something isn't -->
+      <div class="set-section">
+        <h3>Diagnostics</h3>
+        <p class="set-help">Checks every connection (eBay, AI, photos), shows which version of each file is live, recent errors in plain English, and what to do if something breaks.</p>
+        <div class="set-buttons"><a class="btn btn-primary btn-sm" href="/diagnostics">Open Diagnostics</a></div>
+      </div>
+      <hr class="set-divider">
+      <!-- v338: development — messages for tuning the AI drafts -->
+      <div class="set-section">
+        <h3>Download messages</h3>
+        <p class="set-help">For improving the AI drafts: your buyer conversations as one text file you can send to Claude. Usernames, emails, phone numbers and street addresses are removed (a name a buyer typed inside a message may remain). Up to 300 conversations, newest first. Nothing is saved on the server.</p>
+        <div class="set-buttons">
+          <select id="msgx-days" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:6px 8px;border-radius:4px;font-family:'Barlow',sans-serif;font-size:14px;">
+            <option value="30">Last 30 days</option><option value="90" selected>Last 90 days</option><option value="365">Last 365 days</option>
+          </select>
+          <button class="btn btn-primary btn-sm" onclick="downloadMessages()">Download messages</button>
+        </div>
+      </div>
+      <hr class="set-divider">
+      <div class="set-section">
+        <h3>eBay Sales Connection</h3>
+        <!-- <p class="set-help">Connects your eBay seller account so the dashboard shows your real sold orders. It uses the eBay Client ID and Client Secret already saved in your Listing Tool settings.</p> -->
+        <p class="set-help">Connects your eBay seller account so the dashboard shows your real sold orders. It uses the eBay Client ID and Client Secret saved in Settings → Account.</p>   <!-- v326 -->
+        <div id="ebay-status-box" class="set-info">Loading…</div>
+        <div id="ebay-error" class="set-error" style="display:none;"></div>
+        <div class="set-buttons" id="ebay-connected-buttons" style="display:none;">
+          <button class="btn btn-secondary btn-sm" onclick="syncNow()" id="sync-btn">Sync Now</button>
+          <button class="btn btn-secondary btn-sm" onclick="disconnectEbay()">Disconnect</button>
+        </div>
+      </div>
+
+      <!-- v308: FEE CHECK -->
+      <div class="set-section" id="fee-check-section" style="display:none;">
+        <h3>Check fees against eBay</h3>
+        <p class="set-help">Set the same dates as an eBay report (Seller Hub → Performance → Sales → Download report). Each row says which column of that report it should match. Dates are in eBay time (Pacific), like eBay's reports.</p>
+        <div class="fc-dates">
+          <div><label for="fc-from">From</label><input type="date" id="fc-from"></div>
+          <div><label for="fc-to">To</label><input type="date" id="fc-to"></div>
+          <button class="btn btn-primary btn-sm" onclick="runFeeCheck()" id="fc-btn">Check</button>
+          <button class="btn btn-secondary btn-sm" onclick="downloadOrders()" title="One row per order — to line up against eBay's All orders report">Download orders</button>   <!-- v312 -->
+        </div>
+        <div id="fc-result"></div>
+      </div>
+
+      <hr class="set-divider">
+
+      <div class="set-section">
+        <div class="set-step">Step 1</div>
+        <h3>Register these addresses with eBay</h3>
+        <p class="set-help">In your eBay developer account → <strong>User Tokens</strong> → <strong>Add eBay Redirect URL</strong>, choose <strong>OAuth</strong>, and paste these in. They fill in automatically from wherever this app is running — if your web address ever changes, these change too, and you paste the new ones into eBay.</p>
+        <div class="set-row">
+          <label for="url-accepted">Your auth accepted URL</label>
+          <div class="set-input-row"><input id="url-accepted" readonly><button class="btn btn-secondary btn-sm" onclick="copyField('url-accepted')">Copy</button></div>
+        </div>
+        <div class="set-row">
+          <label for="url-declined">Your auth declined URL</label>
+          <div class="set-input-row"><input id="url-declined" readonly><button class="btn btn-secondary btn-sm" onclick="copyField('url-declined')">Copy</button></div>
+        </div>
+        <div class="set-row">
+          <label for="url-privacy">Your privacy policy URL</label>
+          <div class="set-input-row"><input id="url-privacy" readonly><button class="btn btn-secondary btn-sm" onclick="copyField('url-privacy')">Copy</button></div>
+        </div>
+      </div>
+
+      <div class="set-section">
+        <div class="set-step">Step 2</div>
+        <h3>Save the RuName eBay gives you</h3>
+        <p class="set-help">After you save on eBay, it shows a name for that entry, like <strong>Peter_Hoffmann-PeterHof-Lister-abcde</strong>. Copy it here.</p>
+        <div class="set-row">
+          <label for="ru-name">RuName</label>
+          <div class="set-input-row"><input id="ru-name" placeholder="Your_Name-YourApp-Lister-abcde" autocomplete="off" spellcheck="false"><button class="btn btn-primary btn-sm" onclick="saveRuName()" id="ru-save">Save</button></div>
+        </div>
+      </div>
+
+      <div class="set-section">
+        <div class="set-step">Step 3</div>
+        <h3>Connect</h3>
+        <p class="set-help" id="connect-help">Opens eBay's sign-in. Approve access once and you're done — your sales import automatically after that.</p>
+        <div class="set-buttons">
+          <button class="btn btn-primary" id="connect-btn" onclick="connectEbay()">Connect eBay</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script>
+// ─── PartsLister Pro Dashboard v305 ──────────────────────────────────────────
+// v305: real eBay sales (when connected in ⚙ Settings → Admin); sample data otherwise.
+// v306: Admin lists each eBay permission and whether it's approved.
+// v307: eBay fees tile and penalty box.
+// v308: fee check in Admin — itemized fees for exact dates.
+// v309: sales-tax toggle — show sales with or without the tax eBay collects.
+// v310: days follow eBay's time zone (Pacific), so ranges cover the same hours as eBay's reports.
+// v311: clicking the "eBay · updated" badge refreshes from eBay right away.
+// v312: partial refunds come off sales like on eBay; "Download orders" in Admin.
+// v315: This month / Last month / any month / custom dates; penalty fees this year (last year under it).
+// v316: this page is now Sales (/sales). Home (/) and Listings (/listings) tabs in the header.
+// v318: tabs are Home / Sales / Active (/active) / Listings (the Listing Tool, /list).
+// v326: Download button saves the range you're looking at; Settings → Account now holds your keys.
+// v327: Download asks first; Admin links to the Diagnostics page.
+// v330: Settings → Messages tab (AI reply instructions, problem replies, auto-translate).
+// v331: a reply choice for each problem type + discount offers.
+// v333: Fitment questions — optional "Also ask for the buyer's VIN".
+// v335: delivered-but-missing choice, modules (ask if programmed), tone, sign-off.
+// v336: more-photos choice + your availability (used when a draft says you'll get back to them).
+// v338: Admin → Download messages (development: buyer conversations as a text file, names removed).
+// v339: Settings → Messages → Common questions (tested/warranty, programming, donor vehicle, shipping, other countries, buyer's language).
+// Shares the same sign-in and account as the listing tool (/list).
+// v304: sales dashboard — big daily bar graph with a remembered date range.
+// The sales numbers are SAMPLE data for now; real eBay sales replace
+// getSalesDays() later and nothing else on the page needs to change.
+
+const NS = 'http://www.w3.org/2000/svg';
+const RANGES = {
+  today: { days: 1,   label: 'Today' },
+  week:  { days: 7,   label: 'Last 7 days' },
+  '31':  { days: 31,  label: 'Last 31 days' },
+  '90':  { days: 90,  label: 'Last 90 days' },
+  year:  { days: 365, label: 'Last 365 days' }
+};
+const RANGE_KEY = 'plp_dash_range';
+let currentRange = 'week';
+let allDays = [];     // [{ date: Date, key: 'YYYY-MM-DD', sales: Number, orders: Number }]
+// v305
+let me = null;              // the signed-in account
+let salesMode = 'sample';   // 'sample' until eBay is connected, then 'live'
+let salesInfo = {};         // { syncing, lastSync, lastError, historyFrom }
+let pollTimer = null;
+let taxOn = false;        // v309: add sales tax into the sales numbers
+let liveRows = [];        // v309: last daily rows from the server, so the toggle can redraw without refetching
+let feesInfo = { available: false, reason: 'not_connected' };   // v307
+let feesByDay = new Map();                                       // v307: 'YYYY-MM-DD' → [fees, penalty]
+let shownDays = [];
+let curInfo = { days: 7, label: 'Last 7 days', start: '', end: '' };   // v315: the range being shown
+let rangeStartIdx = 0;                                                   // v315: where it starts in allDays
+
+// ─── FORMATTING ──────────────────────────────────────────────────────────────
+const money0 = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+const money2 = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 });
+function moneyShort(n) {
+  if (n >= 1e6) return '$' + (n / 1e6).toFixed(n >= 1e7 ? 0 : 1).replace(/\.0$/, '') + 'M';
+  if (n >= 1e4) return '$' + Math.round(n / 1e3) + 'K';
+  if (n >= 1e3) return '$' + (n / 1e3).toFixed(1).replace(/\.0$/, '') + 'K';
+  return '$' + Math.round(n);
+}
+const fmtLong  = (d) => d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+const fmtShort = (d) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+const fmtDow   = (d) => d.toLocaleDateString('en-US', { weekday: 'short' });
+const fmtMonth = (d) => d.toLocaleDateString('en-US', { month: 'short' });
+function dayKey(d) {
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+// v310: eBay's Seller Hub and reports count days in Pacific time. Using the
+// same zone means a day here starts and ends at the same moment as on eBay.
+const EBAY_TZ = 'America/Los_Angeles';
+function ebayToday() {
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: EBAY_TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()).split('-').map(Number);
+  return new Date(parts[0], parts[1] - 1, parts[2]);
+}
+
+// ─── SAMPLE SALES (replace with real eBay data later) ───────────────────────
+// Deterministic: the same date always gets the same sample numbers, so the
+// graph doesn't jump around on refresh.
+function seededRandom(seed) {
+  let t = seed >>> 0;
+  return function () {
+    t += 0x6D2B79F5;
+    let r = Math.imul(t ^ (t >>> 15), 1 | t);
+    r ^= r + Math.imul(r ^ (r >>> 7), 61 | r);
+    return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function getSalesDays(totalDays) {
+  const days = [];
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  for (let i = totalDays - 1; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(today.getDate() - i);
+    const key = dayKey(d);
+    const rnd = seededRandom(parseInt(key.replace(/-/g, ''), 10));
+    const dow = d.getDay();
+    const weekend = dow === 0 ? 0.55 : dow === 6 ? 0.75 : 1;
+    const growth = 0.85 + 0.3 * (1 - i / totalDays);              // gently rising year
+    const season = 1 + 0.12 * Math.sin((d.getMonth() + 1) / 12 * Math.PI * 2);
+    let orders = Math.max(0, Math.round((8 + rnd() * 12) * weekend * growth * season));
+    let sales = 0;
+    for (let o = 0; o < orders; o++) sales += 28 + rnd() * rnd() * 240;   // most parts cheap, some big
+    if (i === 0) {                                                 // today: only part of the day so far
+      const frac = Math.min(1, (now.getHours() * 60 + now.getMinutes()) / (24 * 60) + 0.05);
+      orders = Math.round(orders * frac);
+      sales = sales * frac;
+    }
+    days.push({ date: d, key, sales: Math.round(sales * 100) / 100, orders });
+  }
+  return days;
+}
+
+// ─── FIGURES ─────────────────────────────────────────────────────────────────
+function setText(id, text) { document.getElementById(id).textContent = text; }
+
+function renderFigures() {
+  // const r = RANGES[currentRange];
+  const r = curInfo;   // v315: works for months and custom dates too
+  const total = shownDays.reduce((s, d) => s + d.sales, 0);
+  const orders = shownDays.reduce((s, d) => s + d.orders, 0);
+  const today = allDays[allDays.length - 1];
+  const yesterday = allDays[allDays.length - 2];
+  const best = shownDays.reduce((b, d) => (d.sales > b.sales ? d : b), shownDays[0]);
+
+  // setText('fig-total-label', 'Sales · ' + r.label);
+  setText('fig-total-label', (salesMode === 'live' && taxOn ? 'Sales incl. tax · ' : 'Sales · ') + r.label);   // v309
+  setText('fig-total', money0.format(total));
+  // Compare against the same-length period right before it
+  // const prev = allDays.slice(-2 * r.days, -r.days);
+  const prev = allDays.slice(Math.max(0, rangeStartIdx - r.days), rangeStartIdx);   // v315: the days right before the range
+  // v305: with real data, compare only against days eBay actually gave us.
+  // eBay keeps about 2 years, so the Year view's earlier period can be a day or
+  // two short — then it compares by the same number of days on both sides.
+  let prevDays = prev;
+  if (salesMode === 'live') prevDays = salesInfo.historyFrom ? prev.filter(d => d.key > salesInfo.historyFrom) : [];
+  const covered = prevDays.length >= Math.ceil(r.days * 0.9);
+  if (currentRange !== 'today' && !covered) {
+    setText('fig-total-sub', 'Not enough history yet to compare');
+  } else if (prev.length === r.days && currentRange !== 'today') {
+    // const prevTotal = prev.reduce((s, d) => s + d.sales, 0);
+    const prevTotal = prevDays.reduce((s, d) => s + d.sales, 0) * (r.days / prevDays.length);
+    const pct = prevTotal ? ((total - prevTotal) / prevTotal) * 100 : 0;
+    setText('fig-total-sub', (pct >= 0 ? '▲ ' : '▼ ') + Math.abs(pct).toFixed(1) + '% vs the ' + r.days + ' days before');
+  } else {
+    setText('fig-total-sub', 'So far today');
+  }
+
+  setText('fig-today', money0.format(today.sales));
+  setText('fig-today-sub', yesterday ? 'Yesterday ' + money0.format(yesterday.sales) : ' ');
+
+  setText('fig-orders', orders.toLocaleString());
+  setText('fig-orders-sub', orders ? 'Avg ' + money2.format(total / orders) + ' per order' : ' ');
+
+  setText('fig-avg', money0.format(total / r.days));
+  setText('fig-avg-sub', r.days + ' day' + (r.days === 1 ? '' : 's'));
+
+  // setText('fig-best', money0.format(best.sales));
+  // setText('fig-best-sub', fmtLong(best.date));
+  setText('fig-best', best.sales > 0 ? money0.format(best.sales) : '—');      // v305: no sales yet → no best day
+  setText('fig-best-sub', best.sales > 0 ? fmtLong(best.date) : ' ');
+
+  setText('chart-title', 'Sales per day · ' + r.label);
+  renderFees(total);   // v307
+}
+
+// ─── CHART ───────────────────────────────────────────────────────────────────
+// Round step for the y-axis (1, 2 or 5 × a power of ten), about 4 gridlines
+function niceStep(v) {
+  if (v <= 0) return 25;
+  const exp = Math.pow(10, Math.floor(Math.log10(v)));
+  const f = v / exp;
+  return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * exp;
+}
+
+function el(name, attrs, parent) {
+  const n = document.createElementNS(NS, name);
+  for (const k in attrs) n.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(n);
+  return n;
+}
+
+// A bar with a 4px rounded top and a square bottom on the baseline
+function barPath(x, y, w, h) {
+  const r = Math.min(4, w / 2, h);
+  if (h <= 0) return '';
+  return `M${x},${y + h}V${y + r}Q${x},${y} ${x + r},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${y + h}Z`;
+}
+
+function xTicks(days, slot) {
+  const n = days.length;
+  const out = [];
+  if (n === 1) return [{ i: 0, label: fmtLong(days[0].date) }];
+  if (n <= 7) return days.map((d, i) => ({ i, label: (slot < 48 ? fmtDow(d.date).slice(0, 2) : fmtDow(d.date)) + ' ' + d.date.getDate() }));
+  if (n <= 90) {
+    // every N days, counted back from today; N grows on narrow screens
+    const need = Math.ceil(64 / slot);
+    const every = [1, 2, 3, 5, 7, 10, 14, 15, 21, 30].find(v => v >= need) || 30;
+    for (let i = n - 1; i >= 0; i -= every) out.push({ i, label: fmtShort(days[i].date) });
+    return out;
+  }
+  // Year: month names at the 1st of each month, thinned if they'd crowd
+  let last = -Infinity;
+  days.forEach((d, i) => {
+    if (d.date.getDate() === 1 && (i - last) * slot >= 34) { out.push({ i, label: fmtMonth(d.date) }); last = i; }
+  });
+  return out;
+}
+
+function renderChart() {
+  const svg = document.getElementById('chart');
+  const wrap = document.getElementById('chart-wrap');
+  const W = wrap.clientWidth, H = wrap.clientHeight;
+  if (!W || !H) return;
+  while (svg.firstChild) svg.removeChild(svg.firstChild);
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+
+  const phone = W < 520;
+  const m = { top: 28, right: 8, bottom: 26, left: phone ? 40 : 52 };
+  const pw = W - m.left - m.right, ph = H - m.top - m.bottom;
+  const n = shownDays.length;
+  const peak = Math.max(1, ...shownDays.map(d => d.sales)) * 1.08;
+  const step = niceStep(peak / 4);
+  const steps = Math.max(1, Math.ceil(peak / step));
+  const max = step * steps;
+
+  // Gridlines + y ticks (4 steps, clean numbers)
+  const g = el('g', {}, svg);
+  for (let s = 0; s <= steps; s++) {
+    const v = step * s;
+    const y = m.top + ph - (v / max) * ph;
+    el('line', { class: s === 0 ? 'baseline' : 'gridline', x1: m.left, x2: W - m.right, y1: Math.round(y) + 0.5, y2: Math.round(y) + 0.5 }, g);
+    const t = el('text', { class: 'tick', x: m.left - 8, y: y + 4, 'text-anchor': 'end' }, g);
+    t.textContent = moneyShort(v);
+  }
+
+  // Bars — always one per day. Thin ranges drop the gap so bars stay visible.
+  const slot = pw / n;
+  const gap = slot >= 6 ? 2 : slot >= 3 ? 1 : 0;
+  const maxW = n === 1 ? 72 : 24;
+  const bw = Math.max(1, Math.min(maxW, slot - gap));
+  const bars = el('g', {}, svg);
+  const barEls = [];
+  shownDays.forEach((d, i) => {
+    const h = (d.sales / max) * ph;
+    const x = m.left + i * slot + (slot - bw) / 2;
+    const y = m.top + ph - h;
+    const p = el('path', { class: 'bar', d: barPath(x, y, bw, h) }, bars);
+    barEls.push(p);
+  });
+
+  // Label the single bar on the Today view (it's the only value)
+  if (n === 1) {
+    const d = shownDays[0];
+    const h = (d.sales / max) * ph;
+    const t = el('text', { class: 'bar-label', x: m.left + pw / 2, y: m.top + ph - h - 8, 'text-anchor': 'middle' }, svg);
+    t.textContent = money0.format(d.sales);
+  }
+
+  // X axis labels
+  const ticks = xTicks(shownDays, slot);
+  const tg = el('g', {}, svg);
+  ticks.forEach(({ i, label }) => {
+    const x = m.left + i * slot + slot / 2;
+    const t = el('text', { class: 'tick', x, y: H - 6, 'text-anchor': 'middle' }, tg);
+    t.textContent = label;
+  });
+  // Keep the first/last labels inside the chart
+  tg.querySelectorAll('text').forEach(t => {
+    const b = t.getBBox();
+    if (b.x < m.left - 4) t.setAttribute('x', parseFloat(t.getAttribute('x')) + (m.left - 4 - b.x));
+    if (b.x + b.width > W) t.setAttribute('x', parseFloat(t.getAttribute('x')) - (b.x + b.width - W));
+  });
+
+  // Hover layer: the whole column slot is the hit target, not just the bar
+  const tip = document.getElementById('tooltip');
+  let active = -1;
+  function show(i) {
+    if (i === active) return;
+    if (active >= 0) barEls[active].classList.remove('active');
+    active = i;
+    if (i < 0) { svg.classList.remove('hovering'); tip.classList.remove('show'); return; }
+    svg.classList.add('hovering');
+    barEls[i].classList.add('active');
+    const d = shownDays[i];
+    tip.textContent = '';
+    const v = document.createElement('span');
+    v.className = 'tt-value';
+    v.textContent = money2.format(d.sales);
+    tip.appendChild(v);
+    tip.appendChild(document.createTextNode(d.orders + ' order' + (d.orders === 1 ? '' : 's') + ' · ' + fmtLong(d.date)));
+    const h = (d.sales / max) * ph;
+    let x = m.left + i * slot + slot / 2;
+    const y = Math.max(m.top + ph - h - 10, 70);
+    tip.style.left = x + 'px';
+    tip.style.top = y + 'px';
+    tip.classList.add('show');
+    // keep the tooltip inside the card
+    const tw = tip.offsetWidth;
+    x = Math.max(tw / 2 + 2, Math.min(W - tw / 2 - 2, x));
+    tip.style.left = x + 'px';
+  }
+  function indexAt(clientX) {
+    const r = svg.getBoundingClientRect();
+    const px = clientX - r.left - m.left;
+    if (px < 0 || px > pw) return -1;
+    return Math.min(n - 1, Math.max(0, Math.floor(px / slot)));
+  }
+  svg.onpointermove = (e) => show(indexAt(e.clientX));
+  svg.onpointerdown = (e) => show(indexAt(e.clientX));
+  svg.onpointerleave = () => show(-1);
+
+  // Keyboard: arrow keys step through days
+  svg.setAttribute('tabindex', '0');
+  svg.onkeydown = (e) => {
+    if (e.key === 'ArrowRight') { show(Math.min(n - 1, active < 0 ? n - 1 : active + 1)); e.preventDefault(); }
+    if (e.key === 'ArrowLeft')  { show(Math.max(0, active < 0 ? n - 1 : active - 1)); e.preventDefault(); }
+    if (e.key === 'Escape') show(-1);
+  };
+  svg.onblur = () => show(-1);
+
+  svg.setAttribute('aria-label', `Sales per day, ${curInfo.label}. Total ${money0.format(shownDays.reduce((s, d) => s + d.sales, 0))}.`);
+}
+
+function renderTable() {
+  const body = document.getElementById('table-body');
+  body.textContent = '';
+  [...shownDays].reverse().forEach(d => {
+    const tr = document.createElement('tr');
+    const a = document.createElement('td'); a.textContent = fmtLong(d.date);
+    const b = document.createElement('td'); b.className = 'num'; b.textContent = money2.format(d.sales);
+    const c = document.createElement('td'); c.className = 'num'; c.textContent = d.orders;
+    tr.append(a, b, c);
+    body.appendChild(tr);
+  });
+}
+
+// ─── RANGE PICKER (remembered) ───────────────────────────────────────────────
+// v315: any range → first and last day (eBay time), how many days, and a label.
+// Ranges: today, week, 31, 90, year, thismonth, lastmonth,
+//         m:YYYY-MM (one month), c:YYYY-MM-DD:YYYY-MM-DD (custom dates)
+function keyToDate(k) { const [y, m, d] = k.split('-').map(Number); return new Date(y, m - 1, d); }
+function daysBetween(a, b) { return Math.round((keyToDate(b) - keyToDate(a)) / 86400000) + 1; }
+const fmtMonthYear = (d) => d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+function rangeInfo(range) {
+  if (!allDays.length) return null;
+  const todayKey = allDays[allDays.length - 1].key, firstKey = allDays[0].key;
+  const today = keyToDate(todayKey);
+  const clamp = (k) => (k < firstKey ? firstKey : k > todayKey ? todayKey : k);
+  let start, end, label;
+  if (RANGES[range]) {
+    const r = RANGES[range];
+    return { days: r.days, label: r.label, start: allDays[allDays.length - r.days].key, end: todayKey };
+  }
+  if (range === 'thismonth' || range === 'lastmonth' || /^m:\d{4}-\d{2}$/.test(range)) {
+    let first;
+    if (range === 'thismonth') first = new Date(today.getFullYear(), today.getMonth(), 1);
+    else if (range === 'lastmonth') first = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+    else { const [y, m] = range.slice(2).split('-').map(Number); first = new Date(y, m - 1, 1); }
+    const last = new Date(first.getFullYear(), first.getMonth() + 1, 0);
+    start = dayKey(first); end = dayKey(last);
+    if (start > todayKey || end < firstKey) return null;
+    label = fmtMonthYear(first) + (end > todayKey ? ' (so far)' : '');
+  } else {
+    const m = /^c:(\d{4}-\d{2}-\d{2}):(\d{4}-\d{2}-\d{2})$/.exec(range);
+    if (!m) return null;
+    start = m[1]; end = m[2];
+    if (start > end) [start, end] = [end, start];
+    const a = keyToDate(clamp(start)), b = keyToDate(clamp(end));
+    label = fmtShort(a) + (a.getFullYear() !== b.getFullYear() ? ', ' + a.getFullYear() : '') + ' – ' + fmtShort(b) + ', ' + b.getFullYear();
+  }
+  start = clamp(start); end = clamp(end);
+  return { days: daysBetween(start, end), label, start, end };
+}
+
+// v315: month dropdown — every month we have sales history for, newest first
+function fillMonthMenu() {
+  const sel = document.getElementById('range-month');
+  if (!allDays.length) return;
+  while (sel.options.length > 1) sel.remove(1);
+  const first = keyToDate(allDays[0].key), last = keyToDate(allDays[allDays.length - 1].key);
+  for (let d = new Date(last.getFullYear(), last.getMonth(), 1); d >= new Date(first.getFullYear(), first.getMonth(), 1); d.setMonth(d.getMonth() - 1)) {
+    const o = document.createElement('option');
+    o.value = 'm:' + d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+    o.textContent = fmtMonthYear(d);
+    sel.appendChild(o);
+  }
+}
+
+function toggleCustom() {
+  const box = document.getElementById('range-custom');
+  box.hidden = !box.hidden;
+  if (!box.hidden) {
+    const from = document.getElementById('range-from'), to = document.getElementById('range-to');
+    if (allDays.length) { from.min = to.min = allDays[0].key; from.max = to.max = allDays[allDays.length - 1].key; }
+    if (!from.value) from.value = curInfo.start;
+    if (!to.value) to.value = curInfo.end;
+    from.focus();
+  }
+  document.getElementById('range-custom-btn').setAttribute('aria-pressed', !box.hidden || currentRange.startsWith('c:') ? 'true' : 'false');
+}
+
+function applyCustom() {
+  const a = document.getElementById('range-from').value, b = document.getElementById('range-to').value;
+  if (!a || !b) { showToast('Pick a start date and an end date.', true); return; }
+  setRange('c:' + a + ':' + b, true);
+}
+
+function setRange(range, save) {
+  // if (!RANGES[range]) range = 'week';
+  // currentRange = range;
+  // shownDays = allDays.slice(-RANGES[range].days);
+  // document.querySelectorAll('.range-picker button').forEach(b => {
+  //   b.setAttribute('aria-pressed', b.dataset.range === range ? 'true' : 'false');
+  // });
+  // v315: months and custom dates too
+  let info = rangeInfo(range);
+  if (!info) { range = 'week'; info = rangeInfo(range); }
+  if (!info) return;
+  currentRange = range;
+  curInfo = info;
+  rangeStartIdx = allDays.findIndex(d => d.key >= info.start);
+  shownDays = allDays.filter(d => d.key >= info.start && d.key <= info.end);
+  document.querySelectorAll('.range-picker button').forEach(b => {
+    b.setAttribute('aria-pressed', b.dataset.range === range ? 'true' : 'false');
+  });
+  fillMonthMenu();
+  const sel = document.getElementById('range-month');
+  sel.value = range.startsWith('m:') ? range : '';
+  sel.classList.toggle('active', range.startsWith('m:'));
+  const isCustom = range.startsWith('c:');
+  if (isCustom) { document.getElementById('range-from').value = info.start; document.getElementById('range-to').value = info.end; }
+  else document.getElementById('range-custom').hidden = true;
+  document.getElementById('range-custom-btn').setAttribute('aria-pressed', isCustom ? 'true' : 'false');
+  if (save) {
+    try { localStorage.setItem(RANGE_KEY, range); } catch (e) { /* not critical */ }
+    // v305: also on your account, so every computer opens on the same range
+    fetch('/api/prefs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dashRange: range }) }).catch(() => {});
+  }
+  renderFigures();
+  renderChart();
+  renderTable();
+}
+
+document.querySelectorAll('.range-picker button').forEach(b => {
+  b.addEventListener('click', () => setRange(b.dataset.range, true));
+});
+
+let resizeTimer;
+new ResizeObserver(() => { clearTimeout(resizeTimer); resizeTimer = setTimeout(renderChart, 60); })
+  .observe(document.getElementById('chart-wrap'));
+
+// ─── SIGN-IN ─────────────────────────────────────────────────────────────────
+async function showAuth(message) {
+  document.getElementById('auth-overlay').classList.remove('hidden');
+  document.getElementById('auth-loading').style.display = 'none';
+  document.getElementById('auth-form').style.display = 'flex';
+  const err = document.getElementById('auth-error');
+  err.textContent = message || '';
+  err.style.display = message ? 'block' : 'none';
+  try {
+    const st = await (await fetch('/api/auth-status')).json();
+    document.getElementById('auth-signup-btn').style.display = st.signupOpen ? 'flex' : 'none';
+    document.getElementById('auth-signup-note').style.display = st.signupOpen ? 'block' : 'none';
+  } catch (e) { /* sign-in still works */ }
+  setTimeout(() => document.getElementById('auth-email').focus(), 50);
+}
+
+async function authSubmit(mode) {
+  const email = document.getElementById('auth-email').value.trim();
+  const password = document.getElementById('auth-password').value;
+  const err = document.getElementById('auth-error');
+  if (!email || !password) { err.textContent = 'Enter your email and password.'; err.style.display = 'block'; return; }
+  const btns = [document.getElementById('auth-login-btn'), document.getElementById('auth-signup-btn')];
+  btns.forEach(b => b.disabled = true);
+  try {
+    const r = await fetch('/api/' + (mode === 'signup' ? 'signup' : 'login'), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { err.textContent = d.error || 'Something went wrong.'; err.style.display = 'block'; return; }
+    // location.reload();
+    // v316: after signing in, go Home — or back to the page that sent you here
+    const next = new URLSearchParams(location.search).get('next');
+    location.href = next && /^\/[a-z]*$/.test(next) ? next : '/';
+  } catch (e) {
+    err.textContent = 'Could not reach the server.'; err.style.display = 'block';
+  } finally {
+    btns.forEach(b => b.disabled = false);
+  }
+}
+
+async function logout() {
+  await fetch('/api/logout', { method: 'POST' }).catch(() => {});
+  location.reload();
+}
+
+// ─── v305: REAL SALES ────────────────────────────────────────────────────────
+function buildLiveDays(rows, totalDays) {
+  // const byDay = new Map(rows.map(([key, sales, orders]) => [key, { sales, orders }]));
+  // v309: rows are [day, sales, orders, tax]; tax is added when the toggle is on
+  const byDay = new Map(rows.map(([key, sales, orders, tax]) => [key, { sales: Math.round((sales + (taxOn ? (tax || 0) : 0)) * 100) / 100, orders }]));
+  const days = [];
+  const now = new Date();
+  // const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const today = ebayToday();   // v310: today in eBay time
+  for (let i = totalDays - 1; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(today.getDate() - i);
+    const key = dayKey(d);
+    const v = byDay.get(key) || { sales: 0, orders: 0 };
+    days.push({ date: d, key, sales: v.sales, orders: v.orders });
+  }
+  return days;
+}
+
+async function loadSales() {
+  let d = { connected: false };
+  try {
+    // const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+    const tz = EBAY_TZ;   // v310
+    const r = await fetch('/api/sales?tz=' + encodeURIComponent(tz));
+    if (r.ok) d = await r.json();
+  } catch (e) { /* fall back to sample */ }
+  if (d.connected) {
+    salesMode = 'live';
+    salesInfo = { syncing: !!d.syncing, lastSync: d.lastSync, lastError: d.lastError, historyFrom: d.historyFrom, taxReady: !!d.taxReady };   // v309: + taxReady
+    liveRows = d.days || [];   // v309
+    allDays = buildLiveDays(liveRows, 730);
+  } else {
+    salesMode = 'sample';
+    salesInfo = {};
+    allDays = getSalesDays(730);
+  }
+  renderBadge();
+  clearTimeout(pollTimer);
+  // if (salesInfo.syncing) pollTimer = setTimeout(refreshSales, 4000);
+  if (salesInfo.syncing) pollTimer = setTimeout(refreshSales, manualRefresh ? 1500 : 4000);   // v311: faster while you wait
+  else if (manualRefresh) {                                                                   // v311: your refresh finished
+    manualRefresh = false;
+    if (salesInfo.lastError) showToast('eBay refresh had a problem — click the badge for details.', true);
+    else showToast('Updated from eBay just now.');
+  }
+}
+
+async function refreshSales() {
+  await loadSales();
+  renderTaxToggle();   // v309
+  await loadFees();   // v307
+  setRange(currentRange, false);
+  if (document.getElementById('settings-overlay').classList.contains('open')) loadEbayStatus();
+}
+
+function timeAgo(iso) {
+  if (!iso) return 'never';
+  const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return mins + ' min ago';
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return hrs + ' hr ago';
+  return Math.round(hrs / 24) + ' days ago';
+}
+
+function renderBadge() {
+  const b = document.getElementById('sample-badge');
+  b.className = 'sample-badge';
+  b.textContent = '';
+  const dot = document.createElement('span');
+  dot.className = 'dot';
+  if (salesMode === 'live') {
+    b.classList.add('live');
+    let text, title;
+    if (salesInfo.lastError) { b.classList.add('warn'); text = 'eBay · sync problem'; title = salesInfo.lastError; }
+    else if (salesInfo.syncing) { b.classList.add('busy'); text = salesInfo.lastSync ? 'eBay · updating…' : 'eBay · importing…'; title = 'Importing your sold orders from eBay'; }
+    // else { text = 'eBay · updated ' + timeAgo(salesInfo.lastSync); title = 'Real sales from eBay. Updates automatically every ' + 15 + ' minutes when you open the dashboard.'; }
+    else { text = 'eBay · updated ' + timeAgo(salesInfo.lastSync) + ' · ↻'; title = 'Click to refresh from eBay now. It also refreshes on its own every 15 minutes.'; }   // v311
+    b.append(dot, document.createTextNode(text));
+    b.title = title;
+    b.disabled = !(me && me.isAdmin);
+  } else {
+    b.textContent = (me && me.isAdmin) ? 'Sample data · Connect eBay' : 'Sample data';
+    b.title = 'These numbers are made up so you can see the layout.';
+    b.disabled = !(me && me.isAdmin);
+  }
+}
+
+// function badgeClick() {
+//   if (me && me.isAdmin) openSettings('admin');
+// }
+// v311: the badge IS the refresh button. It only opens Settings when there's
+// something to fix there (not connected yet, or a sync problem).
+let manualRefresh = false;
+async function badgeClick() {
+  if (!(me && me.isAdmin)) return;
+  if (salesMode !== 'live' || salesInfo.lastError) { openSettings('admin'); return; }
+  if (salesInfo.syncing) return;               // already updating
+  manualRefresh = true;
+  salesInfo.syncing = true;
+  renderBadge();                               // shows "eBay · updating…" immediately
+  try { await fetch('/api/ebay/sync', { method: 'POST' }); }
+  catch (e) { manualRefresh = false; showToast('Could not reach the server.', true); }
+  clearTimeout(pollTimer);
+  pollTimer = setTimeout(refreshSales, 1500);
+}
+
+// Coming back from eBay's sign-in
+function handleEbayReturn() {
+  const q = new URLSearchParams(location.search);
+  const result = q.get('ebay');
+  if (!result) return;
+  // history.replaceState(null, '', '/');
+  history.replaceState(null, '', '/sales');   // v316: this page is /sales now
+  if (result === 'connected') showToast('eBay connected — importing your sales. This can take a minute.');
+  else if (result === 'declined') showToast('eBay connection was cancelled.', true);
+  else if (result === 'error') { showToast(q.get('msg') || 'eBay connection failed.', true); openSettings('admin'); }
+}
+
+let toastTimer;
+function showToast(msg, isError) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.toggle('error', !!isError);
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), isError ? 7000 : 4500);
+}
+
+// ─── v309: SALES TAX TOGGLE ──────────────────────────────────────────────────
+function renderTaxToggle() {
+  const t = document.getElementById('tax-toggle');
+  t.style.display = salesMode === 'live' ? 'inline-flex' : 'none';
+  t.setAttribute('aria-checked', taxOn ? 'true' : 'false');
+  const ready = salesInfo.taxReady;
+  t.disabled = !ready;
+  document.getElementById('tax-toggle-label').textContent = ready ? 'Include sales tax' : 'Sales tax importing…';
+  t.title = ready
+    ? 'On: sales include the sales tax eBay collects (matches eBay’s "Total sales"). Off: your item sales + shipping.'
+    : 'Importing sales tax from eBay — this takes about a minute, once.';
+}
+
+function setTax(on, save) {
+  taxOn = !!on;
+  if (salesMode === 'live') allDays = buildLiveDays(liveRows, 730);
+  renderTaxToggle();
+  setRange(currentRange, false);
+  if (save) fetch('/api/prefs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dashTax: taxOn }) }).catch(() => {});
+}
+
+// ─── v307: FEES ──────────────────────────────────────────────────────────────
+async function loadFees() {
+  let d = { available: false, reason: 'not_connected' };
+  if (salesMode === 'live') {
+    try {
+      // const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+      const tz = EBAY_TZ;   // v310
+      const r = await fetch('/api/fees?tz=' + encodeURIComponent(tz));
+      if (r.ok) d = await r.json();
+    } catch (e) { /* show as unavailable */ }
+  }
+  feesInfo = d;
+  feesByDay = new Map((d.days || []).map(([key, fees, penalty]) => [key, [fees, penalty]]));
+  // keep checking while the first fee import runs
+  if (d.reason === 'importing') { clearTimeout(pollTimer); pollTimer = setTimeout(refreshSales, 4000); }
+}
+
+function renderFees(salesTotal) {
+  // const r = RANGES[currentRange];
+  const r = curInfo;   // v315
+  renderPenaltyYear();   // v315
+  const tile = document.getElementById('penalty-tile');
+  const tag = document.getElementById('penalty-tag');
+  setText('fig-fees-label', 'eBay fees · ' + r.label);
+  setText('fig-penalty-label', 'Penalty fees · ' + r.label);
+  tile.classList.remove('ok', 'bad');
+  tag.textContent = '';
+  if (!feesInfo.available) {
+    const why = {
+      not_connected: 'Connect eBay in ⚙ Settings to see fees',
+      not_approved: 'Approve "Fees" in ⚙ Settings → Admin',
+      importing: 'Importing your fees from eBay…',
+      error: 'Fee import problem — see ⚙ Settings → Admin'
+    }[feesInfo.reason] || ' ';
+    setText('fig-fees', '—'); setText('fig-fees-sub', why);
+    setText('fig-penalty', '—'); setText('fig-penalty-sub', ' ');
+    return;
+  }
+  let fees = 0, penalty = 0;
+  shownDays.forEach(d => { const v = feesByDay.get(d.key); if (v) { fees += v[0]; penalty += v[1]; } });
+  setText('fig-fees', money0.format(Math.max(0, fees)));
+  setText('fig-fees-sub', salesTotal > 0 ? (fees / salesTotal * 100).toFixed(1) + '% of your sales' : 'No sales in this period');
+  if (penalty > 0.005) {
+    tile.classList.add('bad');
+    setText('fig-penalty', money2.format(penalty));
+    tag.textContent = 'Paying penalty';
+    setText('fig-penalty-sub', 'Extra fees from your seller standing — ' + (fees > 0 ? (penalty / fees * 100).toFixed(1) + '% of your fees' : ''));
+  } else {
+    tile.classList.add('ok');
+    setText('fig-penalty', '$0');
+    tag.textContent = 'None';
+    setText('fig-penalty-sub', 'No Below Standard or "not as described" surcharges');
+  }
+}
+
+// v315: penalty fees paid this calendar year (eBay time), last year underneath —
+// the same whatever range the graph shows.
+function renderPenaltyYear() {
+  const tile = document.getElementById('penalty-year-tile');
+  const tag = document.getElementById('penalty-year-tag');
+  const year = ebayToday().getFullYear();
+  setText('fig-penalty-year-label', 'Penalty fees · ' + year);
+  tile.classList.remove('ok', 'bad');
+  tag.textContent = '';
+  if (!feesInfo.available) { setText('fig-penalty-year', '—'); setText('fig-penalty-year-sub', ' '); return; }
+  let thisYear = 0, lastYear = 0;
+  feesByDay.forEach((v, key) => {
+    if (key.startsWith(year + '-')) thisYear += v[1];
+    else if (key.startsWith((year - 1) + '-')) lastYear += v[1];
+  });
+  if (thisYear > 0.005) { tile.classList.add('bad'); setText('fig-penalty-year', money2.format(thisYear)); tag.textContent = 'Paid'; }
+  else { tile.classList.add('ok'); setText('fig-penalty-year', '$0'); tag.textContent = 'None'; }
+  setText('fig-penalty-year-sub', (year - 1) + ' ' + (lastYear > 0.005 ? money2.format(lastYear) : '$0'));
+}
+
+// ─── v305: SETTINGS ──────────────────────────────────────────────────────────
+function openSettings(tab) {
+  document.getElementById('set-email').textContent = me ? me.email : '—';
+  document.getElementById('set-role').textContent = me && me.isAdmin ? '  · admin' : '';
+  document.getElementById('tab-admin').style.display = me && me.isAdmin ? '' : 'none';
+  document.getElementById('settings-overlay').classList.add('open');
+  // showSettingsTab(tab === 'admin' && me && me.isAdmin ? 'admin' : 'account');
+  showSettingsTab(tab === 'admin' && me && me.isAdmin ? 'admin' : tab === 'messages' ? 'messages' : 'account');   // v330
+}
+
+function closeSettings() {
+  document.getElementById('settings-overlay').classList.remove('open');
+}
+
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeSettings(); });
+
+function showSettingsTab(tab) {
+  // ['account', 'admin'].forEach(t => {
+  ['account', 'messages', 'admin'].forEach(t => {   // v330: + messages
+    document.getElementById('tab-' + t).setAttribute('aria-selected', t === tab ? 'true' : 'false');
+    document.getElementById('panel-' + t).classList.toggle('active', t === tab);
+  });
+  if (tab === 'admin') loadEbayStatus();
+  if (tab === 'account') loadKeys();   // v326
+  if (tab === 'messages') loadMsgSettings();   // v330
+}
+
+// ─── v326: ACCOUNT KEYS ──────────────────────────────────────────────────────
+const KEY_FIELDS = ['apiKey', 'claudeModel', 'ebayClientId', 'ebayClientSecret', 'ebayUsername', 'ebayUserToken', 'cloudinaryCloudName', 'cloudinaryApiKey', 'cloudinaryApiSecret', 'serpApiKey'];
+let keysLoaded = false;
+async function loadKeys() {
+  try {
+    const r = await fetch('/api/account/keys');
+    if (!r.ok) throw new Error();
+    const k = (await r.json()).keys || {};
+    KEY_FIELDS.forEach(f => { const el = document.getElementById('k-' + f); if (el) el.value = k[f] || ''; });
+    showTokenStatus(k.ebayUserToken, k.ebayTokenExpiry);
+    keysLoaded = true;
+  } catch (e) { showToast('Could not load your keys.', true); }
+}
+function showTokenStatus(token, expiry) {
+  const el = document.getElementById('k-token-status');
+  if (!token) { el.textContent = 'No User Token saved — the Listing Tool can\u2019t launch listings without it.'; el.style.color = 'var(--danger)'; return; }
+  if (expiry && new Date(expiry) < new Date()) { el.textContent = 'This token expired ' + new Date(expiry).toLocaleDateString() + ' — paste a new one.'; el.style.color = 'var(--danger)'; return; }
+  el.textContent = expiry ? 'Token good until about ' + new Date(expiry).toLocaleDateString() : 'Token saved.';
+  el.style.color = 'var(--success)';
+}
+async function saveKeys() {
+  if (!keysLoaded) { showToast('Keys are still loading — try again in a second.', true); return; }
+  const keys = {};
+  KEY_FIELDS.forEach(f => { const el = document.getElementById('k-' + f); if (el) keys[f] = el.value.trim(); });
+  const btn = document.getElementById('keys-save-btn');
+  btn.disabled = true;
+  try {
+    const r = await fetch('/api/account/keys', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ keys }) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || 'Could not save');
+    showTokenStatus(keys.ebayUserToken, d.tokenExpiry);
+    showToast('Keys saved to your account.');
+  } catch (e) { showToast(e.message, true); }
+  finally { btn.disabled = false; }
+}
+function toggleKeyView(show) {
+  ['apiKey', 'ebayClientSecret', 'cloudinaryApiSecret', 'serpApiKey'].forEach(f => { document.getElementById('k-' + f).type = show ? 'text' : 'password'; });
+}
+
+// ─── v330: MESSAGES SETTINGS ─────────────────────────────────────────────────
+let msDefault = '';
+async function loadMsgSettings() {
+  try {
+    const r = await fetch('/api/msg-settings');
+    if (!r.ok) throw new Error();
+    const d = await r.json();
+    msDefault = d.defaultInstructions || '';
+    document.getElementById('ms-instructions').value = d.instructions || msDefault;
+    setText('ms-instr-note', d.instructions ? 'Using your own instructions.' : 'Using the default.');
+    const sel = document.getElementById('ms-problem');
+    sel.textContent = '';
+    (d.problemPolicies || []).forEach(p => sel.append(new Option(p.label, p.value)));
+    sel.value = d.problemPolicy;
+    document.getElementById('ms-translate').checked = d.autoTranslate !== false;
+    // v331: one choice per problem type
+    const box = document.getElementById('ms-problem-types');
+    box.textContent = '';
+    (d.problemTypes || []).forEach(t => {
+      const row = document.createElement('div'); row.className = 'set-row';
+      const lab = document.createElement('label'); lab.textContent = t.label; lab.htmlFor = 'ms-pt-' + t.key;
+      const s2 = document.createElement('select'); s2.id = 'ms-pt-' + t.key; s2.dataset.key = t.key; s2.title = 'When ' + t.when;
+      s2.style.cssText = sel.style.cssText;
+      t.options.forEach(o => s2.append(new Option(o.label, o.value)));
+      s2.value = (d.problems || {})[t.key] || '';
+      row.append(lab, s2); box.append(row);
+    });
+    document.getElementById('ms-disc-on').checked = !!(d.discount && d.discount.enabled);
+    document.getElementById('ms-disc-pct').value = (d.discount && d.discount.percent) || 5;
+    document.getElementById('ms-fit-vin').checked = !!(d.fitment && d.fitment.askVin);   // v333
+    // v335
+    const dsel = document.getElementById('ms-delivered'); dsel.textContent = '';
+    (d.deliveredOptions || []).forEach(o => dsel.append(new Option(o.label, o.value)));
+    dsel.value = d.deliveredMissing || 'check_first';
+    const tsel = document.getElementById('ms-tone'); tsel.textContent = '';
+    (d.toneOptions || []).forEach(o => tsel.append(new Option(o.label, o.value)));
+    tsel.value = d.tone || 'friendly';
+    document.getElementById('ms-modules').checked = !(d.modules && d.modules.askProgrammed === false);
+    document.getElementById('ms-signoff').value = d.signoff || '';
+    // v336
+    const psel = document.getElementById('ms-photos'); psel.textContent = '';
+    (d.photoOptions || []).forEach(o => psel.append(new Option(o.label, o.value)));
+    psel.value = d.photoRequests || 'check_back';
+    document.getElementById('ms-avail').value = d.availability || '';
+    // v339
+    [['ms-tested', 'testedOptions', 'tested'], ['ms-programming', 'programmingOptions', 'programming'], ['ms-donor', 'donorOptions', 'donor'], ['ms-shipwhen', 'shipWhenOptions', 'shipWhen'], ['ms-intl', 'intlOptions', 'intlNo']].forEach(([elId, optKey, valKey]) => {
+      const x = document.getElementById(elId); x.textContent = '';
+      (d[optKey] || []).forEach(o => x.append(new Option(o.label, o.value)));
+      if (d[valKey]) x.value = d[valKey];
+    });
+    document.getElementById('ms-offers-prog').checked = !!d.offersProgramming;
+    document.getElementById('ms-shipdays').value = d.shipDays || '';
+    document.getElementById('ms-buyer-lang').checked = !!d.buyerLanguage;
+  } catch (e) { showToast('Could not load Messages settings.', true); }
+}
+function useDefaultInstructions() {
+  document.getElementById('ms-instructions').value = msDefault;
+  setText('ms-instr-note', 'Default filled in — click Save to keep it.');
+}
+async function saveMsgSettings() {
+  const btn = document.getElementById('ms-save-btn'); btn.disabled = true;
+  try {
+    // const body = { instructions: …, problemPolicy: …, autoTranslate: … };
+    const problems = {};
+    document.querySelectorAll('#ms-problem-types select').forEach(x => { problems[x.dataset.key] = x.value; });
+    const body = { instructions: document.getElementById('ms-instructions').value, problemPolicy: document.getElementById('ms-problem').value, autoTranslate: document.getElementById('ms-translate').checked,
+      problems, discount: { enabled: document.getElementById('ms-disc-on').checked, percent: parseFloat(document.getElementById('ms-disc-pct').value) || 5 },   // v331
+      fitment: { askVin: document.getElementById('ms-fit-vin').checked },   // v333
+      // v335
+      deliveredMissing: document.getElementById('ms-delivered').value, modules: { askProgrammed: document.getElementById('ms-modules').checked },
+      tone: document.getElementById('ms-tone').value, signoff: document.getElementById('ms-signoff').value,
+      photoRequests: document.getElementById('ms-photos').value, availability: document.getElementById('ms-avail').value,   // v336
+      // v339
+      tested: document.getElementById('ms-tested').value, programming: document.getElementById('ms-programming').value, offersProgramming: document.getElementById('ms-offers-prog').checked,
+      donor: document.getElementById('ms-donor').value, shipWhen: document.getElementById('ms-shipwhen').value, shipDays: document.getElementById('ms-shipdays').value,
+      intlNo: document.getElementById('ms-intl').value, buyerLanguage: document.getElementById('ms-buyer-lang').checked };
+    const r = await fetch('/api/msg-settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'Could not save');
+    setText('ms-instr-note', body.instructions.trim() === msDefault.trim() || !body.instructions.trim() ? 'Using the default.' : 'Using your own instructions.');
+    showToast('Messages settings saved.');
+  } catch (e) { showToast(e.message, true); }
+  finally { btn.disabled = false; }
+}
+
+// ─── v326: SALES DOWNLOAD ────────────────────────────────────────────────────
+// Every order in the dates you're looking at, as a .csv file (opens in Excel/Numbers).
+function downloadSales() {
+  if (salesMode !== 'live') { showToast('Connect eBay first — there are no real sales to download yet.', true); return; }
+  if (!curInfo || !curInfo.start) return;
+  // v327: ask first, so a stray click doesn't download anything
+  const d = (k) => keyToDate(k).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  const n = shownDays.reduce((s, x) => s + x.orders, 0);
+  if (!confirm('Download your sales from ' + d(curInfo.start) + (curInfo.start !== curInfo.end ? ' to ' + d(curInfo.end) : '') + '?\n\n' + n.toLocaleString() + ' order' + (n === 1 ? '' : 's') + ', one row each, as a spreadsheet file.')) return;
+  location.href = '/api/sales/export?from=' + curInfo.start + '&to=' + curInfo.end + '&tz=' + encodeURIComponent(EBAY_TZ);
+}
+
+// v338: Admin → Download messages
+function downloadMessages() {
+  const days = document.getElementById('msgx-days').value;
+  if (!confirm('Download your buyer messages from the last ' + days + ' days?\n\nUp to 300 conversations as a text file, with usernames, emails, phone numbers and street addresses removed. It can take a minute or two.')) return;
+  showToast('Getting your messages from eBay — the file downloads when it\u2019s ready (up to a couple of minutes).');
+  location.href = '/api/admin/messages-export?days=' + encodeURIComponent(days);
+}
+
+let ebayStatus = null;
+async function loadEbayStatus() {
+  const origin = location.origin;
+  let st;
+  try {
+    const r = await fetch('/api/ebay/status');
+    if (!r.ok) throw new Error();
+    st = await r.json();
+  } catch (e) {
+    document.getElementById('ebay-status-box').textContent = 'Could not load the eBay connection status.';
+    return;
+  }
+  ebayStatus = st;
+  document.getElementById('url-accepted').value = origin + st.callbackPath;
+  document.getElementById('url-declined').value = origin + '/?ebay=declined';
+  document.getElementById('url-privacy').value = origin + '/';
+  const ru = document.getElementById('ru-name');
+  if (document.activeElement !== ru) ru.value = st.ruName || '';
+
+  // Status
+  const box = document.getElementById('ebay-status-box');
+  box.textContent = '';
+  const line = (label, value, cls) => {
+    const row = document.createElement('div');
+    const l = document.createElement('span'); l.textContent = label + ' ';
+    const v = document.createElement('span'); v.textContent = value; if (cls) v.className = cls;
+    row.append(l, v); box.appendChild(row);
+  };
+  if (st.connected) {
+    line('Status:', st.syncing ? '✓ Connected — importing orders…' : '✓ Connected', 'ok');
+    line('Orders imported:', Number(st.orders).toLocaleString());
+    if (st.historyFrom) line('History from:', new Date(st.historyFrom).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }));
+    line('Last update:', timeAgo(st.lastSync));
+    if (st.feesApproved) line('Fees imported:', st.feesSync ? Number(st.feeLines).toLocaleString() + ' fee entries · updated ' + timeAgo(st.feesSync) : (st.feesError ? 'problem — see below' : 'importing…'));   // v307
+    if (st.refreshExpires) line('Connection good until:', new Date(st.refreshExpires).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }));
+    // v306: each permission, approved or not
+    if (st.permissions && st.permissions.length) {
+      const head = document.createElement('div');
+      head.textContent = 'Permissions:';
+      head.style.marginTop = '8px';
+      box.appendChild(head);
+      st.permissions.forEach(pm => line('  ' + (pm.granted ? '✓' : '✗') + ' ' + pm.label, pm.granted ? 'approved' : 'not approved yet', pm.granted ? 'ok' : 'bad'));
+    }
+  } else {
+    line('Status:', 'Not connected', 'bad');
+    line('eBay keys (Settings → Account):', st.hasKeys ? '✓ Found' : '✗ Missing', st.hasKeys ? 'ok' : 'bad');
+    line('RuName:', st.ruName ? '✓ Saved' : '✗ Not saved yet', st.ruName ? 'ok' : 'bad');
+  }
+  const err = document.getElementById('ebay-error');
+  // err.style.display = st.lastError ? 'block' : 'none';
+  // err.textContent = st.lastError ? 'Last problem: ' + st.lastError : '';
+  const problems = [st.lastError && ('Sales: ' + st.lastError), st.feesError && ('Fees: ' + st.feesError)].filter(Boolean);   // v307
+  err.style.display = problems.length ? 'block' : 'none';
+  err.textContent = problems.length ? 'Last problem — ' + problems.join(' · ') : '';
+  document.getElementById('ebay-connected-buttons').style.display = st.connected ? 'flex' : 'none';
+  document.getElementById('fee-check-section').style.display = st.feesApproved && st.feesSync ? 'block' : 'none';   // v308
+  if (st.feesApproved && st.feesSync) initFeeCheckDates();
+  document.getElementById('sync-btn').disabled = !!st.syncing;
+  document.getElementById('sync-btn').textContent = st.syncing ? 'Syncing…' : 'Sync Now';
+
+  // Connect button
+  const btn = document.getElementById('connect-btn');
+  const help = document.getElementById('connect-help');
+  btn.textContent = st.connected ? 'Reconnect eBay' : 'Connect eBay';
+  const missing = st.connected && (st.permissions || []).some(pm => !pm.granted);   // v306
+  btn.disabled = !st.hasKeys || !st.ruName;
+  // if (!st.hasKeys) help.textContent = 'First add your eBay Client ID and Client Secret in the Listing Tool → ⚙ Settings → Account.';
+  if (!st.hasKeys) help.textContent = 'First add your eBay Client ID and Client Secret in the Account tab, then Save keys.';   // v326
+  else if (!st.ruName) help.textContent = 'Save your RuName above first.';
+  else if (missing) help.textContent = 'New permissions were added. Click Reconnect eBay and approve them on eBay\u2019s screen — your sales keep working in the meantime.';   // v306
+  else help.textContent = st.connected
+    ? 'Only needed if the connection stops working.'
+    : 'Opens eBay’s sign-in. Approve access once and you’re done — your sales import automatically after that.';
+}
+
+async function saveRuName() {
+  const value = document.getElementById('ru-name').value.trim();
+  const btn = document.getElementById('ru-save');
+  btn.disabled = true;
+  try {
+    const r = await fetch('/api/ebay/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ruName: value }) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { showToast(d.error || 'Could not save.', true); return; }
+    showToast('RuName saved. Make sure that eBay entry uses the accepted URL shown above.');
+    loadEbayStatus();
+  } catch (e) {
+    showToast('Could not reach the server.', true);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function connectEbay() {
+  location.href = '/api/ebay/connect';
+}
+
+async function syncNow() {
+  await fetch('/api/ebay/sync', { method: 'POST' }).catch(() => {});
+  showToast('Updating your sales from eBay…');
+  setTimeout(refreshSales, 800);
+}
+
+async function disconnectEbay() {
+  if (!confirm('Disconnect eBay? Your imported sales are removed from PartsLister and the dashboard goes back to sample data. You can connect again anytime.')) return;
+  await fetch('/api/ebay/disconnect', { method: 'POST' }).catch(() => {});
+  showToast('eBay disconnected.');
+  await refreshSales();
+  loadEbayStatus();
+}
+
+// ─── v308: FEE CHECK ─────────────────────────────────────────────────────────
+// Which column of eBay's sales report each fee type belongs in
+const FEE_NAMES = {
+  FINAL_VALUE_FEE:                  ['Final value fee (percentage)', 'Final value fees'],
+  FINAL_VALUE_FEE_FIXED_PER_ORDER:  ['Final value fee (per order)', 'Final value fees'],
+  FINAL_VALUE_SHIPPING_FEE:         ['Final value fee on shipping', 'Final value fees'],
+  AD_FEE:                           ['Promoted Listings', 'Promoted Listings - General fees'],
+  PREMIUM_AD_FEES:                  ['Promoted Listings (priority)', 'Promoted Listings - Priority fees'],
+  INTERNATIONAL_FEE:                ['International fee', 'International fees'],
+  BELOW_STANDARD_FEE:               ['Below Standard penalty', 'Other eBay fees'],
+  HIGH_ITEM_NOT_AS_DESCRIBED_FEE:   ['"Not as described" penalty', 'Other eBay fees'],
+  EBAY_STORE_SUBSCRIPTION_FEE:      ['Store subscription', 'Account level fees (top of report)'],
+  INSERTION_FEE:                    ['Insertion fee', 'Insertion fees'],
+  PROMOTIONAL_CREDIT:               ['Promotional credit', 'Fee credits'],
+  OTHER_FEES:                       ['Not itemized by eBay', 'Total selling costs']
+};
+
+function initFeeCheckDates() {
+  const f = document.getElementById('fc-from'), t = document.getElementById('fc-to');
+  if (f.value && t.value) return;
+  // const now = new Date();
+  // const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+  const end = ebayToday(); end.setDate(end.getDate() - 1);   // v310: yesterday in eBay time
+  const start = new Date(end); start.setDate(end.getDate() - 30);
+  f.value = dayKey(start); t.value = dayKey(end);
+}
+
+async function runFeeCheck() {
+  const out = document.getElementById('fc-result');
+  const from = document.getElementById('fc-from').value, to = document.getElementById('fc-to').value;
+  if (!from || !to || from > to) { showToast('Pick a start date before the end date.', true); return; }
+  const btn = document.getElementById('fc-btn');
+  btn.disabled = true;
+  out.textContent = 'Checking…';
+  try {
+    // const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+    const tz = EBAY_TZ;   // v310
+    const r = await fetch(`/api/fees/breakdown?from=${from}&to=${to}&tz=${encodeURIComponent(tz)}`);
+    const d = await r.json();
+    out.textContent = '';
+    if (!r.ok) { out.textContent = d.error || 'Could not run the check.'; return; }
+    if (!d.available) { out.textContent = 'Fees aren’t imported yet.'; return; }
+
+    const wrap = document.createElement('div'); wrap.className = 'fc-scroll';
+    const table = document.createElement('table'); table.className = 'fc-table';
+    const head = table.createTHead().insertRow();
+    [['Fee', ''], ['Matches eBay column', ''], ['Charged', 'num'], ['Credited back', 'num']].forEach(([t, c]) => {
+      const th = document.createElement('th'); th.textContent = t; if (c) th.className = c; head.appendChild(th);
+    });
+    const body = table.createTBody();
+    let charged = 0, credited = 0;
+    d.feeTypes.forEach(ft => {
+      const [name, col] = FEE_NAMES[ft.feeType] || [ft.feeType.replace(/_/g, ' ').toLowerCase(), 'Other eBay fees'];
+      const tr = body.insertRow();
+      const c1 = tr.insertCell(); c1.textContent = name;
+      const code = document.createElement('span'); code.className = 'code'; code.textContent = ft.feeType; c1.appendChild(code);
+      tr.insertCell().textContent = col;
+      const c3 = tr.insertCell(); c3.className = 'num'; c3.textContent = ft.charged ? money2.format(ft.charged) : '—';
+      const c4 = tr.insertCell(); c4.className = 'num'; c4.textContent = ft.credited ? '−' + money2.format(ft.credited) : '—';
+      charged += ft.charged; credited += ft.credited;
+    });
+    const tot = body.insertRow(); tot.className = 'total';
+    tot.insertCell().textContent = 'Total fees';
+    tot.insertCell().textContent = 'Charged − credited back';
+    const tc = tot.insertCell(); tc.className = 'num'; tc.textContent = money2.format(charged - credited);
+    tot.insertCell();
+    wrap.appendChild(table);
+    out.appendChild(wrap);
+
+    const counts = document.createElement('div'); counts.className = 'fc-counts';
+    const tx = d.transactions || {};
+    [
+      ['Orders in this range (from your sales import): ', (d.orders.sold || 0) + ' sold, ' + (d.orders.items || 0) + ' items'],
+      ['Sales eBay reported fees for: ', String(tx.SALE || 0)],
+      ['Refunds with fee credits: ', String(tx.REFUND || 0)],
+      ['Other charges (ads, subscription…): ', String(tx.NON_SALE_CHARGE || 0)]
+    ].forEach(([a, b]) => { const row = document.createElement('div'); row.textContent = a + b; counts.appendChild(row); });
+    if ((tx.SALE || 0) < (d.orders.sold || 0)) {
+      const warn = document.createElement('div');
+      warn.style.color = 'var(--danger)';
+      warn.textContent = '⚠ ' + ((d.orders.sold || 0) - (tx.SALE || 0)) + ' sold orders have no fees imported — that’s where fees are missing.';
+      counts.appendChild(warn);
+    }
+    out.appendChild(counts);
+  } catch (e) {
+    out.textContent = 'Could not reach the server.';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// v312: one row per order for the chosen dates (same dates as the fee check)
+function downloadOrders() {
+  const from = document.getElementById('fc-from').value, to = document.getElementById('fc-to').value;
+  if (!from || !to || from > to) { showToast('Pick a start date before the end date.', true); return; }
+  location.href = `/api/orders/export?from=${from}&to=${to}&tz=${encodeURIComponent(EBAY_TZ)}`;
+}
+
+async function copyField(id) {
+  const el = document.getElementById(id);
+  try { await navigator.clipboard.writeText(el.value); }
+  catch (e) { el.select(); document.execCommand('copy'); }
+  showToast('Copied');
+}
+
+// ─── LOAD ────────────────────────────────────────────────────────────────────
+async function load() {
+  let r;
+  try { r = await fetch('/api/me'); }
+  catch (e) { showAuth('Could not reach the server.'); return; }
+  if (r.status === 401) { showAuth(''); return; }
+  if (!r.ok) { showAuth('The server had a problem loading your account.'); return; }
+  me = await r.json();
+
+  document.getElementById('who').textContent = me.email + (me.isAdmin ? '  · admin' : '');
+  document.getElementById('listed-count').textContent = Number(me.listingCount || 0).toLocaleString();
+  document.getElementById('auth-overlay').classList.add('hidden');
+
+  // A year plus a year before it, so "vs the days before" works on every range
+  // allDays = getSalesDays(730);
+  // let saved = 'week';
+  // try { saved = localStorage.getItem(RANGE_KEY) || 'week'; } catch (e) { /* use default */ }
+  // setRange(saved, false);
+
+  // v305: real eBay sales when connected, sample otherwise
+  await loadSales();
+  await loadFees();   // v307
+  let saved = me.dashRange;
+  if (!saved) { try { saved = localStorage.getItem(RANGE_KEY); } catch (e) { /* use default */ } }
+  taxOn = !!me.dashTax;   // v309
+  if (salesMode === 'live') allDays = buildLiveDays(liveRows, 730);
+  renderTaxToggle();
+  setRange(saved || 'week', false);
+  handleEbayReturn();
+  // v316: links from Home — ?range=thismonth shows that range (not saved),
+  // ?settings=1 or ?settings=admin opens Settings
+  const q = new URLSearchParams(location.search);
+  if (q.get('range')) setRange(q.get('range'), false);
+  if (q.get('settings')) openSettings(q.get('settings'));
+  if (q.get('range') || q.get('settings')) history.replaceState(null, '', '/sales');
+}
+
+load();
+</script>
+</body>
+</html>

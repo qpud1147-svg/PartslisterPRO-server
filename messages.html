@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Messages v337</title>
+<title>PartsLister Pro Messages v339</title>
 <!-- PartsLister Pro — Messages page (v321: new; v322: conversation threads — the whole back-and-forth
      with each buyer, chat style, from eBay's Message API. Offers from a conversation. The v321
      email-style view is still at /messages/classic). Nothing about your messages is saved on the server.
@@ -18,7 +18,8 @@
      added automatically when you send a draft that promises it, until you mark it complete). The old
      "Waiting on me" (buyer wrote last, no answer yet) is renamed "Needs reply".
      v337: a listing + order strip under each conversation's header: title, price + shipping, and for
-     this buyer — not bought / bought / shipped with tracking / delivered. -->
+     this buyer — not bought / bought / shipped with tracking / delivered.
+     v339: when a draft is written in the buyer's language, the English version shows under it. -->
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@400;500;600&display=swap');
 
@@ -200,6 +201,10 @@
   .th-info .ti-ord.good { color: var(--success); }
   .th-info .ti-trk { font-family: ui-monospace, Menlo, monospace; color: var(--text); user-select: all; }
   .th-info button { background: none; border: 1px solid var(--border); color: var(--accent); border-radius: 4px; font: inherit; font-size: 11px; padding: 1px 6px; cursor: pointer; margin-left: 4px; }
+  /* v339: English copy of a draft written in the buyer's language */
+  .en-copy { font-size: 12.5px; padding: 6px 12px 0; color: var(--muted); display: none; line-height: 1.45; }
+  .en-copy.on { display: block; }
+  .en-copy b { color: var(--accent); font-weight: 600; }
   /* v336: Waiting on me */
   .fu-row { font-size: 13px; padding: 6px 12px 0; color: var(--accent); display: none; }
   .fu-row.on { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
@@ -254,7 +259,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v337</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v339</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -618,6 +623,10 @@ async function showThread(id) {
       // v336: the draft promises a follow-up → ticked box to add it to Waiting on me when you press Send
       if (out.followUp) { fuBox.checked = true; fuTask.value = out.followUp; fuRow.classList.add('on'); }
       else fuRow.classList.remove('on');
+      // v339: draft in the buyer's language → show the English
+      enCopy.textContent = '';
+      if (out.english) { enCopy.append(el('b', '', 'In English: '), document.createTextNode(out.english)); enCopy.classList.add('on'); }
+      else enCopy.classList.remove('on');
     } catch (e) { aiMsg.textContent = ''; toast(e.message, true); }
     finally { aiBtn.disabled = false; aiBtn.textContent = 'AI draft'; }
   };
@@ -639,6 +648,7 @@ async function showThread(id) {
   const fuLabel = el('label'); fuLabel.append(fuBox, document.createTextNode('Add to Waiting on me when I press Send:'));
   const fuTask = el('input'); fuTask.type = 'text'; fuTask.maxLength = 200; fuTask.title = 'Your to-do (edit it if you like)';
   fuRow.append(fuLabel, fuTask);
+  const enCopy = el('div', 'en-copy');   // v339
   if (t.itemId) {
     loadCountries().then(list => list.forEach(c => shipSel.append(new Option(c.name, c.code))));
     shipSel.onchange = async () => {
@@ -657,7 +667,8 @@ async function showThread(id) {
   ai.append(aiBtn, shipSel, hint, aiMsg);
   // v.append(ai, shipRes);
   // v.append(ai, shipRes, discRow);   // v331: + discount offer box
-  v.append(ai, shipRes, discRow, fuRow);   // v336: + Waiting on me box
+  // v.append(ai, shipRes, discRow, fuRow);   // v336: + Waiting on me box
+  v.append(ai, shipRes, enCopy, discRow, fuRow);   // v339: + English copy
   v.append(comp);
   if (!phone()) ta.focus();
 }
