@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Sales v335</title>
+<title>PartsLister Pro Sales v336</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@400;500;600&display=swap');
 
@@ -529,7 +529,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v335</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v336</span></div>
   </a>
   <!-- v316: switch pages -->
   <nav class="page-tabs" aria-label="Pages">
@@ -810,6 +810,15 @@
         <label style="display:flex;gap:8px;align-items:center;font-size:14px;color:var(--text);cursor:pointer;margin-top:10px;"><input type="checkbox" id="ms-modules"> Computer modules that don't work: ask if it was programmed first</label>
         <p class="set-help" style="margin-top:6px;">For TCMs, PCMs, ECMs, BCMs and other modules, the draft first asks whether it was programmed to their vehicle, then offers the return if it was and still doesn't work.</p>
       </div>
+      <!-- v336: PHOTOS + FOLLOW-UPS -->
+      <div class="set-section">
+        <h3>Photos and getting back to buyers</h3>
+        <div class="set-row"><label for="ms-photos">Buyer asks for more photos or a closer look</label>
+        <select id="ms-photos" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:4px;font-family:'Barlow',sans-serif;font-size:14px;"></select></div>
+        <div class="set-row"><label for="ms-avail">When you're available</label>
+        <input type="text" id="ms-avail" maxlength="200" placeholder="e.g. Monday, Wednesday and Friday afternoons" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:4px;font-family:'Barlow',sans-serif;font-size:14px;"></div>
+        <p class="set-help">When a draft says you'll check something or get back to the buyer, it uses this for when (for example "I'll take a look Monday afternoon"). Leave it empty and drafts won't name a day. Sending a reply like that adds the conversation to <strong>Waiting on me</strong> in Messages until you mark it complete.</p>
+      </div>
       <!-- v335: STYLE -->
       <div class="set-section">
         <h3>Tone and sign-off</h3>
@@ -936,6 +945,7 @@
 // v331: a reply choice for each problem type + discount offers.
 // v333: Fitment questions — optional "Also ask for the buyer's VIN".
 // v335: delivered-but-missing choice, modules (ask if programmed), tone, sign-off.
+// v336: more-photos choice + your availability (used when a draft says you'll get back to them).
 // Shares the same sign-in and account as the listing tool (/list).
 // v304: sales dashboard — big daily bar graph with a remembered date range.
 // The sales numbers are SAMPLE data for now; real eBay sales replace
@@ -1745,6 +1755,11 @@ async function loadMsgSettings() {
     tsel.value = d.tone || 'friendly';
     document.getElementById('ms-modules').checked = !(d.modules && d.modules.askProgrammed === false);
     document.getElementById('ms-signoff').value = d.signoff || '';
+    // v336
+    const psel = document.getElementById('ms-photos'); psel.textContent = '';
+    (d.photoOptions || []).forEach(o => psel.append(new Option(o.label, o.value)));
+    psel.value = d.photoRequests || 'check_back';
+    document.getElementById('ms-avail').value = d.availability || '';
   } catch (e) { showToast('Could not load Messages settings.', true); }
 }
 function useDefaultInstructions() {
@@ -1762,7 +1777,8 @@ async function saveMsgSettings() {
       fitment: { askVin: document.getElementById('ms-fit-vin').checked },   // v333
       // v335
       deliveredMissing: document.getElementById('ms-delivered').value, modules: { askProgrammed: document.getElementById('ms-modules').checked },
-      tone: document.getElementById('ms-tone').value, signoff: document.getElementById('ms-signoff').value };
+      tone: document.getElementById('ms-tone').value, signoff: document.getElementById('ms-signoff').value,
+      photoRequests: document.getElementById('ms-photos').value, availability: document.getElementById('ms-avail').value };   // v336
     const r = await fetch('/api/msg-settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'Could not save');
     setText('ms-instr-note', body.instructions.trim() === msDefault.trim() || !body.instructions.trim() ? 'Using the default.' : 'Using your own instructions.');

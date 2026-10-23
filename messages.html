@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Messages v331</title>
+<title>PartsLister Pro Messages v336</title>
 <!-- PartsLister Pro — Messages page (v321: new; v322: conversation threads — the whole back-and-forth
      with each buyer, chat style, from eBay's Message API. Offers from a conversation. The v321
      email-style view is still at /messages/classic). Nothing about your messages is saved on the server.
@@ -13,7 +13,10 @@
      AI draft uses that answer — or checks any country the buyer names on its own.
      v330: buyer messages in other languages are translated to English automatically (See original to
      switch back); a Settings link opens Settings → Messages.
-     v331: when a draft offers your discount, a checked box sends that offer when you press Send. -->
+     v331: when a draft offers your discount, a checked box sends that offer when you press Send.
+     v336: "Waiting on me" is now your follow-up list (conversations you promised to get back to —
+     added automatically when you send a draft that promises it, until you mark it complete). The old
+     "Waiting on me" (buyer wrote last, no answer yet) is renamed "Needs reply". -->
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@400;500;600&display=swap');
 
@@ -187,6 +190,16 @@
   .disc-row { font-size: 13px; padding: 6px 12px 0; color: var(--accent); display: none; }
   .disc-row.on { display: block; }
   .disc-row label { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
+  /* v336: Waiting on me */
+  .fu-row { font-size: 13px; padding: 6px 12px 0; color: var(--accent); display: none; }
+  .fu-row.on { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .fu-row label { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
+  .fu-row input[type=text] { flex: 1; min-width: 180px; background: var(--surface2); border: 1px solid var(--border); color: var(--text); border-radius: 4px; padding: 4px 8px; font: inherit; font-size: 13px; }
+  .fu-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 8px 16px; border-bottom: 1px solid var(--border); background: rgba(240,165,0,0.08); color: var(--accent); font-size: 13px; }
+  .fu-bar .fu-task { flex: 1; min-width: 160px; color: var(--text); }
+  .fu-bar .fu-since { color: var(--muted); font-size: 12px; }
+  .trow .tlast.fu { color: var(--accent); }
+  .seg .cnt { margin-left: 4px; font-size: 11px; opacity: 0.85; }
   .ship-res.yes { color: var(--success); } .ship-res.no { color: var(--danger); } .ship-res.maybe { color: var(--accent); }
   .th-ai + .th-compose { border-top: none; }
   .btn-danger { background: var(--surface2); color: var(--danger); border-color: rgba(224,82,82,0.5); }
@@ -231,7 +244,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v331</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v336</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -269,7 +282,9 @@
     <div class="seg" role="group" aria-label="Show" id="seg-show">
       <button type="button" data-show="all">All</button>
       <button type="button" data-show="unread">Unread</button>
-      <button type="button" data-show="waiting">Waiting on me</button>
+      <!-- <button type="button" data-show="waiting">Waiting on me</button> -->
+      <button type="button" data-show="needs" title="The buyer wrote last and you haven't answered">Needs reply</button>   <!-- v336: was "Waiting on me" -->
+      <button type="button" data-show="followup" title="Conversations you promised to get back to">Waiting on me<span class="cnt" id="fu-count"></span></button>   <!-- v336 -->
       <button type="button" data-show="trash" title="Deleted conversations">🗑 Trash</button>   <!-- v323 -->
     </div>
     <input type="search" class="search" id="t-search" placeholder="Search buyer, item or message" autocomplete="off">
@@ -322,6 +337,13 @@ async function loadMe() {
 // about an item, "Offers" lets you answer the buyer's Best Offer or send an
 // offer to everyone interested in the item.
 let threads = [], type = 'members', show = 'all', current = null, me = null, isAdmin = false;
+let followups = [];   // v336: Waiting on me — { id, conversationId, itemId, title, task, since }
+const openFollowup = (convId) => followups.find(f => f.conversationId === convId) || null;
+async function loadFollowups() {
+  const d = await getJSON('/api/followups');
+  if (d && Array.isArray(d.followups)) followups = d.followups;
+  setText('fu-count', followups.length ? ' ' + followups.length : '');
+}
 
 function el(tag, cls, text) { const n = document.createElement(tag); if (cls) n.className = cls; if (text !== undefined) n.textContent = text; return n; }
 let toastTimer;
@@ -351,10 +373,17 @@ function renderList() {
   document.querySelectorAll('#seg-type button').forEach(b => b.setAttribute('aria-pressed', b.dataset.type === type ? 'true' : 'false'));
   document.querySelectorAll('#seg-show button').forEach(b => b.setAttribute('aria-pressed', b.dataset.show === show ? 'true' : 'false'));
   const q = norm(document.getElementById('t-search').value).trim();
-  const list = threads.filter(t => {
+  // v336: Waiting on me also shows follow-ups whose conversation isn't in the loaded list
+  const pool = show === 'followup' && type === 'members'
+    ? threads.concat(followups.filter(f => !threads.some(t => t.id === f.conversationId)).map(f => ({ id: f.conversationId, other: '', title: f.title || '', itemId: f.itemId, unread: 0, last: { text: '', date: f.since } })))
+    : threads;
+  // const list = threads.filter(t => {
+  const list = pool.filter(t => {
     if (show !== 'trash' && /DELET/i.test(t.status || '')) return false;   // v323: deleted ones only show in the Trash
     if (show === 'unread' && !t.unread) return false;
-    if (show === 'waiting' && (t.last.mine || type === 'ebay')) return false;
+    // if (show === 'waiting' && (t.last.mine || type === 'ebay')) return false;
+    if (show === 'needs' && (t.last.mine || type === 'ebay')) return false;   // v336: renamed
+    if (show === 'followup' && (type === 'ebay' || !openFollowup(t.id))) return false;   // v336
     if (q && !norm(t.other + ' ' + t.title + ' ' + t.last.text + ' ' + (t.itemId || '')).includes(q)) return false;
     return true;
   });
@@ -365,7 +394,8 @@ function renderList() {
   const box = document.getElementById('t-list');
   box.textContent = '';
   // if (!list.length) { box.append(el('div', 'empty', threads.length ? 'No conversations match.' : 'No conversations.')); return; }
-  if (!list.length) { box.append(el('div', 'empty', show === 'trash' ? 'The Trash is empty.' : threads.length ? 'No conversations match.' : 'No conversations.')); return; }   // v323
+  // if (!list.length) { box.append(el('div', 'empty', show === 'trash' ? 'The Trash is empty.' : threads.length ? 'No conversations match.' : 'No conversations.')); return; }   // v323
+  if (!list.length) { box.append(el('div', 'empty', show === 'trash' ? 'The Trash is empty.' : show === 'followup' ? 'Nothing waiting on you.' : threads.length ? 'No conversations match.' : 'No conversations.')); return; }   // v336
   list.forEach(t => {
     const b = el('button', 'trow' + (t.unread ? ' unread' : '') + (current === t.id ? ' on' : ''));
     b.type = 'button';
@@ -375,7 +405,10 @@ function renderList() {
     r1.append(el('span', 'tdate', shortDate(t.last.date)));
     b.append(r1);
     if (t.title) b.append(el('div', 'ttitle', t.title));
-    b.append(el('div', 'tlast', (t.last.mine ? 'You: ' : '') + t.last.text.replace(/\s+/g, ' ')));
+    // b.append(el('div', 'tlast', (t.last.mine ? 'You: ' : '') + t.last.text.replace(/\s+/g, ' ')));
+    const fu = show === 'followup' ? openFollowup(t.id) : null;   // v336: show your to-do instead of the last message
+    if (fu) b.append(el('div', 'tlast fu', '\u23f3 ' + (fu.task || 'Get back to the buyer') + ' \u00b7 since ' + shortDate(fu.since)));
+    else b.append(el('div', 'tlast', (t.last.mine ? 'You: ' : '') + String(t.last.text || '').replace(/\s+/g, ' ')));
     b.addEventListener('click', () => openThread(t.id));
     box.append(b);
   });
@@ -387,7 +420,8 @@ async function loadList() {
   isAdmin = !!who.isAdmin;
   setText('t-note', 'Loading from eBay…');
   // const d = await getJSON('/api/threads?type=' + type);
-  const d = await getJSON('/api/threads?type=' + type + (show === 'trash' ? '&trash=1' : ''));   // v323: Trash comes from eBay's deleted folder
+  // const d = await getJSON('/api/threads?type=' + type + (show === 'trash' ? '&trash=1' : ''));   // v323: Trash comes from eBay's deleted folder
+  const [d] = await Promise.all([getJSON('/api/threads?type=' + type + (show === 'trash' ? '&trash=1' : '')), loadFollowups()]);   // v336: + Waiting on me
   document.getElementById('loading').classList.add('hidden');
   const err = document.getElementById('t-error'); err.style.display = 'none';
   showScopeBox(false);
@@ -427,7 +461,9 @@ function bubble(m) {
 
 async function showThread(id) {
   current = id;
-  const t = threads.find(x => x.id === id) || { id, other: '', title: '', itemId: null, unread: 0, last: {} };
+  // const t = threads.find(x => x.id === id) || { id, other: '', title: '', itemId: null, unread: 0, last: {} };
+  const f0 = openFollowup(id);   // v336: a Waiting-on-me conversation that isn't in the loaded list
+  const t = threads.find(x => x.id === id) || { id, other: '', title: (f0 && f0.title) || '', itemId: (f0 && f0.itemId) || null, unread: 0, last: {} };
   const v = document.getElementById('t-view');
   if (phone()) { v.classList.add('open'); document.body.style.overflow = 'hidden'; }
   v.textContent = '';
@@ -454,7 +490,29 @@ async function showThread(id) {
   head.append(del);
   const offers = el('div', 'offers'); offers.id = 't-offers';
   const body = el('div', 'th-body'); body.append(el('div', 'empty', 'Loading the conversation from eBay…'));
-  v.append(head, offers, body);
+  // v336: Waiting on me bar — your to-do for this conversation + Mark complete
+  const fuBar = el('div', 'fu-bar'); fuBar.style.display = 'none';
+  const drawFuBar = () => {
+    const f = openFollowup(id);
+    fuBar.textContent = '';
+    if (!f || type === 'ebay' || inTrash) { fuBar.style.display = 'none'; return; }
+    fuBar.style.display = 'flex';
+    fuBar.append(el('span', '', '\u23f3 Waiting on me:'), el('span', 'fu-task', f.task || 'Get back to the buyer'), el('span', 'fu-since', 'since ' + shortDate(f.since)));
+    const done = el('button', 'btn btn-secondary btn-sm', '\u2713 Mark complete'); done.type = 'button';
+    done.onclick = async () => {
+      done.disabled = true;
+      try {
+        const r = await fetch('/api/followups/' + f.id + '/done', { method: 'POST' });
+        if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'Could not mark it complete');
+        followups = followups.filter(x => x.id !== f.id); setText('fu-count', followups.length ? ' ' + followups.length : '');
+        drawFuBar(); renderList(); toast('Marked complete.');
+      } catch (e) { done.disabled = false; toast(e.message, true); }
+    };
+    fuBar.append(done);
+  };
+  drawFuBar();
+  // v.append(head, offers, body);
+  v.append(head, fuBar, offers, body);   // v336: + Waiting on me bar
   renderList();
   const d = await getJSON('/api/threads/' + encodeURIComponent(id) + '?type=' + type + (t.unread ? '&markRead=1' : ''));
   if (current !== id) return;
@@ -500,6 +558,14 @@ async function showThread(id) {
       if (body.querySelector('.empty')) body.textContent = '';
       body.append(bubble(m)); body.scrollTop = body.scrollHeight;
       t.last = { text: m.text, date: m.date, mine: true }; renderList();
+      // v336: the reply promised a follow-up → Waiting on me (unless you unticked it)
+      if (fuRow.classList.contains('on') && fuBox.checked) {
+        const rf = await fetch('/api/followups', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ conversationId: id, itemId: t.itemId, title: t.title, task: fuTask.value }) });
+        if (rf.ok) { await loadFollowups(); drawFuBar(); renderList(); toast('Sent — added to Waiting on me.'); }
+        else toast('Sent, but it couldn\u2019t be added to Waiting on me.', true);
+      }
+      fuRow.classList.remove('on');
     } catch (e) { toast(e.message, true); }
     finally { send.disabled = false; send.textContent = 'Send'; }
   };
@@ -534,6 +600,9 @@ async function showThread(id) {
         discText.textContent = 'Also send the offer for ' + money2.format(out.discount.offerPrice) + ' (' + out.discount.percent + '% off ' + money2.format(out.discount.price) + ') when I press Send';
         discRow.classList.add('on');
       } else { pendingOffer = null; discRow.classList.remove('on'); }
+      // v336: the draft promises a follow-up → ticked box to add it to Waiting on me when you press Send
+      if (out.followUp) { fuBox.checked = true; fuTask.value = out.followUp; fuRow.classList.add('on'); }
+      else fuRow.classList.remove('on');
     } catch (e) { aiMsg.textContent = ''; toast(e.message, true); }
     finally { aiBtn.disabled = false; aiBtn.textContent = 'AI draft'; }
   };
@@ -549,6 +618,12 @@ async function showThread(id) {
   const discBox = el('input'); discBox.type = 'checkbox'; discBox.checked = true;
   const discLabel = el('label'); const discText = el('span', '', '');
   discLabel.append(discBox, discText); discRow.append(discLabel);
+  // v336: "add to Waiting on me" box — shown when a draft promises to get back to the buyer
+  const fuRow = el('div', 'fu-row');
+  const fuBox = el('input'); fuBox.type = 'checkbox'; fuBox.checked = true;
+  const fuLabel = el('label'); fuLabel.append(fuBox, document.createTextNode('Add to Waiting on me when I press Send:'));
+  const fuTask = el('input'); fuTask.type = 'text'; fuTask.maxLength = 200; fuTask.title = 'Your to-do (edit it if you like)';
+  fuRow.append(fuLabel, fuTask);
   if (t.itemId) {
     loadCountries().then(list => list.forEach(c => shipSel.append(new Option(c.name, c.code))));
     shipSel.onchange = async () => {
@@ -566,7 +641,8 @@ async function showThread(id) {
   } else shipSel.disabled = true;
   ai.append(aiBtn, shipSel, hint, aiMsg);
   // v.append(ai, shipRes);
-  v.append(ai, shipRes, discRow);   // v331: + discount offer box
+  // v.append(ai, shipRes, discRow);   // v331: + discount offer box
+  v.append(ai, shipRes, discRow, fuRow);   // v336: + Waiting on me box
   v.append(comp);
   if (!phone()) ta.focus();
 }

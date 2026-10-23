@@ -1,4 +1,4 @@
-// PartsLister Pro server — v335
+// PartsLister Pro server — v336
 // v302: dashboard.html is the homepage (/). The listing tool moved to /list.
 // v305: eBay sales connection — real sold orders on the dashboard.
 // v306: asks eBay for two more permissions — fees/payouts and seller metrics.
@@ -62,6 +62,12 @@
 //       open a request now), modules (ask if it was programmed first), tone (friendly / short),
 //       and your sign-off (added by the app, word for word). Drafts must answer every question
 //       the buyer asks or say the seller doesn't have that information.
+// v336: drafts never make up anything about the seller or the part (where it is, why you can't…).
+//       New settings: "Buyer asks for more photos or a closer look" (default: check the part and
+//       get back to them) and "When you're available" (used whenever a draft says you'll get back
+//       to them). "Waiting on me" follow-up list: when a draft promises a follow-up, sending it adds
+//       the conversation to the list (msg_followups: conversation id, item, your to-do — never the
+//       buyer's messages) until you mark it complete.
 // Accounts with email + password login. Each account's settings (including its
 // own API keys) and history are saved ENCRYPTED in Postgres, so you can log in
 // from any computer and everything is there. Also keeps a lifetime listing count.
@@ -192,6 +198,17 @@ async function setupDatabase() {
       fetched_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       PRIMARY KEY (user_id, item_id)
     );
+    CREATE TABLE IF NOT EXISTS msg_followups (                                            -- v336: "Waiting on me"
+      id              SERIAL PRIMARY KEY,
+      user_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      conversation_id TEXT NOT NULL,
+      item_id         TEXT,
+      title           TEXT,
+      task            TEXT,
+      created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+      done_at         TIMESTAMPTZ
+    );
+    CREATE INDEX IF NOT EXISTS msg_followups_open ON msg_followups (user_id, done_at);
     ALTER TABLE ebay_connections ADD COLUMN IF NOT EXISTS active_count INTEGER;          -- v316: live listings on eBay
     ALTER TABLE ebay_connections ADD COLUMN IF NOT EXISTS active_value NUMERIC(14,2);    -- v316: their asking prices added up
     ALTER TABLE ebay_connections ADD COLUMN IF NOT EXISTS active_sync TIMESTAMPTZ;       -- v316: when that was last checked
@@ -2183,6 +2200,12 @@ const DELIVERED_MISSING = {
   check_first: { label: 'Ask them to check around and with neighbors first', ai: 'ask them to check around the door, mailbox and porch, with neighbors, and with anyone else at the address, and to let you know if it still doesn’t turn up' },
   open_now: { label: 'Tell them to open an “item not received” request right away', ai: 'ask them to open an “item not received” request on eBay so it can be sorted out there' }
 };
+// v336
+const PHOTO_REQUESTS = {
+  check_back: { label: 'Say you\u2019ll check the part and get back to them', ai: 'say you\u2019ll take a close look at the part (name what they asked about) and get back to them' },
+  more_photos: { label: 'Say you\u2019ll take more photos and send them', ai: 'say you\u2019ll take the photos they asked for and send them' },
+  listing_photos: { label: 'Say all the photos are in the listing', ai: 'politely say all the photos you have are in the listing — give no reason or excuse' }
+};
 const TONES = {
   friendly: { label: 'Friendly', ai: 'Tone: warm and friendly. If the buyer sounds worried or upset, briefly acknowledge it.' },
   short: { label: 'Short and to the point', ai: 'Tone: polite but short and to the point. No small talk.' }
@@ -2209,7 +2232,10 @@ function msgSettingsOf(settings) {
     deliveredMissing: DELIVERED_MISSING[m.deliveredMissing] ? m.deliveredMissing : 'check_first',
     modules: { askProgrammed: !(m.modules && m.modules.askProgrammed === false) },
     tone: TONES[m.tone] ? m.tone : 'friendly',
-    signoff: String(m.signoff || '').trim().slice(0, 120)
+    signoff: String(m.signoff || '').trim().slice(0, 120),
+    // v336
+    photoRequests: PHOTO_REQUESTS[m.photoRequests] ? m.photoRequests : 'check_back',
+    availability: String(m.availability || '').trim().slice(0, 200)
   };
 }
 // v331: does the buyer's latest message ask for a lower price?
@@ -2225,7 +2251,8 @@ app.get('/api/msg-settings', requireUser, async (req, res) => {
       problemPolicies: Object.keys(PROBLEM_POLICIES).map(k => ({ value: k, label: PROBLEM_POLICIES[k].label })),
       problemTypes: PROBLEM_TYPES.map(t => ({ key: t.key, label: t.label, when: t.when, options: Object.keys(t.options).map(k => ({ value: k, label: t.options[k].label })) })),   // v331
       deliveredOptions: Object.keys(DELIVERED_MISSING).map(k => ({ value: k, label: DELIVERED_MISSING[k].label })),   // v335
-      toneOptions: Object.keys(TONES).map(k => ({ value: k, label: TONES[k].label })) });
+      toneOptions: Object.keys(TONES).map(k => ({ value: k, label: TONES[k].label })),
+      photoOptions: Object.keys(PHOTO_REQUESTS).map(k => ({ value: k, label: PHOTO_REQUESTS[k].label })) });   // v336
   } catch (e) { res.status(500).json({ error: 'Could not load Messages settings' }); }
 });
 app.post('/api/msg-settings', requireUser, express.json(), async (req, res) => {
@@ -2249,7 +2276,10 @@ app.post('/api/msg-settings', requireUser, express.json(), async (req, res) => {
       deliveredMissing: DELIVERED_MISSING[b.deliveredMissing] ? b.deliveredMissing : 'check_first',
       modules: { askProgrammed: !(b.modules && b.modules.askProgrammed === false) },
       tone: TONES[b.tone] ? b.tone : 'friendly',
-      signoff: String(b.signoff || '').trim().slice(0, 120)
+      signoff: String(b.signoff || '').trim().slice(0, 120),
+      // v336
+      photoRequests: PHOTO_REQUESTS[b.photoRequests] ? b.photoRequests : 'check_back',
+      availability: String(b.availability || '').trim().slice(0, 200)
     };
     await writeUserData(req.user.id, d);
     res.json({ ok: true });
@@ -2580,8 +2610,13 @@ app.post('/api/threads/:id/draft', requireUser, express.json(), async (req, res)
       // v334
       'Whenever the reply offers a return or asks the buyer to open a return request, also tell them how long they have, using the Return window line in ORDER & RETURNS (days left and the last day, exactly as given). If the window hasn\'t started, say they\'ll have the stated number of days from delivery. If there\'s no Return window line, don\'t mention a time limit.',
       'Tracking and delivery: use only the SHIPMENT facts. You may give the carrier, tracking number, shipped date, expected date and delivered date shown there. Never describe where the package is or make up a delivery date.',
+      // v336
+      'Never make up anything about the seller or the part that isn\'t in the sections given: where the part is, whether the seller has it on hand, the seller\'s schedule, or reasons why something can\'t be done. If you don\'t know, say less.',
+      'Requests for more photos, measurements or a closer look at the part: ' + PHOTO_REQUESTS[ms.photoRequests].ai + '.',
+      ms.availability ? 'When the reply says the seller will check something, take photos or get back to them, use the seller\'s availability for when: "' + ms.availability + '". Never promise a sooner time.' : 'When the reply says the seller will check something or get back to them, don\'t name a day or time.',
       'Write in English. Plain text only: no markdown, no subject line, no placeholders like [Name], no signature.',
-      'Reply with only the message text.'
+      // 'Reply with only the message text.'
+      'Reply with only the message text, then one last line: "FOLLOWUP: " plus a short to-do for the seller (under 12 words, e.g. "Check level sensor opening for cracks, send photos") if the reply promises the seller will check, look, measure, take photos or get back to the buyer — otherwise "FOLLOWUP: none".'
     ].filter(Boolean).join(' ');   // v335: filter — the modules rule can be off
     // const user = 'LISTING\n' + listing + '\n\nCONVERSATION (oldest first)\n' + convo + (hint ? '\n\nSELLER\'S INSTRUCTIONS FOR THIS REPLY\n' + hint : '') + '\n\nWrite the seller\'s reply now.';
     // const user = 'LISTING\n' + listing + (shipping ? '\n\nSHIPPING CHECK (checked with eBay just now)\n' + shipping : '') + '\n\nCONVERSATION (oldest first)\n' + convo + (hint ? '\n\nSELLER\'S INSTRUCTIONS FOR THIS REPLY\n' + hint : '') + '\n\nWrite the seller\'s reply now.';   // v329: + shipping check
@@ -2598,16 +2633,54 @@ app.post('/api/threads/:id/draft', requireUser, express.json(), async (req, res)
     if (!r.ok) return res.status(502).json({ error: 'Claude didn\u2019t answer: ' + ((d.error && d.error.message) || ('HTTP ' + r.status)) });
     // const text = ((d.content || []).filter(c => c.type === 'text').map(c => c.text).join('\n') || '').trim();
     let text = ((d.content || []).filter(c => c.type === 'text').map(c => c.text).join('\n') || '').trim();
+    // v336: the follow-up to-do line (removed from the draft)
+    let followUp = null;
+    const fu = /\n?\s*FOLLOWUP:\s*(.*)\s*$/i.exec(text);
+    if (fu) { text = text.slice(0, fu.index).trim(); const task = fu[1].trim().replace(/^["']|["']$/g, ''); if (task && !/^none\.?$/i.test(task)) followUp = task.slice(0, 140); }
     if (text && ms.signoff && !text.endsWith(ms.signoff)) text += '\n\n' + ms.signoff;   // v335: your sign-off, word for word
     if (!text) return res.status(502).json({ error: 'Claude returned an empty draft — try again.' });
     // res.json({ draft: text.slice(0, 2000), usedListing: !!itemId });
     // res.json({ draft: text.slice(0, 2000), usedListing: !!itemId, shipChecks: shipChecks.map(sc => ({ country: sc.country, verdict: sc.verdict })) });   // v329
     // res.json({ draft: text.slice(0, 2000), usedListing: !!itemId, shipChecks: shipChecks.map(sc => ({ country: sc.country, verdict: sc.verdict })), orderFacts: orderFacts || null });   // v330
-    res.json({ draft: text.slice(0, 2000), usedListing: !!itemId, shipChecks: shipChecks.map(sc => ({ country: sc.country, verdict: sc.verdict })), orderFacts: orderFacts || null, discount });   // v331: + discount
+    // res.json({ draft: text.slice(0, 2000), usedListing: !!itemId, shipChecks: shipChecks.map(sc => ({ country: sc.country, verdict: sc.verdict })), orderFacts: orderFacts || null, discount });   // v331: + discount
+    res.json({ draft: text.slice(0, 2000), usedListing: !!itemId, shipChecks: shipChecks.map(sc => ({ country: sc.country, verdict: sc.verdict })), orderFacts: orderFacts || null, discount, followUp });   // v336: + followUp
   } catch (e) {
     console.error('[draft]', e.message);
     res.status(500).json({ error: 'Could not draft a reply: ' + e.message });
   }
+});
+
+// ─── v336: "WAITING ON ME" — conversations you promised to get back to ─────────
+// Stores only the conversation id, the item, its title and your to-do — never buyer messages.
+app.get('/api/followups', requireUser, async (req, res) => {
+  try {
+    const r = await pool.query(`SELECT id, conversation_id, item_id, title, task, created_at FROM msg_followups
+      WHERE user_id = $1 AND done_at IS NULL ORDER BY created_at`, [req.user.id]);
+    res.json({ followups: r.rows.map(x => ({ id: x.id, conversationId: x.conversation_id, itemId: x.item_id, title: x.title, task: x.task, since: x.created_at })) });
+  } catch (e) { console.error('[followups]', e.message); res.status(500).json({ error: 'Could not load Waiting on me' }); }
+});
+app.post('/api/followups', requireUser, express.json(), async (req, res) => {
+  const b = req.body || {};
+  const conv = String(b.conversationId || '');
+  if (!/^[\w.:-]{1,80}$/.test(conv)) return res.status(400).json({ error: 'Bad conversation' });
+  const itemId = /^\d{6,20}$/.test(String(b.itemId || '')) ? String(b.itemId) : null;
+  const title = String(b.title || '').slice(0, 200) || null;
+  const task = String(b.task || '').trim().slice(0, 200) || 'Get back to the buyer';
+  try {
+    // one open to-do per conversation: a new promise replaces the old wording
+    const open = await pool.query('SELECT id FROM msg_followups WHERE user_id = $1 AND conversation_id = $2 AND done_at IS NULL', [req.user.id, conv]);
+    if (open.rows.length) await pool.query('UPDATE msg_followups SET task = $1, item_id = COALESCE($2, item_id), title = COALESCE($3, title) WHERE id = $4', [task, itemId, title, open.rows[0].id]);
+    else await pool.query('INSERT INTO msg_followups (user_id, conversation_id, item_id, title, task) VALUES ($1, $2, $3, $4, $5)', [req.user.id, conv, itemId, title, task]);
+    res.json({ ok: true });
+  } catch (e) { console.error('[followups add]', e.message); res.status(500).json({ error: 'Could not add to Waiting on me' }); }
+});
+app.post('/api/followups/:id/done', requireUser, async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (!(id > 0)) return res.status(400).json({ error: 'Bad id' });
+  try {
+    await pool.query('UPDATE msg_followups SET done_at = now() WHERE id = $1 AND user_id = $2', [id, req.user.id]);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: 'Could not mark it complete' }); }
 });
 
 // ─── v322: OFFERS ────────────────────────────────────────────────────────────
@@ -3267,5 +3340,5 @@ app.get('*', (req, res) => {
 });
 
 setupDatabase()
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v335 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v336 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });
