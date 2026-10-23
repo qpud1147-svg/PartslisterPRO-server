@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Sales v347</title>
+<title>PartsLister Pro Sales v349</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@400;500;600&display=swap');
 
@@ -529,7 +529,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v347</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v349</span></div>
   </a>
   <!-- v316: switch pages -->
   <nav class="page-tabs" aria-label="Pages">
@@ -844,6 +844,10 @@
         <select id="ms-radiocode" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:4px;font-family:'Barlow',sans-serif;font-size:14px;"></select></div>
         <div class="set-row"><label for="ms-pickup">Asks about local pickup</label>
         <select id="ms-pickup" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:4px;font-family:'Barlow',sans-serif;font-size:14px;"></select></div>
+        <!-- v349 -->
+        <div class="set-row"><label for="ms-afterwindow">Problem after the return window ended</label>
+        <select id="ms-afterwindow" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:4px;font-family:'Barlow',sans-serif;font-size:14px;"></select></div>
+        <label style="display:flex;gap:8px;align-items:center;font-size:14px;color:var(--text);cursor:pointer;margin-top:10px;"><input type="checkbox" id="ms-usvehicles"> My parts come from US (left-hand-drive) vehicles</label>
         <label style="display:flex;gap:8px;align-items:center;font-size:14px;color:var(--text);cursor:pointer;margin-top:10px;"><input type="checkbox" id="ms-buyer-lang"> Reply in the buyer's language</label>
         <p class="set-help" style="margin-top:6px;">When a buyer writes in Spanish, Russian etc., the draft is written in their language and the English version is shown under it for you to check.</p>
       </div>
@@ -1016,6 +1020,7 @@
 // v345: more Common questions (changed mind, address change, faster shipping, part of the item, radio code, pickup).
 // v346: Admin → Download messages with drafts (listing & order facts per conversation, progress bar).
 // v347: "Write sandbox AI replies" replaces "AI drafts only" — AI replies written into the file only, never sent.
+// v349: Common questions + "After the return window ends" and "My parts come from US (left-hand-drive) vehicles".
 // Shares the same sign-in and account as the listing tool (/list).
 // v304: sales dashboard — big daily bar graph with a remembered date range.
 // The sales numbers are SAMPLE data for now; real eBay sales replace
@@ -1831,7 +1836,7 @@ async function loadMsgSettings() {
     psel.value = d.photoRequests || 'check_back';
     document.getElementById('ms-avail').value = d.availability || '';
     // v339
-    [['ms-remorse', 'remorseOptions', 'remorse'], ['ms-addrchange', 'addressChangeOptions', 'addressChange'], ['ms-faster', 'fasterOptions', 'faster'], ['ms-partial', 'partialOptions', 'partial'], ['ms-radiocode', 'radioCodeOptions', 'radioCode'], ['ms-pickup', 'pickupOptions', 'pickup'], ['ms-testsparts', 'testsPartsOptions', 'testsParts'], ['ms-tested', 'testedOptions', 'tested'], ['ms-programming', 'programmingOptions', 'programming'], ['ms-donor', 'donorOptions', 'donor'], ['ms-shipwhen', 'shipWhenOptions', 'shipWhen'], ['ms-intl', 'intlOptions', 'intlNo']].forEach(([elId, optKey, valKey]) => {
+    [['ms-afterwindow', 'afterWindowOptions', 'afterWindow'], ['ms-remorse', 'remorseOptions', 'remorse'], ['ms-addrchange', 'addressChangeOptions', 'addressChange'], ['ms-faster', 'fasterOptions', 'faster'], ['ms-partial', 'partialOptions', 'partial'], ['ms-radiocode', 'radioCodeOptions', 'radioCode'], ['ms-pickup', 'pickupOptions', 'pickup'], ['ms-testsparts', 'testsPartsOptions', 'testsParts'], ['ms-tested', 'testedOptions', 'tested'], ['ms-programming', 'programmingOptions', 'programming'], ['ms-donor', 'donorOptions', 'donor'], ['ms-shipwhen', 'shipWhenOptions', 'shipWhen'], ['ms-intl', 'intlOptions', 'intlNo']].forEach(([elId, optKey, valKey]) => {
       const x = document.getElementById(elId); x.textContent = '';
       (d[optKey] || []).forEach(o => x.append(new Option(o.label, o.value)));
       if (d[valKey]) x.value = d[valKey];
@@ -1839,6 +1844,7 @@ async function loadMsgSettings() {
     document.getElementById('ms-offers-prog').checked = !!d.offersProgramming;
     document.getElementById('ms-shipdays').value = d.shipDays || '';
     document.getElementById('ms-buyer-lang').checked = !!d.buyerLanguage;
+    document.getElementById('ms-usvehicles').checked = d.usVehicles !== false;   // v349
   } catch (e) { showToast('Could not load Messages settings.', true); }
 }
 function useDefaultInstructions() {
@@ -1862,6 +1868,7 @@ async function saveMsgSettings() {
       tested: document.getElementById('ms-tested').value, testsParts: document.getElementById('ms-testsparts').value, programming: document.getElementById('ms-programming').value, offersProgramming: document.getElementById('ms-offers-prog').checked,
       donor: document.getElementById('ms-donor').value, shipWhen: document.getElementById('ms-shipwhen').value, shipDays: document.getElementById('ms-shipdays').value,
       intlNo: document.getElementById('ms-intl').value, buyerLanguage: document.getElementById('ms-buyer-lang').checked,
+      afterWindow: document.getElementById('ms-afterwindow').value, usVehicles: document.getElementById('ms-usvehicles').checked,   // v349
       // v345
       remorse: document.getElementById('ms-remorse').value, addressChange: document.getElementById('ms-addrchange').value, faster: document.getElementById('ms-faster').value, partial: document.getElementById('ms-partial').value, radioCode: document.getElementById('ms-radiocode').value, pickup: document.getElementById('ms-pickup').value };
     const r = await fetch('/api/msg-settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });

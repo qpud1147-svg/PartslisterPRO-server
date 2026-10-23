@@ -1,4 +1,4 @@
-// PartsLister Pro server — v348
+// PartsLister Pro server — v349
 // v302: dashboard.html is the homepage (/). The listing tool moved to /list.
 // v305: eBay sales connection — real sold orders on the dashboard.
 // v306: asks eBay for two more permissions — fees/payouts and seller metrics.
@@ -111,6 +111,12 @@
 // v348: PART NUMBER picks real part numbers out of item specifics (your listings also put years and
 //       keywords there — "2006 2007 2008, MODULE UNIT"); drafts give at most the main few. Orders that
 //       were cancelled or refunded are handled as such (no "check around your porch" for a refunded order).
+// v349: from 100 sandbox replies — no discount offer once the buyer has bought it or the listing has
+//       ended; "this has sold" now leads the facts so it isn't missed; the AI is told it can't see
+//       buyers' photos; never "good working condition"; VIN / programming / part-number wording
+//       tightened; questions about details not in the listing → check and get back. New settings:
+//       after the return window ends (default: check and get back — never "sold as-is"), and
+//       "my parts come from US (left-hand-drive) vehicles".
 // Accounts with email + password login. Each account's settings (including its
 // own API keys) and history are saved ENCRYPTED in Postgres, so you can log in
 // from any computer and everything is there. Also keeps a lifetime listing count.
@@ -2305,6 +2311,12 @@ const PICKUP = {
   ship_only: { label: 'Shipping only — no local pickup', ai: 'say sorry, you only ship (no local pickup)' },
   check_back: { label: 'Say you’ll check and get back to them', ai: 'say you’ll check and get back to them' }
 };
+// v349
+const AFTER_WINDOW = {
+  check_back: { label: 'Say you\u2019ll look into it and get back to them', ai: 'say the return window has passed, but you\u2019ll look into it and get back to them' },
+  passed: { label: 'Politely say the return window has passed', ai: 'politely say the return window has passed' },
+  still_ok: { label: 'Say you\u2019ll still take it back for a refund', ai: 'say the return window has passed, but you\u2019ll still take it back for a refund and will get back to them with the details' }
+};
 const TONES = {
   friendly: { label: 'Friendly', ai: 'Tone: warm and friendly. If the buyer sounds worried or upset, briefly acknowledge it.' },
   short: { label: 'Short and to the point', ai: 'Tone: polite but short and to the point. No small talk.' }
@@ -2352,6 +2364,8 @@ function msgSettingsOf(settings) {
     partial: PARTIAL[m.partial] ? m.partial : 'as_shown',
     radioCode: RADIO_CODE[m.radioCode] ? m.radioCode : 'dont_have',
     pickup: PICKUP[m.pickup] ? m.pickup : 'ship_only',
+    afterWindow: AFTER_WINDOW[m.afterWindow] ? m.afterWindow : 'check_back',   // v349
+    usVehicles: m.usVehicles !== false,   // v349: on unless turned off
   };
 }
 // v341: a buyer message that doesn't need an answer ("ok thanks", "got it", "👍")
@@ -2387,7 +2401,8 @@ app.get('/api/msg-settings', requireUser, async (req, res) => {
       fasterOptions: Object.keys(FASTER).map(k => ({ value: k, label: FASTER[k].label })),
       partialOptions: Object.keys(PARTIAL).map(k => ({ value: k, label: PARTIAL[k].label })),
       radioCodeOptions: Object.keys(RADIO_CODE).map(k => ({ value: k, label: RADIO_CODE[k].label })),
-      pickupOptions: Object.keys(PICKUP).map(k => ({ value: k, label: PICKUP[k].label })) });
+      pickupOptions: Object.keys(PICKUP).map(k => ({ value: k, label: PICKUP[k].label })),
+      afterWindowOptions: Object.keys(AFTER_WINDOW).map(k => ({ value: k, label: AFTER_WINDOW[k].label })) });   // v349
   } catch (e) { res.status(500).json({ error: 'Could not load Messages settings' }); }
 });
 app.post('/api/msg-settings', requireUser, express.json(), async (req, res) => {
@@ -2432,6 +2447,8 @@ app.post('/api/msg-settings', requireUser, express.json(), async (req, res) => {
       partial: PARTIAL[b.partial] ? b.partial : 'as_shown',
       radioCode: RADIO_CODE[b.radioCode] ? b.radioCode : 'dont_have',
       pickup: PICKUP[b.pickup] ? b.pickup : 'ship_only',
+      afterWindow: AFTER_WINDOW[b.afterWindow] ? b.afterWindow : 'check_back',   // v349
+      usVehicles: b.usVehicles !== false,
     };
     await writeUserData(req.user.id, d);
     res.json({ ok: true });
@@ -2635,6 +2652,7 @@ async function returnFacts(userId, itemId, buyer, info) {   // v343: + info (fil
       const qty = parseInt(xmlTag(it, 'Quantity') || '', 10);
       const sold = parseInt(xmlTag(xmlTag(it, 'SellingStatus') || '', 'QuantitySold') || '0', 10) || 0;
       const left = qty >= 0 ? Math.max(0, qty - sold) : null;
+      if (info) info.listingEnded = (st && st !== 'Active') || left === 0;   // v349
       if (st && st !== 'Active') lines.push('LISTING STATUS (live): ENDED' + (sold > 0 ? ' \u2014 sold' : '') + '. It is no longer available to buy.');
       else if (left === 0) lines.push('LISTING STATUS (live): SOLD OUT \u2014 none left to buy.');
       else if (st) lines.push('LISTING STATUS (live): active' + (left !== null ? ', ' + left + ' available' : '') + '.');
@@ -2793,14 +2811,16 @@ const draftHandler = async (req, res) => {   // v347: named, so the sandbox down
     for (let offset = 0; offset < 300; offset += 50) {
       const q = new URLSearchParams({ conversation_type: 'FROM_MEMBERS', limit: '50', offset: String(offset) });
       const { data } = await restCall(req.user.id, 'GET', '/commerce/message/v1/conversation/' + encodeURIComponent(id) + '?' + q);
-      ((data && data.messages) || []).forEach(m => msgs.push({ from: m.senderUsername || '', date: m.createdDate || '', text: m.messageBody || '', mine: !!(me && m.senderUsername === me) }));
+      // ((data && data.messages) || []).forEach(m => msgs.push({ from: m.senderUsername || '', date: m.createdDate || '', text: m.messageBody || '', mine: !!(me && m.senderUsername === me) }));
+      ((data && data.messages) || []).forEach(m => msgs.push({ from: m.senderUsername || '', date: m.createdDate || '', text: m.messageBody || '', mine: !!(me && m.senderUsername === me), media: (m.messageMedia || []).length }));   // v349: + media count
       if (!data || !data.next || ((data && data.messages) || []).length < 50) break;
     }
     msgs.sort((x, y) => String(x.date).localeCompare(String(y.date)));
     // v347: sandbox — only the conversation before your actual reply
     if (req._sandbox && req._sandbox.before) { const keep = msgs.filter(m => String(m.date) < req._sandbox.before); msgs.length = 0; keep.forEach(m => msgs.push(m)); }
     if (req._sandbox) req._sandbox.msgs = msgs;
-    const convo = msgs.slice(-30).map(m => (m.mine ? 'SELLER (me)' : 'BUYER (' + m.from + ')') + ' [' + String(m.date).slice(0, 10) + ']: ' + m.text).join('\n');
+    // const convo = msgs.slice(-30).map(m => (m.mine ? 'SELLER (me)' : 'BUYER (' + m.from + ')') + ' [' + String(m.date).slice(0, 10) + ']: ' + m.text).join('\n');
+    const convo = msgs.slice(-30).map(m => (m.mine ? 'SELLER (me)' : 'BUYER (' + m.from + ')') + ' [' + String(m.date).slice(0, 10) + ']: ' + m.text + (m.media ? ' [' + m.media + ' photo(s) attached — you can NOT see them]' : '')).join('\n');   // v349
     if (!convo) return res.status(400).json({ error: 'There\u2019s no message to answer yet.' });
     // v341: nothing to answer → say so instead of drafting (a note in the box still writes a follow-up)
     const lastMsg = msgs[msgs.length - 1];
@@ -2852,6 +2872,9 @@ const draftHandler = async (req, res) => {   // v347: named, so the sandbox down
     // const orderFacts = itemId ? await returnFacts(req.user.id, itemId, buyerName) : '';
     const orderInfo = {};   // v343
     const orderFacts = itemId ? await returnFacts(req.user.id, itemId, buyerName, orderInfo) : '';
+    // v349: no discount once this buyer has bought it, or the listing has ended / sold out
+    if (discount && ((orderInfo.boughtAt && !orderInfo.cancelled) || orderInfo.listingEnded)) discount = null;
+    const statusLead = (orderInfo.listingEnded && !orderInfo.boughtAt) ? 'IMPORTANT: this listing has SOLD / ENDED and this buyer did not buy it. Start the reply by saying sorry, it has sold and is no longer available.\n\n' : '';
     // v343: TIMELINE — did the buyer's questions come before they bought it?
     let timeline = '';
     const lastBuyerMsg = msgs.filter(m => !m.mine).slice(-1)[0];
@@ -2899,7 +2922,7 @@ const draftHandler = async (req, res) => {   // v347: named, so the sandbox down
       // 'Returns, refunds, problems …: respond as the seller\'s problem policy says: ' + PROBLEM_POLICIES[ms.problemPolicy].ai …   (v330 — one choice for every problem)
       // v331: work out which kind of problem it is, then follow the seller's choice for that kind
       'Problems: first decide which kind the buyer has, then follow the seller\'s choice for that kind. ' + PROBLEM_TYPES.map(t => 'If ' + t.when + ': ' + t.options[ms.problems[t.key]].ai).join(' ') + ' Any other problem (not as described, missing pieces): ' + PROBLEM_POLICIES[ms.problemPolicy].ai,
-      'Return windows: use only the ORDER & RETURNS section — never calculate dates yourself. For damaged, defective or wrong-part problems: if it says the buyer is INSIDE the return window, follow the choice above; if the window has ENDED, politely say the return window has passed. A package that never arrived is not limited by the return window. If no order or return policy is given, don\'t mention any time limit.',
+      'Return windows: use only the ORDER & RETURNS section — never calculate dates yourself. For damaged, defective or wrong-part problems: if it says the buyer is INSIDE the return window, follow the choice above; if the window has ENDED: ' + AFTER_WINDOW[ms.afterWindow].ai + ' (never call the part "sold as-is" and never blame eBay). A package that never arrived is not limited by the return window. If no order or return policy is given, don\'t mention any time limit.',
       // v332
       // 'PART NUMBER rule: use only the PART NUMBER line. If it gives a number, write the number out in the reply whenever you suggest comparing, so the buyer has it right there. If it says NONE or unknown, never ask the buyer to compare part numbers with the listing or say the listing has one — ask for their VIN, or suggest comparing their original part with the listing photos.',   (v332)
       // v333: VIN only when the seller turned it on
@@ -2940,6 +2963,14 @@ const draftHandler = async (req, res) => {   // v347: named, so the sandbox down
       'Buyer asks to buy only part of the item, or the item without something that\'s included: ' + PARTIAL[ms.partial].ai + '.',
       'Buyer asks for the radio / anti-theft / security code: ' + RADIO_CODE[ms.radioCode].ai + '.',
       'Buyer asks about local pickup or picking it up in person: ' + PICKUP[ms.pickup].ai + '.',
+      // v349
+      'Buyers\' photos and attachments: you can NOT see them. If they ask you to look at a photo (does this match, is this compatible), never say it matches or doesn\'t — ' + PHOTO_REQUESTS.check_back.ai + ' (they sent a photo).',
+      'Never describe the part as "working", "in working condition" or "good working condition", even if the listing says so. Say it is used, and give the condition notes only if they ask about condition.',
+      'If the buyer gives THEIR VIN to check fitment' + (ms.fitment.askVin ? ': say you\'ll check it and get back to them.' : ': say you aren\'t able to check fitment by VIN, then use the fitment list and the PART NUMBER rule. Don\'t confuse their VIN with the donor vehicle\'s VIN.'),
+      'Programming: only say what the programming rule says. Never say a part "will need" or "typically needs" programming.',
+      'Part numbers: do NOT add part numbers or "compare part numbers" to answers about the donor vehicle, mileage, condition, warranty, shipping or price — only when they ask whether it fits or for the part number.',
+      'Questions about a detail of the part that the LISTING doesn\'t answer (features like cornering lights or navigation, clips, connectors, color, corrosion, what\'s included): ' + PHOTO_REQUESTS[ms.photoRequests].ai + '. Never guess.',
+      ms.usVehicles ? 'Right-hand drive / European / Japanese-market questions: the seller\'s parts come from US vehicles (left-hand drive, US market).' : '',
       '"Is it still available?": answer from LISTING STATUS (active with some available = yes).',
       'Only bring up part numbers or comparing part numbers when the buyer asks whether it fits, asks for the part number, or names their own part number. If the listing has many part numbers, give the main one or two, not a long list.',
       'Never suggest other sellers, searching eBay or anywhere else for the part, or dealing outside eBay (no off-eBay payments, no changing the price for another account, no sharing the seller\'s address or contact details).',
@@ -2959,7 +2990,7 @@ const draftHandler = async (req, res) => {   // v347: named, so the sandbox down
     // const discountText = discount ? 'The buyer asked for a lower price. The seller\'s best is ' + discount.percent + '% off: $' + discount.offerPrice.toFixed(2) + ' (listed at $' + discount.price.toFixed(2) + '). Say that the best you can do is ' + discount.percent + '% off and that you\'ve sent them an offer for $' + discount.offerPrice.toFixed(2) + ' — if they don\'t receive it, they should let you know. Don\'t offer any other price.' : '';
     // v339: only IF the buyer is asking for a lower price / making an offer
     const discountText = discount ? 'IF the buyer\'s latest message asks for a lower price, makes an offer or names their own price (e.g. "150$?", "can I have it for 160", "would you take anything less?", "is the price firm?"): say that the best you can do is ' + discount.percent + '% off and that you\'ve sent them an offer for $' + discount.offerPrice.toFixed(2) + ' (listed at $' + discount.price.toFixed(2) + ') — if they don\'t receive it, they should let you know. Don\'t offer any other price. If they are NOT asking about price, ignore this section.' : '';
-    const user = 'LISTING\n' + listing + '\n\nORDER & RETURNS (worked out by the app from eBay)\n' + (orderFacts || 'No order found for this item yet (the buyer may not have bought it).') + (timeline ? '\n\nTIMELINE\n' + timeline : '') + (shipping ? '\n\nSHIPPING CHECK (checked with eBay just now)\n' + shipping : '') + (discountText ? '\n\nDISCOUNT\n' + discountText : '') + '\n\nCONVERSATION (oldest first)\n' + convo + (hint ? '\n\nSELLER\'S INSTRUCTIONS FOR THIS REPLY\n' + hint : '') + '\n\nWrite the seller\'s reply now.';   // v330: + order & returns, v331: + discount
+    const user = statusLead + 'LISTING\n' + listing + '\n\nORDER & RETURNS (worked out by the app from eBay)\n' + (orderFacts || 'No order found for this item yet (the buyer may not have bought it).') + (timeline ? '\n\nTIMELINE\n' + timeline : '') + (shipping ? '\n\nSHIPPING CHECK (checked with eBay just now)\n' + shipping : '') + (discountText ? '\n\nDISCOUNT\n' + discountText : '') + '\n\nCONVERSATION (oldest first)\n' + convo + (hint ? '\n\nSELLER\'S INSTRUCTIONS FOR THIS REPLY\n' + hint : '') + '\n\nWrite the seller\'s reply now.';   // v330: + order & returns, v331: + discount
 
     const r = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -4049,5 +4080,5 @@ app.get('*', (req, res) => {
 });
 
 setupDatabase()
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v348 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v349 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });
