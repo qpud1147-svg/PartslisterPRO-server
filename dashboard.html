@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Sales v338</title>
+<title>PartsLister Pro Sales v339</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@400;500;600&display=swap');
 
@@ -529,7 +529,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v338</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v339</span></div>
   </a>
   <!-- v316: switch pages -->
   <nav class="page-tabs" aria-label="Pages">
@@ -810,6 +810,26 @@
         <label style="display:flex;gap:8px;align-items:center;font-size:14px;color:var(--text);cursor:pointer;margin-top:10px;"><input type="checkbox" id="ms-modules"> Computer modules that don't work: ask if it was programmed first</label>
         <p class="set-help" style="margin-top:6px;">For TCMs, PCMs, ECMs, BCMs and other modules, the draft first asks whether it was programmed to their vehicle, then offers the return if it was and still doesn't work.</p>
       </div>
+      <!-- v339: COMMON QUESTIONS (from 106 real conversations) -->
+      <div class="set-section">
+        <h3>Common questions</h3>
+        <p class="set-help">How the AI answers the questions buyers ask most.</p>
+        <div class="set-row"><label for="ms-tested">Is it tested / does it work / warranty?</label>
+        <select id="ms-tested" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:4px;font-family:'Barlow',sans-serif;font-size:14px;"></select></div>
+        <div class="set-row"><label for="ms-programming">Does it need programming?</label>
+        <select id="ms-programming" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:4px;font-family:'Barlow',sans-serif;font-size:14px;"></select></div>
+        <label style="display:flex;gap:8px;align-items:center;font-size:14px;color:var(--text);cursor:pointer;margin-top:10px;"><input type="checkbox" id="ms-offers-prog"> I offer programming (if a buyer asks me to program it)</label>
+        <div class="set-row"><label for="ms-donor">What vehicle did it come from? (year, VIN, mileage…)</label>
+        <select id="ms-donor" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:4px;font-family:'Barlow',sans-serif;font-size:14px;"></select></div>
+        <div class="set-row"><label for="ms-shipwhen">Has it shipped / when will it ship? (when it hasn’t shipped yet)</label>
+        <select id="ms-shipwhen" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:4px;font-family:'Barlow',sans-serif;font-size:14px;"></select></div>
+        <div class="set-row"><label for="ms-shipdays">Your shipping days</label>
+        <input type="text" id="ms-shipdays" maxlength="200" placeholder="e.g. Monday, Wednesday and Friday" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:4px;font-family:'Barlow',sans-serif;font-size:14px;"></div>
+        <div class="set-row"><label for="ms-intl">Can you ship to my country? (when eBay won’t let it ship there)</label>
+        <select id="ms-intl" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:4px;font-family:'Barlow',sans-serif;font-size:14px;"></select></div>
+        <label style="display:flex;gap:8px;align-items:center;font-size:14px;color:var(--text);cursor:pointer;margin-top:10px;"><input type="checkbox" id="ms-buyer-lang"> Reply in the buyer's language</label>
+        <p class="set-help" style="margin-top:6px;">When a buyer writes in Spanish, Russian etc., the draft is written in their language and the English version is shown under it for you to check.</p>
+      </div>
       <!-- v336: PHOTOS + FOLLOW-UPS -->
       <div class="set-section">
         <h3>Photos and getting back to buyers</h3>
@@ -959,6 +979,7 @@
 // v335: delivered-but-missing choice, modules (ask if programmed), tone, sign-off.
 // v336: more-photos choice + your availability (used when a draft says you'll get back to them).
 // v338: Admin → Download messages (development: buyer conversations as a text file, names removed).
+// v339: Settings → Messages → Common questions (tested/warranty, programming, donor vehicle, shipping, other countries, buyer's language).
 // Shares the same sign-in and account as the listing tool (/list).
 // v304: sales dashboard — big daily bar graph with a remembered date range.
 // The sales numbers are SAMPLE data for now; real eBay sales replace
@@ -1773,6 +1794,15 @@ async function loadMsgSettings() {
     (d.photoOptions || []).forEach(o => psel.append(new Option(o.label, o.value)));
     psel.value = d.photoRequests || 'check_back';
     document.getElementById('ms-avail').value = d.availability || '';
+    // v339
+    [['ms-tested', 'testedOptions', 'tested'], ['ms-programming', 'programmingOptions', 'programming'], ['ms-donor', 'donorOptions', 'donor'], ['ms-shipwhen', 'shipWhenOptions', 'shipWhen'], ['ms-intl', 'intlOptions', 'intlNo']].forEach(([elId, optKey, valKey]) => {
+      const x = document.getElementById(elId); x.textContent = '';
+      (d[optKey] || []).forEach(o => x.append(new Option(o.label, o.value)));
+      if (d[valKey]) x.value = d[valKey];
+    });
+    document.getElementById('ms-offers-prog').checked = !!d.offersProgramming;
+    document.getElementById('ms-shipdays').value = d.shipDays || '';
+    document.getElementById('ms-buyer-lang').checked = !!d.buyerLanguage;
   } catch (e) { showToast('Could not load Messages settings.', true); }
 }
 function useDefaultInstructions() {
@@ -1791,7 +1821,11 @@ async function saveMsgSettings() {
       // v335
       deliveredMissing: document.getElementById('ms-delivered').value, modules: { askProgrammed: document.getElementById('ms-modules').checked },
       tone: document.getElementById('ms-tone').value, signoff: document.getElementById('ms-signoff').value,
-      photoRequests: document.getElementById('ms-photos').value, availability: document.getElementById('ms-avail').value };   // v336
+      photoRequests: document.getElementById('ms-photos').value, availability: document.getElementById('ms-avail').value,   // v336
+      // v339
+      tested: document.getElementById('ms-tested').value, programming: document.getElementById('ms-programming').value, offersProgramming: document.getElementById('ms-offers-prog').checked,
+      donor: document.getElementById('ms-donor').value, shipWhen: document.getElementById('ms-shipwhen').value, shipDays: document.getElementById('ms-shipdays').value,
+      intlNo: document.getElementById('ms-intl').value, buyerLanguage: document.getElementById('ms-buyer-lang').checked };
     const r = await fetch('/api/msg-settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'Could not save');
     setText('ms-instr-note', body.instructions.trim() === msDefault.trim() || !body.instructions.trim() ? 'Using the default.' : 'Using your own instructions.');
