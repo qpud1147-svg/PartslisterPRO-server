@@ -3,12 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Messages v324</title>
+<title>PartsLister Pro Messages v329</title>
 <!-- PartsLister Pro — Messages page (v321: new; v322: conversation threads — the whole back-and-forth
      with each buyer, chat style, from eBay's Message API. Offers from a conversation. The v321
      email-style view is still at /messages/classic). Nothing about your messages is saved on the server.
      v323: delete a conversation + Trash (restore from there); "AI draft" writes a reply from the
-     conversation and the listing — you edit it and press Send. -->
+     conversation and the listing — you edit it and press Send.
+     v329: "Ships to" box checks whether this listing can ship to a country (eBay checked live), and the
+     AI draft uses that answer — or checks any country the buyer names on its own. -->
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@400;500;600&display=swap');
 
@@ -172,6 +174,10 @@
   .th-ai input { flex: 1; min-width: 160px; background: var(--surface2); border: 1px solid var(--border); color: var(--text); border-radius: 4px; padding: 6px 10px; font: inherit; font-size: 13px; }
   .th-ai input:focus { border-color: var(--accent); outline: none; }
   .th-ai .aimsg { font-size: 12px; color: var(--muted); }
+  /* v329: ships-to check */
+  .th-ai select { background: var(--surface2); border: 1px solid var(--border); color: var(--text); border-radius: 4px; padding: 6px 8px; font: inherit; font-size: 13px; color-scheme: dark; max-width: 170px; }
+  .ship-res { font-size: 12.5px; padding: 6px 12px 0; line-height: 1.45; }
+  .ship-res.yes { color: var(--success); } .ship-res.no { color: var(--danger); } .ship-res.maybe { color: var(--accent); }
   .th-ai + .th-compose { border-top: none; }
   .btn-danger { background: var(--surface2); color: var(--danger); border-color: rgba(224,82,82,0.5); }
   .btn-danger:hover { border-color: var(--danger); color: var(--danger); }
@@ -215,7 +221,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v324</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v329</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -487,21 +493,50 @@ async function showThread(id) {
     aiBtn.disabled = true; aiBtn.textContent = 'Drafting…'; aiMsg.textContent = t.itemId ? 'Reading the conversation and the listing…' : 'Reading the conversation…';
     try {
       const r = await fetch('/api/threads/' + encodeURIComponent(id) + '/draft', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ itemId: t.itemId, hint: hint.value }) });
+        body: JSON.stringify({ itemId: t.itemId, hint: hint.value, country: shipSel.value || undefined }) });   // v329: + country
       const out = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(out.error || 'No draft');
       if (current !== id) return;
       ta.value = out.draft; ta.focus();
       ta.style.height = Math.min(180, ta.scrollHeight + 2) + 'px';   // grow to fit the draft
-      aiMsg.textContent = 'Draft ready — check it, edit if needed, then Send.';
+      // aiMsg.textContent = 'Draft ready — check it, edit if needed, then Send.';
+      const sc = (out.shipChecks || []).map(x => x.country + ': ' + ({ yes: 'ships', no: 'can\u2019t ship', probably: 'probably ships', unknown: 'unclear' }[x.verdict])).join(', ');
+      aiMsg.textContent = 'Draft ready — check it, edit if needed, then Send.' + (sc ? ' (Checked shipping — ' + sc + ')' : '');   // v329
     } catch (e) { aiMsg.textContent = ''; toast(e.message, true); }
     finally { aiBtn.disabled = false; aiBtn.textContent = 'AI draft'; }
   };
   hint.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); aiBtn.click(); } });
-  ai.append(aiBtn, hint, aiMsg);
-  v.append(ai);
+  // ai.append(aiBtn, hint, aiMsg);
+  // v329: Ships-to box — pick a country to check this listing; AI draft then uses that answer
+  const shipSel = el('select'); shipSel.title = 'Can this item ship to…? (checked with eBay)';
+  shipSel.append(new Option('Ships to…?', ''));
+  const shipRes = el('div', 'ship-res');
+  if (t.itemId) {
+    loadCountries().then(list => list.forEach(c => shipSel.append(new Option(c.name, c.code))));
+    shipSel.onchange = async () => {
+      shipRes.className = 'ship-res'; shipRes.textContent = '';
+      if (!shipSel.value) return;
+      shipRes.textContent = 'Checking with eBay…';
+      const d = await getJSON('/api/shipcheck/' + encodeURIComponent(t.itemId) + '?country=' + shipSel.value);
+      if (current !== id) return;
+      if (!d || d.error) { shipRes.textContent = (d && d.error) || 'Couldn\u2019t check.'; return; }
+      const word = { yes: 'Yes — ships to ', no: 'No — eBay won\u2019t let it ship to ', probably: 'Probably ships to ', unknown: 'Couldn\u2019t tell for ' }[d.verdict] + d.country;
+      const cost = d.options.filter(o => o.cost !== null).map(o => o.service + ' ' + money2.format(o.cost)).join(', ');
+      shipRes.className = 'ship-res ' + (d.verdict === 'yes' ? 'yes' : d.verdict === 'no' ? 'no' : 'maybe');
+      shipRes.textContent = word + (cost ? ' (' + cost + ')' : '') + '. ' + d.how.join('; ') + '. AI draft will use this.';
+    };
+  } else shipSel.disabled = true;
+  ai.append(aiBtn, shipSel, hint, aiMsg);
+  v.append(ai, shipRes);
   v.append(comp);
   if (!phone()) ta.focus();
+}
+
+// v329: country list for the Ships-to box (asked once)
+let countriesP = null;
+function loadCountries() {
+  if (!countriesP) countriesP = getJSON('/api/shipcheck/countries').then(d => (d && d.countries) || []);
+  return countriesP;
 }
 
 // ─── v323: DELETE / RESTORE ──────────────────────────────────────────────────

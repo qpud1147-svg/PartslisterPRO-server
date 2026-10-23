@@ -1,4 +1,4 @@
-// PartsLister Pro server — v328
+// PartsLister Pro server — v329
 // v302: dashboard.html is the homepage (/). The listing tool moved to /list.
 // v305: eBay sales connection — real sold orders on the dashboard.
 // v306: asks eBay for two more permissions — fees/payouts and seller metrics.
@@ -37,6 +37,9 @@
 // v328: every Diagnostics check now really tests the service (no "a key is saved, so OK"):
 //       the Listing Tool's eBay token is tried with eBay exactly the way Launch uses it, the eBay
 //       sign-in is refreshed fresh, the AI key sends a 1-word test, offers + claims are tested too.
+// v329: "Can you ship to my country?" — checks a listing for a country two ways (eBay's shopper
+//       view for that country + your listing's ship-to / excluded lists) and gives the answer to
+//       the AI draft. Also a Ships-to check box in Messages.
 // Accounts with email + password login. Each account's settings (including its
 // own API keys) and history are saved ENCRYPTED in Postgres, so you can log in
 // from any computer and everything is there. Also keeps a lifetime listing count.
@@ -1989,11 +1992,132 @@ async function getFitment(userId, itemId) {
   } catch (e) { return []; }
 }
 
+// ─── v329: CAN THIS LISTING SHIP TO A COUNTRY? ───────────────────────────────
+// Two looks, so one unclear answer doesn't decide it:
+//  1) eBay's shopper view of the listing for a buyer in that country (Browse API with the
+//     country as the buyer's location) — lists the shipping options that buyer would see.
+//     This includes eBay International Shipping, which can block items your settings allow.
+//  2) Your listing's own settings (Trading API GetItem): ship-to places, excluded places,
+//     and whether eBay International Shipping is on.
+// [code, name, other names, a sample postal code so calculated shipping can be priced]
+const COUNTRIES = [
+  ['CA', 'Canada', [], 'M5V 2T6'], ['MX', 'Mexico', [], '06000'], ['GB', 'United Kingdom', ['uk', 'england', 'britain', 'great britain', 'scotland', 'wales', 'northern ireland'], 'SW1A 1AA'],
+  ['IE', 'Ireland', [], 'D02 X285'], ['DE', 'Germany', ['deutschland'], '10115'], ['FR', 'France', [], '75001'], ['IT', 'Italy', ['italia'], '00118'],
+  ['ES', 'Spain', ['espana', 'españa'], '28001'], ['PT', 'Portugal', [], '1100-148'], ['NL', 'Netherlands', ['holland', 'the netherlands'], '1012 JS'],
+  ['BE', 'Belgium', [], '1000'], ['AT', 'Austria', [], '1010'], ['CH', 'Switzerland', [], '8001'], ['DK', 'Denmark', [], '1050'], ['SE', 'Sweden', [], '111 52'],
+  ['NO', 'Norway', [], '0150'], ['FI', 'Finland', [], '00100'], ['PL', 'Poland', [], '00-001'], ['CZ', 'Czech Republic', ['czechia'], '110 00'],
+  ['GR', 'Greece', [], '105 57'], ['HU', 'Hungary', [], '1051'], ['RO', 'Romania', [], '010011'], ['LT', 'Lithuania', [], '01100'], ['LV', 'Latvia', [], 'LV-1050'],
+  ['EE', 'Estonia', [], '10111'], ['UA', 'Ukraine', [], '01001'], ['RU', 'Russia', ['russian federation'], '101000'], ['TR', 'Turkey', ['türkiye', 'turkiye'], '34000'],
+  ['IL', 'Israel', [], '6100000'], ['AE', 'United Arab Emirates', ['uae', 'dubai', 'abu dhabi'], ''], ['SA', 'Saudi Arabia', [], '11564'], ['KW', 'Kuwait', [], ''],
+  ['QA', 'Qatar', [], ''], ['JO', 'Jordan', [], '11118'], ['EG', 'Egypt', [], '11511'], ['ZA', 'South Africa', [], '2001'], ['NG', 'Nigeria', [], '100001'],
+  ['KE', 'Kenya', [], '00100'], ['AU', 'Australia', [], '2000'], ['NZ', 'New Zealand', [], '6011'], ['JP', 'Japan', [], '100-0001'], ['KR', 'South Korea', ['korea'], '04524'],
+  ['CN', 'China', [], '100000'], ['HK', 'Hong Kong', [], ''], ['TW', 'Taiwan', [], '100'], ['SG', 'Singapore', [], '018989'], ['MY', 'Malaysia', [], '50000'],
+  ['TH', 'Thailand', [], '10200'], ['PH', 'Philippines', [], '1000'], ['ID', 'Indonesia', [], '10110'], ['VN', 'Vietnam', ['viet nam'], '100000'], ['IN', 'India', [], '110001'],
+  ['PK', 'Pakistan', [], '44000'], ['BR', 'Brazil', ['brasil'], '01000-000'], ['AR', 'Argentina', [], 'C1000'], ['CL', 'Chile', [], '8320000'], ['CO', 'Colombia', [], '110111'],
+  ['PE', 'Peru', [], '15001'], ['CR', 'Costa Rica', [], '10101'], ['PA', 'Panama', [], ''], ['DO', 'Dominican Republic', [], '10101'], ['JM', 'Jamaica', [], ''],
+  ['TT', 'Trinidad and Tobago', ['trinidad'], ''], ['BS', 'Bahamas', ['the bahamas'], ''], ['BB', 'Barbados', [], ''], ['GU', 'Guam', [], '96910'],
+  ['IS', 'Iceland', [], '101'], ['CY', 'Cyprus', [], '1010'], ['MT', 'Malta', [], 'VLT 1000'], ['LU', 'Luxembourg', [], '1009'], ['SK', 'Slovakia', [], '811 01'],
+  ['SI', 'Slovenia', [], '1000'], ['HR', 'Croatia', [], '10000'], ['BG', 'Bulgaria', [], '1000'], ['RS', 'Serbia', [], '11000']
+];
+const countryByCode = (c) => COUNTRIES.find(x => x[0] === String(c || '').toUpperCase()) || null;
+// eBay's region names (used in excluded / ship-to lists) for each country above
+const REGION_OF = {
+  Europe: 'GB IE DE FR IT ES PT NL BE AT CH DK SE NO FI PL CZ GR HU RO LT LV EE UA RU IS CY MT LU SK SI HR BG RS TR',
+  Asia: 'JP KR CN HK TW IN PK', 'Southeast Asia': 'SG MY TH PH ID VN', 'Middle East': 'IL AE SA KW QA JO EG TR',
+  Africa: 'ZA NG KE EG', Oceania: 'AU NZ GU', 'North America': 'CA MX', Americas: 'CA MX BR AR CL CO PE CR PA DO JM TT BS BB',
+  'South America': 'BR AR CL CO PE', 'Central America and Caribbean': 'CR PA DO JM TT BS BB'
+};
+const regionsOf = (code) => Object.keys(REGION_OF).filter(r => REGION_OF[r].split(' ').includes(code));
+// Find countries named in a buyer's text, e.g. "do you ship to the UK?" → ['GB']
+function detectCountries(text) {
+  const t = ' ' + String(text || '').toLowerCase().replace(/[^a-z\u00c0-\u024f ]+/g, ' ') + ' ';
+  const found = [];
+  for (const [code, name, alts] of COUNTRIES) {
+    if ([name.toLowerCase()].concat(alts).some(w => t.includes(' ' + w + ' '))) found.push(code);
+  }
+  return found.slice(0, 3);
+}
+
+async function shipCheck(userId, itemId, code) {
+  const c = countryByCode(code);
+  if (!c) throw new Error('Unknown country');
+  const out = { code: c[0], country: c[1], verdict: 'unknown', options: [], how: [], sellerShipTo: [], sellerExcluded: [], ebayIntlShipping: null };
+  // 2) your listing's own settings
+  try {
+    const xml = await tradingCall(userId, 'GetItem', `<ItemID>${itemId}</ItemID><DetailLevel>ReturnAll</DetailLevel>`);
+    const item = xmlTag(xml, 'Item') || '';
+    const sd = xmlTag(item, 'ShippingDetails') || '';
+    out.sellerShipTo = xmlAll(item, 'ShipToLocations').map(xmlDecode).filter(Boolean);
+    xmlAll(sd, 'InternationalShippingServiceOption').forEach(o => xmlAll(o, 'ShipToLocation').forEach(l => { if (!out.sellerShipTo.includes(l)) out.sellerShipTo.push(xmlDecode(l)); }));
+    out.sellerExcluded = xmlAll(sd, 'ExcludeShipToLocation').map(xmlDecode).filter(Boolean);
+    out.ebayIntlShipping = xmlTag(sd, 'GlobalShipping') === 'true';
+  } catch (e) { out.how.push('Couldn\u2019t read the listing\u2019s shipping settings: ' + e.message); }
+  // 1) eBay's shopper view from that country
+  try {
+    const s = await getUserSettings(userId);
+    const appToken = await getAppToken(String(s.ebayClientId || '').trim(), String(s.ebayClientSecret || '').trim());
+    const ctx = 'contextualLocation=' + encodeURIComponent('country=' + c[0] + (c[3] ? ',zip=' + c[3] : ''));
+    const r = await fetch('https://api.ebay.com/buy/browse/v1/item/get_item_by_legacy_id?legacy_item_id=' + encodeURIComponent(itemId), {
+      headers: { Authorization: 'Bearer ' + appToken, 'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US', 'X-EBAY-C-ENDUSERCTX': ctx, Accept: 'application/json' },
+      signal: AbortSignal.timeout(20000)
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      const msg = (d.errors || []).map(e => e.longMessage || e.message).join('; ') || ('HTTP ' + r.status);
+      if (/ship|deliver|location|not available/i.test(msg)) { out.verdict = 'no'; out.how.push('eBay: ' + msg); }
+      else out.how.push('eBay\u2019s shopper view didn\u2019t answer: ' + msg);
+    } else {
+      out.options = (d.shippingOptions || []).map(o => ({
+        service: o.shippingServiceCode || o.shippingCarrierCode || o.type || 'Shipping',
+        cost: o.shippingCost ? parseFloat(o.shippingCost.value) : null,
+        type: o.optionalShippingFeeType || o.type || '',
+        arrives: o.maxEstimatedDeliveryDate || null
+      }));
+      const excl = ((d.shipToLocations && d.shipToLocations.regionExcluded) || []).map(x => x.regionId || x.regionName);
+      if (excl.some(x => String(x).toUpperCase() === c[0] || String(x).toLowerCase() === c[1].toLowerCase())) out.verdict = 'no';
+      else if (out.options.length) out.verdict = 'yes';
+      else out.verdict = 'no';
+      out.how.push(out.options.length ? 'eBay shows ' + out.options.length + ' shipping option' + (out.options.length === 1 ? '' : 's') + ' for a buyer in ' + c[1] : 'eBay shows no shipping options for a buyer in ' + c[1]);
+    }
+  } catch (e) { out.how.push('eBay\u2019s shopper view didn\u2019t answer: ' + e.message); }
+  // If the shopper view couldn't answer, fall back to your settings (less sure)
+  if (out.verdict === 'unknown' && (out.sellerShipTo.length || out.sellerExcluded.length)) {
+    const ex = out.sellerExcluded.map(x => x.toLowerCase());
+    const exRegion = regionsOf(c[0]).find(r => ex.includes(r.toLowerCase()));
+    if (ex.includes(c[0].toLowerCase()) || ex.includes(c[1].toLowerCase())) { out.verdict = 'no'; out.how.push(c[1] + ' is on the listing\u2019s excluded list'); }
+    else if (exRegion) { out.verdict = 'no'; out.how.push('The listing excludes ' + exRegion + ', which includes ' + c[1]); }
+    else if (out.sellerShipTo.some(x => /worldwide/i.test(x) || x.toUpperCase() === c[0])) { out.verdict = 'probably'; out.how.push('The listing ships worldwide and doesn\u2019t exclude ' + c[1] + ' (eBay\u2019s own checks could still block it)'); }
+  }
+  return out;
+}
+
+function shipCheckText(sc) {
+  const v = { yes: 'YES', no: 'NO', probably: 'PROBABLY (not confirmed)', unknown: 'UNKNOWN' }[sc.verdict];
+  const opts = sc.options.length ? ' Options: ' + sc.options.map(o => o.service + (o.cost !== null ? ' $' + o.cost.toFixed(2) : '')).join('; ') + '.' : '';
+  return 'Shipping to ' + sc.country + ' (' + sc.code + '): ' + v + '.' + opts + (sc.how.length ? ' How we know: ' + sc.how.join('; ') + '.' : '');
+}
+
+app.get('/api/shipcheck/countries', requireUser, (req, res) => res.json({ countries: COUNTRIES.map(c => ({ code: c[0], name: c[1] })).sort((a, b) => a.name.localeCompare(b.name)) }));
+app.get('/api/shipcheck/:itemId', requireUser, async (req, res) => {
+  const itemId = String(req.params.itemId || '');
+  if (!/^\d{6,20}$/.test(itemId)) return res.status(400).json({ error: 'Bad item number' });
+  if (!countryByCode(req.query.country)) return res.status(400).json({ error: 'Pick a country' });
+  try {
+    const conn = await getConnection(req.user.id);
+    if (!conn || !conn.refresh_enc) return res.status(400).json({ error: 'Connect eBay first' });
+    res.json(await shipCheck(req.user.id, itemId, req.query.country));
+  } catch (e) {
+    console.error('[shipcheck]', e.message);
+    res.status(500).json({ error: 'Could not check: ' + e.message });
+  }
+});
+
 app.post('/api/threads/:id/draft', requireUser, express.json(), async (req, res) => {
   const id = String(req.params.id || '');
   const b = req.body || {};
   const itemId = /^\d{6,20}$/.test(String(b.itemId || '')) ? String(b.itemId) : null;
   const hint = String(b.hint || '').trim().slice(0, 500);
+  const pickedCountry = countryByCode(b.country) ? String(b.country).toUpperCase() : null;   // v329: from the Ships-to box
   if (!/^[\w.:-]{1,80}$/.test(id)) return res.status(400).json({ error: 'Bad conversation' });
   try {
     const settings = await getUserSettings(req.user.id);
@@ -2038,16 +2162,30 @@ app.post('/api/threads/:id/draft', requireUser, express.json(), async (req, res)
       } else listing = 'The listing details could not be loaded (' + (it.error || 'unknown') + ').';
     }
 
+    // v329: shipping-to-a-country answers — the country picked in Messages, or ones the buyer named
+    let shipping = '';
+    const shipChecks = [];
+    if (itemId) {
+      const buyerText = msgs.filter(m => !m.mine).slice(-5).map(m => m.text).join(' ');
+      const codes = pickedCountry ? [pickedCountry] : (/\bship|shipping|deliver|send\b/i.test(buyerText) ? detectCountries(buyerText) : []);
+      for (const code of codes) {
+        try { const sc = await shipCheck(req.user.id, itemId, code); shipChecks.push(sc); } catch (e) { /* skip that one */ }
+      }
+      if (shipChecks.length) shipping = shipChecks.map(shipCheckText).join('\n');
+    }
+
     const system = [
       'You draft replies for a small eBay seller of used auto parts (pulled from salvage vehicles) to buyer messages.',
       'Write the reply the seller will send, answering the buyer\'s latest message.',
       'Use ONLY facts from the listing and the conversation. Never invent part numbers, fitment, measurements, condition details, shipping times, or policies.',
       'Fitment questions: if the buyer\'s vehicle is in the fitment list, say it is listed as fitting and suggest they match the part number to their original part. If it is not listed or there is no fitment list, say you can\'t confirm it and ask them to compare the part number on their original part (or send the VIN). Never promise fit.',
       'Price/offer questions: don\'t invent a price; if the seller gave instructions, follow them, otherwise suggest they send an offer through the listing.',
+      'Shipping-to-a-country questions: use only the SHIPPING CHECK section. YES: say it can ship there (you may mention the cost shown). NO: say that unfortunately eBay doesn\'t allow this item to ship to their country. PROBABLY or UNKNOWN, or no check given: say they can see the shipping options for their country by entering their address on the listing page. Never promise international shipping beyond what the check says.',
       'Keep it short (1–4 sentences), friendly and plain. Plain text only: no markdown, no subject line, no placeholders like [Name], no signature.',
       'Reply with only the message text.'
     ].join(' ');
-    const user = 'LISTING\n' + listing + '\n\nCONVERSATION (oldest first)\n' + convo + (hint ? '\n\nSELLER\'S INSTRUCTIONS FOR THIS REPLY\n' + hint : '') + '\n\nWrite the seller\'s reply now.';
+    // const user = 'LISTING\n' + listing + '\n\nCONVERSATION (oldest first)\n' + convo + (hint ? '\n\nSELLER\'S INSTRUCTIONS FOR THIS REPLY\n' + hint : '') + '\n\nWrite the seller\'s reply now.';
+    const user = 'LISTING\n' + listing + (shipping ? '\n\nSHIPPING CHECK (checked with eBay just now)\n' + shipping : '') + '\n\nCONVERSATION (oldest first)\n' + convo + (hint ? '\n\nSELLER\'S INSTRUCTIONS FOR THIS REPLY\n' + hint : '') + '\n\nWrite the seller\'s reply now.';   // v329: + shipping check
 
     const r = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -2059,7 +2197,8 @@ app.post('/api/threads/:id/draft', requireUser, express.json(), async (req, res)
     if (!r.ok) return res.status(502).json({ error: 'Claude didn\u2019t answer: ' + ((d.error && d.error.message) || ('HTTP ' + r.status)) });
     const text = ((d.content || []).filter(c => c.type === 'text').map(c => c.text).join('\n') || '').trim();
     if (!text) return res.status(502).json({ error: 'Claude returned an empty draft — try again.' });
-    res.json({ draft: text.slice(0, 2000), usedListing: !!itemId });
+    // res.json({ draft: text.slice(0, 2000), usedListing: !!itemId });
+    res.json({ draft: text.slice(0, 2000), usedListing: !!itemId, shipChecks: shipChecks.map(sc => ({ country: sc.country, verdict: sc.verdict })) });   // v329
   } catch (e) {
     console.error('[draft]', e.message);
     res.status(500).json({ error: 'Could not draft a reply: ' + e.message });
@@ -2723,5 +2862,5 @@ app.get('*', (req, res) => {
 });
 
 setupDatabase()
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v328 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v329 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });
