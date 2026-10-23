@@ -1,4 +1,4 @@
-// PartsLister Pro server — v350
+// PartsLister Pro server — v351
 // v302: dashboard.html is the homepage (/). The listing tool moved to /list.
 // v305: eBay sales connection — real sold orders on the dashboard.
 // v306: asks eBay for two more permissions — fees/payouts and seller metrics.
@@ -121,6 +121,9 @@
 //       your return address: after eBay's window closes but inside your days, the draft says they
 //       can still ship it back to your address and you'll refund them when it arrives. Past your
 //       days (or when it's off), "Problem after the return window ended" applies.
+// v351: the AI's own thinking leaked into a draft ("Wait, let me reconsider. The buyer is asking…").
+//       The message to the buyer must now be inside <reply> tags and only that is used; a draft
+//       that still reads like notes about the buyer is rewritten once automatically.
 // Accounts with email + password login. Each account's settings (including its
 // own API keys) and history are saved ENCRYPTED in Postgres, so you can log in
 // from any computer and everything is there. Also keeps a lifetime listing count.
@@ -2998,6 +3001,8 @@ const draftHandler = async (req, res) => {   // v347: named, so the sandbox down
       // 'Reply with only the message text.'
       // v341
       hint ? '' : 'If the buyer\'s latest message doesn\'t need an answer (it\'s only thanks / ok / goodbye), reply with exactly NO_REPLY_NEEDED and nothing else. Never write notes to the seller in place of a reply.',
+      // v351
+      'FORMAT: put the message to the buyer — and nothing else — inside <reply> and </reply>. It is the seller speaking directly to the buyer ("I", "you"); never refer to "the buyer" or "the seller", never think out loud, never add notes. Any ENGLISH:, OFFER: and FOLLOWUP: lines go after </reply>.',
       'Reply with only the message text, then one last line: "FOLLOWUP: " plus a short to-do for the seller (under 12 words, e.g. "Check level sensor opening for cracks, send photos") if the reply promises the seller will check, look, measure, take photos or get back to the buyer — otherwise "FOLLOWUP: none".'
     ].filter(Boolean).join(' ');   // v335: filter — the modules rule can be off
     // const user = 'LISTING\n' + listing + '\n\nCONVERSATION (oldest first)\n' + convo + (hint ? '\n\nSELLER\'S INSTRUCTIONS FOR THIS REPLY\n' + hint : '') + '\n\nWrite the seller\'s reply now.';
@@ -3007,16 +3012,42 @@ const draftHandler = async (req, res) => {   // v347: named, so the sandbox down
     const discountText = discount ? 'IF the buyer\'s latest message asks for a lower price, makes an offer or names their own price (e.g. "150$?", "can I have it for 160", "would you take anything less?", "is the price firm?"): say that the best you can do is ' + discount.percent + '% off and that you\'ve sent them an offer for $' + discount.offerPrice.toFixed(2) + ' (listed at $' + discount.price.toFixed(2) + ') — if they don\'t receive it, they should let you know. Don\'t offer any other price. If they are NOT asking about price, ignore this section.' : '';
     const user = statusLead + 'LISTING\n' + listing + '\n\nORDER & RETURNS (worked out by the app from eBay)\n' + (orderFacts || 'No order found for this item yet (the buyer may not have bought it).') + (timeline ? '\n\nTIMELINE\n' + timeline : '') + (lateReturn ? '\n\nLATE RETURN (seller\'s own policy)\n' + lateReturn : '') + (shipping ? '\n\nSHIPPING CHECK (checked with eBay just now)\n' + shipping : '') + (discountText ? '\n\nDISCOUNT\n' + discountText : '') + '\n\nCONVERSATION (oldest first)\n' + convo + (hint ? '\n\nSELLER\'S INSTRUCTIONS FOR THIS REPLY\n' + hint : '') + '\n\nWrite the seller\'s reply now.';   // v330: + order & returns, v331: + discount
 
-    const r = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({ model, max_tokens: 900, system, messages: [{ role: 'user', content: user }] }),   // v339: 600 → 900 (room for the English copy)
-      signal: AbortSignal.timeout(60000)
-    });
-    const d = await r.json().catch(() => ({}));
-    if (!r.ok) return res.status(502).json({ error: 'Claude didn\u2019t answer: ' + ((d.error && d.error.message) || ('HTTP ' + r.status)) });
-    // const text = ((d.content || []).filter(c => c.type === 'text').map(c => c.text).join('\n') || '').trim();
-    let text = ((d.content || []).filter(c => c.type === 'text').map(c => c.text).join('\n') || '').trim();
+    // v351: ask, keep only what's inside <reply>…</reply> (plus the ENGLISH / OFFER / FOLLOWUP lines),
+    //       and if it still reads like notes about the buyer, ask once more
+    const askAI = async (messages) => {
+      const r = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+        body: JSON.stringify({ model, max_tokens: 900, system, messages }),   // v339: 600 → 900 (room for the English copy)
+        signal: AbortSignal.timeout(60000)
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw Object.assign(new Error('Claude didn\u2019t answer: ' + ((d.error && d.error.message) || ('HTTP ' + r.status))), { aiError: true });
+      return ((d.content || []).filter(c => c.type === 'text').map(c => c.text).join('\n') || '').trim();
+    };
+    const pickReply = (raw) => {
+      const m = /<reply>([\s\S]*?)<\/reply>/i.exec(raw);
+      if (!m) return { text: raw.replace(/<\/?reply>/gi, '').trim(), tagged: false };
+      const rest = raw.slice(0, m.index) + '\n' + raw.slice(m.index + m[0].length);
+      const meta = (/(ENGLISH:[\s\S]*?)(?=\n\s*(OFFER|FOLLOWUP):|$)/i.exec(rest) || [''])[0].trim();
+      const extra = [meta, (/OFFER:\s*(yes|no)\b/i.exec(rest) || [''])[0], (/FOLLOWUP:.*$/im.exec(rest) || [''])[0]].filter(Boolean).join('\n');
+      return { text: (m[1].trim() + (extra ? '\n' + extra : '')).trim(), tagged: true };
+    };
+    const looksLikeNotes = (t) => /\b(let me (reconsider|think)|wait,|the buyer (is|wants|asked|says|has)|I need to (answer|reply|respond)|the seller (should|would|is)|draft (a )?reply)\b/i.test(t.split(/\n\s*(ENGLISH|OFFER|FOLLOWUP):/i)[0]);
+    let text;
+    try {
+      const raw1 = await askAI([{ role: 'user', content: user }]);
+      if (/NO_REPLY_NEEDED/.test(raw1) && !/<reply>[\s\S]*?\w[\s\S]*?<\/reply>/i.test(raw1)) text = 'NO_REPLY_NEEDED';
+      else {
+        let pick = pickReply(raw1);
+        if (!pick.text || looksLikeNotes(pick.text)) {
+          const raw2 = await askAI([{ role: 'user', content: user }, { role: 'assistant', content: raw1 },
+            { role: 'user', content: 'That included notes or thinking. Write ONLY the message the seller sends to the buyer, speaking directly to them, inside <reply></reply> — then the ENGLISH / OFFER / FOLLOWUP lines after it if needed.' }]);
+          pick = pickReply(raw2);
+        }
+        text = pick.text;
+      }
+    } catch (e) { if (e.aiError) return res.status(502).json({ error: e.message }); throw e; }
     if (/^\s*NO_REPLY_NEEDED\b/.test(text)) return res.json({ noReply: true, reason: 'The buyer\u2019s last message doesn\u2019t need an answer. To reply anyway, type what you want to say in the box next to AI draft.' });   // v341
     // v336: the follow-up to-do line (removed from the draft)
     let followUp = null;
@@ -4095,5 +4126,5 @@ app.get('*', (req, res) => {
 });
 
 setupDatabase()
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v350 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v351 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });
