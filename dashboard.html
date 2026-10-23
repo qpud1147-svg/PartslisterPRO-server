@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Sales v331</title>
+<title>PartsLister Pro Sales v333</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@400;500;600&display=swap');
 
@@ -529,7 +529,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v331</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v333</span></div>
   </a>
   <!-- v316: switch pages -->
   <nav class="page-tabs" aria-label="Pages">
@@ -804,6 +804,12 @@
         <div class="set-row"><label for="ms-problem">Anything else (not as described, missing pieces…)</label>
         <select id="ms-problem" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:4px;font-family:'Barlow',sans-serif;font-size:14px;"></select></div>
       </div>
+      <!-- v333: FITMENT -->
+      <div class="set-section">
+        <h3>Fitment questions</h3>
+        <label style="display:flex;gap:8px;align-items:center;font-size:14px;color:var(--text);cursor:pointer;"><input type="checkbox" id="ms-fit-vin"> Also ask for the buyer's VIN</label>
+        <p class="set-help" style="margin-top:6px;">When a buyer asks if a part fits, the AI says whether their vehicle is in the listing's fitment list (it never promises fit). If the listing has a part number, it asks them to compare it with the number on their original part and writes the number in the message. If there's no part number, it says so and asks them to compare their original part with the listing photos. Leave the VIN box off until you have a way to check VINs; when it's off, the AI never asks for one.</p>
+      </div>
       <!-- v331: DISCOUNTS -->
       <div class="set-section">
         <h3>When a buyer asks for a discount</h3>
@@ -913,6 +919,7 @@
 // v327: Download asks first; Admin links to the Diagnostics page.
 // v330: Settings → Messages tab (AI reply instructions, problem replies, auto-translate).
 // v331: a reply choice for each problem type + discount offers.
+// v333: Fitment questions — optional "Also ask for the buyer's VIN".
 // Shares the same sign-in and account as the listing tool (/list).
 // v304: sales dashboard — big daily bar graph with a remembered date range.
 // The sales numbers are SAMPLE data for now; real eBay sales replace
@@ -1712,6 +1719,7 @@ async function loadMsgSettings() {
     });
     document.getElementById('ms-disc-on').checked = !!(d.discount && d.discount.enabled);
     document.getElementById('ms-disc-pct').value = (d.discount && d.discount.percent) || 5;
+    document.getElementById('ms-fit-vin').checked = !!(d.fitment && d.fitment.askVin);   // v333
   } catch (e) { showToast('Could not load Messages settings.', true); }
 }
 function useDefaultInstructions() {
@@ -1725,7 +1733,8 @@ async function saveMsgSettings() {
     const problems = {};
     document.querySelectorAll('#ms-problem-types select').forEach(x => { problems[x.dataset.key] = x.value; });
     const body = { instructions: document.getElementById('ms-instructions').value, problemPolicy: document.getElementById('ms-problem').value, autoTranslate: document.getElementById('ms-translate').checked,
-      problems, discount: { enabled: document.getElementById('ms-disc-on').checked, percent: parseFloat(document.getElementById('ms-disc-pct').value) || 5 } };   // v331
+      problems, discount: { enabled: document.getElementById('ms-disc-on').checked, percent: parseFloat(document.getElementById('ms-disc-pct').value) || 5 },   // v331
+      fitment: { askVin: document.getElementById('ms-fit-vin').checked } };   // v333
     const r = await fetch('/api/msg-settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'Could not save');
     setText('ms-instr-note', body.instructions.trim() === msDefault.trim() || !body.instructions.trim() ? 'Using the default.' : 'Using your own instructions.');

@@ -1,4 +1,4 @@
-// PartsLister Pro server — v332
+// PartsLister Pro server — v333
 // v302: dashboard.html is the homepage (/). The listing tool moved to /list.
 // v305: eBay sales connection — real sold orders on the dashboard.
 // v306: asks eBay for two more permissions — fees/payouts and seller metrics.
@@ -51,6 +51,10 @@
 //       tracking number, carrier, shipped date, eBay's expected delivery date and the delivered
 //       date (Trading GetOrders) — and the return window now counts from the delivery date.
 //       Buyer asks which vehicle the part came from and the listing doesn't say → it says so.
+// v333: Settings → Messages → Fitment questions: "Also ask for the buyer's VIN" (off by default —
+//       no VIN checking yet). Off: the draft never asks for a VIN; it asks the buyer to compare
+//       the listing's part number, or, with no part number, to compare their original part with
+//       the listing photos. Drafts answer the question directly (no condition filler).
 // Accounts with email + password login. Each account's settings (including its
 // own API keys) and history are saved ENCRYPTED in Postgres, so you can log in
 // from any computer and everything is there. Also keeps a lifetime listing count.
@@ -2129,7 +2133,9 @@ const DEFAULT_MSG_INSTRUCTIONS = [
   'You draft replies for a small eBay seller of used auto parts (pulled from salvage vehicles) to buyer messages.',
   'Write the reply the seller will send, answering the buyer\'s latest message.',
   // 'Fitment questions: if the buyer\'s vehicle is in the fitment list, say it is listed as fitting and suggest they match the part number to their original part. If it is not listed or there is no fitment list, say you can\'t confirm it and ask them to compare the part number on their original part (or send the VIN). Never promise fit.',
-  'Fitment questions: if the buyer\'s vehicle is in the fitment list, say it is listed as fitting. If it is not listed or there is no fitment list, say you can\'t confirm it and ask for their VIN. Follow the PART NUMBER rule for comparing part numbers. Never promise fit.',   // v332
+  // 'Fitment questions: if the buyer\'s vehicle is in the fitment list, say it is listed as fitting. If it is not listed or there is no fitment list, say you can\'t confirm it and ask for their VIN. Follow the PART NUMBER rule for comparing part numbers. Never promise fit.',   // v332
+  'Fitment questions: if the buyer\'s vehicle is in the fitment list, say it is listed as fitting. If it is not listed or there is no fitment list, say the listing doesn\'t show their vehicle as a fit, so you can\'t confirm it. Then follow the PART NUMBER rule. Never promise fit.',   // v333
+  'Answer the buyer\'s question directly. Don\'t open by repeating the condition or other listing facts they didn\'t ask about.',   // v333
   // 'Price/offer questions: don\'t invent a price; if the seller gave instructions, follow them, otherwise suggest they send an offer through the listing.',
   'Price/discount questions: if a DISCOUNT section is given, follow it exactly. Otherwise don\'t offer or invent a discount — politely say the price is as listed (unless the seller\'s instructions say otherwise).',   // v331
   'Keep it short (1–4 sentences), friendly and plain.'
@@ -2175,7 +2181,8 @@ function msgSettingsOf(settings) {
     problemPolicy: PROBLEM_POLICIES[m.problemPolicy] ? m.problemPolicy : 'return_or_refund',
     autoTranslate: m.autoTranslate !== false,
     problems,   // v331
-    discount: { enabled: !!(m.discount && m.discount.enabled), percent: pct > 0 && pct < 90 ? pct : 5 }   // v331
+    discount: { enabled: !!(m.discount && m.discount.enabled), percent: pct > 0 && pct < 90 ? pct : 5 },   // v331
+    fitment: { askVin: !!(m.fitment && m.fitment.askVin) }   // v333: off until VIN checking exists
   };
 }
 // v331: does the buyer's latest message ask for a lower price?
@@ -2207,7 +2214,8 @@ app.post('/api/msg-settings', requireUser, express.json(), async (req, res) => {
       problemPolicy: PROBLEM_POLICIES[b.problemPolicy] ? b.problemPolicy : 'return_or_refund',
       autoTranslate: b.autoTranslate !== false,
       problems,
-      discount: { enabled: !!(b.discount && b.discount.enabled), percent: pct > 0 && pct < 90 ? Math.round(pct * 10) / 10 : 5 }
+      discount: { enabled: !!(b.discount && b.discount.enabled), percent: pct > 0 && pct < 90 ? Math.round(pct * 10) / 10 : 5 },
+      fitment: { askVin: !!(b.fitment && b.fitment.askVin) }   // v333
     };
     await writeUserData(req.user.id, d);
     res.json({ ok: true });
@@ -2520,7 +2528,10 @@ app.post('/api/threads/:id/draft', requireUser, express.json(), async (req, res)
       'Problems: first decide which kind the buyer has, then follow the seller\'s choice for that kind. ' + PROBLEM_TYPES.map(t => 'If ' + t.when + ': ' + t.options[ms.problems[t.key]].ai).join(' ') + ' Any other problem (not as described, missing pieces): ' + PROBLEM_POLICIES[ms.problemPolicy].ai,
       'Return windows: use only the ORDER & RETURNS section — never calculate dates yourself. For damaged, defective or wrong-part problems: if it says the buyer is INSIDE the return window, follow the choice above; if the window has ENDED, politely say the return window has passed. A package that never arrived is not limited by the return window. If no order or return policy is given, don\'t mention any time limit.',
       // v332
-      'PART NUMBER rule: use only the PART NUMBER line. If it gives a number, write the number out in the reply whenever you suggest comparing, so the buyer has it right there. If it says NONE or unknown, never ask the buyer to compare part numbers with the listing or say the listing has one — ask for their VIN, or suggest comparing their original part with the listing photos.',
+      // 'PART NUMBER rule: use only the PART NUMBER line. If it gives a number, write the number out in the reply whenever you suggest comparing, so the buyer has it right there. If it says NONE or unknown, never ask the buyer to compare part numbers with the listing or say the listing has one — ask for their VIN, or suggest comparing their original part with the listing photos.',   (v332)
+      // v333: VIN only when the seller turned it on
+      'PART NUMBER rule: use only the PART NUMBER line. If it gives a number, ask the buyer to compare it with the number on their original part and write the number out in the reply. If it says NONE or unknown, never mention comparing part numbers or say the listing has one — say this listing doesn\'t have a part number, so please compare their original part with the listing photos.'
+        + (ms.fitment.askVin ? ' You may also ask for their VIN so the seller can check fitment.' : ' Never ask for a VIN or offer to check one.'),
       'If the buyer asks which vehicle the part came from (year, model, mileage, VIN of the donor vehicle) and the LISTING doesn\'t say, say plainly that you don\'t have that information for this part — don\'t skip the question.',
       'Tracking and delivery: use only the SHIPMENT facts. You may give the carrier, tracking number, shipped date, expected date and delivered date shown there. Never describe where the package is or make up a delivery date.',
       'Write in English. Plain text only: no markdown, no subject line, no placeholders like [Name], no signature.',
@@ -3208,5 +3219,5 @@ app.get('*', (req, res) => {
 });
 
 setupDatabase()
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v332 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v333 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });
