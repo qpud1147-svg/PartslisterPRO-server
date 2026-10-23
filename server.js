@@ -1,4 +1,4 @@
-// PartsLister Pro server — v342
+// PartsLister Pro server — v346
 // v302: dashboard.html is the homepage (/). The listing tool moved to /list.
 // v305: eBay sales connection — real sold orders on the dashboard.
 // v306: asks eBay for two more permissions — fees/payouts and seller metrics.
@@ -90,6 +90,19 @@
 //       warranty choice is now separate from it.
 // v342: drafts speak as the seller ("the listing", never "your listing"), and know live whether the
 //       listing has ended / sold out — if this buyer didn't buy it, the draft says it has sold.
+// v343: drafts know the timeline — if the buyer asked before they bought it (and it's shipped or
+//       delivered since), the draft doesn't offer to check the part; it notes they went ahead and
+//       bought it and asks them to say if it isn't what they needed.
+// v345: (v344 Test AI drafts was dropped — built from v343.) From 300 real conversations: drafts only
+//       bring up part numbers when the buyer asks about fit; never send buyers to other sellers or
+//       off eBay; "still available?" answered from the live status; natural "I'll get back to you
+//       by…" wording. New answer choices: changed mind / bought the wrong one, change my address,
+//       faster shipping, sell part of it, radio / anti-theft code, local pickup. Download messages
+//       also removes names in quoted email replies and "-Name" sign-offs.
+// v346: Admin → Download messages with drafts: 7 / 14 / 30 / 90 / 365 days, 50 / 100 / 300
+//       conversations, optional "AI drafts only" (found by your sign-off), progress bar, and a
+//       "Facts now" line per conversation (price, shipping, part #, live status, returns, this
+//       buyer's order) so drafts can be checked against the real facts.
 // Accounts with email + password login. Each account's settings (including its
 // own API keys) and history are saved ENCRYPTED in Postgres, so you can log in
 // from any computer and everything is there. Also keeps a lifetime listing count.
@@ -2259,6 +2272,31 @@ const INTL_NO = {
   us_only: { label: 'Say you only ship within the US', ai: 'say that sorry, you only ship within the US' },
   check_back: { label: 'Say you\u2019ll look into it and get back to them', ai: 'say you\u2019ll look into shipping to their country and get back to them' }
 };
+// v345: more answers, from 300 real conversations (your own past replies are the defaults)
+const REMORSE = {
+  open_return: { label: 'They can open a return on eBay (return shipping per the listing’s policy)', ai: 'say they can return it: open a return request on eBay within the return window (give the time left), return shipping as the listing’s return policy says' },
+  ask_first: { label: 'Say you’ll check and get back to them', ai: 'say you’ll look into it and get back to them' }
+};
+const ADDRESS_CHANGE = {
+  cancel_reorder: { label: 'I can’t change it — cancel and reorder with the right address', ai: 'say you can’t change the shipping address on an order; you can cancel it so they can reorder with the right address (if it hasn’t shipped yet)' },
+  check_back: { label: 'Say you’ll see what you can do and get back to them', ai: 'say you’ll see what you can do and get back to them' }
+};
+const FASTER = {
+  checkout: { label: 'They can pick a faster shipping option at checkout', ai: 'say they can choose a faster shipping option at checkout if the listing offers one, and it ships on your shipping days; never promise a delivery date' },
+  no: { label: 'Sorry, it ships with the listing’s shipping only', ai: 'say sorry, it ships with the shipping shown on the listing; never promise a delivery date' }
+};
+const PARTIAL = {
+  as_shown: { label: 'Sorry — it’s only sold as shown', ai: 'say sorry, it’s only sold as shown in the listing' },
+  check_back: { label: 'Say you’ll check and get back to them', ai: 'say you’ll check and get back to them' }
+};
+const RADIO_CODE = {
+  dont_have: { label: 'I don’t have the code', ai: 'say you don’t have the code for it (a dealer can usually get it from the radio’s serial number)' },
+  check_back: { label: 'Say you’ll check and get back to them', ai: 'say you’ll check and get back to them' }
+};
+const PICKUP = {
+  ship_only: { label: 'Shipping only — no local pickup', ai: 'say sorry, you only ship (no local pickup)' },
+  check_back: { label: 'Say you’ll check and get back to them', ai: 'say you’ll check and get back to them' }
+};
 const TONES = {
   friendly: { label: 'Friendly', ai: 'Tone: warm and friendly. If the buyer sounds worried or upset, briefly acknowledge it.' },
   short: { label: 'Short and to the point', ai: 'Tone: polite but short and to the point. No small talk.' }
@@ -2298,7 +2336,14 @@ function msgSettingsOf(settings) {
     shipWhen: SHIP_WHEN[m.shipWhen] ? m.shipWhen : 'ship_days',
     shipDays: String(m.shipDays || '').trim().slice(0, 200),
     intlNo: INTL_NO[m.intlNo] ? m.intlNo : 'ebay_no',
-    buyerLanguage: !!m.buyerLanguage
+    buyerLanguage: !!m.buyerLanguage,
+    // v345
+    remorse: REMORSE[m.remorse] ? m.remorse : 'open_return',
+    addressChange: ADDRESS_CHANGE[m.addressChange] ? m.addressChange : 'cancel_reorder',
+    faster: FASTER[m.faster] ? m.faster : 'checkout',
+    partial: PARTIAL[m.partial] ? m.partial : 'as_shown',
+    radioCode: RADIO_CODE[m.radioCode] ? m.radioCode : 'dont_have',
+    pickup: PICKUP[m.pickup] ? m.pickup : 'ship_only',
   };
 }
 // v341: a buyer message that doesn't need an answer ("ok thanks", "got it", "👍")
@@ -2327,7 +2372,14 @@ app.get('/api/msg-settings', requireUser, async (req, res) => {
       programmingOptions: Object.keys(PROGRAMMING_ANSWERS).map(k => ({ value: k, label: PROGRAMMING_ANSWERS[k].label })),
       donorOptions: Object.keys(DONOR_ANSWERS).map(k => ({ value: k, label: DONOR_ANSWERS[k].label })),
       shipWhenOptions: Object.keys(SHIP_WHEN).map(k => ({ value: k, label: SHIP_WHEN[k].label })),
-      intlOptions: Object.keys(INTL_NO).map(k => ({ value: k, label: INTL_NO[k].label })) });
+      intlOptions: Object.keys(INTL_NO).map(k => ({ value: k, label: INTL_NO[k].label })),
+      // v345
+      remorseOptions: Object.keys(REMORSE).map(k => ({ value: k, label: REMORSE[k].label })),
+      addressChangeOptions: Object.keys(ADDRESS_CHANGE).map(k => ({ value: k, label: ADDRESS_CHANGE[k].label })),
+      fasterOptions: Object.keys(FASTER).map(k => ({ value: k, label: FASTER[k].label })),
+      partialOptions: Object.keys(PARTIAL).map(k => ({ value: k, label: PARTIAL[k].label })),
+      radioCodeOptions: Object.keys(RADIO_CODE).map(k => ({ value: k, label: RADIO_CODE[k].label })),
+      pickupOptions: Object.keys(PICKUP).map(k => ({ value: k, label: PICKUP[k].label })) });
   } catch (e) { res.status(500).json({ error: 'Could not load Messages settings' }); }
 });
 app.post('/api/msg-settings', requireUser, express.json(), async (req, res) => {
@@ -2364,7 +2416,14 @@ app.post('/api/msg-settings', requireUser, express.json(), async (req, res) => {
       shipWhen: SHIP_WHEN[b.shipWhen] ? b.shipWhen : 'ship_days',
       shipDays: String(b.shipDays || '').trim().slice(0, 200),
       intlNo: INTL_NO[b.intlNo] ? b.intlNo : 'ebay_no',
-      buyerLanguage: !!b.buyerLanguage
+      buyerLanguage: !!b.buyerLanguage,
+      // v345
+      remorse: REMORSE[b.remorse] ? b.remorse : 'open_return',
+      addressChange: ADDRESS_CHANGE[b.addressChange] ? b.addressChange : 'cancel_reorder',
+      faster: FASTER[b.faster] ? b.faster : 'checkout',
+      partial: PARTIAL[b.partial] ? b.partial : 'as_shown',
+      radioCode: RADIO_CODE[b.radioCode] ? b.radioCode : 'dont_have',
+      pickup: PICKUP[b.pickup] ? b.pickup : 'ship_only',
     };
     await writeUserData(req.user.id, d);
     res.json({ ok: true });
@@ -2513,6 +2572,7 @@ async function findBuyerOrder(userId, itemId, buyer) {
     const hit = infos.find(x => x.buyer && x.buyer.toLowerCase() === String(buyer).toLowerCase());
     if (!hit) { out.otherBuyer = true; return out; }
     out.ship = hit;
+    out.matched = true;   // v343: this buyer's own order
     out.row = rows.find(r => r.order_id === hit.orderId) || rows[0];
     return out;
   }
@@ -2526,7 +2586,7 @@ const daysSince = (d) => Math.floor((Date.now() - new Date(d).getTime()) / 86400
 // v330: the facts the AI gets about the sale and the return window — all worked out here
 // v332: + SHIPMENT (tracking / delivered), and the return window counts from delivery like eBay
 // v337: + buyer — uses the order this buyer placed (not another buyer's)
-async function returnFacts(userId, itemId, buyer) {
+async function returnFacts(userId, itemId, buyer, info) {   // v343: + info (filled with the order dates)
   const lines = [];
   let sold = null, ship = null, shipErr = null;
   const fo = await findBuyerOrder(userId, itemId, buyer);
@@ -2535,10 +2595,11 @@ async function returnFacts(userId, itemId, buyer) {
     const o = fo.row;
     sold = new Date(o.created_at);
     const ago = daysSince(sold);
-    lines.push('Sold on ' + sold.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'America/Los_Angeles' }) + ' (' + ago + ' day' + (ago === 1 ? '' : 's') + ' ago), order ' + o.order_id + '.'
+    lines.push((fo.matched ? 'THIS BUYER bought it on ' : 'Sold on ') + sold.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'America/Los_Angeles' }) + ' (' + ago + ' day' + (ago === 1 ? '' : 's') + ' ago), order ' + o.order_id + '.'
       + (o.ship_status === 'FULFILLED' ? ' It has shipped.' : o.ship_status ? ' Not marked shipped yet.' : '')
       + (!o.counted ? ' This order was cancelled or refunded (' + o.status + ').' : ''));
     ship = fo.ship; shipErr = fo.shipErr;
+    if (info) { info.boughtAt = o.created_at; info.shippedAt = (fo.ship && fo.ship.shippedTime) || null; info.deliveredAt = (fo.ship && fo.ship.deliveredTime) || null; info.cancelled = !o.counted; }   // v343
   }
 
   // SHIPMENT
@@ -2747,7 +2808,20 @@ app.post('/api/threads/:id/draft', requireUser, express.json(), async (req, res)
     // v330: ORDER & RETURNS — the sale date and return window, calculated here (the AI never does date math)
     // const orderFacts = itemId ? await returnFacts(req.user.id, itemId) : '';
     const buyerName = (msgs.find(m => !m.mine && m.from) || {}).from || '';   // v337: this conversation's buyer
-    const orderFacts = itemId ? await returnFacts(req.user.id, itemId, buyerName) : '';
+    // const orderFacts = itemId ? await returnFacts(req.user.id, itemId, buyerName) : '';
+    const orderInfo = {};   // v343
+    const orderFacts = itemId ? await returnFacts(req.user.id, itemId, buyerName, orderInfo) : '';
+    // v343: TIMELINE — did the buyer's questions come before they bought it?
+    let timeline = '';
+    const lastBuyerMsg = msgs.filter(m => !m.mine).slice(-1)[0];
+    if (orderInfo.boughtAt && !orderInfo.cancelled && lastBuyerMsg) {
+      const asked = Date.parse(lastBuyerMsg.date), bought = Date.parse(orderInfo.boughtAt);
+      const fmt = (x) => new Date(x).toLocaleDateString('en-US', { month: 'long', day: 'numeric', timeZone: 'America/Los_Angeles' });
+      const status = orderInfo.deliveredAt ? 'it was delivered on ' + fmt(orderInfo.deliveredAt) : orderInfo.shippedAt ? 'it shipped on ' + fmt(orderInfo.shippedAt) : 'it has not shipped yet';
+      timeline = asked < bought
+        ? 'The buyer\'s latest message (' + fmt(asked) + ') was sent BEFORE they bought the item (' + fmt(bought) + '); ' + status + '. Their earlier question was never answered before they bought.'
+        : 'This buyer bought the item on ' + fmt(bought) + ' and wrote after that; ' + status + '.';
+    }
 
     // v329: shipping-to-a-country answers — the country picked in Messages, or ones the buyer named
     let shipping = '';
@@ -2800,6 +2874,8 @@ app.post('/api/threads/:id/draft', requireUser, express.json(), async (req, res)
       'Whenever the reply offers a return or asks the buyer to open a return request, also tell them how long they have, using the Return window line in ORDER & RETURNS (days left and the last day, exactly as given). If the window hasn\'t started, say they\'ll have the stated number of days from delivery. If there\'s no Return window line, don\'t mention a time limit.',
       'Tracking and delivery: use only the SHIPMENT facts. You may give the carrier, tracking number, shipped date, expected date and delivered date shown there. Never describe where the package is or make up a delivery date.',
       // v336
+      // v343
+      'If this buyer has already bought the item and it has shipped or been delivered, never offer to check, measure or photograph the part \u2014 it isn\'t with the seller any more. If TIMELINE says their question came BEFORE they bought it: apologize for the slow reply, say you see they went ahead and bought it (and it was delivered on the date given, if so), and ask them to let you know if it isn\'t what they needed \u2014 then follow the return-window rule.',
       // v342
       'You ARE the seller, writing to the buyer. Call it "the listing" or "my listing" \u2014 never "your listing". "Your" means the buyer\'s vehicle or part.',
       'If LISTING STATUS says ENDED or SOLD OUT and this buyer has not bought the item: start by saying sorry, this one has sold / is no longer available. Don\'t walk them through fitment or part numbers for it, but still answer any simple question briefly if the facts allow.',
@@ -2814,6 +2890,17 @@ app.post('/api/threads/:id/draft', requireUser, express.json(), async (req, res)
       'Donor vehicle questions (what year/model/VIN/mileage/engine it came from, right-hand drive, etc.): ' + DONOR_ANSWERS[ms.donor].ai + '.',
       'Has it shipped / when will it ship: use ORDER & RETURNS and SHIPMENT. If it has shipped, give the shipped date, carrier and tracking number. If it hasn\'t shipped: ' + SHIP_WHEN[ms.shipWhen].ai + (ms.shipDays ? ' (the seller ships: ' + ms.shipDays + ')' : '') + '. Never promise a specific day you weren\'t given.',
       'If the SHIPPING CHECK says NO for the buyer\'s country (or they ask you to enable shipping to their country): ' + INTL_NO[ms.intlNo].ai + '.',
+      // v345
+      'Buyer changed their mind, bought the wrong one, or no longer needs it (not a problem with the part): ' + REMORSE[ms.remorse].ai + '.',
+      'Buyer wants to change the shipping address: ' + ADDRESS_CHANGE[ms.addressChange].ai + '.',
+      'Buyer asks for faster shipping, overnight, or delivery by a certain day: ' + FASTER[ms.faster].ai + '.',
+      'Buyer asks to buy only part of the item, or the item without something that\'s included: ' + PARTIAL[ms.partial].ai + '.',
+      'Buyer asks for the radio / anti-theft / security code: ' + RADIO_CODE[ms.radioCode].ai + '.',
+      'Buyer asks about local pickup or picking it up in person: ' + PICKUP[ms.pickup].ai + '.',
+      '"Is it still available?": answer from LISTING STATUS (active with some available = yes).',
+      'Only bring up part numbers or comparing part numbers when the buyer asks whether it fits, asks for the part number, or names their own part number. If the listing has many part numbers, give the main one or two, not a long list.',
+      'Never suggest other sellers, searching eBay or anywhere else for the part, or dealing outside eBay (no off-eBay payments, no changing the price for another account, no sharing the seller\'s address or contact details).',
+      'When saying you\'ll get back to them, word it naturally, e.g. "I\'ll take a look and get back to you by Wednesday afternoon."',
       // 'Write in English. Plain text only: no markdown, no subject line, no placeholders like [Name], no signature.',
       ms.buyerLanguage
         ? 'Write the reply in the same language as the buyer\'s latest message. Plain text only: no markdown, no subject line, no placeholders like [Name], no signature. If that language is not English, after the reply add a line "ENGLISH:" followed by an English translation of your reply (one paragraph).'
@@ -2829,7 +2916,7 @@ app.post('/api/threads/:id/draft', requireUser, express.json(), async (req, res)
     // const discountText = discount ? 'The buyer asked for a lower price. The seller\'s best is ' + discount.percent + '% off: $' + discount.offerPrice.toFixed(2) + ' (listed at $' + discount.price.toFixed(2) + '). Say that the best you can do is ' + discount.percent + '% off and that you\'ve sent them an offer for $' + discount.offerPrice.toFixed(2) + ' — if they don\'t receive it, they should let you know. Don\'t offer any other price.' : '';
     // v339: only IF the buyer is asking for a lower price / making an offer
     const discountText = discount ? 'IF the buyer\'s latest message asks for a lower price, makes an offer or names their own price (e.g. "150$?", "can I have it for 160", "would you take anything less?", "is the price firm?"): say that the best you can do is ' + discount.percent + '% off and that you\'ve sent them an offer for $' + discount.offerPrice.toFixed(2) + ' (listed at $' + discount.price.toFixed(2) + ') — if they don\'t receive it, they should let you know. Don\'t offer any other price. If they are NOT asking about price, ignore this section.' : '';
-    const user = 'LISTING\n' + listing + '\n\nORDER & RETURNS (worked out by the app from eBay)\n' + (orderFacts || 'No order found for this item yet (the buyer may not have bought it).') + (shipping ? '\n\nSHIPPING CHECK (checked with eBay just now)\n' + shipping : '') + (discountText ? '\n\nDISCOUNT\n' + discountText : '') + '\n\nCONVERSATION (oldest first)\n' + convo + (hint ? '\n\nSELLER\'S INSTRUCTIONS FOR THIS REPLY\n' + hint : '') + '\n\nWrite the seller\'s reply now.';   // v330: + order & returns, v331: + discount
+    const user = 'LISTING\n' + listing + '\n\nORDER & RETURNS (worked out by the app from eBay)\n' + (orderFacts || 'No order found for this item yet (the buyer may not have bought it).') + (timeline ? '\n\nTIMELINE\n' + timeline : '') + (shipping ? '\n\nSHIPPING CHECK (checked with eBay just now)\n' + shipping : '') + (discountText ? '\n\nDISCOUNT\n' + discountText : '') + '\n\nCONVERSATION (oldest first)\n' + convo + (hint ? '\n\nSELLER\'S INSTRUCTIONS FOR THIS REPLY\n' + hint : '') + '\n\nWrite the seller\'s reply now.';   // v330: + order & returns, v331: + discount
 
     const r = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -2896,7 +2983,10 @@ function redactMsg(text, names) {   // v339
   t = t.replace(/\b\d{1,6}\s+(?:[A-Za-z0-9.'-]+\s+){0,4}(?:st|street|ave|avenue|rd|road|blvd|boulevard|dr|drive|ln|lane|ct|court|way|pl|plz|plaza|place|cir|circle|pkwy|parkway|hwy|highway|ter|terrace|trl|trail|loop|sq|square|pike|run|xing|crossing|row|aly|alley)\b\.?(?:,?\s*(?:apt|unit|suite|ste|#)\.?\s*[\w-]+)?/gi, '[address]');
   t = t.replace(/\b(apt|unit|suite|ste)\.?\s*#?\s*\d+\w*/gi, '[address]');
   t = t.replace(/\b[A-Z]{2}\s+\d{5}(?:-\d{4})?\b/g, '[state zip]');
-  t = t.replace(/\b([Mm]y name is|[Nn]ame's|[Ii]'?m|[Tt]his is)\s+([A-Z][a-z]+)(\s+[A-Z][a-z]+)?\b(?=[\s.,!])/g, (m, a, b) => (/^(interested|looking|wondering|trying|not|sorry|good|the|a|in)$/i.test(b) ? m : a + ' [name]'));
+  // v345: names in quoted email replies ("Name <email> wrote / escribió") and "-Name" sign-offs
+  t = t.replace(/[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2}\s*<\[email\]>/g, '[name] <[email]>');
+  t = t.replace(/(^|[\s,])-\s?[A-Z][a-z]+\s*$/, '$1-[name]');
+  t = t.replace(/\b([Mm]y name is|[Nn]ame's|[Ii]'?m|[Tt]his is)\s+([A-Z][a-z]+)(\s+[A-Z][a-z]+)?\b(?=[\s.,!]|$)/g, (m, a, b) => (/^(interested|looking|wondering|trying|not|sorry|good|the|a|in)$/i.test(b) ? m : a + ' [name]'));
   // a sign-off at the end: " / Name", "Thanks, Name", " / COMPANY INC." lines
   t = t.replace(/((?:thanks|thank you|regards|cheers|best)[,!.]?\s*(?:\/\s*)?)([A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z.]*){0,2})\s*$/i, '$1[name]');
   t = t.split(/\r?\n/).map((seg, i, arr) => ((i > 0 || (arr.length === 1 && /^[A-Z][a-z]+(\s+[A-Z][a-z]+){1,2}$/.test(seg.trim()))) && /^[A-Z][A-Za-z.&']*(\s+[A-Z][A-Za-z.&']*){0,3}\.?$/.test(seg.trim()) && seg.trim().length < 40 && !/^(Thank|Thanks|Hi|Hello|Ok|Okay|Yes|No)\b/.test(seg.trim()) ? '[name]' : seg)).join('\n');
@@ -2956,6 +3046,135 @@ app.get('/api/admin/messages-export', requireUser, requireAdmin, async (req, res
     console.error('[messages export]', e.message);
     res.status(500).send('Could not download messages: ' + e.message);
   }
+});
+
+// ─── v346: ADMIN — DOWNLOAD MESSAGES WITH DRAFTS (development) ───────────────
+// Like Download messages, plus one line per conversation with the listing and order facts the AI
+// sees (price, shipping, part number, live status, return policy, this buyer's order), so drafts can
+// be checked against the real facts. Runs in the background with progress; kept in memory only.
+const msgExports = new Map();   // jobId → { userId, target, checked, found, started, finished, error, text }
+
+async function exportFactsLine(userId, itemId, buyer) {
+  const bits = [];
+  try {
+    const xml = await tradingCall(userId, 'GetItem', `<ItemID>${itemId}</ItemID><DetailLevel>ReturnAll</DetailLevel><IncludeItemSpecifics>true</IncludeItemSpecifics>`);
+    const item = xmlTag(xml, 'Item') || '';
+    const ss = xmlTag(item, 'SellingStatus') || '';
+    const sd = xmlTag(item, 'ShippingDetails') || '';
+    const price = parseFloat(xmlTag(ss, 'CurrentPrice') || '');
+    const opt = xmlAll(sd, 'ShippingServiceOptions')[0] || '';
+    const free = opt && xmlTag(opt, 'FreeShipping') === 'true';
+    const shipCost = parseFloat(xmlTag(opt, 'ShippingServiceCost') || '');
+    const calc = /Calculated/i.test(xmlTag(sd, 'ShippingType') || '');
+    bits.push((price ? '$' + price.toFixed(2) : 'price ?') + (free ? ' + free ship' : calc ? ' + calculated ship' : !isNaN(shipCost) ? ' + $' + shipCost.toFixed(2) + ' ship' : ''));
+    const specifics = xmlAll(xmlTag(item, 'ItemSpecifics') || '', 'NameValueList').map(nv => ({ name: xmlDecode(xmlTag(nv, 'Name')), value: xmlAll(nv, 'Value').map(xmlDecode).join(', ') }));
+    const pn = partNumbersOf(specifics);
+    bits.push(pn.length ? 'part # ' + pn.slice(0, 3).map(x => x.value).join(', ') + (pn.length > 3 ? ' (+' + (pn.length - 3) + ' more)' : '') : 'no part #');
+    const st = xmlTag(ss, 'ListingStatus') || '';
+    const qty = parseInt(xmlTag(item, 'Quantity') || '', 10);
+    const sold = parseInt(xmlTag(ss, 'QuantitySold') || '0', 10) || 0;
+    const left = qty >= 0 ? Math.max(0, qty - sold) : null;
+    bits.push(st && st !== 'Active' ? 'ENDED' + (sold ? ' (sold)' : '') : left === 0 ? 'SOLD OUT' : 'active' + (left !== null ? ' (' + left + ' left)' : ''));
+    const rp = xmlTag(item, 'ReturnPolicy') || '';
+    if (/NotAccepted/i.test(xmlTag(rp, 'ReturnsAcceptedOption') || '')) bits.push('no returns');
+    else if (rp) { const days = parseInt((/(\d+)/.exec(xmlTag(rp, 'ReturnsWithinOption') || '') || [])[1], 10); const payer = xmlTag(rp, 'ShippingCostPaidByOption') || ''; bits.push('returns ' + (days ? days + ' days' : '?') + (payer ? ', ' + payer.toLowerCase() + ' pays return ship' : '')); }
+  } catch (e) { bits.push('listing info unavailable (' + String(e.message).slice(0, 60) + ')'); }
+  try {
+    const fo = await findBuyerOrder(userId, itemId, buyer);
+    const fmt = (x) => new Date(x).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/Los_Angeles' });
+    if (fo.otherBuyer) bits.push('this buyer did NOT buy it (sold to someone else)');
+    else if (fo.row) {
+      const o = fo.row, sh = fo.ship || {};
+      bits.push((fo.matched ? 'this buyer bought it ' : 'sold ') + fmt(o.created_at)
+        + (!o.counted ? ', cancelled/refunded' : '')
+        + (sh.shippedTime ? ', shipped ' + fmt(sh.shippedTime) : o.ship_status === 'FULFILLED' ? ', shipped' : ', not shipped')
+        + (sh.deliveredTime ? ', delivered ' + fmt(sh.deliveredTime) : sh.expectedMax && sh.shippedTime ? ', expected by ' + fmt(sh.expectedMax) : '')
+        + ((sh.tracks || [])[0] && sh.tracks[0].carrier ? ' (' + sh.tracks[0].carrier + ')' : ''));
+    } else bits.push('this buyer hasn\'t bought it');
+  } catch (e) { bits.push('order info unavailable'); }
+  return 'Facts now: ' + bits.join(' · ');
+}
+
+async function runMsgExport(job, user, days, count, draftsOnly) {
+  try {
+    const conn = await getConnection(user.id);
+    if (threadsBlocked(conn)) throw new Error('Connect eBay (with message permission) first.');
+    const me = await myEbayUser(user.id);
+    const signoff = msgSettingsOf(await getUserSettings(user.id)).signoff;   // used to spot your AI drafts
+    if (draftsOnly && !signoff) throw new Error('"AI drafts only" finds your drafts by your sign-off — set one in Settings → Messages first.');
+    const cutoff = Date.now() - days * 86400000;
+    const convs = [];
+    for (let offset = 0; offset < 2000; offset += 50) {
+      const q = new URLSearchParams({ conversation_type: 'FROM_MEMBERS', limit: '50', offset: String(offset) });
+      const { data } = await restCall(user.id, 'GET', '/commerce/message/v1/conversation?' + q);
+      const list = (data && data.conversations) || [];
+      list.forEach(c => {
+        const lm = c.latestMessage || {};
+        const when = Date.parse(lm.createdDate || c.createdDate || '') || 0;
+        if (when >= cutoff) convs.push({ id: c.conversationId, title: c.conversationTitle || '', itemId: c.referenceType === 'LISTING' ? (c.referenceId || '') : '', when });
+      });
+      if (!data || !data.next || list.length < 50) break;
+    }
+    convs.sort((a, b) => b.when - a.when);
+    job.candidates = convs.length;
+    job.target = draftsOnly ? count : Math.min(count, convs.length);
+    const picked = [];   // { i, text }
+    let next = 0;
+    async function worker() {
+      while (next < convs.length && picked.length < count) {
+        const i = next++, c = convs[i];
+        try {
+          const q = new URLSearchParams({ conversation_type: 'FROM_MEMBERS', limit: '50', offset: '0' });
+          const { data } = await restCall(user.id, 'GET', '/commerce/message/v1/conversation/' + encodeURIComponent(c.id) + '?' + q);
+          const msgs = ((data && data.messages) || []).slice().sort((x, y) => String(x.createdDate).localeCompare(String(y.createdDate)));
+          job.checked++;
+          const isDraft = (m) => !!signoff && m.senderUsername === me && String(m.messageBody || '').trim().endsWith(signoff);
+          if (draftsOnly && !msgs.some(isDraft)) continue;
+          if (picked.length >= count) break;
+          const others = [...new Set(msgs.map(m => m.senderUsername).filter(u => u && u !== me))];
+          const names = [{ name: me, as: 'Seller' }].concat(others.map((u, k) => ({ name: u, as: others.length > 1 ? 'Buyer' + (k + 1) : 'Buyer' })));
+          const facts = c.itemId ? await exportFactsLine(user.id, c.itemId, others[0] || '') : 'Facts now: no listing attached';
+          const lines = msgs.map(m => {
+            const who = m.senderUsername === me ? (isDraft(m) ? 'Seller (AI draft)' : 'Seller') : 'Buyer' + (others.length > 1 ? (others.indexOf(m.senderUsername) + 1) : '');
+            const media = (m.messageMedia || []).length ? ' [' + (m.messageMedia || []).length + ' photo/attachment]' : '';
+            return '[' + String(m.createdDate || '').slice(0, 16).replace('T', ' ') + '] ' + who + ': ' + redactMsg(m.messageBody || '', names).replace(/\r?\n+/g, ' / ') + media;
+          });
+          picked.push({ i, text: (c.itemId ? ' · item ' + c.itemId : '') + (c.title ? ' · ' + redactMsg(c.title, names) : '') + ' ===\n' + facts + '\n' + (lines.join('\n') || '(no messages)') });
+          job.found = picked.length;
+        } catch (e) { job.checked++; }
+      }
+    }
+    await Promise.all([1, 2, 3, 4].map(worker));
+    picked.sort((a, b) => a.i - b.i);
+    job.text = 'PartsLister Pro — buyer messages with listing & order facts, last ' + days + ' days — ' + picked.length + ' conversation' + (picked.length === 1 ? '' : 's') + (draftsOnly ? ' answered with an AI draft' : '') + '\n'
+      + 'Downloaded ' + new Date().toISOString().slice(0, 16).replace('T', ' ') + ' UTC. "Facts now" is the listing and this buyer\'s order as of the download (not when the message was sent). Usernames, emails, phone numbers, addresses and VINs are removed.\n\n'
+      + picked.map((p, k) => '=== Conversation ' + (k + 1) + p.text).join('\n\n') + '\n';
+  } catch (e) { job.error = e.message; }
+  job.finished = Date.now();
+}
+
+app.post('/api/admin/messages-export2', requireUser, requireAdmin, express.json(), (req, res) => {
+  const b = req.body || {};
+  const days = [7, 14, 30, 90, 365].includes(parseInt(b.days, 10)) ? parseInt(b.days, 10) : 14;
+  const count = [50, 100, 300].includes(parseInt(b.count, 10)) ? parseInt(b.count, 10) : 100;
+  for (const j of msgExports.values()) if (j.userId === req.user.id && !j.finished) return res.status(409).json({ error: 'A download is already being prepared.' });
+  for (const [k, j] of msgExports) if (j.finished && Date.now() - j.finished > 3600000) msgExports.delete(k);   // keep an hour
+  const id = crypto.randomBytes(8).toString('hex');
+  const job = { userId: req.user.id, days, target: count, candidates: null, checked: 0, found: 0, started: Date.now(), finished: null, error: null, text: '' };
+  msgExports.set(id, job);
+  runMsgExport(job, req.user, days, count, !!b.draftsOnly);
+  res.json({ id });
+});
+app.get('/api/admin/messages-export2/:id', requireUser, requireAdmin, (req, res) => {
+  const job = msgExports.get(String(req.params.id));
+  if (!job || job.userId !== req.user.id) return res.status(404).json({ error: 'Download not found (the server may have restarted) — start it again.' });
+  if (req.query.download === '1') {
+    if (!job.finished || !job.text) return res.status(409).send(job.error || 'Not ready yet.');
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="partslister-messages-facts-' + job.days + 'd-' + new Date(job.started).toISOString().slice(0, 10) + '.txt"');
+    return res.send(job.text);
+  }
+  res.json({ target: job.target, candidates: job.candidates, checked: job.checked, found: job.found, finished: !!job.finished, error: job.error });
 });
 
 // ─── v337: LISTING + ORDER STRIP for a conversation ─────────────────────────
@@ -3696,5 +3915,5 @@ app.get('*', (req, res) => {
 });
 
 setupDatabase()
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v342 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v346 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Sales v341</title>
+<title>PartsLister Pro Sales v346</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@400;500;600&display=swap');
 
@@ -529,7 +529,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v341</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v346</span></div>
   </a>
   <!-- v316: switch pages -->
   <nav class="page-tabs" aria-label="Pages">
@@ -831,6 +831,19 @@
         <input type="text" id="ms-shipdays" maxlength="200" placeholder="e.g. Monday, Wednesday and Friday" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:4px;font-family:'Barlow',sans-serif;font-size:14px;"></div>
         <div class="set-row"><label for="ms-intl">Can you ship to my country? (when eBay won’t let it ship there)</label>
         <select id="ms-intl" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:4px;font-family:'Barlow',sans-serif;font-size:14px;"></select></div>
+        <!-- v345 -->
+        <div class="set-row"><label for="ms-remorse">Changed their mind / bought the wrong one</label>
+        <select id="ms-remorse" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:4px;font-family:'Barlow',sans-serif;font-size:14px;"></select></div>
+        <div class="set-row"><label for="ms-addrchange">Wants to change the shipping address</label>
+        <select id="ms-addrchange" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:4px;font-family:'Barlow',sans-serif;font-size:14px;"></select></div>
+        <div class="set-row"><label for="ms-faster">Wants it faster / by a certain day</label>
+        <select id="ms-faster" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:4px;font-family:'Barlow',sans-serif;font-size:14px;"></select></div>
+        <div class="set-row"><label for="ms-partial">Wants only part of the item</label>
+        <select id="ms-partial" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:4px;font-family:'Barlow',sans-serif;font-size:14px;"></select></div>
+        <div class="set-row"><label for="ms-radiocode">Asks for the radio / anti-theft code</label>
+        <select id="ms-radiocode" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:4px;font-family:'Barlow',sans-serif;font-size:14px;"></select></div>
+        <div class="set-row"><label for="ms-pickup">Asks about local pickup</label>
+        <select id="ms-pickup" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:4px;font-family:'Barlow',sans-serif;font-size:14px;"></select></div>
         <label style="display:flex;gap:8px;align-items:center;font-size:14px;color:var(--text);cursor:pointer;margin-top:10px;"><input type="checkbox" id="ms-buyer-lang"> Reply in the buyer's language</label>
         <p class="set-help" style="margin-top:6px;">When a buyer writes in Spanish, Russian etc., the draft is written in their language and the English version is shown under it for you to check.</p>
       </div>
@@ -891,6 +904,21 @@
           </select>
           <button class="btn btn-primary btn-sm" onclick="downloadMessages()">Download messages</button>
         </div>
+      </div>
+      <hr class="set-divider">
+      <!-- v346: development — messages + the listing/order facts, for checking AI drafts -->
+      <div class="set-section">
+        <h3>Download messages with drafts</h3>
+        <p class="set-help">Same as Download messages, plus a "Facts now" line on each conversation: price, shipping, part number, whether the listing is active or sold, the return policy, and this buyer's order (bought / shipped / delivered). With <strong>AI drafts only</strong>, it keeps just the conversations you answered with an AI draft (found by your sign-off). Takes longer — a few eBay lookups per conversation. Doesn't use your Anthropic key.</p>
+        <div class="set-buttons">
+          <select id="mx2-days" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:6px 8px;border-radius:4px;font-family:'Barlow',sans-serif;font-size:14px;"><option value="7">Last 7 days</option><option value="14" selected>Last 14 days</option><option value="30">Last 30 days</option><option value="90">Last 90 days</option><option value="365">Last 365 days</option></select>
+          <select id="mx2-count" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:6px 8px;border-radius:4px;font-family:'Barlow',sans-serif;font-size:14px;"><option value="50">Up to 50</option><option value="100" selected>Up to 100</option><option value="300">Up to 300</option></select>
+          <label style="display:inline-flex;gap:6px;align-items:center;font-size:14px;color:var(--text);cursor:pointer;"><input type="checkbox" id="mx2-drafts"> AI drafts only</label>
+          <button class="btn btn-primary btn-sm" id="mx2-start" onclick="startMsgExport2()">Prepare download</button>
+          <a class="btn btn-secondary btn-sm" id="mx2-dl" style="display:none">Download</a>
+        </div>
+        <progress id="mx2-bar" max="100" value="0" style="width:100%;height:10px;margin-top:10px;display:none;accent-color:var(--accent);"></progress>
+        <p class="set-help" id="mx2-status" style="margin-top:6px;"></p>
       </div>
       <hr class="set-divider">
       <div class="set-section">
@@ -985,6 +1013,8 @@
 // v338: Admin → Download messages (development: buyer conversations as a text file, names removed).
 // v339: Settings → Messages → Common questions (tested/warranty, programming, donor vehicle, shipping, other countries, buyer's language).
 // v341: "Do you test your parts?" (no / yes / some); the warranty answer is its own choice.
+// v345: more Common questions (changed mind, address change, faster shipping, part of the item, radio code, pickup).
+// v346: Admin → Download messages with drafts (listing & order facts per conversation, progress bar).
 // Shares the same sign-in and account as the listing tool (/list).
 // v304: sales dashboard — big daily bar graph with a remembered date range.
 // The sales numbers are SAMPLE data for now; real eBay sales replace
@@ -1800,7 +1830,7 @@ async function loadMsgSettings() {
     psel.value = d.photoRequests || 'check_back';
     document.getElementById('ms-avail').value = d.availability || '';
     // v339
-    [['ms-testsparts', 'testsPartsOptions', 'testsParts'], ['ms-tested', 'testedOptions', 'tested'], ['ms-programming', 'programmingOptions', 'programming'], ['ms-donor', 'donorOptions', 'donor'], ['ms-shipwhen', 'shipWhenOptions', 'shipWhen'], ['ms-intl', 'intlOptions', 'intlNo']].forEach(([elId, optKey, valKey]) => {
+    [['ms-remorse', 'remorseOptions', 'remorse'], ['ms-addrchange', 'addressChangeOptions', 'addressChange'], ['ms-faster', 'fasterOptions', 'faster'], ['ms-partial', 'partialOptions', 'partial'], ['ms-radiocode', 'radioCodeOptions', 'radioCode'], ['ms-pickup', 'pickupOptions', 'pickup'], ['ms-testsparts', 'testsPartsOptions', 'testsParts'], ['ms-tested', 'testedOptions', 'tested'], ['ms-programming', 'programmingOptions', 'programming'], ['ms-donor', 'donorOptions', 'donor'], ['ms-shipwhen', 'shipWhenOptions', 'shipWhen'], ['ms-intl', 'intlOptions', 'intlNo']].forEach(([elId, optKey, valKey]) => {
       const x = document.getElementById(elId); x.textContent = '';
       (d[optKey] || []).forEach(o => x.append(new Option(o.label, o.value)));
       if (d[valKey]) x.value = d[valKey];
@@ -1830,7 +1860,9 @@ async function saveMsgSettings() {
       // v339
       tested: document.getElementById('ms-tested').value, testsParts: document.getElementById('ms-testsparts').value, programming: document.getElementById('ms-programming').value, offersProgramming: document.getElementById('ms-offers-prog').checked,
       donor: document.getElementById('ms-donor').value, shipWhen: document.getElementById('ms-shipwhen').value, shipDays: document.getElementById('ms-shipdays').value,
-      intlNo: document.getElementById('ms-intl').value, buyerLanguage: document.getElementById('ms-buyer-lang').checked };
+      intlNo: document.getElementById('ms-intl').value, buyerLanguage: document.getElementById('ms-buyer-lang').checked,
+      // v345
+      remorse: document.getElementById('ms-remorse').value, addressChange: document.getElementById('ms-addrchange').value, faster: document.getElementById('ms-faster').value, partial: document.getElementById('ms-partial').value, radioCode: document.getElementById('ms-radiocode').value, pickup: document.getElementById('ms-pickup').value };
     const r = await fetch('/api/msg-settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'Could not save');
     setText('ms-instr-note', body.instructions.trim() === msDefault.trim() || !body.instructions.trim() ? 'Using the default.' : 'Using your own instructions.');
@@ -1849,6 +1881,44 @@ function downloadSales() {
   const n = shownDays.reduce((s, x) => s + x.orders, 0);
   if (!confirm('Download your sales from ' + d(curInfo.start) + (curInfo.start !== curInfo.end ? ' to ' + d(curInfo.end) : '') + '?\n\n' + n.toLocaleString() + ' order' + (n === 1 ? '' : 's') + ', one row each, as a spreadsheet file.')) return;
   location.href = '/api/sales/export?from=' + curInfo.start + '&to=' + curInfo.end + '&tz=' + encodeURIComponent(EBAY_TZ);
+}
+
+// v346: Admin → Download messages with drafts (background job + progress bar)
+let mx2Timer = null;
+async function startMsgExport2() {
+  const days = document.getElementById('mx2-days').value, count = document.getElementById('mx2-count').value, draftsOnly = document.getElementById('mx2-drafts').checked;
+  if (!confirm('Prepare your buyer messages from the last ' + days + ' days (up to ' + count + (draftsOnly ? ', AI drafts only' : '') + ') with listing and order facts?\n\nNames, emails, phone numbers and addresses are removed. It can take several minutes.')) return;
+  const btn = document.getElementById('mx2-start'); btn.disabled = true;
+  document.getElementById('mx2-dl').style.display = 'none';
+  try {
+    const r = await fetch('/api/admin/messages-export2', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ days, count, draftsOnly }) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || 'Could not start');
+    pollMsgExport2(d.id);
+  } catch (e) { btn.disabled = false; showToast(e.message, true); }
+}
+function pollMsgExport2(id) {
+  clearTimeout(mx2Timer);
+  const st = document.getElementById('mx2-status'), bar = document.getElementById('mx2-bar');
+  fetch('/api/admin/messages-export2/' + id).then(r => r.json()).then(d => {
+    if (d.error && !d.finished && d.target === undefined) { st.textContent = d.error; document.getElementById('mx2-start').disabled = false; bar.style.display = 'none'; return; }
+    bar.style.display = '';
+    const draftsOnly = document.getElementById('mx2-drafts').checked;
+    // progress: conversations found out of the target (AI drafts only: conversations looked at out of all of them)
+    const pct = d.finished ? 100 : draftsOnly && d.candidates ? Math.round(100 * d.checked / d.candidates) : d.target ? Math.round(100 * d.found / d.target) : 0;
+    bar.value = Math.min(100, pct);
+    if (d.finished) {
+      document.getElementById('mx2-start').disabled = false;
+      if (d.error) { st.textContent = 'Stopped: ' + d.error; return; }
+      st.textContent = 'Ready: ' + d.found + ' conversation' + (d.found === 1 ? '' : 's') + '.';
+      const a = document.getElementById('mx2-dl'); a.href = '/api/admin/messages-export2/' + id + '?download=1'; a.style.display = '';
+    } else {
+      st.textContent = d.candidates === null ? 'Getting your conversation list from eBay…'
+        : draftsOnly ? 'Looked at ' + d.checked + ' of ' + d.candidates + ' conversations · ' + d.found + ' with AI drafts so far…'
+        : d.found + ' of ' + d.target + ' conversations…';
+      mx2Timer = setTimeout(() => pollMsgExport2(id), 2000);
+    }
+  }).catch(() => { mx2Timer = setTimeout(() => pollMsgExport2(id), 4000); });
 }
 
 // v338: Admin → Download messages
