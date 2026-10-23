@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Messages v330</title>
+<title>PartsLister Pro Messages v331</title>
 <!-- PartsLister Pro — Messages page (v321: new; v322: conversation threads — the whole back-and-forth
      with each buyer, chat style, from eBay's Message API. Offers from a conversation. The v321
      email-style view is still at /messages/classic). Nothing about your messages is saved on the server.
@@ -12,7 +12,8 @@
      v329: "Ships to" box checks whether this listing can ship to a country (eBay checked live), and the
      AI draft uses that answer — or checks any country the buyer names on its own.
      v330: buyer messages in other languages are translated to English automatically (See original to
-     switch back); a Settings link opens Settings → Messages. -->
+     switch back); a Settings link opens Settings → Messages.
+     v331: when a draft offers your discount, a checked box sends that offer when you press Send. -->
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@400;500;600&display=swap');
 
@@ -182,6 +183,10 @@
   /* v330: translations */
   .bub .tr { display: block; font-size: 11px; color: var(--muted); margin-top: 4px; }
   .bub .tr a { color: var(--accent); cursor: pointer; text-decoration: underline; }
+  /* v331: discount offer box */
+  .disc-row { font-size: 13px; padding: 6px 12px 0; color: var(--accent); display: none; }
+  .disc-row.on { display: block; }
+  .disc-row label { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
   .ship-res.yes { color: var(--success); } .ship-res.no { color: var(--danger); } .ship-res.maybe { color: var(--accent); }
   .th-ai + .th-compose { border-top: none; }
   .btn-danger { background: var(--surface2); color: var(--danger); border-color: rgba(224,82,82,0.5); }
@@ -226,7 +231,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v330</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v331</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -477,6 +482,15 @@ async function showThread(id) {
     if (!text) return;
     send.disabled = true; send.textContent = 'Sending…';
     try {
+      // v331: send the discount offer first (if the box is ticked) — if eBay refuses it, the message isn't sent
+      if (pendingOffer && discBox.checked) {
+        const ro = await fetch('/api/offers/' + encodeURIComponent(t.itemId) + '/send', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ price: pendingOffer.offerPrice, message: '' }) });
+        const oo = await ro.json().catch(() => ({}));
+        if (!ro.ok) throw new Error((oo.error || 'eBay didn\u2019t send the offer') + ' — your message was NOT sent. Untick "send the offer" and edit the message if you want to send it anyway.');
+        toast('Offer for ' + money2.format(pendingOffer.offerPrice) + ' sent to interested buyers.');
+        pendingOffer = null; discRow.classList.remove('on');
+      }
       const r = await fetch('/api/threads/' + encodeURIComponent(id) + '/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) });
       const out = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(out.error || 'Not sent');
@@ -514,6 +528,12 @@ async function showThread(id) {
       const rw = /Return window: (INSIDE|ENDED)[^(]*/.exec(out.orderFacts || '');
       if (rw) aiMsg.textContent += ' (Return window: ' + rw[0].replace('Return window: ', '').replace(/ counting.*$/, '').trim() + ')';
       aiMsg.title = out.orderFacts || 'No order found for this item';
+      // v331: the draft offers your discount → tick box to send that offer on Send
+      if (out.discount) {
+        pendingOffer = out.discount; discBox.checked = true;
+        discText.textContent = 'Also send the offer for ' + money2.format(out.discount.offerPrice) + ' (' + out.discount.percent + '% off ' + money2.format(out.discount.price) + ') when I press Send';
+        discRow.classList.add('on');
+      } else { pendingOffer = null; discRow.classList.remove('on'); }
     } catch (e) { aiMsg.textContent = ''; toast(e.message, true); }
     finally { aiBtn.disabled = false; aiBtn.textContent = 'AI draft'; }
   };
@@ -523,6 +543,12 @@ async function showThread(id) {
   const shipSel = el('select'); shipSel.title = 'Can this item ship to…? (checked with eBay)';
   shipSel.append(new Option('Ships to…?', ''));
   const shipRes = el('div', 'ship-res');
+  // v331: "also send the offer" box — shown only when a draft offers your discount
+  let pendingOffer = null;
+  const discRow = el('div', 'disc-row');
+  const discBox = el('input'); discBox.type = 'checkbox'; discBox.checked = true;
+  const discLabel = el('label'); const discText = el('span', '', '');
+  discLabel.append(discBox, discText); discRow.append(discLabel);
   if (t.itemId) {
     loadCountries().then(list => list.forEach(c => shipSel.append(new Option(c.name, c.code))));
     shipSel.onchange = async () => {
@@ -539,7 +565,8 @@ async function showThread(id) {
     };
   } else shipSel.disabled = true;
   ai.append(aiBtn, shipSel, hint, aiMsg);
-  v.append(ai, shipRes);
+  // v.append(ai, shipRes);
+  v.append(ai, shipRes, discRow);   // v331: + discount offer box
   v.append(comp);
   if (!phone()) ta.focus();
 }

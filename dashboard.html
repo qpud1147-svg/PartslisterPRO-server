@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Sales v330</title>
+<title>PartsLister Pro Sales v331</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@400;500;600&display=swap');
 
@@ -529,7 +529,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v330</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v331</span></div>
   </a>
   <!-- v316: switch pages -->
   <nav class="page-tabs" aria-label="Pages">
@@ -798,8 +798,17 @@
       </div>
       <div class="set-section">
         <h3>When a buyer has a problem</h3>
-        <p class="set-help">Wrong part, damaged, not working, not as described — and the buyer is still inside your return window. (If the window has ended, the AI says so politely. The app works out the dates from the sale and your listing's return policy.)</p>
-        <div class="set-row"><select id="ms-problem" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:4px;font-family:'Barlow',sans-serif;font-size:14px;"></select></div>
+        <!-- <p class="set-help">Wrong part, damaged, not working, not as described — and the buyer is still inside your return window. …</p> -->
+        <p class="set-help">The AI works out which kind of problem the buyer has, then answers the way you pick here. For damaged, defective and wrong-part problems the return window applies — if it has ended, the AI says so politely. (The app works out the dates from the sale and your listing's return policy.)</p>   <!-- v331 -->
+        <div id="ms-problem-types"></div>   <!-- v331: one choice per problem type -->
+        <div class="set-row"><label for="ms-problem">Anything else (not as described, missing pieces…)</label>
+        <select id="ms-problem" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:4px;font-family:'Barlow',sans-serif;font-size:14px;"></select></div>
+      </div>
+      <!-- v331: DISCOUNTS -->
+      <div class="set-section">
+        <h3>When a buyer asks for a discount</h3>
+        <label style="display:flex;gap:8px;align-items:center;font-size:14px;color:var(--text);cursor:pointer;"><input type="checkbox" id="ms-disc-on"> Offer <input type="number" id="ms-disc-pct" min="1" max="50" step="0.5" style="width:64px;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:4px 6px;border-radius:4px;font:inherit;"> % off</label>
+        <p class="set-help" style="margin-top:6px;">When it's on and the buyer asks for a lower price, the AI draft says that's the best you can do and that you've sent an offer. The offer is sent when you press <strong>Send</strong> (there's a checkbox to skip it), so a draft you throw away never sends a discount. eBay only lets apps send an offer to everyone watching the item or with it in their cart, so the draft also says "if you don't receive it, let me know". When it's off, the AI says the price is as listed.</p>
       </div>
       <div class="set-section">
         <h3>Translate</h3>
@@ -903,6 +912,7 @@
 // v326: Download button saves the range you're looking at; Settings → Account now holds your keys.
 // v327: Download asks first; Admin links to the Diagnostics page.
 // v330: Settings → Messages tab (AI reply instructions, problem replies, auto-translate).
+// v331: a reply choice for each problem type + discount offers.
 // Shares the same sign-in and account as the listing tool (/list).
 // v304: sales dashboard — big daily bar graph with a remembered date range.
 // The sales numbers are SAMPLE data for now; real eBay sales replace
@@ -1688,6 +1698,20 @@ async function loadMsgSettings() {
     (d.problemPolicies || []).forEach(p => sel.append(new Option(p.label, p.value)));
     sel.value = d.problemPolicy;
     document.getElementById('ms-translate').checked = d.autoTranslate !== false;
+    // v331: one choice per problem type
+    const box = document.getElementById('ms-problem-types');
+    box.textContent = '';
+    (d.problemTypes || []).forEach(t => {
+      const row = document.createElement('div'); row.className = 'set-row';
+      const lab = document.createElement('label'); lab.textContent = t.label; lab.htmlFor = 'ms-pt-' + t.key;
+      const s2 = document.createElement('select'); s2.id = 'ms-pt-' + t.key; s2.dataset.key = t.key; s2.title = 'When ' + t.when;
+      s2.style.cssText = sel.style.cssText;
+      t.options.forEach(o => s2.append(new Option(o.label, o.value)));
+      s2.value = (d.problems || {})[t.key] || '';
+      row.append(lab, s2); box.append(row);
+    });
+    document.getElementById('ms-disc-on').checked = !!(d.discount && d.discount.enabled);
+    document.getElementById('ms-disc-pct').value = (d.discount && d.discount.percent) || 5;
   } catch (e) { showToast('Could not load Messages settings.', true); }
 }
 function useDefaultInstructions() {
@@ -1697,7 +1721,11 @@ function useDefaultInstructions() {
 async function saveMsgSettings() {
   const btn = document.getElementById('ms-save-btn'); btn.disabled = true;
   try {
-    const body = { instructions: document.getElementById('ms-instructions').value, problemPolicy: document.getElementById('ms-problem').value, autoTranslate: document.getElementById('ms-translate').checked };
+    // const body = { instructions: …, problemPolicy: …, autoTranslate: … };
+    const problems = {};
+    document.querySelectorAll('#ms-problem-types select').forEach(x => { problems[x.dataset.key] = x.value; });
+    const body = { instructions: document.getElementById('ms-instructions').value, problemPolicy: document.getElementById('ms-problem').value, autoTranslate: document.getElementById('ms-translate').checked,
+      problems, discount: { enabled: document.getElementById('ms-disc-on').checked, percent: parseFloat(document.getElementById('ms-disc-pct').value) || 5 } };   // v331
     const r = await fetch('/api/msg-settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'Could not save');
     setText('ms-instr-note', body.instructions.trim() === msDefault.trim() || !body.instructions.trim() ? 'Using the default.' : 'Using your own instructions.');

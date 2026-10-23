@@ -1,4 +1,4 @@
-// PartsLister Pro server — v330
+// PartsLister Pro server — v331
 // v302: dashboard.html is the homepage (/). The listing tool moved to /list.
 // v305: eBay sales connection — real sold orders on the dashboard.
 // v306: asks eBay for two more permissions — fees/payouts and seller metrics.
@@ -43,6 +43,9 @@
 // v330: Settings → Messages (your AI reply instructions + Use default, how to answer problems,
 //       auto-translate). AI drafts now get the real sale date, the listing's return policy and the
 //       days left — worked out here, not guessed by the AI. Buyer messages auto-translate to English.
+// v331: a separate reply choice for each problem type (didn't arrive / damaged / defective / wrong
+//       part), and an optional discount: when a buyer asks for a lower price, the draft offers your
+//       % off and the app can send that offer when you press Send.
 // Accounts with email + password login. Each account's settings (including its
 // own API keys) and history are saved ENCRYPTED in Postgres, so you can log in
 // from any computer and everything is there. Also keeps a lifetime listing count.
@@ -2121,7 +2124,8 @@ const DEFAULT_MSG_INSTRUCTIONS = [
   'You draft replies for a small eBay seller of used auto parts (pulled from salvage vehicles) to buyer messages.',
   'Write the reply the seller will send, answering the buyer\'s latest message.',
   'Fitment questions: if the buyer\'s vehicle is in the fitment list, say it is listed as fitting and suggest they match the part number to their original part. If it is not listed or there is no fitment list, say you can\'t confirm it and ask them to compare the part number on their original part (or send the VIN). Never promise fit.',
-  'Price/offer questions: don\'t invent a price; if the seller gave instructions, follow them, otherwise suggest they send an offer through the listing.',
+  // 'Price/offer questions: don\'t invent a price; if the seller gave instructions, follow them, otherwise suggest they send an offer through the listing.',
+  'Price/discount questions: if a DISCOUNT section is given, follow it exactly. Otherwise don\'t offer or invent a discount — politely say the price is as listed (unless the seller\'s instructions say otherwise).',   // v331
   'Keep it short (1–4 sentences), friendly and plain.'
 ].join(' ');
 // What the AI offers when a buyer has a problem (inside the return window)
@@ -2132,19 +2136,51 @@ const PROBLEM_POLICIES = {
   photos_first: { label: 'Ask for photos first, then decide', ai: 'apologize and ask the buyer to send clear photos of the part and the problem so the seller can make it right; don\'t promise a refund or return yet.' },
   open_return: { label: 'Ask them to open a return on eBay', ai: 'politely ask the buyer to open a return request on eBay so it can be handled there.' }
 };
+// v331: each kind of problem gets its own choice. The AI works out which kind the buyer has.
+const PROBLEM_TYPES = [
+  { key: 'notReceived', label: 'Didn\u2019t arrive', when: 'the buyer says the item hasn\u2019t arrived / was lost / tracking hasn\u2019t moved', def: 'nr_tracking', options: {
+    nr_tracking: { label: 'Check tracking first, refund if it\u2019s lost', ai: 'say you\u2019re sorry and will check the tracking right away, and that if it\u2019s lost they\u2019ll get a full refund. Never ask for photos.' },
+    nr_refund: { label: 'Refund right away', ai: 'say you\u2019re sorry and that you\u2019ll issue a full refund. Never ask for photos.' },
+    nr_open: { label: 'Ask them to open an \u201citem not received\u201d request on eBay', ai: 'say you\u2019re sorry and ask them to open an \u201citem not received\u201d request on eBay so it can be sorted out there. Never ask for photos.' } } },
+  { key: 'damaged', label: 'Arrived damaged', when: 'the buyer says the item arrived broken, cracked, bent or damaged in shipping', def: 'photos_first', options: {} },
+  { key: 'defective', label: 'Defective / not working', when: 'the buyer says the part doesn\u2019t work, is faulty, or throws codes', def: 'return_or_refund', options: {} },
+  { key: 'wrongPart', label: 'Wrong part / doesn\u2019t fit', when: 'the buyer says it\u2019s the wrong part or doesn\u2019t fit their vehicle', def: 'wp_compare', options: {
+    wp_compare: { label: 'Ask them to compare part numbers, then offer a return', ai: 'ask them to compare the part number on the listing with the one on their original part; if it was listed wrong or doesn\u2019t match the listing, offer a return for a refund.' },
+    wp_fitment: { label: 'Check the fitment list, then offer a return', ai: 'check the fitment list in the LISTING: if their vehicle is listed, say so and ask them to compare part numbers; either way, offer a return for a refund if it truly doesn\u2019t fit.' } } }
+];
+// damaged / defective use the general choices (PROBLEM_POLICIES); every type can also use them
+PROBLEM_TYPES.forEach(t => { Object.keys(PROBLEM_POLICIES).forEach(k => { if (!t.options[k] && t.key !== 'notReceived') t.options[k] = PROBLEM_POLICIES[k]; }); });
+
 function msgSettingsOf(settings) {
   const m = (settings && settings.msgSettings) || {};
+  const problems = {};
+  PROBLEM_TYPES.forEach(t => {
+    const saved = m.problems && m.problems[t.key];
+    // before v331 there was one choice for everything — use it for damaged / defective if set
+    const legacy = (t.key === 'damaged' || t.key === 'defective') && PROBLEM_POLICIES[m.problemPolicy] ? m.problemPolicy : null;
+    problems[t.key] = t.options[saved] ? saved : (legacy && t.options[legacy] ? legacy : t.def);
+  });
+  const pct = parseFloat(m.discount && m.discount.percent);
   return {
     instructions: String(m.instructions || '').trim(),
     problemPolicy: PROBLEM_POLICIES[m.problemPolicy] ? m.problemPolicy : 'return_or_refund',
-    autoTranslate: m.autoTranslate !== false
+    autoTranslate: m.autoTranslate !== false,
+    problems,   // v331
+    discount: { enabled: !!(m.discount && m.discount.enabled), percent: pct > 0 && pct < 90 ? pct : 5 }   // v331
   };
+}
+// v331: does the buyer's latest message ask for a lower price?
+function asksForDiscount(text) {
+  const t = String(text || '').toLowerCase();
+  // careful with part names: "lower control arm", "less" in "wireless", "offer free shipping?"
+  return /\bdiscount|\bcoupon|best price|lowest price|lower (the |your )?price|go (any )?lower|any lower|(price|it) (is )?(firm|negotiable)|negotiat|cheaper|knock (some|anything|it) off|wiggle room|(make|cut|give) (me )?(a|any) deal|best you can do|(would|will|can) you (do|take|accept) \$?\d|(take|do) \$\d|\$\d+(\.\d\d)? (and|&) (i'?ll|i will) buy|for less\b/.test(t);
 }
 app.get('/api/msg-settings', requireUser, async (req, res) => {
   try {
     const ms = msgSettingsOf(await getUserSettings(req.user.id));
     res.json({ ...ms, defaultInstructions: DEFAULT_MSG_INSTRUCTIONS,
-      problemPolicies: Object.keys(PROBLEM_POLICIES).map(k => ({ value: k, label: PROBLEM_POLICIES[k].label })) });
+      problemPolicies: Object.keys(PROBLEM_POLICIES).map(k => ({ value: k, label: PROBLEM_POLICIES[k].label })),
+      problemTypes: PROBLEM_TYPES.map(t => ({ key: t.key, label: t.label, when: t.when, options: Object.keys(t.options).map(k => ({ value: k, label: t.options[k].label })) })) });   // v331
   } catch (e) { res.status(500).json({ error: 'Could not load Messages settings' }); }
 });
 app.post('/api/msg-settings', requireUser, express.json(), async (req, res) => {
@@ -2153,10 +2189,16 @@ app.post('/api/msg-settings', requireUser, express.json(), async (req, res) => {
     const d = (await readUserData(req.user.id)) || { settings: {}, history: { pigtail: [], otherside: [] } };
     d.settings = d.settings || {};
     const instr = String(b.instructions || '').trim().slice(0, 4000);
+    // v331: one choice per problem type + discount
+    const problems = {};
+    PROBLEM_TYPES.forEach(t => { const v = b.problems && b.problems[t.key]; problems[t.key] = t.options[v] ? v : t.def; });
+    const pct = parseFloat(b.discount && b.discount.percent);
     d.settings.msgSettings = {
       instructions: instr === DEFAULT_MSG_INSTRUCTIONS ? '' : instr,   // the default is stored as "use default"
       problemPolicy: PROBLEM_POLICIES[b.problemPolicy] ? b.problemPolicy : 'return_or_refund',
-      autoTranslate: b.autoTranslate !== false
+      autoTranslate: b.autoTranslate !== false,
+      problems,
+      discount: { enabled: !!(b.discount && b.discount.enabled), percent: pct > 0 && pct < 90 ? Math.round(pct * 10) / 10 : 5 }
     };
     await writeUserData(req.user.id, d);
     res.json({ ok: true });
@@ -2273,6 +2315,7 @@ app.post('/api/threads/:id/draft', requireUser, express.json(), async (req, res)
     // if (!apiKey) return res.status(400).json({ error: 'Add your Anthropic API key in the Listing Tool → ⚙ Settings first.' });
     if (!apiKey) return res.status(400).json({ error: 'Add your Anthropic API key in ⚙ Settings → Account first.' });   // v326
     const model = String(settings.claudeModel || '').trim() || 'claude-sonnet-4-5';
+    const ms0 = msgSettingsOf(settings);   // v331
     const conn = await getConnection(req.user.id);
     const blocked = threadsBlocked(conn); if (blocked) return res.status(400).json({ error: 'Reconnect eBay to approve message threads first.' });
 
@@ -2310,6 +2353,18 @@ app.post('/api/threads/:id/draft', requireUser, express.json(), async (req, res)
       } else listing = 'The listing details could not be loaded (' + (it.error || 'unknown') + ').';
     }
 
+    // v331: DISCOUNT — if it's switched on and the buyer's latest message asks for a lower price
+    let discount = null;
+    if (itemId && ms0.discount.enabled) {
+      const lastBuyer = msgs.filter(m => !m.mine).slice(-1)[0];
+      const it0 = await getItemData(req.user.id, itemId);
+      const price = it0.data && it0.data.price;
+      if (lastBuyer && price && asksForDiscount(lastBuyer.text)) {
+        const offer = Math.round(price * (1 - ms0.discount.percent / 100) * 100) / 100;
+        discount = { percent: ms0.discount.percent, price, offerPrice: offer };
+      }
+    }
+
     // v330: ORDER & RETURNS — the sale date and return window, calculated here (the AI never does date math)
     const orderFacts = itemId ? await returnFacts(req.user.id, itemId) : '';
 
@@ -2339,19 +2394,23 @@ app.post('/api/threads/:id/draft', requireUser, express.json(), async (req, res)
     */
     // v330: your own instructions (⚙ Settings → Messages) or the default, plus fixed safety rules
     // that always apply — so a custom prompt can't make it invent policies, dates or fitment.
-    const ms = msgSettingsOf(settings);
+    const ms = ms0;   // v331: read once, above
     const system = [
       ms.instructions || DEFAULT_MSG_INSTRUCTIONS,
       'RULES THAT ALWAYS APPLY:',
       'Use ONLY facts from the LISTING, ORDER & RETURNS, SHIPPING CHECK and CONVERSATION sections. Never invent part numbers, fitment, measurements, condition details, dates, deadlines, shipping times, or policies.',
       'Shipping-to-a-country questions: use only the SHIPPING CHECK section. YES: say it can ship there (you may mention the cost shown). NO: say that unfortunately eBay doesn\'t allow this item to ship to their country. PROBABLY or UNKNOWN, or no check given: say they can see the shipping options for their country by entering their address on the listing page.',
-      'Returns, refunds, problems (wrong part, damaged, not working, not as described): use only the ORDER & RETURNS section — never calculate dates yourself. If it says the buyer is INSIDE the return window, respond as the seller\'s problem policy says: ' + PROBLEM_POLICIES[ms.problemPolicy].ai + ' If it says the window has ENDED, politely say the return window has passed, without being rude. If no order or return policy is given, don\'t mention any time limit; say the seller will look into it.',
+      // 'Returns, refunds, problems …: respond as the seller\'s problem policy says: ' + PROBLEM_POLICIES[ms.problemPolicy].ai …   (v330 — one choice for every problem)
+      // v331: work out which kind of problem it is, then follow the seller's choice for that kind
+      'Problems: first decide which kind the buyer has, then follow the seller\'s choice for that kind. ' + PROBLEM_TYPES.map(t => 'If ' + t.when + ': ' + t.options[ms.problems[t.key]].ai).join(' ') + ' Any other problem (not as described, missing pieces): ' + PROBLEM_POLICIES[ms.problemPolicy].ai,
+      'Return windows: use only the ORDER & RETURNS section — never calculate dates yourself. For damaged, defective or wrong-part problems: if it says the buyer is INSIDE the return window, follow the choice above; if the window has ENDED, politely say the return window has passed. A package that never arrived is not limited by the return window. If no order or return policy is given, don\'t mention any time limit.',
       'Write in English. Plain text only: no markdown, no subject line, no placeholders like [Name], no signature.',
       'Reply with only the message text.'
     ].join(' ');
     // const user = 'LISTING\n' + listing + '\n\nCONVERSATION (oldest first)\n' + convo + (hint ? '\n\nSELLER\'S INSTRUCTIONS FOR THIS REPLY\n' + hint : '') + '\n\nWrite the seller\'s reply now.';
     // const user = 'LISTING\n' + listing + (shipping ? '\n\nSHIPPING CHECK (checked with eBay just now)\n' + shipping : '') + '\n\nCONVERSATION (oldest first)\n' + convo + (hint ? '\n\nSELLER\'S INSTRUCTIONS FOR THIS REPLY\n' + hint : '') + '\n\nWrite the seller\'s reply now.';   // v329: + shipping check
-    const user = 'LISTING\n' + listing + '\n\nORDER & RETURNS (worked out by the app from eBay)\n' + (orderFacts || 'No order found for this item yet (the buyer may not have bought it).') + (shipping ? '\n\nSHIPPING CHECK (checked with eBay just now)\n' + shipping : '') + '\n\nCONVERSATION (oldest first)\n' + convo + (hint ? '\n\nSELLER\'S INSTRUCTIONS FOR THIS REPLY\n' + hint : '') + '\n\nWrite the seller\'s reply now.';   // v330: + order & returns
+    const discountText = discount ? 'The buyer asked for a lower price. The seller\'s best is ' + discount.percent + '% off: $' + discount.offerPrice.toFixed(2) + ' (listed at $' + discount.price.toFixed(2) + '). Say that the best you can do is ' + discount.percent + '% off and that you\'ve sent them an offer for $' + discount.offerPrice.toFixed(2) + ' — if they don\'t receive it, they should let you know. Don\'t offer any other price.' : '';
+    const user = 'LISTING\n' + listing + '\n\nORDER & RETURNS (worked out by the app from eBay)\n' + (orderFacts || 'No order found for this item yet (the buyer may not have bought it).') + (shipping ? '\n\nSHIPPING CHECK (checked with eBay just now)\n' + shipping : '') + (discountText ? '\n\nDISCOUNT\n' + discountText : '') + '\n\nCONVERSATION (oldest first)\n' + convo + (hint ? '\n\nSELLER\'S INSTRUCTIONS FOR THIS REPLY\n' + hint : '') + '\n\nWrite the seller\'s reply now.';   // v330: + order & returns, v331: + discount
 
     const r = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -2365,7 +2424,8 @@ app.post('/api/threads/:id/draft', requireUser, express.json(), async (req, res)
     if (!text) return res.status(502).json({ error: 'Claude returned an empty draft — try again.' });
     // res.json({ draft: text.slice(0, 2000), usedListing: !!itemId });
     // res.json({ draft: text.slice(0, 2000), usedListing: !!itemId, shipChecks: shipChecks.map(sc => ({ country: sc.country, verdict: sc.verdict })) });   // v329
-    res.json({ draft: text.slice(0, 2000), usedListing: !!itemId, shipChecks: shipChecks.map(sc => ({ country: sc.country, verdict: sc.verdict })), orderFacts: orderFacts || null });   // v330
+    // res.json({ draft: text.slice(0, 2000), usedListing: !!itemId, shipChecks: shipChecks.map(sc => ({ country: sc.country, verdict: sc.verdict })), orderFacts: orderFacts || null });   // v330
+    res.json({ draft: text.slice(0, 2000), usedListing: !!itemId, shipChecks: shipChecks.map(sc => ({ country: sc.country, verdict: sc.verdict })), orderFacts: orderFacts || null, discount });   // v331: + discount
   } catch (e) {
     console.error('[draft]', e.message);
     res.status(500).json({ error: 'Could not draft a reply: ' + e.message });
@@ -3029,5 +3089,5 @@ app.get('*', (req, res) => {
 });
 
 setupDatabase()
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v330 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v331 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });
