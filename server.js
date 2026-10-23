@@ -1,4 +1,4 @@
-// PartsLister Pro server — v349
+// PartsLister Pro server — v350
 // v302: dashboard.html is the homepage (/). The listing tool moved to /list.
 // v305: eBay sales connection — real sold orders on the dashboard.
 // v306: asks eBay for two more permissions — fees/payouts and seller metrics.
@@ -117,6 +117,10 @@
 //       tightened; questions about details not in the listing → check and get back. New settings:
 //       after the return window ends (default: check and get back — never "sold as-is"), and
 //       "my parts come from US (left-hand-drive) vehicles".
+// v350: optional "Honor returns up to 30 / 60 / 90 days after delivery" (counted from delivery) with
+//       your return address: after eBay's window closes but inside your days, the draft says they
+//       can still ship it back to your address and you'll refund them when it arrives. Past your
+//       days (or when it's off), "Problem after the return window ended" applies.
 // Accounts with email + password login. Each account's settings (including its
 // own API keys) and history are saved ENCRYPTED in Postgres, so you can log in
 // from any computer and everything is there. Also keeps a lifetime listing count.
@@ -2366,6 +2370,7 @@ function msgSettingsOf(settings) {
     pickup: PICKUP[m.pickup] ? m.pickup : 'ship_only',
     afterWindow: AFTER_WINDOW[m.afterWindow] ? m.afterWindow : 'check_back',   // v349
     usVehicles: m.usVehicles !== false,   // v349: on unless turned off
+    honorLate: { enabled: !!(m.honorLate && m.honorLate.enabled), days: [30, 60, 90].includes(m.honorLate && m.honorLate.days) ? m.honorLate.days : 60, address: String((m.honorLate && m.honorLate.address) || '').trim().slice(0, 300) },   // v350
   };
 }
 // v341: a buyer message that doesn't need an answer ("ok thanks", "got it", "👍")
@@ -2449,6 +2454,7 @@ app.post('/api/msg-settings', requireUser, express.json(), async (req, res) => {
       pickup: PICKUP[b.pickup] ? b.pickup : 'ship_only',
       afterWindow: AFTER_WINDOW[b.afterWindow] ? b.afterWindow : 'check_back',   // v349
       usVehicles: b.usVehicles !== false,
+      honorLate: { enabled: !!(b.honorLate && b.honorLate.enabled), days: [30, 60, 90].includes(parseInt(b.honorLate && b.honorLate.days, 10)) ? parseInt(b.honorLate.days, 10) : 60, address: String((b.honorLate && b.honorLate.address) || '').trim().slice(0, 300) },   // v350
     };
     await writeUserData(req.user.id, d);
     res.json({ ok: true });
@@ -2874,6 +2880,15 @@ const draftHandler = async (req, res) => {   // v347: named, so the sandbox down
     const orderFacts = itemId ? await returnFacts(req.user.id, itemId, buyerName, orderInfo) : '';
     // v349: no discount once this buyer has bought it, or the listing has ended / sold out
     if (discount && ((orderInfo.boughtAt && !orderInfo.cancelled) || orderInfo.listingEnded)) discount = null;
+    // v350: LATE RETURN — your own extra days, counted from delivery (from the purchase date if eBay has no delivery date)
+    let lateReturn = '';
+    if (ms0.honorLate.enabled && orderInfo.boughtAt && !orderInfo.cancelled && /Return window: ENDED/.test(orderFacts)) {
+      const from = orderInfo.deliveredAt || orderInfo.boughtAt;
+      const left = ms0.honorLate.days - Math.floor((Date.now() - new Date(from).getTime()) / 86400000);
+      const lastDay = new Date(new Date(from).getTime() + ms0.honorLate.days * 86400000).toLocaleDateString('en-US', { weekday: 'short', month: 'long', day: 'numeric', timeZone: 'America/Los_Angeles' });
+      if (left >= 0) lateReturn = 'The eBay return window has closed, but the seller still accepts returns up to ' + ms0.honorLate.days + ' days after delivery, and this buyer is inside that: ' + left + ' day' + (left === 1 ? '' : 's') + ' left (until ' + lastDay + '). If they want to return it or say it doesn\'t work: say the eBay return window has closed, but they can still ship it back '
+        + (ms0.honorLate.address ? 'to this address: ' + ms0.honorLate.address.replace(/\s*\n\s*/g, ', ') : '(say you\'ll send them the return address)') + ' — and you\'ll refund them once it arrives. Give the last day.';
+    }
     const statusLead = (orderInfo.listingEnded && !orderInfo.boughtAt) ? 'IMPORTANT: this listing has SOLD / ENDED and this buyer did not buy it. Start the reply by saying sorry, it has sold and is no longer available.\n\n' : '';
     // v343: TIMELINE — did the buyer's questions come before they bought it?
     let timeline = '';
@@ -2922,7 +2937,7 @@ const draftHandler = async (req, res) => {   // v347: named, so the sandbox down
       // 'Returns, refunds, problems …: respond as the seller\'s problem policy says: ' + PROBLEM_POLICIES[ms.problemPolicy].ai …   (v330 — one choice for every problem)
       // v331: work out which kind of problem it is, then follow the seller's choice for that kind
       'Problems: first decide which kind the buyer has, then follow the seller\'s choice for that kind. ' + PROBLEM_TYPES.map(t => 'If ' + t.when + ': ' + t.options[ms.problems[t.key]].ai).join(' ') + ' Any other problem (not as described, missing pieces): ' + PROBLEM_POLICIES[ms.problemPolicy].ai,
-      'Return windows: use only the ORDER & RETURNS section — never calculate dates yourself. For damaged, defective or wrong-part problems: if it says the buyer is INSIDE the return window, follow the choice above; if the window has ENDED: ' + AFTER_WINDOW[ms.afterWindow].ai + ' (never call the part "sold as-is" and never blame eBay). A package that never arrived is not limited by the return window. If no order or return policy is given, don\'t mention any time limit.',
+      'Return windows: use only the ORDER & RETURNS section — never calculate dates yourself. For damaged, defective or wrong-part problems: if it says the buyer is INSIDE the return window, follow the choice above; if the window has ENDED: follow the LATE RETURN section if there is one, otherwise ' + AFTER_WINDOW[ms.afterWindow].ai + ' (never call the part "sold as-is" and never blame eBay). A package that never arrived is not limited by the return window. If no order or return policy is given, don\'t mention any time limit.',
       // v332
       // 'PART NUMBER rule: use only the PART NUMBER line. If it gives a number, write the number out in the reply whenever you suggest comparing, so the buyer has it right there. If it says NONE or unknown, never ask the buyer to compare part numbers with the listing or say the listing has one — ask for their VIN, or suggest comparing their original part with the listing photos.',   (v332)
       // v333: VIN only when the seller turned it on
@@ -2990,7 +3005,7 @@ const draftHandler = async (req, res) => {   // v347: named, so the sandbox down
     // const discountText = discount ? 'The buyer asked for a lower price. The seller\'s best is ' + discount.percent + '% off: $' + discount.offerPrice.toFixed(2) + ' (listed at $' + discount.price.toFixed(2) + '). Say that the best you can do is ' + discount.percent + '% off and that you\'ve sent them an offer for $' + discount.offerPrice.toFixed(2) + ' — if they don\'t receive it, they should let you know. Don\'t offer any other price.' : '';
     // v339: only IF the buyer is asking for a lower price / making an offer
     const discountText = discount ? 'IF the buyer\'s latest message asks for a lower price, makes an offer or names their own price (e.g. "150$?", "can I have it for 160", "would you take anything less?", "is the price firm?"): say that the best you can do is ' + discount.percent + '% off and that you\'ve sent them an offer for $' + discount.offerPrice.toFixed(2) + ' (listed at $' + discount.price.toFixed(2) + ') — if they don\'t receive it, they should let you know. Don\'t offer any other price. If they are NOT asking about price, ignore this section.' : '';
-    const user = statusLead + 'LISTING\n' + listing + '\n\nORDER & RETURNS (worked out by the app from eBay)\n' + (orderFacts || 'No order found for this item yet (the buyer may not have bought it).') + (timeline ? '\n\nTIMELINE\n' + timeline : '') + (shipping ? '\n\nSHIPPING CHECK (checked with eBay just now)\n' + shipping : '') + (discountText ? '\n\nDISCOUNT\n' + discountText : '') + '\n\nCONVERSATION (oldest first)\n' + convo + (hint ? '\n\nSELLER\'S INSTRUCTIONS FOR THIS REPLY\n' + hint : '') + '\n\nWrite the seller\'s reply now.';   // v330: + order & returns, v331: + discount
+    const user = statusLead + 'LISTING\n' + listing + '\n\nORDER & RETURNS (worked out by the app from eBay)\n' + (orderFacts || 'No order found for this item yet (the buyer may not have bought it).') + (timeline ? '\n\nTIMELINE\n' + timeline : '') + (lateReturn ? '\n\nLATE RETURN (seller\'s own policy)\n' + lateReturn : '') + (shipping ? '\n\nSHIPPING CHECK (checked with eBay just now)\n' + shipping : '') + (discountText ? '\n\nDISCOUNT\n' + discountText : '') + '\n\nCONVERSATION (oldest first)\n' + convo + (hint ? '\n\nSELLER\'S INSTRUCTIONS FOR THIS REPLY\n' + hint : '') + '\n\nWrite the seller\'s reply now.';   // v330: + order & returns, v331: + discount
 
     const r = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -4080,5 +4095,5 @@ app.get('*', (req, res) => {
 });
 
 setupDatabase()
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v349 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v350 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });

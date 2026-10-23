@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Sales v349</title>
+<title>PartsLister Pro Sales v350</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@400;500;600&display=swap');
 
@@ -529,7 +529,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v349</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v350</span></div>
   </a>
   <!-- v316: switch pages -->
   <nav class="page-tabs" aria-label="Pages">
@@ -847,6 +847,11 @@
         <!-- v349 -->
         <div class="set-row"><label for="ms-afterwindow">Problem after the return window ended</label>
         <select id="ms-afterwindow" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:4px;font-family:'Barlow',sans-serif;font-size:14px;"></select></div>
+        <!-- v350: late returns -->
+        <label style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:14px;color:var(--text);cursor:pointer;margin-top:10px;"><input type="checkbox" id="ms-honor-on"> Honor returns up to
+          <select id="ms-honor-days" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:4px;font-family:'Barlow',sans-serif;font-size:14px;width:auto;padding:4px 8px;"><option value="30">30</option><option value="60" selected>60</option><option value="90">90</option></select> days after delivery (counted from delivery)</label>
+        <textarea id="ms-honor-addr" rows="3" maxlength="300" placeholder="Your return address (name, street, city, state ZIP)" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:4px;font-family:'Barlow',sans-serif;font-size:14px;width:100%;margin-top:8px;resize:vertical;"></textarea>
+        <p class="set-help" style="margin-top:6px;">Optional. When eBay's return window has closed but the buyer is still within your days <strong>counted from delivery</strong>, the draft says they can still ship it back to this address and you'll refund them when it arrives (refund it yourself from Orders — there's no eBay return for it). Past your days, or when this is off, "Problem after the return window ended" above is used.</p>
         <label style="display:flex;gap:8px;align-items:center;font-size:14px;color:var(--text);cursor:pointer;margin-top:10px;"><input type="checkbox" id="ms-usvehicles"> My parts come from US (left-hand-drive) vehicles</label>
         <label style="display:flex;gap:8px;align-items:center;font-size:14px;color:var(--text);cursor:pointer;margin-top:10px;"><input type="checkbox" id="ms-buyer-lang"> Reply in the buyer's language</label>
         <p class="set-help" style="margin-top:6px;">When a buyer writes in Spanish, Russian etc., the draft is written in their language and the English version is shown under it for you to check.</p>
@@ -1021,6 +1026,7 @@
 // v346: Admin → Download messages with drafts (listing & order facts per conversation, progress bar).
 // v347: "Write sandbox AI replies" replaces "AI drafts only" — AI replies written into the file only, never sent.
 // v349: Common questions + "After the return window ends" and "My parts come from US (left-hand-drive) vehicles".
+// v350: "Honor returns up to 30 / 60 / 90 days after delivery" (counted from delivery) + return address.
 // Shares the same sign-in and account as the listing tool (/list).
 // v304: sales dashboard — big daily bar graph with a remembered date range.
 // The sales numbers are SAMPLE data for now; real eBay sales replace
@@ -1845,6 +1851,10 @@ async function loadMsgSettings() {
     document.getElementById('ms-shipdays').value = d.shipDays || '';
     document.getElementById('ms-buyer-lang').checked = !!d.buyerLanguage;
     document.getElementById('ms-usvehicles').checked = d.usVehicles !== false;   // v349
+    // v350
+    document.getElementById('ms-honor-on').checked = !!(d.honorLate && d.honorLate.enabled);
+    document.getElementById('ms-honor-days').value = String((d.honorLate && d.honorLate.days) || 60);
+    document.getElementById('ms-honor-addr').value = (d.honorLate && d.honorLate.address) || '';
   } catch (e) { showToast('Could not load Messages settings.', true); }
 }
 function useDefaultInstructions() {
@@ -1869,6 +1879,7 @@ async function saveMsgSettings() {
       donor: document.getElementById('ms-donor').value, shipWhen: document.getElementById('ms-shipwhen').value, shipDays: document.getElementById('ms-shipdays').value,
       intlNo: document.getElementById('ms-intl').value, buyerLanguage: document.getElementById('ms-buyer-lang').checked,
       afterWindow: document.getElementById('ms-afterwindow').value, usVehicles: document.getElementById('ms-usvehicles').checked,   // v349
+      honorLate: { enabled: document.getElementById('ms-honor-on').checked, days: parseInt(document.getElementById('ms-honor-days').value, 10), address: document.getElementById('ms-honor-addr').value },   // v350
       // v345
       remorse: document.getElementById('ms-remorse').value, addressChange: document.getElementById('ms-addrchange').value, faster: document.getElementById('ms-faster').value, partial: document.getElementById('ms-partial').value, radioCode: document.getElementById('ms-radiocode').value, pickup: document.getElementById('ms-pickup').value };
     const r = await fetch('/api/msg-settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
