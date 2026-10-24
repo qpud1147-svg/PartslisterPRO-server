@@ -1,4 +1,4 @@
-// PartsLister Pro server — v370
+// PartsLister Pro server — v374
 // v302: dashboard.html is the homepage (/). The listing tool moved to /list.
 // v305: eBay sales connection — real sold orders on the dashboard.
 // v306: asks eBay for two more permissions — fees/payouts and seller metrics.
@@ -170,6 +170,19 @@
 // v366: smarter "doesn't need a reply" check (no AI): short messages made only of thank-you / ok /
 //       got-it / received words drop out of Needs reply ("Ok thank you for your help", "Just
 //       purchased. Thank you!"). Anything with a question or any other word stays in.
+// v374: LISTINGS PER DAY (Active page) — every listing that went up in the last 90 days, from eBay's
+//       GetSellerList by start date (includes ones that since sold or ended), counted per day in your
+//       time zone (Settings → Messages). Kept in memory 30 minutes; nothing saved.
+// v373: Returns page — + CANCELLATION REQUESTS (open / closed, approve or decline — same eBay
+//       Post-Order system as returns, no new permission) and + PAYMENT DISPUTES (needs your response /
+//       awaiting eBay's decision / closed — needs the new "Payment disputes" permission, so reconnect
+//       eBay once). Stage filters for returns are worked out on the page.
+// v371: LATE RETURNS — when you send a buyer your return address (Settings → Messages → late returns
+//       on), the app adds it to a Late returns list on the Returns page: address sent date, then you
+//       mark it received, then refund it (eBay's refund shows up there by itself). Not received in 30
+//       days → it drops off. "Add to Late returns" in Messages adds one by hand. The address reply asks
+//       the buyer to mail it within 2 weeks. Stores only the conversation, item, title, order number,
+//       order total and dates — no buyer name, address or messages.
 // v370: Returns — fees. Each return also reads eBay's money records (Payments → transactions) for
 //       that order: the fees eBay charged on the sale, and after a refund, the fee credit eBay gave
 //       back, so the page shows what the refund really cost. Before refunding it shows an "about"
@@ -319,6 +332,21 @@ async function setupDatabase() {
       done_at         TIMESTAMPTZ
     );
     CREATE INDEX IF NOT EXISTS msg_followups_open ON msg_followups (user_id, done_at);
+    CREATE TABLE IF NOT EXISTS late_returns (                                             -- v371: Late returns
+      id              SERIAL PRIMARY KEY,
+      user_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      conversation_id TEXT NOT NULL,
+      item_id         TEXT,
+      order_id        TEXT,
+      title           TEXT,
+      order_total     NUMERIC(12,2),
+      source          TEXT,
+      sent_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+      received_at     TIMESTAMPTZ,
+      refunded_at     TIMESTAMPTZ,
+      refund_amount   NUMERIC(12,2)
+    );
+    CREATE INDEX IF NOT EXISTS late_returns_user ON late_returns (user_id);
     ALTER TABLE ebay_connections ADD COLUMN IF NOT EXISTS active_count INTEGER;          -- v316: live listings on eBay
     ALTER TABLE ebay_connections ADD COLUMN IF NOT EXISTS active_value NUMERIC(14,2);    -- v316: their asking prices added up
     ALTER TABLE ebay_connections ADD COLUMN IF NOT EXISTS active_sync TIMESTAMPTZ;       -- v316: when that was last checked
@@ -915,7 +943,8 @@ const EBAY_SCOPES = [
   { scope: 'https://api.ebay.com/oauth/api_scope/sell.finances',              label: 'Fees, payouts & sales tax' },
   { scope: 'https://api.ebay.com/oauth/api_scope/sell.analytics.readonly',    label: 'Seller metrics & standing' },
   { scope: 'https://api.ebay.com/oauth/api_scope/commerce.message',           label: 'Message threads (read & reply)' },   // v322
-  { scope: 'https://api.ebay.com/oauth/api_scope/sell.inventory',             label: 'Send offers to buyers' }             // v322
+  { scope: 'https://api.ebay.com/oauth/api_scope/sell.inventory',             label: 'Send offers to buyers' },            // v322
+  { scope: 'https://api.ebay.com/oauth/api_scope/sell.payment.dispute',       label: 'Payment disputes' }                  // v373
 ];
 const SALES_SCOPES = EBAY_SCOPES.map(x => x.scope).join(' ');
 
@@ -2088,7 +2117,18 @@ app.post('/api/threads/:id/send', requireUser, express.json(), async (req, res) 
     const blocked = threadsBlocked(conn); if (blocked) return res.status(400).json({ error: 'Reconnect eBay to approve message threads first.' });
     const { data } = await restCall(req.user.id, 'POST', '/commerce/message/v1/send_message', { conversationId: id, messageText: text, emailCopyToSender: true });
     msgCounts.delete(req.user.id);
-    res.json({ ok: true, message: data ? { id: data.messageId, text: data.messageBody || text, date: data.createdDate || new Date().toISOString(), mine: true } : null });
+    // res.json({ ok: true, message: data ? { id: data.messageId, text: data.messageBody || text, date: data.createdDate || new Date().toISOString(), mine: true } : null });
+    // v371: the message gave your return address (late returns on) → add it to Late returns
+    let lateAdded = null;
+    try {
+      const ms = msgSettingsOf(await getUserSettings(req.user.id));
+      const itemId = String((req.body && req.body.itemId) || '');
+      if (ms.honorLate.enabled && /^\d{6,20}$/.test(itemId) && hasReturnAddress(text, ms.honorLate.address)) {
+        const r = await addLateReturn(req.user.id, id, itemId, String((req.body && req.body.buyer) || '').slice(0, 80), 'auto');
+        if (r.ok) lateAdded = r.existed ? 'already' : 'added';
+      }
+    } catch (e) { console.warn('[late return add]', e.message); }
+    res.json({ ok: true, lateReturn: lateAdded, message: data ? { id: data.messageId, text: data.messageBody || text, date: data.createdDate || new Date().toISOString(), mine: true } : null });
   } catch (e) {
     console.error('[thread send]', e.message);
     res.status(502).json({ error: 'eBay didn\u2019t send it: ' + e.message });
@@ -3075,7 +3115,7 @@ const draftHandler = async (req, res) => {   // v347: named, so the sandbox down
       const left = ms0.honorLate.days - Math.floor((Date.now() - new Date(from).getTime()) / 86400000);
       const lastDay = new Date(new Date(from).getTime() + ms0.honorLate.days * 86400000).toLocaleDateString('en-US', { weekday: 'short', month: 'long', day: 'numeric', timeZone: 'America/Los_Angeles' });
       if (left >= 0) lateReturn = 'The eBay return window has closed, but the seller still accepts returns up to ' + ms0.honorLate.days + ' days after delivery, and this buyer is inside that: ' + left + ' day' + (left === 1 ? '' : 's') + ' left (until ' + lastDay + '). If they want to return it or say it doesn\'t work: say the eBay return window has closed, but they can still ship it back '
-        + (ms0.honorLate.address ? 'to this address: ' + ms0.honorLate.address.replace(/\s*\n\s*/g, ', ') : '(say you\'ll send them the return address)') + ' — and you\'ll refund them once it arrives. Give the last day.';
+        + (ms0.honorLate.address ? 'to this address: ' + ms0.honorLate.address.replace(/\s*\n\s*/g, ', ') : '(say you\'ll send them the return address)') + ' — and ask them to please mail it within 2 weeks, and you\'ll refund them once it arrives (no calendar date).';   // v371 (was: "Give the last day.")
     }
     const statusLead = (orderInfo.listingEnded && !orderInfo.boughtAt) ? 'IMPORTANT: this listing has SOLD / ENDED and this buyer did not buy it. Start the reply by saying sorry, it has sold and is no longer available.\n\n' : '';
     // v343: TIMELINE — did the buyer's questions come before they bought it?
@@ -3304,6 +3344,9 @@ const draftHandler = async (req, res) => {   // v347: named, so the sandbox down
           : 'To know if it fits your vehicle, please compare your original part with the listing photos to see if it\'s a match.');
       }
     }
+    // v371: a reply with your return address always asks them to mail it within 2 weeks
+    if (text && lateReturn && hasReturnAddress(text, ms.honorLate.address) && !/\b(2|two)\s+weeks\b|\b14\s+days\b/i.test(text))
+      text += '\n\nPlease mail it within 2 weeks, and I\'ll refund you once it arrives.';
     if (text && ms.signoff && !text.endsWith(ms.signoff)) text += '\n\n' + ms.signoff;   // v335: your sign-off, word for word
     if (!text) return res.status(502).json({ error: 'Claude returned an empty draft — try again.' });
     // res.json({ draft: text.slice(0, 2000), usedListing: !!itemId });
@@ -3669,6 +3712,10 @@ app.get('/api/threads/:id/info', requireUser, async (req, res) => {
         tracks: sh.tracks || [], shipError: fo.shipErr || null
       };
     } else out.order = { status: 'not_bought' };
+    try {   // v371: already in Late returns?
+      const lr = await pool.query('SELECT id, sent_at, received_at, refunded_at FROM late_returns WHERE user_id = $1 AND conversation_id = $2 ORDER BY id DESC LIMIT 1', [req.user.id, String(req.params.id)]);
+      out.lateReturn = lr.rows[0] ? { id: lr.rows[0].id, sent: lr.rows[0].sent_at, received: lr.rows[0].received_at, refunded: lr.rows[0].refunded_at } : null;
+    } catch (e) { out.lateReturn = null; }
     res.json(out);
   } catch (e) {
     console.error('[thread info]', e.message);
@@ -3707,6 +3754,84 @@ app.post('/api/followups/:id/done', requireUser, async (req, res) => {
     await pool.query('UPDATE msg_followups SET done_at = now() WHERE id = $1 AND user_id = $2', [id, req.user.id]);
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: 'Could not mark it complete' }); }
+});
+
+// ─── v371: LATE RETURNS ──────────────────────────────────────────────────────
+// Returns you agreed to take back after eBay's window closed. The buyer mails it on their own (no
+// eBay tracking), so: address sent → you mark it received → refunded (picked up from eBay's money
+// records for the order, or marked by hand). Not received within 30 days → removed. Refunded ones
+// show for 7 days, then go. Stores no buyer name, address or messages.
+const LATE_DAYS = 30;
+function returnAddressKey(address) {
+  const first = String(address || '').split(/\n|,/).map(s => s.trim()).find(s => /\d/.test(s) && s.length >= 5) || '';
+  return first.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 10);   // house number + start of the street (so "Rd" vs "Road" still matches)
+}
+function hasReturnAddress(text, address) {
+  const k = returnAddressKey(address);
+  return k.length >= 6 && String(text || '').toLowerCase().replace(/[^a-z0-9]/g, '').includes(k);
+}
+async function addLateReturn(userId, conv, itemId, buyer, source) {
+  const fo = await findBuyerOrder(userId, itemId, buyer);
+  if (fo.otherBuyer) return { ok: false, error: 'This buyer didn\u2019t buy this item.' };
+  if (!fo.row) return { ok: false, error: 'No order found for this buyer and item.' };
+  const ex = await pool.query('SELECT id FROM late_returns WHERE user_id = $1 AND order_id = $2 AND refunded_at IS NULL', [userId, fo.row.order_id]);
+  if (ex.rows.length) return { ok: true, existed: true, id: ex.rows[0].id };
+  let title = null;
+  try { const it = await getItemData(userId, itemId); title = (it && it.data && it.data.title) || null; } catch (e) { /* title is optional */ }
+  const r = await pool.query(`INSERT INTO late_returns (user_id, conversation_id, item_id, order_id, title, order_total, source)
+    VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`, [userId, conv, itemId, fo.row.order_id, title, fo.row.total, source]);
+  return { ok: true, id: r.rows[0].id };
+}
+app.get('/api/late-returns', requireUser, async (req, res) => {
+  try {
+    await pool.query(`DELETE FROM late_returns WHERE user_id = $1 AND (
+      (received_at IS NULL AND refunded_at IS NULL AND sent_at < now() - interval '${LATE_DAYS} days') OR
+      (refunded_at IS NOT NULL AND refunded_at < now() - interval '7 days'))`, [req.user.id]);
+    const rows = (await pool.query('SELECT * FROM late_returns WHERE user_id = $1 ORDER BY sent_at', [req.user.id])).rows;
+    // refunded on eBay since the address was sent? → mark it
+    for (const x of rows.filter(x => !x.refunded_at && x.order_id)) {
+      try {
+        const f = await orderFees(req.user.id, x.order_id);
+        const rf = ((f && f.refunds) || []).filter(t => t.date && new Date(t.date) >= new Date(x.sent_at));
+        if (rf.length) {
+          const amount = Math.round(rf.reduce((s, t) => s + t.amount + t.credit, 0) * 100) / 100;
+          const when = rf[rf.length - 1].date;
+          await pool.query('UPDATE late_returns SET refunded_at = $2, refund_amount = $3 WHERE id = $1', [x.id, when, amount]);
+          x.refunded_at = when; x.refund_amount = amount;
+        }
+      } catch (e) { /* check again next time */ }
+    }
+    const ms = msgSettingsOf(await getUserSettings(req.user.id));
+    res.json({ enabled: ms.honorLate.enabled, days: LATE_DAYS, items: rows.map(x => ({
+      id: x.id, conversationId: x.conversation_id, itemId: x.item_id, orderId: x.order_id, title: x.title,
+      total: x.order_total !== null ? Number(x.order_total) : null, source: x.source,
+      sent: x.sent_at, received: x.received_at, refunded: x.refunded_at, refundAmount: x.refund_amount !== null ? Number(x.refund_amount) : null,
+      dropsOn: x.received_at ? null : new Date(new Date(x.sent_at).getTime() + LATE_DAYS * 86400000).toISOString()
+    })) });
+  } catch (e) { console.error('[late returns]', e.message); res.status(500).json({ error: 'Could not load Late returns' }); }
+});
+app.post('/api/late-returns', requireUser, express.json(), async (req, res) => {
+  const b = req.body || {};
+  const conv = String(b.conversationId || ''), itemId = String(b.itemId || '');
+  if (!/^[\w.:-]{1,80}$/.test(conv) || !/^\d{6,20}$/.test(itemId)) return res.status(400).json({ error: 'This conversation has no item.' });
+  try {
+    const r = await addLateReturn(req.user.id, conv, itemId, String(b.buyer || '').slice(0, 80), 'manual');
+    if (!r.ok) return res.status(400).json({ error: r.error });
+    res.json({ ok: true, existed: !!r.existed });
+  } catch (e) { console.error('[late returns add]', e.message); res.status(500).json({ error: 'Could not add it to Late returns' }); }
+});
+app.post('/api/late-returns/:id/:action', requireUser, async (req, res) => {
+  const id = parseInt(req.params.id, 10), action = req.params.action;
+  if (!(id > 0)) return res.status(400).json({ error: 'Bad id' });
+  const sql = {
+    received: 'UPDATE late_returns SET received_at = now() WHERE id = $1 AND user_id = $2',
+    unreceived: 'UPDATE late_returns SET received_at = NULL WHERE id = $1 AND user_id = $2',
+    refunded: 'UPDATE late_returns SET refunded_at = now() WHERE id = $1 AND user_id = $2',
+    remove: 'DELETE FROM late_returns WHERE id = $1 AND user_id = $2'
+  }[action];
+  if (!sql) return res.status(400).json({ error: 'Unknown action' });
+  try { await pool.query(sql, [id, req.user.id]); res.json({ ok: true }); }
+  catch (e) { res.status(500).json({ error: 'Could not update it' }); }
 });
 
 // ─── v322: OFFERS ────────────────────────────────────────────────────────────
@@ -3840,6 +3965,39 @@ function mapReturn(m) {
     escalated: !!(m.escalationInfo && m.escalationInfo.caseId)
   };
 }
+// v373: cancellation requests (Post-Order API)
+function mapCancel(m) {
+  const state = m.cancelState || '', status = m.cancelStatus || '';
+  const due = dval(m.sellerResponseDueDate);
+  return {
+    kind: 'cancel', id: String(m.cancelId), state, status, buyer: m.buyerLoginName || '',
+    orderId: m.legacyOrderId || null, itemId: null, reason: m.cancelReason || '', closeReason: m.cancelCloseReason || '',
+    amount: amt(m.requestRefundAmount), created: dval(m.cancelRequestDate), closedAt: dval(m.cancelCloseDate),
+    due: /CLOSED/i.test(state) ? null : due, requestor: m.requestorType || '',
+    needsMe: !/CLOSED/i.test(state) && !/SELLER/i.test(m.requestorType || '') && (!!due || /REQUEST|PENDING/i.test(status)),   // the buyer asked; waiting on you
+    shipped: dval(m.shipmentDate)
+  };
+}
+// v373: payment disputes (Fulfillment API — camelCase in JSON; snake_case accepted just in case)
+function mapDispute(m) {
+  const g = (a, b) => m[a] !== undefined ? m[a] : m[b];
+  const status = g('paymentDisputeStatus', 'payment_dispute_status') || '';
+  return {
+    kind: 'dispute', id: String(g('paymentDisputeId', 'payment_dispute_id') || ''), status, reason: g('reason', 'reason') || '',
+    orderId: g('orderId', 'order_id') || null, itemId: null, buyer: g('buyerUsername', 'buyer_username') || '',
+    amount: amt(g('amount', 'amount')), created: g('openDate', 'open_date') || null, due: g('respondByDate', 'respond_by_date') || null,
+    closedAt: g('closedDate', 'closed_date') || null
+  };
+}
+const DISPUTE_SCOPE = 'https://api.ebay.com/oauth/api_scope/sell.payment.dispute';
+// item number for an order (from the saved sales) — cancellations and disputes only give the order
+async function itemsForOrders(userId, orderIds) {
+  const ids = [...new Set(orderIds.filter(Boolean))];
+  if (!ids.length) return {};
+  const r = await pool.query('SELECT order_id, item_id FROM ebay_order_items WHERE user_id = $1 AND order_id = ANY($2)', [userId, ids]);
+  const out = {}; r.rows.forEach(x => { if (!out[x.order_id]) out[x.order_id] = x.item_id; });
+  return out;
+}
 function mapInquiry(m) {
   return {
     kind: 'inquiry', id: String(m.inquiryId), status: m.inquiryStatusEnum || '', buyer: m.buyer || '',
@@ -3880,16 +4038,52 @@ async function loadReturns(userId, view) {
       .filter(x => closed ? /CLOSED/i.test(x.status) : !/CLOSED/i.test(x.status))
       .forEach(x => out.push(x));
   } catch (e) { errors.push('Cases: ' + e.message); }
+  // v373: cancellation requests
+  try {
+    const q = new URLSearchParams({ role: 'SELLER', limit: '200', sort: '-CANCEL_REQUEST_DATE',
+      creation_date_range_from: new Date(Date.now() - (closed ? 90 : 60) * 86400000).toISOString(), creation_date_range_to: new Date().toISOString() });
+    const d = await poCall(userId, 'GET', '/cancellation/search?' + q);
+    ((d && d.cancellations) || []).map(mapCancel)
+      .filter(x => /CLOSED/i.test(x.state) === closed)
+      .forEach(x => out.push(x));
+  } catch (e) { errors.push('Cancellations: ' + e.message); }
+  // v373: payment disputes (only with the permission)
+  let disputesNeedScope = false;
+  try {
+    const conn = await getConnection(userId);
+    if (!hasScope(conn, DISPUTE_SCOPE)) disputesNeedScope = true;
+    else {
+      const token = await getAccessToken(userId);
+      const q = new URLSearchParams({ limit: '200', open_date_from: from, open_date_to: new Date().toISOString() });
+      const r = await fetch(EBAY_FIN_HOST + '/sell/fulfillment/v1/payment_dispute_summary?' + q, {
+        headers: { 'Authorization': 'Bearer ' + token, 'Accept': 'application/json', 'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US' }, signal: AbortSignal.timeout(30000) });
+      if (r.status !== 204) {
+        const t = await r.text(); let d = null; try { d = JSON.parse(t); } catch (e) { /* not JSON */ }
+        if (!r.ok) throw new Error((d && d.errors && d.errors.map(e => e.longMessage || e.message).join('; ')) || ('HTTP ' + r.status));
+        ((d && (d.paymentDisputeSummaries || d.payment_dispute_summaries)) || []).map(mapDispute)
+          .filter(x => x.id && (/CLOSED/i.test(x.status) === closed))
+          .forEach(x => out.push(x));
+      }
+    }
+  } catch (e) { errors.push('Payment disputes: ' + e.message); }
+  // item numbers for cancellations / disputes (they only give the order)
+  try {
+    const need = out.filter(x => !x.itemId && x.orderId);
+    const map = await itemsForOrders(userId, need.map(x => x.orderId));
+    need.forEach(x => { x.itemId = map[x.orderId] || (/^(\d{9,15})-\d+$/.exec(x.orderId) || [])[1] || null; });
+  } catch (e) { /* titles are optional */ }
   out.sort((a, b) => String(b.created || '').localeCompare(String(a.created || '')));
-  return { items: out, errors };
+  return { items: out, errors, disputesNeedScope };   // v373: + disputesNeedScope
 }
 
 app.get('/api/returns', requireUser, async (req, res) => {
   try {
     const conn = await getConnection(req.user.id);
     if (!conn || !conn.refresh_enc) return res.json({ connected: false });
-    const { items, errors } = await loadReturns(req.user.id, req.query.view === 'closed' ? 'closed' : 'open');
-    res.json({ connected: true, items, errors });
+    // const { items, errors } = await loadReturns(req.user.id, req.query.view === 'closed' ? 'closed' : 'open');
+    // res.json({ connected: true, items, errors });
+    const { items, errors, disputesNeedScope } = await loadReturns(req.user.id, req.query.view === 'closed' ? 'closed' : 'open');
+    res.json({ connected: true, items, errors, disputesNeedScope });   // v373
   } catch (e) {
     console.error('[returns]', e.message);
     res.json({ connected: true, items: [], errors: [e.message] });
@@ -3905,7 +4099,10 @@ app.get('/api/returns/summary', requireUser, async (req, res) => {
     const c = returnCounts.get(req.user.id);
     if (c && Date.now() - c.at < 300000) return res.json(c.data);
     const { items, errors } = await loadReturns(req.user.id, 'open');
-    const data = { connected: true, open: items.length, needMe: items.filter(x => x.kind !== 'return' || /SELLER/i.test(x.todo || '') || (x.options || []).length).length, errors };
+    // const data = { connected: true, open: items.length, needMe: items.filter(x => x.kind !== 'return' || /SELLER/i.test(x.todo || '') || (x.options || []).length).length, errors };
+    const needs = (x) => x.kind === 'return' ? (/SELLER/i.test(x.todo || '') || (x.options || []).length > 0)
+      : x.kind === 'cancel' ? !!x.needsMe : x.kind === 'dispute' ? /ACTION_NEEDED/i.test(x.status) : true;   // v373
+    const data = { connected: true, open: items.length, needMe: items.filter(needs).length, errors };
     returnCounts.set(req.user.id, { at: Date.now(), data });
     res.json(data);
   } catch (e) { res.json({ connected: true, open: null, error: e.message }); }
@@ -4069,6 +4266,42 @@ app.post('/api/returns/inquiry/:id/tracking', requireUser, express.json(), async
   } catch (e) {
     console.error('[inquiry tracking]', e.message);
     res.status(502).json({ error: 'eBay didn\u2019t take the tracking: ' + e.message });
+  }
+});
+
+// v373: cancellation request — approve (cancels the order; refund the buyer on eBay if it's not
+// automatic) or decline (sends the ship date and tracking from the order when it has shipped)
+app.post('/api/returns/cancel/:id/approve', requireUser, async (req, res) => {
+  if (!poId(req.params.id)) return res.status(400).json({ error: 'Bad cancellation number' });
+  try {
+    await poCall(req.user.id, 'POST', '/cancellation/' + req.params.id + '/approve');
+    clearReturnCount(req.user.id);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('[cancel approve]', e.message);
+    res.status(502).json({ error: 'eBay didn\u2019t approve the cancellation: ' + e.message });
+  }
+});
+app.post('/api/returns/cancel/:id/decline', requireUser, express.json(), async (req, res) => {
+  if (!poId(req.params.id)) return res.status(400).json({ error: 'Bad cancellation number' });
+  const orderId = String((req.body || {}).orderId || '');
+  try {
+    const body = {};
+    if (/^[0-9A-Za-z-]{5,40}$/.test(orderId)) {
+      try {
+        const sh = await shipmentFacts(req.user.id, orderId);
+        if (sh && sh.shippedTime) {
+          body.shipmentDate = { value: new Date(sh.shippedTime).toISOString() };
+          if (sh.tracks && sh.tracks[0]) body.trackingNumber = sh.tracks[0].number;
+        }
+      } catch (e) { /* decline without ship info */ }
+    }
+    await poCall(req.user.id, 'POST', '/cancellation/' + req.params.id + '/reject', body);
+    clearReturnCount(req.user.id);
+    res.json({ ok: true, sentShipInfo: !!body.shipmentDate });
+  } catch (e) {
+    console.error('[cancel decline]', e.message);
+    res.status(502).json({ error: 'eBay didn\u2019t decline the cancellation: ' + e.message });
   }
 });
 
@@ -4360,6 +4593,65 @@ async function checkActiveListings(userId) {
   }
 }
 
+// v374: LISTINGS PER DAY — start times of every listing started in the last 91 days
+const listedCache = new Map();   // userId → { at, data } or { at, promise }
+async function listingStarts(userId) {
+  const to = new Date(), from = new Date(to.getTime() - 91 * 86400000);   // under eBay's 120-day limit
+  const starts = [];
+  for (let page = 1; page <= 60; page++) {
+    const xml = await tradingCall(userId, 'GetSellerList',
+      `<StartTimeFrom>${from.toISOString()}</StartTimeFrom><StartTimeTo>${to.toISOString()}</StartTimeTo>`
+      + `<DetailLevel>ReturnAll</DetailLevel><Pagination><EntriesPerPage>200</EntriesPerPage><PageNumber>${page}</PageNumber></Pagination>`
+      + `<OutputSelector>ItemArray.Item.ItemID</OutputSelector><OutputSelector>ItemArray.Item.ListingDetails.StartTime</OutputSelector>`
+      + `<OutputSelector>PaginationResult</OutputSelector><OutputSelector>HasMoreItems</OutputSelector>`);
+    const items = xmlAll(xmlTag(xml, 'ItemArray') || '', 'Item');
+    items.forEach(it => { const st = xmlTag(xmlTag(it, 'ListingDetails') || '', 'StartTime'); if (st) starts.push(st); });
+    const pages = parseInt(xmlTag(xmlTag(xml, 'PaginationResult') || '', 'TotalNumberOfPages') || '1', 10) || 1;
+    if (!items.length || page >= pages) break;
+  }
+  return starts;
+}
+app.get('/api/listings/daily', requireUser, async (req, res) => {
+  try {
+    const conn = await getConnection(req.user.id);
+    if (!conn || !conn.refresh_enc) return res.json({ connected: false });
+    const tz = msgSettingsOf(await getUserSettings(req.user.id)).timezone || 'America/Chicago';
+    let c = listedCache.get(req.user.id);
+    if (!c || req.query.refresh === '1' && !c.promise || (c.data && Date.now() - c.at > 30 * 60000)) {
+      const promise = listingStarts(req.user.id);
+      c = { at: Date.now(), promise };
+      listedCache.set(req.user.id, c);
+      promise.then(starts => listedCache.set(req.user.id, { at: Date.now(), data: starts }),
+                   e => listedCache.set(req.user.id, { at: Date.now(), error: e.message }));
+    }
+    let starts;
+    if (c.promise) starts = await c.promise.catch(e => { throw e; });
+    else if (c.error) { listedCache.delete(req.user.id); throw new Error(c.error); }
+    else starts = c.data;
+    // count per day / per hour in your time zone
+    const dayKey = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' });
+    const hourOf = new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: 'numeric', hourCycle: 'h23' });
+    const today = dayKey.format(new Date());
+    const byDay = {}, hours = new Array(24).fill(0);
+    starts.forEach(s => {
+      const d = new Date(s); if (isNaN(d)) return;
+      const k = dayKey.format(d); byDay[k] = (byDay[k] || 0) + 1;
+      if (k === today) hours[parseInt(hourOf.format(d), 10) % 24]++;
+    });
+    const days = [];
+    const [y, m, dd] = today.split('-').map(Number);
+    for (let i = 89; i >= 0; i--) {
+      const t = new Date(Date.UTC(y, m - 1, dd - i));
+      const k = t.toISOString().slice(0, 10);
+      days.push({ date: k, n: byDay[k] || 0 });
+    }
+    res.json({ connected: true, tz, today, days, hours, checkedAt: new Date(listedCache.get(req.user.id).at || Date.now()).toISOString() });
+  } catch (e) {
+    console.error('[listings daily]', e.message);
+    res.json({ connected: true, error: 'eBay didn\u2019t give us your listing dates: ' + e.message });
+  }
+});
+
 app.get('/api/listings/summary', requireUser, async (req, res) => {
   try {
     const conn = await getConnection(req.user.id);
@@ -4436,5 +4728,5 @@ app.get('*', (req, res) => {
 });
 
 setupDatabase()
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v370 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v374 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });

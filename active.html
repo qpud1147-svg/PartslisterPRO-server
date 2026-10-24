@@ -3,9 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Active v324</title>
+<title>PartsLister Pro Active v374</title>
 <!-- PartsLister Pro — Active page (v316: new as the Listings page, listings.html; v318: renamed Active, active.html, at /active). Shares the sign-in, account and
-     eBay connection with the Sales page (/sales) and the listing tool (/list). -->
+     eBay connection with the Sales page (/sales) and the listing tool (/list).
+     v374: Listings per day chart — Today (by hour) · 7 Day · 31 Day · 90 Day, from eBay's listing start
+     dates (includes listings that since sold or ended), in your time zone. -->
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@400;500;600&display=swap');
 
@@ -94,6 +96,34 @@
   .soon p { color: var(--muted); font-size: 12px; line-height: 1.45; }
   .error-box { background: rgba(224,82,82,0.08); border: 1px solid rgba(224,82,82,0.4); color: #f0a0a0; border-radius: 6px; padding: 10px 12px; font-size: 13px; line-height: 1.5; margin-bottom: 12px; display: none; }
 
+  /* v374: LISTINGS PER DAY — same look as the Sales chart */
+  :root { --grid: #2a2a2a; --bar-dim: #7a5a24; }
+  .chart-card { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 16px 18px 10px; margin-bottom: 12px; }
+  .chart-top { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+  .chart-top h2 { font-family: 'Barlow Condensed', sans-serif; font-size: 20px; font-weight: 700; letter-spacing: 0.5px; }
+  .range-picker { margin-left: auto; display: inline-flex; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 3px; gap: 2px; }
+  .range-picker button { background: none; border: none; color: var(--muted); font-family: 'Barlow Condensed', sans-serif; font-size: 14px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; padding: 6px 12px; border-radius: 4px; cursor: pointer; }
+  .range-picker button:hover { color: var(--text); }
+  .range-picker button[aria-pressed="true"] { background: var(--accent); color: #000; }
+  .lstats { display: flex; gap: 28px; flex-wrap: wrap; margin-bottom: 8px; }
+  .lstat .v { font-family: 'Barlow Condensed', sans-serif; font-size: 30px; font-weight: 700; line-height: 1.05; }
+  .lstat .v.accent { color: var(--accent); }
+  .lstat .k { font-size: 12px; color: var(--muted); }
+  .chart-note { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+  #lchart-wrap { position: relative; height: 300px; }
+  #lchart { display: block; width: 100%; height: 100%; touch-action: pan-y; }
+  #lchart .gridline { stroke: var(--grid); stroke-width: 1; shape-rendering: crispEdges; }
+  #lchart .baseline { stroke: #3a3a3a; stroke-width: 1; shape-rendering: crispEdges; }
+  #lchart .tick { fill: var(--muted); font-family: 'Barlow', sans-serif; font-size: 11px; }
+  #lchart .bar { fill: var(--accent); }
+  #lchart.hovering .bar { fill: var(--bar-dim); }
+  #lchart.hovering .bar.active { fill: var(--accent); }
+  #lchart .avgline { stroke: var(--text2); stroke-width: 1; stroke-dasharray: 4 4; }
+  .tooltip { position: absolute; pointer-events: none; background: #0b0b0b; border: 1px solid #3a3a3a; border-radius: 6px; padding: 8px 12px; font-size: 12px; color: var(--text2); white-space: nowrap; opacity: 0; transform: translate(-50%, -100%); z-index: 5; box-shadow: 0 6px 20px rgba(0,0,0,0.5); }
+  .tooltip.show { opacity: 1; }
+  .tooltip .tt-value { display: block; font-family: 'Barlow Condensed', sans-serif; font-size: 22px; font-weight: 700; color: var(--text); line-height: 1.1; }
+  @media (max-width: 700px) { .range-picker { margin-left: 0; } .range-picker button { padding: 6px 9px; font-size: 13px; } #lchart-wrap { height: 230px; } .lstats { gap: 18px; } .lstat .v { font-size: 26px; } }
+
   #loading { position: fixed; inset: 0; background: var(--bg); z-index: 100; display: flex; align-items: center; justify-content: center; color: var(--muted); font-family: 'Barlow Condensed', sans-serif; letter-spacing: 2px; text-transform: uppercase; }
   #loading.hidden { display: none; }
 
@@ -119,7 +149,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v324</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v374</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -173,9 +203,29 @@
     </div>
   </div>
 
+  <!-- v374: LISTINGS PER DAY -->
+  <div class="chart-card">
+    <div class="chart-top">
+      <h2 id="lc-title">Listings per day</h2>
+      <div class="range-picker" role="group" aria-label="Range" id="lc-range">
+        <button type="button" data-r="1">Today</button>
+        <button type="button" data-r="7">7 Day</button>
+        <button type="button" data-r="31" aria-pressed="true">31 Day</button>
+        <button type="button" data-r="90">90 Day</button>
+      </div>
+    </div>
+    <div class="lstats">
+      <div class="lstat"><div class="v accent" id="lc-total">—</div><div class="k" id="lc-total-k">Listed</div></div>
+      <div class="lstat"><div class="v" id="lc-avg">—</div><div class="k" id="lc-avg-k">Per day</div></div>
+      <div class="lstat"><div class="v" id="lc-best">—</div><div class="k" id="lc-best-k">Best day</div></div>
+    </div>
+    <div class="chart-note" id="lc-note">Loading from eBay…</div>
+    <div id="lchart-wrap"><svg id="lchart" role="img" aria-labelledby="lc-title"></svg><div class="tooltip" id="lc-tip"></div></div>
+  </div>
+
   <div class="section-title">Coming Next</div>
   <div class="soon-grid">
-    <div class="soon"><h3>Listings per day</h3><p>How many you listed each day, with monthly totals and value.</p></div>
+    <!-- <div class="soon"><h3>Listings per day</h3><p>How many you listed each day, with monthly totals and value.</p></div>   v374: built (chart above) -->
     <div class="soon"><h3>Aged inventory</h3><p>Listings that have sat the longest, oldest first.</p></div>
     <div class="soon"><h3>Picking page</h3><p>Sold items by bin, search by SKU, mark them picked.</p></div>
   </div>
@@ -251,8 +301,93 @@ async function loadListings(refresh) {
   clearTimeout(pollTimer);
   if (d.checking || d.activeCount === null && !d.error) pollTimer = setTimeout(() => loadListings(false), 3000);
 }
-function refreshListings() { loadListings(true); }
+// function refreshListings() { loadListings(true); }
+function refreshListings() { loadListings(true); loadDaily(true); }   // v374: + the per-day chart
 loadListings(false);
+
+// ─── v374: LISTINGS PER DAY ──────────────────────────────────────────────────
+let daily = null, lcRange = 31;
+try { const r = parseInt(localStorage.getItem('lcRange'), 10); if ([1, 7, 31, 90].includes(r)) lcRange = r; } catch (e) { /* fine */ }
+const SVGNS = 'http://www.w3.org/2000/svg';
+function sv(name, attrs, parent) { const n = document.createElementNS(SVGNS, name); for (const k in attrs) n.setAttribute(k, attrs[k]); if (parent) parent.appendChild(n); return n; }
+function barPath(x, y, w, h) { const r = Math.min(4, w / 2, h); if (h <= 0) return ''; return `M${x},${y + h}V${y + r}Q${x},${y} ${x + r},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${y + h}Z`; }
+function niceStep(v) { if (v <= 1) return 1; const e = Math.pow(10, Math.floor(Math.log10(v))); const f = v / e; return Math.max(1, (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * e); }
+const dLabel = (k, opts) => new Date(k + 'T12:00:00Z').toLocaleDateString('en-US', Object.assign({ timeZone: 'UTC' }, opts));
+const hourLabel = (h) => (h % 12 || 12) + (h < 12 ? ' AM' : ' PM');
+
+async function loadDaily(refresh) {
+  if (!daily) setText('lc-note', 'Loading from eBay…');
+  const d = await getJSON('/api/listings/daily' + (refresh ? '?refresh=1' : ''));
+  if (!d || d._signedOut) { setText('lc-note', 'Could not reach the server.'); return; }
+  if (!d.connected) { setText('lc-note', 'Connect eBay to see this.'); return; }
+  if (d.error) { setText('lc-note', d.error); return; }
+  daily = d;
+  drawDaily();
+}
+function drawDaily() {
+  document.querySelectorAll('#lc-range button').forEach(b => b.setAttribute('aria-pressed', String(parseInt(b.dataset.r, 10) === lcRange)));
+  if (!daily) return;
+  // the bars for this range: Today = by hour, otherwise by day
+  const bars = lcRange === 1
+    ? daily.hours.map((n, h) => ({ n, label: hourLabel(h), long: hourLabel(h) + ' – ' + hourLabel((h + 1) % 24) + ' today', tick: h % 3 === 0 ? hourLabel(h) : '' }))
+    : daily.days.slice(-lcRange).map((d, i, arr) => ({ n: d.n, long: dLabel(d.date, { weekday: 'short', month: 'short', day: 'numeric' }),
+        tick: lcRange === 7 ? dLabel(d.date, { weekday: 'short' }) : (i % (lcRange === 31 ? 5 : 14) === 0 || i === arr.length - 1) ? dLabel(d.date, { month: 'short', day: 'numeric' }) : '' }));
+  const total = bars.reduce((s, b) => s + b.n, 0);
+  setText('lc-total', total.toLocaleString());
+  setText('lc-total-k', lcRange === 1 ? 'Listed today' : 'Listed in ' + lcRange + ' days');
+  if (lcRange === 1) {
+    const last7 = daily.days.slice(-8, -1).reduce((s, d) => s + d.n, 0) / 7;
+    setText('lc-avg', last7.toFixed(1)); setText('lc-avg-k', 'Daily average (last 7 days)');
+    const bh = daily.hours.indexOf(Math.max(...daily.hours));
+    setText('lc-best', Math.max(...daily.hours) ? hourLabel(bh) : '—'); setText('lc-best-k', 'Busiest hour today');
+  } else {
+    setText('lc-avg', (total / lcRange).toFixed(1)); setText('lc-avg-k', 'Per day');
+    const days = daily.days.slice(-lcRange); const best = days.reduce((a, b) => b.n > a.n ? b : a, days[0]);
+    setText('lc-best', best && best.n ? best.n.toLocaleString() : '—'); setText('lc-best-k', best && best.n ? 'Best day · ' + dLabel(best.date, { month: 'short', day: 'numeric' }) : 'Best day');
+  }
+  setText('lc-note', 'Every listing that went up, including ones that since sold or ended · your time zone · checked ' + timeAgo(daily.checkedAt));
+
+  const svg = document.getElementById('lchart'), wrap = document.getElementById('lchart-wrap');
+  const W = wrap.clientWidth, H = wrap.clientHeight; if (!W || !H) return;
+  while (svg.firstChild) svg.removeChild(svg.firstChild);
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  const m = { top: 14, right: 8, bottom: 24, left: 36 };
+  const pw = W - m.left - m.right, ph = H - m.top - m.bottom, n = bars.length;
+  const peak = Math.max(1, ...bars.map(b => b.n)) * 1.08, step = niceStep(peak / 4), steps = Math.max(1, Math.ceil(peak / step)), max = step * steps;
+  for (let i = 0; i <= steps; i++) {
+    const v = step * i, y = Math.round(m.top + ph - (v / max) * ph) + 0.5;
+    sv('line', { class: i ? 'gridline' : 'baseline', x1: m.left, x2: W - m.right, y1: y, y2: y }, svg);
+    sv('text', { class: 'tick', x: m.left - 8, y: y + 4, 'text-anchor': 'end' }, svg).textContent = v;
+  }
+  const slot = pw / n, gap = slot >= 6 ? 2 : 1, bw = Math.max(1, Math.min(n <= 7 ? 48 : 24, slot - gap));
+  const els = bars.map((b, i) => { const h = (b.n / max) * ph, x = m.left + i * slot + (slot - bw) / 2; return sv('path', { class: 'bar', d: barPath(x, m.top + ph - h, bw, h) }, svg); });
+  if (lcRange > 1) { const avg = total / lcRange, y = Math.round(m.top + ph - (avg / max) * ph) + 0.5; sv('line', { class: 'avgline', x1: m.left, x2: W - m.right, y1: y, y2: y }, svg); }
+  bars.forEach((b, i) => { if (b.tick) sv('text', { class: 'tick', x: m.left + i * slot + slot / 2, y: H - 6, 'text-anchor': 'middle' }, svg).textContent = b.tick; });
+  // hover
+  const tip = document.getElementById('lc-tip'); let act = -1;
+  function show(i) {
+    if (i === act) return;
+    if (act >= 0) els[act].classList.remove('active');
+    act = i;
+    if (i < 0) { svg.classList.remove('hovering'); tip.classList.remove('show'); return; }
+    svg.classList.add('hovering'); els[i].classList.add('active');
+    tip.textContent = '';
+    const v = document.createElement('span'); v.className = 'tt-value'; v.textContent = bars[i].n + ' listed';
+    tip.append(v, document.createTextNode(bars[i].long));
+    let x = m.left + i * slot + slot / 2; const y = Math.max(m.top + ph - (bars[i].n / max) * ph - 10, 60);
+    tip.style.top = y + 'px'; tip.style.left = x + 'px'; tip.classList.add('show');
+    const tw = tip.offsetWidth; x = Math.max(tw / 2 + 2, Math.min(W - tw / 2 - 2, x)); tip.style.left = x + 'px';
+  }
+  const at = (cx) => { const r = svg.getBoundingClientRect(), px = cx - r.left - m.left; return px < 0 || px > pw ? -1 : Math.min(n - 1, Math.max(0, Math.floor(px / slot))); };
+  svg.onpointermove = (e) => show(at(e.clientX)); svg.onpointerdown = (e) => show(at(e.clientX)); svg.onpointerleave = () => show(-1);
+}
+document.querySelectorAll('#lc-range button').forEach(b => b.addEventListener('click', () => {
+  lcRange = parseInt(b.dataset.r, 10);
+  try { localStorage.setItem('lcRange', String(lcRange)); } catch (e) { /* fine */ }
+  drawDaily();
+}));
+new ResizeObserver(() => drawDaily()).observe(document.getElementById('lchart-wrap'));
+loadDaily(false);
 </script>
 </body>
 </html>
