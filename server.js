@@ -1,4 +1,4 @@
-// PartsLister Pro server — v361
+// PartsLister Pro server — v362
 // v302: dashboard.html is the homepage (/). The listing tool moved to /list.
 // v305: eBay sales connection — real sold orders on the dashboard.
 // v306: asks eBay for two more permissions — fees/payouts and seller metrics.
@@ -154,6 +154,10 @@
 // v361: "I'll get back to you by…" uses the NEXT of your available days, worked out from today's
 //       date in your time zone (Friday night → Monday, not Wednesday). Diesel / gas / engine-size
 //       questions: fit goes by part number, so the draft asks them to match it.
+// v362: fit / diesel-or-gas / engine / "will it work" questions ALWAYS end with the part-number check —
+//       if the AI leaves it out, the app adds it ("To know if it fits your vehicle, please compare
+//       the part number … with the one on your original part to see if it's a match."). Settings →
+//       Messages → Your time zone (default Central) for "get back to you by…".
 // Accounts with email + password login. Each account's settings (including its
 // own API keys) and history are saved ENCRYPTED in Postgres, so you can log in
 // from any computer and everything is there. Also keeps a lifetime listing count.
@@ -2404,6 +2408,7 @@ function msgSettingsOf(settings) {
     pickup: PICKUP[m.pickup] ? m.pickup : 'ship_only',
     afterWindow: AFTER_WINDOW[m.afterWindow] ? m.afterWindow : 'check_back',   // v349
     usVehicles: m.usVehicles !== false,   // v349: on unless turned off
+    timezone: TIMEZONES[m.timezone] ? m.timezone : 'America/Chicago',   // v362
     honorLate: { enabled: !!(m.honorLate && m.honorLate.enabled), days: [30, 60, 90].includes(m.honorLate && m.honorLate.days) ? m.honorLate.days : 60, address: String((m.honorLate && m.honorLate.address) || '').trim().slice(0, 300) },   // v350
   };
 }
@@ -2421,8 +2426,9 @@ function offerPriceFor(price, pct) {
 // v361: the next day you're available, from your "When you're available" text ("Monday, Wednesday
 //       and Friday afternoons", "Mon/Wed/Fri 12-4"). Today counts only if it's before the end time
 //       (an "X-4" range ends at 4 pm; "afternoon(s)" ends at 5 pm; otherwise noon).
-const SELLER_TZ = 'America/Chicago';
-function nextAvailableDay(text, now = new Date()) {
+const SELLER_TZ = 'America/Chicago';   // default — v362: Settings → Messages → Your time zone
+const TIMEZONES = {'America/New_York': 'Eastern', 'America/Chicago': 'Central', 'America/Denver': 'Mountain', 'America/Phoenix': 'Arizona (no daylight saving)', 'America/Los_Angeles': 'Pacific', 'America/Anchorage': 'Alaska', 'Pacific/Honolulu': 'Hawaii' };   // v362
+function nextAvailableDay(text, now = new Date(), tz = SELLER_TZ) {
   const t = String(text || '').toLowerCase();
   const names = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
   const short = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
@@ -2431,7 +2437,7 @@ function nextAvailableDay(text, now = new Date()) {
   if (/\bweekends?\b/.test(t)) days = days.concat([0, 6]);
   if (/\b(every ?day|daily)\b/.test(t)) days = [0, 1, 2, 3, 4, 5, 6];
   if (!days.length) return null;
-  const local = new Date(now.toLocaleString('en-US', { timeZone: SELLER_TZ }));   // wall-clock time in your time zone
+  const local = new Date(now.toLocaleString('en-US', { timeZone: TIMEZONES[tz] ? tz : SELLER_TZ }));   // v362: your time zone   // wall-clock time in your time zone
   const range = /(\d{1,2})(?::\d\d)?\s*(am|pm)?\s*(?:-|–|to)\s*(\d{1,2})(?::\d\d)?\s*(am|pm)?/.exec(t);
   let endHour = /afternoon/.test(t) ? 17 : /morning/.test(t) ? 12 : /evening/.test(t) ? 21 : 12;
   if (range) { let e = parseInt(range[3], 10); if (range[4] === 'pm' || (!range[4] && e < 9)) e += e < 12 ? 12 : 0; endHour = e; }
@@ -2475,7 +2481,8 @@ app.get('/api/msg-settings', requireUser, async (req, res) => {
       partialOptions: Object.keys(PARTIAL).map(k => ({ value: k, label: PARTIAL[k].label })),
       radioCodeOptions: Object.keys(RADIO_CODE).map(k => ({ value: k, label: RADIO_CODE[k].label })),
       pickupOptions: Object.keys(PICKUP).map(k => ({ value: k, label: PICKUP[k].label })),
-      afterWindowOptions: Object.keys(AFTER_WINDOW).map(k => ({ value: k, label: AFTER_WINDOW[k].label })) });   // v349
+      afterWindowOptions: Object.keys(AFTER_WINDOW).map(k => ({ value: k, label: AFTER_WINDOW[k].label })),   // v349
+      timezoneOptions: Object.keys(TIMEZONES).map(k => ({ value: k, label: TIMEZONES[k] })) });   // v362
   } catch (e) { res.status(500).json({ error: 'Could not load Messages settings' }); }
 });
 app.post('/api/msg-settings', requireUser, express.json(), async (req, res) => {
@@ -2522,6 +2529,7 @@ app.post('/api/msg-settings', requireUser, express.json(), async (req, res) => {
       pickup: PICKUP[b.pickup] ? b.pickup : 'ship_only',
       afterWindow: AFTER_WINDOW[b.afterWindow] ? b.afterWindow : 'check_back',   // v349
       usVehicles: b.usVehicles !== false,
+      timezone: TIMEZONES[b.timezone] ? b.timezone : 'America/Chicago',   // v362
       honorLate: { enabled: !!(b.honorLate && b.honorLate.enabled), days: [30, 60, 90].includes(parseInt(b.honorLate && b.honorLate.days, 10)) ? parseInt(b.honorLate.days, 10) : 60, address: String((b.honorLate && b.honorLate.address) || '').trim().slice(0, 300) },   // v350
     };
     await writeUserData(req.user.id, d);
@@ -2916,11 +2924,13 @@ const draftHandler = async (req, res) => {   // v347: named, so the sandbox down
     // the listing
     // let listing = 'No listing is attached to this conversation.';
     let listing = 'No listing is attached to this conversation.\nPART NUMBER: unknown (no listing).';   // v332
+    let mainPN = null, listingLoaded = false;   // v362: for the part-number check the app adds if the AI leaves it out
     if (itemId) {
       const it = await getItemData(req.user.id, itemId);
       const fit = await getFitment(req.user.id, itemId);
       if (it.data) {
         const d = it.data;
+        listingLoaded = true; mainPN = (partNumbersOf(d.specifics)[0] || {}).value || null;   // v362
         listing = [
           'Title: ' + (d.title || ''),
           'Item number: ' + d.itemId,
@@ -3092,7 +3102,7 @@ const draftHandler = async (req, res) => {   // v347: named, so the sandbox down
       // ms.availability ? 'When the reply says … use the seller\'s availability for when: "' + ms.availability + '". Never promise a sooner time.' : '…',   (v336)
       (() => {   // v361: name the NEXT available day, worked out here
         if (!ms.availability) return 'When the reply says the seller will check something or get back to them, don\'t name a day or time.';
-        const nd = nextAvailableDay(ms.availability);
+        const nd = nextAvailableDay(ms.availability, new Date(), ms.timezone);   // v362
         return nd ? 'When the reply says the seller will check something, take photos or get back to them, say by ' + nd.label + ' — that is the seller\'s next available day (availability: "' + ms.availability + '"). Use only that day; never a different or sooner one.'
           : 'When the reply says the seller will check something, take photos or get back to them, use the seller\'s availability for when: "' + ms.availability + '". Never promise a sooner time.';
       })(),
@@ -3122,7 +3132,8 @@ const draftHandler = async (req, res) => {   // v347: named, so the sandbox down
       (() => { const lb = msgs.filter(m => !m.mine).slice(-1)[0]; const age = lb ? (Date.now() - Date.parse(lb.date)) / 86400000 : 0; return age > 2 ? 'The buyer\'s latest message is ' + Math.floor(age) + ' days old: start with a short "Sorry for the slow reply" (once), then answer. Don\'t promise anything by a day that has already passed.' : ''; })(),
       'FITMENT (always, whatever the instructions above say): never tell the buyer it fits, works, or "yes" because the year, make and model match — the same vehicle can use different part numbers by engine, trim, options or build date. Say the vehicle is (or isn\'t) in the listing\'s compatibility list, and that they need to match the part number on their original part (write the number out, per the PART NUMBER rule). For computer modules and electronics (ECM, PCM, ECU, TCM, BCM, TIPM, ABS module, airbag module, instrument cluster, radio, climate control, fuse box/junction box, key modules): ALWAYS ask them to match the part number, and ALWAYS add: ' + PROGRAMMING_ANSWERS[ms.programming].ai.replace(/^say that /, 'mention that ') + '.',
       'Programming: only say what the programming rule says. Never say a part "will need" or "typically needs" programming.',
-      'Part numbers: do NOT add part numbers or "compare part numbers" to answers about the donor vehicle, mileage, condition, warranty, shipping or price — only when they ask whether it fits or for the part number.',
+      // 'Part numbers: do NOT add part numbers … to answers about the donor vehicle, mileage, condition, warranty, shipping or price — only when they ask whether it fits or for the part number.',   (v349)
+      'Part numbers: do NOT add part numbers to answers about mileage, condition, warranty, shipping or price. DO include the part-number check whenever they ask if it fits / will work, or ask about the engine, diesel or gas, trim, or which vehicle it came from.',   // v362
       'Questions about a detail of the part that the LISTING doesn\'t answer (features like cornering lights or navigation, clips, connectors, color, corrosion, what\'s included): ' + PHOTO_REQUESTS[ms.photoRequests].ai + '. Never guess.',
       ms.usVehicles ? 'Right-hand drive / European / Japanese-market questions: the seller\'s parts come from US vehicles (left-hand drive, US market).' : '',
       '"Is it still available?": answer from LISTING STATUS (active with some available = yes).',
@@ -3204,6 +3215,18 @@ const draftHandler = async (req, res) => {   // v347: named, so the sandbox down
     if (discount) {
       const used = offerUsed === null ? discount.wordMatch : offerUsed;   // no OFFER line → fall back to the word list
       if (!used) discount = null; else delete discount.wordMatch;
+    }
+    // v362: fit-type questions always get the part-number check — added here if the AI left it out
+    {
+      const lastQ = (msgs.filter(m => !m.mine).slice(-1)[0] || {}).text || '';
+      const fitQ = /\b(fit|fits|fitment|work (on|with|for)|compatible|compatibility|diesel|gas(oline)?|engine|motor size|\d\.\d ?l|liter|v6|v8|trim|same as|interchange|donor|came (out of|from)|removed from|pulled from|vin)\b/i.test(lastQ);
+      const soldToOther = orderInfo.listingEnded && !orderInfo.boughtAt;
+      if (text && fitQ && !soldToOther && listingLoaded) {
+        const hasCheck = mainPN ? text.replace(/[^A-Z0-9]/gi, '').toUpperCase().includes(mainPN.replace(/[^A-Z0-9]/gi, '').toUpperCase()) : /listing photos/i.test(text);
+        if (!hasCheck) text += '\n\n' + (mainPN
+          ? 'To know if it fits your vehicle, please compare the part number ' + mainPN + ' with the one on your original part to see if it\'s a match.'
+          : 'To know if it fits your vehicle, please compare your original part with the listing photos to see if it\'s a match.');
+      }
     }
     if (text && ms.signoff && !text.endsWith(ms.signoff)) text += '\n\n' + ms.signoff;   // v335: your sign-off, word for word
     if (!text) return res.status(502).json({ error: 'Claude returned an empty draft — try again.' });
@@ -4267,5 +4290,5 @@ app.get('*', (req, res) => {
 });
 
 setupDatabase()
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v361 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v362 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });

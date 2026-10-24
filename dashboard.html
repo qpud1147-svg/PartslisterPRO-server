@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Sales v350</title>
+<title>PartsLister Pro Sales v362</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@400;500;600&display=swap');
 
@@ -529,7 +529,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v350</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v362</span></div>
   </a>
   <!-- v316: switch pages -->
   <nav class="page-tabs" aria-label="Pages">
@@ -863,6 +863,9 @@
         <select id="ms-photos" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:4px;font-family:'Barlow',sans-serif;font-size:14px;"></select></div>
         <div class="set-row"><label for="ms-avail">When you're available</label>
         <input type="text" id="ms-avail" maxlength="200" placeholder="e.g. Monday, Wednesday and Friday afternoons" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:4px;font-family:'Barlow',sans-serif;font-size:14px;"></div>
+        <!-- v362 -->
+        <div class="set-row"><label for="ms-tz">Your time zone</label>
+        <select id="ms-tz" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:4px;font-family:'Barlow',sans-serif;font-size:14px;"></select></div>
         <p class="set-help">When a draft says you'll check something or get back to the buyer, it uses this for when (for example "I'll take a look Monday afternoon"). Leave it empty and drafts won't name a day. Sending a reply like that adds the conversation to <strong>Waiting on me</strong> in Messages until you mark it complete.</p>
       </div>
       <!-- v335: STYLE -->
@@ -1027,6 +1030,7 @@
 // v347: "Write sandbox AI replies" replaces "AI drafts only" — AI replies written into the file only, never sent.
 // v349: Common questions + "After the return window ends" and "My parts come from US (left-hand-drive) vehicles".
 // v350: "Honor returns up to 30 / 60 / 90 days after delivery" (counted from delivery) + return address.
+// v362: Your time zone (for "I'll get back to you by …").
 // Shares the same sign-in and account as the listing tool (/list).
 // v304: sales dashboard — big daily bar graph with a remembered date range.
 // The sales numbers are SAMPLE data for now; real eBay sales replace
@@ -1841,6 +1845,10 @@ async function loadMsgSettings() {
     (d.photoOptions || []).forEach(o => psel.append(new Option(o.label, o.value)));
     psel.value = d.photoRequests || 'check_back';
     document.getElementById('ms-avail').value = d.availability || '';
+    // v362
+    const tzs = document.getElementById('ms-tz'); tzs.textContent = '';
+    (d.timezoneOptions || [{ value: 'America/Chicago', label: 'Central' }]).forEach(o => tzs.append(new Option(o.label, o.value)));
+    tzs.value = d.timezone || 'America/Chicago';
     // v339
     [['ms-afterwindow', 'afterWindowOptions', 'afterWindow'], ['ms-remorse', 'remorseOptions', 'remorse'], ['ms-addrchange', 'addressChangeOptions', 'addressChange'], ['ms-faster', 'fasterOptions', 'faster'], ['ms-partial', 'partialOptions', 'partial'], ['ms-radiocode', 'radioCodeOptions', 'radioCode'], ['ms-pickup', 'pickupOptions', 'pickup'], ['ms-testsparts', 'testsPartsOptions', 'testsParts'], ['ms-tested', 'testedOptions', 'tested'], ['ms-programming', 'programmingOptions', 'programming'], ['ms-donor', 'donorOptions', 'donor'], ['ms-shipwhen', 'shipWhenOptions', 'shipWhen'], ['ms-intl', 'intlOptions', 'intlNo']].forEach(([elId, optKey, valKey]) => {
       const x = document.getElementById(elId); x.textContent = '';
@@ -1873,7 +1881,7 @@ async function saveMsgSettings() {
       // v335
       deliveredMissing: document.getElementById('ms-delivered').value, modules: { askProgrammed: document.getElementById('ms-modules').checked },
       tone: document.getElementById('ms-tone').value, signoff: document.getElementById('ms-signoff').value,
-      photoRequests: document.getElementById('ms-photos').value, availability: document.getElementById('ms-avail').value,   // v336
+      photoRequests: document.getElementById('ms-photos').value, availability: document.getElementById('ms-avail').value, timezone: document.getElementById('ms-tz').value,   // v336, v362
       // v339
       tested: document.getElementById('ms-tested').value, testsParts: document.getElementById('ms-testsparts').value, programming: document.getElementById('ms-programming').value, offersProgramming: document.getElementById('ms-offers-prog').checked,
       donor: document.getElementById('ms-donor').value, shipWhen: document.getElementById('ms-shipwhen').value, shipDays: document.getElementById('ms-shipdays').value,
