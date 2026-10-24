@@ -1,4 +1,4 @@
-// PartsLister Pro server — v351
+// PartsLister Pro server — v354
 // v302: dashboard.html is the homepage (/). The listing tool moved to /list.
 // v305: eBay sales connection — real sold orders on the dashboard.
 // v306: asks eBay for two more permissions — fees/payouts and seller metrics.
@@ -124,6 +124,18 @@
 // v351: the AI's own thinking leaked into a draft ("Wait, let me reconsider. The buyer is asking…").
 //       The message to the buyer must now be inside <reply> tags and only that is used; a draft
 //       that still reads like notes about the buyer is rewritten once automatically.
+// v352: who pays return shipping depends on WHY it's coming back (eBay's rule): changed mind /
+//       ordered wrong / doesn't need it → the listing's policy (you said: buyer pays); damaged,
+//       defective, not working, wrong item sent, listed wrong / not as described → the seller pays
+//       (eBay gives the buyer a prepaid label). Reason unclear → the draft doesn't mention it.
+// v353: AI drafts can SEE the photos buyers send (up to 4, from their recent messages): it reads a
+//       part number off a label and compares it with the listing ("I see 56029423AG on your label —
+//       that matches"). Blurry / dark / cut off → it asks for a closer, well-lit photo instead of
+//       guessing. Photos are fetched from eBay into memory for that one AI call and thrown away —
+//       never saved to the database, a file, or your computer.
+// v354: drafts know the listing's shipping (live from eBay): flat rate → they give the amount,
+//       free → they say free, calculated → shipping depends on the buyer's location and they can
+//       see it by entering their ZIP on the listing. No more "check the listing yourself" for flat rate.
 // Accounts with email + password login. Each account's settings (including its
 // own API keys) and history are saved ENCRYPTED in Postgres, so you can log in
 // from any computer and everything is there. Also keeps a lifetime listing count.
@@ -2295,7 +2307,7 @@ const INTL_NO = {
 };
 // v345: more answers, from 300 real conversations (your own past replies are the defaults)
 const REMORSE = {
-  open_return: { label: 'They can open a return on eBay (return shipping per the listing’s policy)', ai: 'say they can return it: open a return request on eBay within the return window (give the time left), return shipping as the listing’s return policy says' },
+  open_return: { label: 'They can open a return on eBay (return shipping per the listing’s policy)', ai: 'say they can return it: open a return request on eBay within the return window (give the time left); return shipping as the listing’s return policy says for changed-mind returns (follow the RETURN SHIPPING rule)' },
   ask_first: { label: 'Say you’ll check and get back to them', ai: 'say you’ll look into it and get back to them' }
 };
 const ADDRESS_CHANGE = {
@@ -2662,6 +2674,16 @@ async function returnFacts(userId, itemId, buyer, info) {   // v343: + info (fil
       const sold = parseInt(xmlTag(xmlTag(it, 'SellingStatus') || '', 'QuantitySold') || '0', 10) || 0;
       const left = qty >= 0 ? Math.max(0, qty - sold) : null;
       if (info) info.listingEnded = (st && st !== 'Active') || left === 0;   // v349
+      // v354: the listing's US shipping, live
+      const sd = xmlTag(it, 'ShippingDetails') || '';
+      const opt = xmlAll(sd, 'ShippingServiceOptions')[0] || '';
+      const stype = xmlTag(sd, 'ShippingType') || '';
+      const free = opt && xmlTag(opt, 'FreeShipping') === 'true';
+      const cost = parseFloat(xmlTag(opt, 'ShippingServiceCost') || '');
+      const svc = xmlDecode(xmlTag(opt, 'ShippingService') || '').replace(/([a-z])([A-Z])/g, '$1 $2');
+      if (free) lines.push('SHIPPING COST (live, US): FREE shipping' + (svc ? ' (' + svc + ')' : '') + '.');
+      else if (/Calculated/i.test(stype)) lines.push('SHIPPING COST (live, US): CALCULATED — it depends on the buyer\'s location; they see the exact cost by entering their ZIP code on the listing.');
+      else if (!isNaN(cost)) lines.push('SHIPPING COST (live, US): FLAT RATE $' + cost.toFixed(2) + (svc ? ' (' + svc + ')' : '') + ' to anywhere in the US.');
       if (st && st !== 'Active') lines.push('LISTING STATUS (live): ENDED' + (sold > 0 ? ' \u2014 sold' : '') + '. It is no longer available to buy.');
       else if (left === 0) lines.push('LISTING STATUS (live): SOLD OUT \u2014 none left to buy.');
       else if (st) lines.push('LISTING STATUS (live): active' + (left !== null ? ', ' + left + ' available' : '') + '.');
@@ -2673,7 +2695,8 @@ async function returnFacts(userId, itemId, buyer, info) {   // v343: + info (fil
       const within = xmlTag(rp, 'ReturnsWithinOption') || '';
       const days = parseInt((/(\d+)/.exec(within) || [])[1], 10);
       const payer = xmlTag(rp, 'ShippingCostPaidByOption') || '';
-      lines.push('Return policy: returns accepted' + (days ? ' within ' + days + ' days' : '') + (payer ? '; return shipping paid by the ' + payer.toLowerCase() : '') + '.');
+      // lines.push('Return policy: returns accepted' + (days ? ' within ' + days + ' days' : '') + (payer ? '; return shipping paid by the ' + payer.toLowerCase() : '') + '.');
+      lines.push('Return policy: returns accepted' + (days ? ' within ' + days + ' days' : '') + (payer ? '; for changed-mind returns, return shipping is paid by the ' + payer.toLowerCase() + ' (for damaged / defective / not-as-described items the seller always pays — eBay rule)' : '') + '.');   // v352
       if (days && ship && ship.deliveredTime) {
         // eBay counts the return window from delivery
         const left = days - daysSince(ship.deliveredTime);
@@ -2821,7 +2844,7 @@ const draftHandler = async (req, res) => {   // v347: named, so the sandbox down
       const q = new URLSearchParams({ conversation_type: 'FROM_MEMBERS', limit: '50', offset: String(offset) });
       const { data } = await restCall(req.user.id, 'GET', '/commerce/message/v1/conversation/' + encodeURIComponent(id) + '?' + q);
       // ((data && data.messages) || []).forEach(m => msgs.push({ from: m.senderUsername || '', date: m.createdDate || '', text: m.messageBody || '', mine: !!(me && m.senderUsername === me) }));
-      ((data && data.messages) || []).forEach(m => msgs.push({ from: m.senderUsername || '', date: m.createdDate || '', text: m.messageBody || '', mine: !!(me && m.senderUsername === me), media: (m.messageMedia || []).length }));   // v349: + media count
+      ((data && data.messages) || []).forEach(m => msgs.push({ from: m.senderUsername || '', date: m.createdDate || '', text: m.messageBody || '', mine: !!(me && m.senderUsername === me), media: (m.messageMedia || []).length, images: (m.messageMedia || []).filter(x => x && /IMAGE/i.test(x.mediaType || 'IMAGE') && /^https:\/\//.test(x.mediaUrl || '')).map(x => x.mediaUrl) }));   // v349: + media count, v353: + image links
       if (!data || !data.next || ((data && data.messages) || []).length < 50) break;
     }
     msgs.sort((x, y) => String(x.date).localeCompare(String(y.date)));
@@ -2829,7 +2852,7 @@ const draftHandler = async (req, res) => {   // v347: named, so the sandbox down
     if (req._sandbox && req._sandbox.before) { const keep = msgs.filter(m => String(m.date) < req._sandbox.before); msgs.length = 0; keep.forEach(m => msgs.push(m)); }
     if (req._sandbox) req._sandbox.msgs = msgs;
     // const convo = msgs.slice(-30).map(m => (m.mine ? 'SELLER (me)' : 'BUYER (' + m.from + ')') + ' [' + String(m.date).slice(0, 10) + ']: ' + m.text).join('\n');
-    const convo = msgs.slice(-30).map(m => (m.mine ? 'SELLER (me)' : 'BUYER (' + m.from + ')') + ' [' + String(m.date).slice(0, 10) + ']: ' + m.text + (m.media ? ' [' + m.media + ' photo(s) attached — you can NOT see them]' : '')).join('\n');   // v349
+    const convo = msgs.slice(-30).map(m => (m.mine ? 'SELLER (me)' : 'BUYER (' + m.from + ')') + ' [' + String(m.date).slice(0, 10) + ']: ' + m.text + (m.media ? ' [' + m.media + ' photo(s) attached]' : '')).join('\n');   // v349, v353: whether you can see them is said below
     if (!convo) return res.status(400).json({ error: 'There\u2019s no message to answer yet.' });
     // v341: nothing to answer → say so instead of drafting (a note in the box still writes a follow-up)
     const lastMsg = msgs[msgs.length - 1];
@@ -2932,10 +2955,31 @@ const draftHandler = async (req, res) => {   // v347: named, so the sandbox down
     // v330: your own instructions (⚙ Settings → Messages) or the default, plus fixed safety rules
     // that always apply — so a custom prompt can't make it invent policies, dates or fitment.
     const ms = ms0;   // v331: read once, above
+    // v353: the buyer's recent photos — fetched into memory for this one AI call, never saved
+    const buyerPhotos = [];   // { n, media_type, data }
+    {
+      const recentBuyer = msgs.filter(m => !m.mine).slice(-3);
+      const urls = [];
+      recentBuyer.forEach(m => (m.images || []).forEach(u => { if (urls.length < 4) urls.push(u); }));
+      for (const u of urls) {
+        try {
+          const host = new URL(u).hostname;
+          if (!/(^|\.)(ebayimg\.com|ebay\.com|ebaystatic\.com|ebaydesc\.com)$/i.test(host)) { console.warn('[draft photos] skipped a photo from ' + host + ' (not an eBay picture server)'); continue; }   // only eBay's own picture servers
+          const pr = await fetch(u, { signal: AbortSignal.timeout(15000) });
+          const type = (pr.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+          if (!pr.ok || !/^image\/(jpeg|png|gif|webp)$/.test(type)) continue;
+          const buf = Buffer.from(await pr.arrayBuffer());
+          if (buf.length > 4.5 * 1024 * 1024) continue;   // the AI's size limit
+          buyerPhotos.push({ n: buyerPhotos.length + 1, media_type: type, data: buf.toString('base64') });
+        } catch (e) { /* skip that photo */ }
+      }
+    }
     const system = [
       ms.instructions || DEFAULT_MSG_INSTRUCTIONS,
       'RULES THAT ALWAYS APPLY:',
       'Use ONLY facts from the LISTING, ORDER & RETURNS, SHIPPING CHECK and CONVERSATION sections. Never invent part numbers, fitment, measurements, condition details, dates, deadlines, shipping times, or policies.',
+      // v354
+      'Shipping cost questions (US): use the SHIPPING COST line. FLAT RATE → give the exact amount ("Shipping is a flat $19.86 anywhere in the US"). FREE → say shipping is free. CALCULATED → say it depends on their location and they can see the exact cost by entering their ZIP on the listing. Never tell a flat-rate or free-shipping buyer to check the cost themselves.',
       'Shipping-to-a-country questions: use only the SHIPPING CHECK section. YES: say it can ship there (you may mention the cost shown). NO: say that unfortunately eBay doesn\'t allow this item to ship to their country. PROBABLY or UNKNOWN, or no check given: say they can see the shipping options for their country by entering their address on the listing page.',
       // 'Returns, refunds, problems …: respond as the seller\'s problem policy says: ' + PROBLEM_POLICIES[ms.problemPolicy].ai …   (v330 — one choice for every problem)
       // v331: work out which kind of problem it is, then follow the seller's choice for that kind
@@ -2953,6 +2997,8 @@ const draftHandler = async (req, res) => {   // v347: named, so the sandbox down
       ms.modules.askProgrammed ? 'Computer modules (TCM, PCM, ECM, BCM, ABS module and other control modules): if the buyer says the module doesn\'t work, first ask whether it was programmed to their vehicle — used modules often need programming — and say that if it was programmed and still doesn\'t work, they can return it (with the return-window time left). This comes before the seller\'s defective choice.' : '',
       TONES[ms.tone].ai,
       // v334
+      // v352
+      'RETURN SHIPPING — who pays depends on the reason: (1) changed their mind, ordered the wrong part for their vehicle, no longer needs it → the listing\'s return policy (if it says buyer, write "you\'d cover the return shipping"). (2) arrived damaged, defective / doesn\'t work, wrong item sent, or it doesn\'t match the listing (wrong part number, the fitment list includes their vehicle but it doesn\'t fit, listed wrong) → the seller pays: say "I\'ll cover the return shipping — eBay will give you a prepaid return label when you open the return." (3) reason not clear → don\'t mention who pays. Always say it to the buyer ("you"), never "paid by the buyer".',
       'Whenever the reply offers a return or asks the buyer to open a return request, also tell them how long they have, using the Return window line in ORDER & RETURNS (days left and the last day, exactly as given). If the window hasn\'t started, say they\'ll have the stated number of days from delivery. If there\'s no Return window line, don\'t mention a time limit.',
       'Tracking and delivery: use only the SHIPMENT facts. You may give the carrier, tracking number, shipped date, expected date and delivered date shown there. Never describe where the package is or make up a delivery date.',
       // v336
@@ -2982,7 +3028,8 @@ const draftHandler = async (req, res) => {   // v347: named, so the sandbox down
       'Buyer asks for the radio / anti-theft / security code: ' + RADIO_CODE[ms.radioCode].ai + '.',
       'Buyer asks about local pickup or picking it up in person: ' + PICKUP[ms.pickup].ai + '.',
       // v349
-      'Buyers\' photos and attachments: you can NOT see them. If they ask you to look at a photo (does this match, is this compatible), never say it matches or doesn\'t — ' + PHOTO_REQUESTS.check_back.ai + ' (they sent a photo).',
+      buyerPhotos.length ? 'BUYER PHOTOS: the photos the buyer sent are attached after the facts (newest last). If one clearly shows a part number or label, say what you read ("I see 56029423AG on your label") and compare it with the PART NUMBER line — say whether it matches the listing (never promise fit). Read every character carefully; if the photo is blurry, dark, glare-covered, cut off, or you are not sure of ANY character, do not guess — kindly ask for a closer, well-lit photo of the label/part number. Don\'t describe other things in the photo unless asked. Photos the buyer sent that are not attached: you can\'t see those.' : '',
+      'Buyers\' photos and attachments that are NOT attached here: you can NOT see them. If they ask you to look at a photo (does this match, is this compatible), never say it matches or doesn\'t — ' + PHOTO_REQUESTS.check_back.ai + ' (they sent a photo).',
       'Never describe the part as "working", "in working condition" or "good working condition", even if the listing says so. Say it is used, and give the condition notes only if they ask about condition.',
       'If the buyer gives THEIR VIN to check fitment' + (ms.fitment.askVin ? ': say you\'ll check it and get back to them.' : ': say you aren\'t able to check fitment by VIN, then use the fitment list and the PART NUMBER rule. Don\'t confuse their VIN with the donor vehicle\'s VIN.'),
       'Programming: only say what the programming rule says. Never say a part "will need" or "typically needs" programming.',
@@ -3036,12 +3083,17 @@ const draftHandler = async (req, res) => {   // v347: named, so the sandbox down
     const looksLikeNotes = (t) => /\b(let me (reconsider|think)|wait,|the buyer (is|wants|asked|says|has)|I need to (answer|reply|respond)|the seller (should|would|is)|draft (a )?reply)\b/i.test(t.split(/\n\s*(ENGLISH|OFFER|FOLLOWUP):/i)[0]);
     let text;
     try {
-      const raw1 = await askAI([{ role: 'user', content: user }]);
+      // v353: + the buyer's photos (memory only)
+      const firstContent = buyerPhotos.length
+        ? [{ type: 'text', text: user }].concat(buyerPhotos.flatMap(ph => [{ type: 'text', text: 'BUYER PHOTO ' + ph.n + ':' }, { type: 'image', source: { type: 'base64', media_type: ph.media_type, data: ph.data } }]))
+        : user;
+      // const raw1 = await askAI([{ role: 'user', content: user }]);
+      const raw1 = await askAI([{ role: 'user', content: firstContent }]);
       if (/NO_REPLY_NEEDED/.test(raw1) && !/<reply>[\s\S]*?\w[\s\S]*?<\/reply>/i.test(raw1)) text = 'NO_REPLY_NEEDED';
       else {
         let pick = pickReply(raw1);
         if (!pick.text || looksLikeNotes(pick.text)) {
-          const raw2 = await askAI([{ role: 'user', content: user }, { role: 'assistant', content: raw1 },
+          const raw2 = await askAI([{ role: 'user', content: firstContent }, { role: 'assistant', content: raw1 },
             { role: 'user', content: 'That included notes or thinking. Write ONLY the message the seller sends to the buyer, speaking directly to them, inside <reply></reply> — then the ENGLISH / OFFER / FOLLOWUP lines after it if needed.' }]);
           pick = pickReply(raw2);
         }
@@ -4126,5 +4178,5 @@ app.get('*', (req, res) => {
 });
 
 setupDatabase()
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v351 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v354 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });
