@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Messages v366</title>
+<title>PartsLister Pro Messages v367</title>
 <!-- PartsLister Pro — Messages page (v321: new; v322: conversation threads — the whole back-and-forth
      with each buyer, chat style, from eBay's Message API. Offers from a conversation. The v321
      email-style view is still at /messages/classic). Nothing about your messages is saved on the server.
@@ -27,7 +27,9 @@
      v365: buyer photos open full size inside the page (click to zoom, Esc / × to close). Optional
      automatic AI draft for conversations that need a reply, and a Discard button next to Send.
      A draft you haven't sent stays put if you open another conversation and come back.
-     v366: Discard sits under Send, same size. Smarter "doesn't need a reply" check for Needs reply. -->
+     v366: Discard sits under Send, same size. Smarter "doesn't need a reply" check for Needs reply.
+     v367: at the bottom of Needs reply, "Hidden — no reply needed (N)" shows the conversations the
+     check left out, so you can catch a mistake. -->
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@400;500;600&display=swap');
 
@@ -236,6 +238,9 @@
   .lightbox .lb-prev { left: 14px; } .lightbox .lb-next { right: 14px; }
   .lightbox .lb-count { position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%); color: #ddd; font-size: 13px; }
   .btn-discard { background: var(--surface2); color: var(--muted); border: 1px solid var(--border); display: none; }
+  .hidden-link { display: block; width: 100%; text-align: left; background: none; border: none; border-top: 1px solid var(--border); color: var(--muted); font: inherit; font-size: 12.5px; padding: 10px 14px; cursor: pointer; }   /* v367 */
+  .hidden-link:hover { color: var(--accent); }
+  .hidden-note { font-size: 12px; color: var(--muted); padding: 8px 14px; border-bottom: 1px solid var(--border); }
   .send-col { display: flex; flex-direction: column; gap: 6px; }   /* v366: Send on top, Discard under it, same width */
   .send-col .btn { width: 92px; text-align: center; justify-content: center; }
   .btn-discard.on { display: inline-block; }
@@ -281,7 +286,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v366</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v367</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -398,6 +403,8 @@ function isCloserSmart(text) {
 }
 const isCloser = (text) => isCloserSmart(text) || /^\s*(ok(ay)?|k+|kk|thanks?( you)?( so much| a lot)?|thank u|thx|ty|tysm|got it|gotcha|cool|great|perfect|awesome|sounds good|will do|no worries|no problem|np|understood|alright|all right|appreciate it|much appreciated)([\s,.!]+(ok(ay)?|thanks?( you)?|thx|ty|again|man|bro|buddy|sir|so much|a lot|appreciate it))*[\s.!,]*[\u{1F44D}\u{1F64F}\u{1F642}\u{1F60A}\u{263A}️]*\s*$/iu.test(String(text || '')) || /^\s*([\u{1F44D}\u{1F64F}\u{1F642}\u{1F60A}\u{263A}]\uFE0F?\s*)+$/u.test(String(text || ''));   // v366: + isCloserSmart
 const needsReply = (t) => (t.needsReply !== undefined ? t.needsReply : !t.last.mine) && !(t.last && t.last.mine);
+let showHidden = false;   // v367: Needs reply → showing the hidden ones
+const hiddenNoReply = (t) => !!(t.last && !t.last.mine) && !needsReply(t);   // the buyer wrote last but it's only a thank-you / ok
 const draftsById = {};   // v365: unsent drafts, per conversation (this page only — not saved)
 const discardedIds = new Set();   // v365: you discarded the auto draft — don't write another one this visit
 let followups = [];   // v336: Waiting on me — { id, conversationId, itemId, title, task, since }
@@ -446,7 +453,8 @@ function renderList() {
     if (show === 'unread' && !t.unread) return false;
     // if (show === 'waiting' && (t.last.mine || type === 'ebay')) return false;
     // if (show === 'needs' && (t.last.mine || type === 'ebay')) return false;   // v336: renamed
-    if (show === 'needs' && (type === 'ebay' || !needsReply(t))) return false;   // v341: not if you wrote last or they only said "ok thanks"
+    // if (show === 'needs' && (type === 'ebay' || !needsReply(t))) return false;   // v341: not if you wrote last or they only said "ok thanks"
+    if (show === 'needs' && (type === 'ebay' || (showHidden ? !hiddenNoReply(t) : !needsReply(t)))) return false;   // v367: or the hidden ones
     if (show === 'followup' && (type === 'ebay' || !openFollowup(t.id))) return false;   // v336
     if (q && !norm(t.other + ' ' + t.title + ' ' + t.last.text + ' ' + (t.itemId || '')).includes(q)) return false;
     return true;
@@ -459,7 +467,19 @@ function renderList() {
   box.textContent = '';
   // if (!list.length) { box.append(el('div', 'empty', threads.length ? 'No conversations match.' : 'No conversations.')); return; }
   // if (!list.length) { box.append(el('div', 'empty', show === 'trash' ? 'The Trash is empty.' : threads.length ? 'No conversations match.' : 'No conversations.')); return; }   // v323
-  if (!list.length) { box.append(el('div', 'empty', show === 'trash' ? 'The Trash is empty.' : show === 'followup' ? 'Nothing waiting on you.' : threads.length ? 'No conversations match.' : 'No conversations.')); return; }   // v336
+  // v367: the link to the conversations the "no reply needed" check left out of Needs reply
+  const addHiddenLink = () => {
+    if (show !== 'needs' || type === 'ebay') return;
+    const n = threads.filter(x => !/DELET/i.test(x.status || '') && hiddenNoReply(x)).length;
+    if (!n && !showHidden) return;
+    const a = el('button', 'hidden-link', showHidden ? '\u2039 Back to Needs reply' : 'Hidden \u2014 no reply needed (' + n + ') \u203a');
+    a.type = 'button'; a.title = showHidden ? '' : 'The buyer\u2019s last message was only a thank-you / ok — check none of these need an answer';
+    a.onclick = () => { showHidden = !showHidden; renderList(); };
+    box.append(a);
+  };
+  if (show === 'needs' && showHidden) box.append(el('div', 'hidden-note', 'Left out of Needs reply because the buyer\u2019s last message looked like just a thank-you / ok:'));
+  // if (!list.length) { … }   // v336
+  if (!list.length) { box.append(el('div', 'empty', show === 'trash' ? 'The Trash is empty.' : show === 'followup' ? 'Nothing waiting on you.' : (show === 'needs' && showHidden) ? 'Nothing hidden.' : threads.length ? 'No conversations match.' : 'No conversations.')); addHiddenLink(); return; }   // v336, v367
   list.forEach(t => {
     const b = el('button', 'trow' + (t.unread ? ' unread' : '') + (current === t.id ? ' on' : ''));
     b.type = 'button';
@@ -476,6 +496,7 @@ function renderList() {
     b.addEventListener('click', () => openThread(t.id));
     box.append(b);
   });
+  addHiddenLink();   // v367
 }
 
 async function loadList() {
@@ -953,7 +974,7 @@ document.querySelectorAll('#seg-type button').forEach(b => b.addEventListener('c
 // v323: switching into or out of the Trash loads a different list from eBay
 document.querySelectorAll('#seg-show button').forEach(b => b.addEventListener('click', () => {
   const wasTrash = show === 'trash';
-  show = b.dataset.show;
+  show = b.dataset.show; showHidden = false;   // v367
   if (wasTrash !== (show === 'trash')) { current = null; document.getElementById('t-view').innerHTML = '<div class="empty">Pick a conversation.</div>'; loadList(); }
   else renderList();
 }));
