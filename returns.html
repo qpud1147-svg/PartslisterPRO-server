@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Returns v372</title>
+<title>PartsLister Pro Returns v373</title>
 <!-- PartsLister Pro — Returns page (v324: new). Returns, "item not received" claims and cases from
      eBay's Post-Order API, read live (nothing saved on the server). Approve / decline / refund from here.
      v325: "Open on eBay" uses the link eBay gives for that return's current stage.
@@ -17,7 +17,11 @@
            your return address in Messages, or by hand). Address sent → Mark received → refund on
            eBay (picked up automatically). Not received in 30 days → it drops off.
      v372: Late returns is its own button (All · Returns · Late returns · Not received · Cases) with
-           its count, and lists like the others. Refunded ones are under Closed. -->
+           its count, and lists like the others. Refunded ones are under Closed.
+     v373: + Cancellations (approve / decline) and Disputes (payment disputes — needs the "Payment
+           disputes" permission). Smaller stage buttons under Returns (Needs attention, Requested,
+           Waiting for buyer to ship, Shipped, Delivered) and Disputes (Needs your response, Awaiting
+           decision). Counts on the buttons. -->
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@400;500;600&display=swap');
 
@@ -206,6 +210,11 @@
   .late-row .l-acts { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; align-items: center; }
   .late-row .late-soon, .late-soon { color: #e0a030; font-weight: 600; }
   .kind.late { color: #e0a030; border-color: rgba(224,160,48,0.5); }   /* v372 */
+  .kind.cancel { color: #6aa8ff; border-color: rgba(106,168,255,0.5); }   /* v373 */
+  .kind.dispute { color: var(--danger); border-color: rgba(224,82,82,0.5); }
+  #seg-stage { display: none; margin: -4px 0 10px; }
+  #seg-stage.on { display: inline-flex; flex-wrap: wrap; }
+  #seg-stage button { font-size: 12px; padding: 4px 10px; }
   @media (max-width: 700px) { #seg-kind { flex-wrap: wrap; max-width: 100%; } #seg-kind button { white-space: nowrap; } }   /* v372: 5 buttons fit on a phone */
   .o-right .l-acts { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; margin-top: 8px; }
   .order .o-right .l-acts .btn { cursor: pointer; }
@@ -254,7 +263,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v372</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v373</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -295,9 +304,12 @@
       <button type="button" data-kind="late" id="late-btn" style="display:none">Late returns</button>   <!-- v372 -->
       <button type="button" data-kind="inquiry">Not received</button>
       <button type="button" data-kind="case">Cases</button>
+      <button type="button" data-kind="cancel">Cancellations</button>   <!-- v373 -->
+      <button type="button" data-kind="dispute">Disputes</button>       <!-- v373 -->
     </div>
     <input type="search" class="search" id="r-search" placeholder="Search buyer, item, reason or number" autocomplete="off">
   </div>
+  <div class="seg" role="group" aria-label="Stage" id="seg-stage"></div>   <!-- v373 -->
   <div class="summary" id="r-summary">&nbsp;</div>
   <div class="orders" id="r-list"></div>
 </main>
@@ -353,7 +365,31 @@ function el(tag, cls, text) { const n = document.createElement(tag); if (cls) n.
 let toastTimer;
 function toast(msg, bad) { const t = document.getElementById('toast'); t.textContent = msg; t.className = 'show' + (bad ? ' error' : ''); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.className = '', bad ? 8000 : 4000); }
 const nice = (s) => { s = String(s || '').replace(/_/g, ' ').toLowerCase(); return s.charAt(0).toUpperCase() + s.slice(1); };
-const KIND = { return: 'Return', inquiry: 'Not received', case: 'Case' };
+// const KIND = { return: 'Return', inquiry: 'Not received', case: 'Case' };
+const KIND = { return: 'Return', inquiry: 'Not received', case: 'Case', cancel: 'Cancellation', dispute: 'Payment dispute' };   // v373
+// v373: stages
+function returnStage(x) {
+  const s = (String(x.status || '') + ' ' + String(x.state || '')).toUpperCase();
+  if (/CLOSED/.test(s)) return 'closed';
+  if (/DELIVERED|RECEIVED/.test(s)) return 'delivered';
+  if (/SHIPPED|IN_TRANSIT/.test(s)) return 'shipped';
+  if (/REQUESTED/.test(s) && !/LABEL/.test(s)) return 'requested';
+  return 'waiting';
+}
+const needsAttention = (x) => x.kind === 'return' ? (/SELLER/i.test(x.todo || '') || (x.options || []).length > 0)
+  : x.kind === 'cancel' ? !!x.needsMe : x.kind === 'dispute' ? /ACTION_NEEDED/i.test(x.status || '') : true;
+const STAGES = {
+  return: [['all', 'All open'], ['needs', 'Needs attention'], ['requested', 'Requested'], ['waiting', 'Waiting for buyer to ship'], ['shipped', 'Shipped'], ['delivered', 'Delivered']],
+  dispute: [['all', 'All open'], ['action', 'Needs your response'], ['decision', 'Awaiting decision']]
+};
+function stageOk(x) {
+  if (view !== 'open' || stageF === 'all' || !STAGES[kindF]) return true;
+  if (kindF === 'return') return stageF === 'needs' ? needsAttention(x) : returnStage(x) === stageF;
+  if (kindF === 'dispute') return stageF === 'action' ? /ACTION_NEEDED/i.test(x.status || '') : !/ACTION_NEEDED/i.test(x.status || '');
+  return true;
+}
+const STAGE_LABEL = { requested: 'Requested', waiting: 'Waiting for buyer to ship', shipped: 'Shipped', delivered: 'Delivered' };
+let stageF = 'all', disputesNeedScope = false;
 const dateStr = (iso) => iso ? new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
 function dueEl(iso) {
   if (!iso) return null;
@@ -368,7 +404,31 @@ function render() {
   document.querySelectorAll('#seg-kind button').forEach(b => b.setAttribute('aria-pressed', b.dataset.kind === kindF ? 'true' : 'false'));
   const q = norm(document.getElementById('r-search').value).trim();
   // const list = items.filter(x => (kindF === 'all' || x.kind === kindF) &&
-  const list = kindF === 'late' ? [] : items.filter(x => (kindF === 'all' || x.kind === kindF) &&   // v372
+  // v373: stage buttons under Returns / Disputes (open only)
+  const sg = document.getElementById('seg-stage');
+  const stages = view === 'open' ? STAGES[kindF] : null;
+  sg.classList.toggle('on', !!stages);
+  sg.textContent = '';
+  if (stages) {
+    if (!stages.some(st => st[0] === stageF)) stageF = 'all';
+    const ofKind = items.filter(x => x.kind === kindF);
+    stages.forEach(([k, label]) => {
+      const n = k === 'all' ? ofKind.length : ofKind.filter(x => { const keep = stageF; stageF = k; const ok = stageOk(x); stageF = keep; return ok; }).length;
+      const b = el('button', '', label + (n ? ' ' + n : '')); b.type = 'button';
+      b.setAttribute('aria-pressed', k === stageF ? 'true' : 'false');
+      b.onclick = () => { stageF = k; render(); };
+      sg.append(b);
+    });
+  }
+  // kind buttons: + counts
+  document.querySelectorAll('#seg-kind button').forEach(b => {
+    if (!b.dataset.label) b.dataset.label = b.textContent;
+    const k = b.dataset.kind; if (k === 'late' || k === 'all') return;
+    const n = items.filter(x => x.kind === k).length;
+    b.textContent = b.dataset.label + (n ? ' ' + n : '');
+  });
+  // const list = kindF === 'late' ? [] : items.filter(x => (kindF === 'all' || x.kind === kindF) &&   // v372
+  const list = kindF === 'late' ? [] : items.filter(x => (kindF === 'all' || x.kind === kindF) && stageOk(x) &&   // v373: + stage
     (!q || norm([x.buyer, x.id, x.orderId, x.itemId, x.reason, x.status, x.comments, titles[x.itemId]].join(' ')).includes(q)));
   // v372: Late returns — open ones under Open, refunded ones under Closed
   const lateView = lateItems.filter(x => view === 'open' ? !x.refunded : !!x.refunded);
@@ -378,10 +438,19 @@ function render() {
   lb.textContent = 'Late returns' + (lateView.length ? ' ' + lateView.length : '');
   const c = (k) => items.filter(x => x.kind === k).length;
   // setText('r-summary', list.length + ' shown · ' + c('return') + ' return' + (c('return') === 1 ? '' : 's') + ' · ' + c('inquiry') + ' not received · ' + c('case') + ' case' + (c('case') === 1 ? '' : 's'));
-  setText('r-summary', (list.length + lateShown.length) + ' shown · ' + c('return') + ' return' + (c('return') === 1 ? '' : 's') + (lateEnabled || lateItems.length ? ' · ' + lateView.length + ' late' : '') + ' · ' + c('inquiry') + ' not received · ' + c('case') + ' case' + (c('case') === 1 ? '' : 's'));
+  setText('r-summary', (list.length + lateShown.length) + ' shown · ' + c('return') + ' return' + (c('return') === 1 ? '' : 's') + (lateEnabled || lateItems.length ? ' · ' + lateView.length + ' late' : '') + ' · ' + c('inquiry') + ' not received · ' + c('case') + ' case' + (c('case') === 1 ? '' : 's')
+    + ' · ' + c('cancel') + ' cancellation' + (c('cancel') === 1 ? '' : 's') + ' · ' + c('dispute') + ' dispute' + (c('dispute') === 1 ? '' : 's'));   // v373
   const box = document.getElementById('r-list');
   box.textContent = '';
   // if (!list.length) { box.append(el('div', 'empty', items.length ? 'Nothing matches.' : (view === 'open' ? 'No open returns, claims or cases. Nice.' : 'Nothing closed in the last 90 days.'))); return; }
+  if (kindF === 'dispute' && disputesNeedScope) {   // v373
+    box.append(el('div', 'empty', 'To see payment disputes, reconnect eBay once (Sales page → Connect eBay) and allow “Payment disputes”.'));
+    return;
+  }
+  if (!list.length && !lateShown.length && kindF in KIND && kindF !== 'return') {   // v373
+    box.append(el('div', 'empty', items.some(x => x.kind === kindF) ? 'Nothing matches.' : 'No ' + (view === 'open' ? 'open' : 'closed') + ' ' + { inquiry: 'not-received claims', case: 'cases', cancel: 'cancellation requests', dispute: 'payment disputes' }[kindF] + '.'));
+    return;
+  }
   if (!list.length && !lateShown.length) {
     box.append(el('div', 'empty', kindF === 'late'
       ? (lateView.length ? 'Nothing matches.' : view === 'open' ? 'No late returns. When you send a buyer your return address in Messages, the sale shows up here.' : 'No refunded late returns in the last 7 days.')
@@ -402,11 +471,21 @@ function render() {
     l2.append(document.createTextNode([x.buyer && 'Buyer ' + x.buyer, x.reason && nice(x.reason), nice(x.status || x.state)].filter(Boolean).join(' · ')));
     mid.append(l2);
     const d = dueEl(view === 'open' ? x.due : null);
-    const l3 = el('div', 'r-line'); l3.append(document.createTextNode('Opened ' + dateStr(x.created) + (d ? ' · ' : ''))); if (d) l3.append(d);
+    const l3 = el('div', 'r-line'); l3.append(document.createTextNode((x.kind === 'cancel' ? 'Requested ' : 'Opened ') + dateStr(x.created) + (x.orderId && (x.kind === 'cancel' || x.kind === 'dispute') ? ' · order ' + x.orderId : '') + (d ? ' · ' : ''))); if (d) l3.append(d);   // v373
     mid.append(l3);
     const right = el('div', 'o-right');
     right.append(el('div', 'o-total', x.amount !== null && x.amount !== undefined ? money2.format(x.amount) : '—'));
-    right.append(el('div', 'chip ' + (view === 'open' ? (x.kind === 'case' ? 'bad' : 'ship') : 'part'), view === 'open' ? (x.kind === 'case' ? 'Case open' : 'Open') : 'Closed'));
+    // right.append(el('div', 'chip ' + (view === 'open' ? (x.kind === 'case' ? 'bad' : 'ship') : 'part'), view === 'open' ? (x.kind === 'case' ? 'Case open' : 'Open') : 'Closed'));
+    // v373: say the stage
+    let chipT = 'Closed', chipC = 'part';
+    if (view === 'open') {
+      if (x.kind === 'case') { chipT = 'Case open'; chipC = 'bad'; }
+      else if (x.kind === 'dispute') { chipT = /ACTION_NEEDED/i.test(x.status || '') ? 'Respond' : 'Awaiting decision'; chipC = /ACTION_NEEDED/i.test(x.status || '') ? 'bad' : 'ship'; }
+      else if (x.kind === 'cancel') { chipT = x.needsMe ? 'Respond' : 'Open'; chipC = x.needsMe ? 'bad' : 'ship'; }
+      else if (x.kind === 'return') { chipT = needsAttention(x) ? 'Needs attention' : (STAGE_LABEL[returnStage(x)] || 'Open'); chipC = needsAttention(x) ? 'bad' : 'ship'; }
+      else chipT = 'Open', chipC = 'ship';
+    }
+    right.append(el('div', 'chip ' + chipC, chipT));
     row.append(img, mid, right);
     box.append(row);
   });
@@ -444,6 +523,7 @@ async function load() {
   if (!d.connected) { setText('r-note', 'eBay isn’t connected yet' + (isAdmin ? ' — connect it in Settings → Admin.' : '.')); items = []; render(); return; }
   if (d.errors && d.errors.length) { err.textContent = 'eBay had a problem with part of this: ' + d.errors.join(' | '); err.style.display = 'block'; }
   items = d.items || [];
+  disputesNeedScope = !!d.disputesNeedScope;   // v373
   setText('r-note', 'From eBay · checked ' + new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) + ' · ');
   const r = el('button', '', 'Refresh'); r.type = 'button'; r.onclick = load;
   document.getElementById('r-note').append(r);
@@ -777,6 +857,23 @@ async function showDetail(key) {
     fb.onclick = () => act(base + '/refund', {}, 'Refund ' + (x.amount ? money2.format(x.amount) : 'the full amount') + ' to ' + (x.buyer || 'the buyer') + ' now? This sends real money.', 'Refund sent.');
     r2.append(fb);
     acts.append(r2);
+  } else if (x.kind === 'cancel') {   // v373
+    acts.append(el('h4', '', 'Cancellation request'));
+    if (x.reason) acts.append(el('div', 'r-line', 'Buyer’s reason: ' + nice(x.reason)));
+    if (x.needsMe) {
+      const r1 = el('div', 'row');
+      const ap = el('button', 'btn btn-primary btn-sm', 'Approve cancellation'); ap.type = 'button';
+      ap.onclick = () => act(base + '/approve', {}, 'Approve this cancellation? eBay cancels order ' + (x.orderId || '') + ' and the buyer gets their money back' + (x.amount ? ' (' + money2.format(x.amount) + ')' : '') + '. Don’t ship it.', 'Cancellation approved.');
+      const de = el('button', 'btn btn-danger btn-sm', 'Decline'); de.type = 'button';
+      de.onclick = () => act(base + '/decline', { orderId: x.orderId }, 'Decline this cancellation? Do this if you already shipped it — the app sends eBay the ship date and tracking from the order. The buyer can still start a return.', 'Cancellation declined.');
+      r1.append(ap, de);
+      acts.append(r1);
+    } else acts.append(el('div', 'r-line', 'Nothing to do here — eBay isn’t waiting on you for this one.'));
+  } else if (x.kind === 'dispute') {   // v373
+    acts.append(el('h4', '', 'Payment dispute'));
+    if (x.reason) acts.append(el('div', 'r-line', 'Reason: ' + nice(x.reason)));
+    acts.append(el('div', 'r-line', /ACTION_NEEDED/i.test(x.status || '') ? 'eBay needs your response' + (x.due ? ' by ' + dateStr(x.due) : '') + '. Respond on eBay (Seller Hub → Orders → Requests and disputes) — you may need to upload proof like tracking.'
+      : 'Waiting on eBay’s decision — nothing to do right now.'));
   } else {
     acts.append(el('h4', '', 'Case'));
     acts.append(el('div', 'r-line', 'eBay is deciding this case. You can follow it and respond on eBay.'));
@@ -797,13 +894,15 @@ async function showDetail(key) {
   } else {
     const a = el('a', 'btn btn-secondary btn-sm', 'Open eBay orders');
     a.href = 'https://www.ebay.com/sh/ord'; a.target = '_blank'; a.rel = 'noopener';   // the page that worked before
-    lr.append(a, el('span', 'r-line', 'eBay didn\u2019t send a direct link for this one.'));
+    // lr.append(a, el('span', 'r-line', 'eBay didn\u2019t send a direct link for this one.'));
+    lr.append(a); if (x.kind === 'return') lr.append(el('span', 'r-line', 'eBay didn\u2019t send a direct link for this one.'));   // v373
   }
   acts.append(lr);
 }
 
 document.querySelectorAll('#seg-view button').forEach(b => b.addEventListener('click', () => { view = b.dataset.view; load(); }));
-document.querySelectorAll('#seg-kind button').forEach(b => b.addEventListener('click', () => { kindF = b.dataset.kind; render(); }));
+// document.querySelectorAll('#seg-kind button').forEach(b => b.addEventListener('click', () => { kindF = b.dataset.kind; render(); }));
+document.querySelectorAll('#seg-kind button').forEach(b => b.addEventListener('click', () => { kindF = b.dataset.kind; stageF = 'all'; render(); }));   // v373
 let st; document.getElementById('r-search').addEventListener('input', () => { clearTimeout(st); st = setTimeout(render, 120); });
 load();
 setInterval(() => { if (!document.hidden && !document.getElementById('detail').classList.contains('open')) load(); }, 5 * 60000);

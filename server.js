@@ -1,4 +1,4 @@
-// PartsLister Pro server — v371
+// PartsLister Pro server — v373
 // v302: dashboard.html is the homepage (/). The listing tool moved to /list.
 // v305: eBay sales connection — real sold orders on the dashboard.
 // v306: asks eBay for two more permissions — fees/payouts and seller metrics.
@@ -170,6 +170,10 @@
 // v366: smarter "doesn't need a reply" check (no AI): short messages made only of thank-you / ok /
 //       got-it / received words drop out of Needs reply ("Ok thank you for your help", "Just
 //       purchased. Thank you!"). Anything with a question or any other word stays in.
+// v373: Returns page — + CANCELLATION REQUESTS (open / closed, approve or decline — same eBay
+//       Post-Order system as returns, no new permission) and + PAYMENT DISPUTES (needs your response /
+//       awaiting eBay's decision / closed — needs the new "Payment disputes" permission, so reconnect
+//       eBay once). Stage filters for returns are worked out on the page.
 // v371: LATE RETURNS — when you send a buyer your return address (Settings → Messages → late returns
 //       on), the app adds it to a Late returns list on the Returns page: address sent date, then you
 //       mark it received, then refund it (eBay's refund shows up there by itself). Not received in 30
@@ -936,7 +940,8 @@ const EBAY_SCOPES = [
   { scope: 'https://api.ebay.com/oauth/api_scope/sell.finances',              label: 'Fees, payouts & sales tax' },
   { scope: 'https://api.ebay.com/oauth/api_scope/sell.analytics.readonly',    label: 'Seller metrics & standing' },
   { scope: 'https://api.ebay.com/oauth/api_scope/commerce.message',           label: 'Message threads (read & reply)' },   // v322
-  { scope: 'https://api.ebay.com/oauth/api_scope/sell.inventory',             label: 'Send offers to buyers' }             // v322
+  { scope: 'https://api.ebay.com/oauth/api_scope/sell.inventory',             label: 'Send offers to buyers' },            // v322
+  { scope: 'https://api.ebay.com/oauth/api_scope/sell.payment.dispute',       label: 'Payment disputes' }                  // v373
 ];
 const SALES_SCOPES = EBAY_SCOPES.map(x => x.scope).join(' ');
 
@@ -3957,6 +3962,39 @@ function mapReturn(m) {
     escalated: !!(m.escalationInfo && m.escalationInfo.caseId)
   };
 }
+// v373: cancellation requests (Post-Order API)
+function mapCancel(m) {
+  const state = m.cancelState || '', status = m.cancelStatus || '';
+  const due = dval(m.sellerResponseDueDate);
+  return {
+    kind: 'cancel', id: String(m.cancelId), state, status, buyer: m.buyerLoginName || '',
+    orderId: m.legacyOrderId || null, itemId: null, reason: m.cancelReason || '', closeReason: m.cancelCloseReason || '',
+    amount: amt(m.requestRefundAmount), created: dval(m.cancelRequestDate), closedAt: dval(m.cancelCloseDate),
+    due: /CLOSED/i.test(state) ? null : due, requestor: m.requestorType || '',
+    needsMe: !/CLOSED/i.test(state) && !/SELLER/i.test(m.requestorType || '') && (!!due || /REQUEST|PENDING/i.test(status)),   // the buyer asked; waiting on you
+    shipped: dval(m.shipmentDate)
+  };
+}
+// v373: payment disputes (Fulfillment API — camelCase in JSON; snake_case accepted just in case)
+function mapDispute(m) {
+  const g = (a, b) => m[a] !== undefined ? m[a] : m[b];
+  const status = g('paymentDisputeStatus', 'payment_dispute_status') || '';
+  return {
+    kind: 'dispute', id: String(g('paymentDisputeId', 'payment_dispute_id') || ''), status, reason: g('reason', 'reason') || '',
+    orderId: g('orderId', 'order_id') || null, itemId: null, buyer: g('buyerUsername', 'buyer_username') || '',
+    amount: amt(g('amount', 'amount')), created: g('openDate', 'open_date') || null, due: g('respondByDate', 'respond_by_date') || null,
+    closedAt: g('closedDate', 'closed_date') || null
+  };
+}
+const DISPUTE_SCOPE = 'https://api.ebay.com/oauth/api_scope/sell.payment.dispute';
+// item number for an order (from the saved sales) — cancellations and disputes only give the order
+async function itemsForOrders(userId, orderIds) {
+  const ids = [...new Set(orderIds.filter(Boolean))];
+  if (!ids.length) return {};
+  const r = await pool.query('SELECT order_id, item_id FROM ebay_order_items WHERE user_id = $1 AND order_id = ANY($2)', [userId, ids]);
+  const out = {}; r.rows.forEach(x => { if (!out[x.order_id]) out[x.order_id] = x.item_id; });
+  return out;
+}
 function mapInquiry(m) {
   return {
     kind: 'inquiry', id: String(m.inquiryId), status: m.inquiryStatusEnum || '', buyer: m.buyer || '',
@@ -3997,16 +4035,52 @@ async function loadReturns(userId, view) {
       .filter(x => closed ? /CLOSED/i.test(x.status) : !/CLOSED/i.test(x.status))
       .forEach(x => out.push(x));
   } catch (e) { errors.push('Cases: ' + e.message); }
+  // v373: cancellation requests
+  try {
+    const q = new URLSearchParams({ role: 'SELLER', limit: '200', sort: '-CANCEL_REQUEST_DATE',
+      creation_date_range_from: new Date(Date.now() - (closed ? 90 : 60) * 86400000).toISOString(), creation_date_range_to: new Date().toISOString() });
+    const d = await poCall(userId, 'GET', '/cancellation/search?' + q);
+    ((d && d.cancellations) || []).map(mapCancel)
+      .filter(x => /CLOSED/i.test(x.state) === closed)
+      .forEach(x => out.push(x));
+  } catch (e) { errors.push('Cancellations: ' + e.message); }
+  // v373: payment disputes (only with the permission)
+  let disputesNeedScope = false;
+  try {
+    const conn = await getConnection(userId);
+    if (!hasScope(conn, DISPUTE_SCOPE)) disputesNeedScope = true;
+    else {
+      const token = await getAccessToken(userId);
+      const q = new URLSearchParams({ limit: '200', open_date_from: from, open_date_to: new Date().toISOString() });
+      const r = await fetch(EBAY_FIN_HOST + '/sell/fulfillment/v1/payment_dispute_summary?' + q, {
+        headers: { 'Authorization': 'Bearer ' + token, 'Accept': 'application/json', 'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US' }, signal: AbortSignal.timeout(30000) });
+      if (r.status !== 204) {
+        const t = await r.text(); let d = null; try { d = JSON.parse(t); } catch (e) { /* not JSON */ }
+        if (!r.ok) throw new Error((d && d.errors && d.errors.map(e => e.longMessage || e.message).join('; ')) || ('HTTP ' + r.status));
+        ((d && (d.paymentDisputeSummaries || d.payment_dispute_summaries)) || []).map(mapDispute)
+          .filter(x => x.id && (/CLOSED/i.test(x.status) === closed))
+          .forEach(x => out.push(x));
+      }
+    }
+  } catch (e) { errors.push('Payment disputes: ' + e.message); }
+  // item numbers for cancellations / disputes (they only give the order)
+  try {
+    const need = out.filter(x => !x.itemId && x.orderId);
+    const map = await itemsForOrders(userId, need.map(x => x.orderId));
+    need.forEach(x => { x.itemId = map[x.orderId] || (/^(\d{9,15})-\d+$/.exec(x.orderId) || [])[1] || null; });
+  } catch (e) { /* titles are optional */ }
   out.sort((a, b) => String(b.created || '').localeCompare(String(a.created || '')));
-  return { items: out, errors };
+  return { items: out, errors, disputesNeedScope };   // v373: + disputesNeedScope
 }
 
 app.get('/api/returns', requireUser, async (req, res) => {
   try {
     const conn = await getConnection(req.user.id);
     if (!conn || !conn.refresh_enc) return res.json({ connected: false });
-    const { items, errors } = await loadReturns(req.user.id, req.query.view === 'closed' ? 'closed' : 'open');
-    res.json({ connected: true, items, errors });
+    // const { items, errors } = await loadReturns(req.user.id, req.query.view === 'closed' ? 'closed' : 'open');
+    // res.json({ connected: true, items, errors });
+    const { items, errors, disputesNeedScope } = await loadReturns(req.user.id, req.query.view === 'closed' ? 'closed' : 'open');
+    res.json({ connected: true, items, errors, disputesNeedScope });   // v373
   } catch (e) {
     console.error('[returns]', e.message);
     res.json({ connected: true, items: [], errors: [e.message] });
@@ -4022,7 +4096,10 @@ app.get('/api/returns/summary', requireUser, async (req, res) => {
     const c = returnCounts.get(req.user.id);
     if (c && Date.now() - c.at < 300000) return res.json(c.data);
     const { items, errors } = await loadReturns(req.user.id, 'open');
-    const data = { connected: true, open: items.length, needMe: items.filter(x => x.kind !== 'return' || /SELLER/i.test(x.todo || '') || (x.options || []).length).length, errors };
+    // const data = { connected: true, open: items.length, needMe: items.filter(x => x.kind !== 'return' || /SELLER/i.test(x.todo || '') || (x.options || []).length).length, errors };
+    const needs = (x) => x.kind === 'return' ? (/SELLER/i.test(x.todo || '') || (x.options || []).length > 0)
+      : x.kind === 'cancel' ? !!x.needsMe : x.kind === 'dispute' ? /ACTION_NEEDED/i.test(x.status) : true;   // v373
+    const data = { connected: true, open: items.length, needMe: items.filter(needs).length, errors };
     returnCounts.set(req.user.id, { at: Date.now(), data });
     res.json(data);
   } catch (e) { res.json({ connected: true, open: null, error: e.message }); }
@@ -4186,6 +4263,42 @@ app.post('/api/returns/inquiry/:id/tracking', requireUser, express.json(), async
   } catch (e) {
     console.error('[inquiry tracking]', e.message);
     res.status(502).json({ error: 'eBay didn\u2019t take the tracking: ' + e.message });
+  }
+});
+
+// v373: cancellation request — approve (cancels the order; refund the buyer on eBay if it's not
+// automatic) or decline (sends the ship date and tracking from the order when it has shipped)
+app.post('/api/returns/cancel/:id/approve', requireUser, async (req, res) => {
+  if (!poId(req.params.id)) return res.status(400).json({ error: 'Bad cancellation number' });
+  try {
+    await poCall(req.user.id, 'POST', '/cancellation/' + req.params.id + '/approve');
+    clearReturnCount(req.user.id);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('[cancel approve]', e.message);
+    res.status(502).json({ error: 'eBay didn\u2019t approve the cancellation: ' + e.message });
+  }
+});
+app.post('/api/returns/cancel/:id/decline', requireUser, express.json(), async (req, res) => {
+  if (!poId(req.params.id)) return res.status(400).json({ error: 'Bad cancellation number' });
+  const orderId = String((req.body || {}).orderId || '');
+  try {
+    const body = {};
+    if (/^[0-9A-Za-z-]{5,40}$/.test(orderId)) {
+      try {
+        const sh = await shipmentFacts(req.user.id, orderId);
+        if (sh && sh.shippedTime) {
+          body.shipmentDate = { value: new Date(sh.shippedTime).toISOString() };
+          if (sh.tracks && sh.tracks[0]) body.trackingNumber = sh.tracks[0].number;
+        }
+      } catch (e) { /* decline without ship info */ }
+    }
+    await poCall(req.user.id, 'POST', '/cancellation/' + req.params.id + '/reject', body);
+    clearReturnCount(req.user.id);
+    res.json({ ok: true, sentShipInfo: !!body.shipmentDate });
+  } catch (e) {
+    console.error('[cancel decline]', e.message);
+    res.status(502).json({ error: 'eBay didn\u2019t decline the cancellation: ' + e.message });
   }
 });
 
@@ -4553,5 +4666,5 @@ app.get('*', (req, res) => {
 });
 
 setupDatabase()
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v371 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v373 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });
