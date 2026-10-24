@@ -1,4 +1,4 @@
-// PartsLister Pro server — v364
+// PartsLister Pro server — v365
 // v302: dashboard.html is the homepage (/). The listing tool moved to /list.
 // v305: eBay sales connection — real sold orders on the dashboard.
 // v306: asks eBay for two more permissions — fees/payouts and seller metrics.
@@ -166,6 +166,7 @@
 //       transmission / body / ABS / airbag / key-immobilizer modules, TIPMs and smart junction
 //       boxes, instrument clusters. Radios get "may need a radio code" instead. Mirrors, lights,
 //       switches, motors, trim and plain fuse boxes get no note. The app decides from the title.
+// v365: Settings → Messages → "Write an AI draft automatically" (only for conversations that need a reply).
 // Accounts with email + password login. Each account's settings (including its
 // own API keys) and history are saved ENCRYPTED in Postgres, so you can log in
 // from any computer and everything is there. Also keeps a lifetime listing count.
@@ -2439,6 +2440,7 @@ function msgSettingsOf(settings) {
     afterWindow: AFTER_WINDOW[m.afterWindow] ? m.afterWindow : 'check_back',   // v349
     usVehicles: m.usVehicles !== false,   // v349: on unless turned off
     timezone: TIMEZONES[m.timezone] ? m.timezone : 'America/Chicago',   // v362
+    autoDraft: !!m.autoDraft,   // v365
     honorLate: { enabled: !!(m.honorLate && m.honorLate.enabled), days: [30, 60, 90].includes(m.honorLate && m.honorLate.days) ? m.honorLate.days : 60, address: String((m.honorLate && m.honorLate.address) || '').trim().slice(0, 300) },   // v350
   };
 }
@@ -2568,6 +2570,7 @@ app.post('/api/msg-settings', requireUser, express.json(), async (req, res) => {
       afterWindow: AFTER_WINDOW[b.afterWindow] ? b.afterWindow : 'check_back',   // v349
       usVehicles: b.usVehicles !== false,
       timezone: TIMEZONES[b.timezone] ? b.timezone : 'America/Chicago',   // v362
+      autoDraft: !!b.autoDraft,   // v365
       honorLate: { enabled: !!(b.honorLate && b.honorLate.enabled), days: [30, 60, 90].includes(parseInt(b.honorLate && b.honorLate.days, 10)) ? parseInt(b.honorLate.days, 10) : 60, address: String((b.honorLate && b.honorLate.address) || '').trim().slice(0, 300) },   // v350
     };
     await writeUserData(req.user.id, d);
@@ -4333,5 +4336,5 @@ app.get('*', (req, res) => {
 });
 
 setupDatabase()
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v364 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v365 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });

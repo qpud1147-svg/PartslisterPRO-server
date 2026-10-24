@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Sales v362</title>
+<title>PartsLister Pro Sales v365</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@400;500;600&display=swap');
 
@@ -529,7 +529,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v362</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v365</span></div>
   </a>
   <!-- v316: switch pages -->
   <nav class="page-tabs" aria-label="Pages">
@@ -891,6 +891,9 @@
       </div>
       <div class="set-section">
         <h3>Translate</h3>
+        <!-- v365 -->
+        <label style="display:flex;gap:8px;align-items:center;font-size:14px;color:var(--text);cursor:pointer;margin-bottom:6px;"><input type="checkbox" id="ms-autodraft"> Write an AI draft automatically when I open a conversation that needs a reply</label>
+        <p class="set-help" style="margin:0 0 12px;">Only conversations in <strong>Needs reply</strong> (the buyer wrote last and it needs an answer). Nothing is sent until you press Send — there's a <strong>Discard</strong> button next to it. Each draft uses your Anthropic key.</p>
         <label style="display:flex;gap:8px;align-items:center;font-size:14px;color:var(--text);cursor:pointer;"><input type="checkbox" id="ms-translate"> Auto-translate buyer messages to English</label>
         <p class="set-help" style="margin-top:6px;">Only messages that aren't already in English are translated, each one once. Every translated message has a <strong>See original</strong> link. Uses your Anthropic key.</p>
         <div class="set-buttons"><button class="btn btn-primary btn-sm" id="ms-save-btn" onclick="saveMsgSettings()">Save</button></div>
@@ -1031,6 +1034,7 @@
 // v349: Common questions + "After the return window ends" and "My parts come from US (left-hand-drive) vehicles".
 // v350: "Honor returns up to 30 / 60 / 90 days after delivery" (counted from delivery) + return address.
 // v362: Your time zone (for "I'll get back to you by …").
+// v365: Write an AI draft automatically (conversations that need a reply).
 // Shares the same sign-in and account as the listing tool (/list).
 // v304: sales dashboard — big daily bar graph with a remembered date range.
 // The sales numbers are SAMPLE data for now; real eBay sales replace
@@ -1816,6 +1820,7 @@ async function loadMsgSettings() {
     (d.problemPolicies || []).forEach(p => sel.append(new Option(p.label, p.value)));
     sel.value = d.problemPolicy;
     document.getElementById('ms-translate').checked = d.autoTranslate !== false;
+    document.getElementById('ms-autodraft').checked = !!d.autoDraft;   // v365
     // v331: one choice per problem type
     const box = document.getElementById('ms-problem-types');
     box.textContent = '';
@@ -1875,7 +1880,8 @@ async function saveMsgSettings() {
     // const body = { instructions: …, problemPolicy: …, autoTranslate: … };
     const problems = {};
     document.querySelectorAll('#ms-problem-types select').forEach(x => { problems[x.dataset.key] = x.value; });
-    const body = { instructions: document.getElementById('ms-instructions').value, problemPolicy: document.getElementById('ms-problem').value, autoTranslate: document.getElementById('ms-translate').checked,
+    const body = { instructions: document.getElementById('ms-instructions').value, problemPolicy: document.getElementById('ms-problem').value, autoTranslate: document.getElementById('ms-translate').checked, autoDraft: document.getElementById('ms-autodraft').checked,   // v365
+     
       problems, discount: { enabled: document.getElementById('ms-disc-on').checked, percent: parseFloat(document.getElementById('ms-disc-pct').value) || 5 },   // v331
       fitment: { askVin: document.getElementById('ms-fit-vin').checked },   // v333
       // v335

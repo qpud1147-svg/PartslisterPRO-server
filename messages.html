@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Messages v355</title>
+<title>PartsLister Pro Messages v365</title>
 <!-- PartsLister Pro — Messages page (v321: new; v322: conversation threads — the whole back-and-forth
      with each buyer, chat style, from eBay's Message API. Offers from a conversation. The v321
      email-style view is still at /messages/classic). Nothing about your messages is saved on the server.
@@ -23,7 +23,10 @@
      v341: "Needs reply" skips conversations you answered last or where the buyer only said "ok thanks";
      AI draft says when there's nothing to answer instead of writing a note into the reply box.
      v355: if eBay can't send your discount offer on this listing, the draft doesn't promise one and
-     the line under AI draft says why. -->
+     the line under AI draft says why.
+     v365: buyer photos open full size inside the page (click to zoom, Esc / × to close). Optional
+     automatic AI draft for conversations that need a reply, and a Discard button next to Send.
+     A draft you haven't sent stays put if you open another conversation and come back. -->
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@400;500;600&display=swap');
 
@@ -221,6 +224,18 @@
   .seg .cnt { margin-left: 4px; font-size: 11px; opacity: 0.85; }
   .ship-res.yes { color: var(--success); } .ship-res.no { color: var(--danger); } .ship-res.maybe { color: var(--accent); }
   .th-ai + .th-compose { border-top: none; }
+  /* v365: photo viewer + Discard */
+  .lightbox { position: fixed; inset: 0; z-index: 9999; background: rgba(0,0,0,0.92); display: none; align-items: center; justify-content: center; overflow: auto; }
+  .lightbox.on { display: flex; }
+  .lightbox img { max-width: 96vw; max-height: 92vh; object-fit: contain; cursor: zoom-in; border-radius: 4px; }
+  .lightbox.zoom { align-items: flex-start; justify-content: flex-start; }
+  .lightbox.zoom img { max-width: none; max-height: none; cursor: zoom-out; }
+  .lightbox .lb-close { position: fixed; top: 14px; right: 18px; font-size: 30px; line-height: 1; color: #fff; background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.3); border-radius: 50%; width: 44px; height: 44px; cursor: pointer; }
+  .lightbox .lb-nav { position: fixed; top: 50%; transform: translateY(-50%); font-size: 30px; color: #fff; background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.3); border-radius: 50%; width: 44px; height: 44px; cursor: pointer; }
+  .lightbox .lb-prev { left: 14px; } .lightbox .lb-next { right: 14px; }
+  .lightbox .lb-count { position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%); color: #ddd; font-size: 13px; }
+  .btn-discard { background: var(--surface2); color: var(--muted); border: 1px solid var(--border); display: none; }
+  .btn-discard.on { display: inline-block; }
   .btn-danger { background: var(--surface2); color: var(--danger); border-color: rgba(224,82,82,0.5); }
   .btn-danger:hover { border-color: var(--danger); color: var(--danger); }
   .th-note { padding: 10px 16px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13px; }
@@ -263,7 +278,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v355</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v365</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -316,6 +331,8 @@
   </div>
 </main>
 <div id="toast"></div>
+<!-- v365: full-size photo viewer -->
+<div class="lightbox" id="lightbox" role="dialog" aria-label="Photo"><button type="button" class="lb-close" title="Close (Esc)">×</button><button type="button" class="lb-nav lb-prev" title="Previous">‹</button><img alt=""><button type="button" class="lb-nav lb-next" title="Next">›</button><div class="lb-count"></div></div>
 
 <script>
 // ─── SHARED (same on Home and Listings) ─────────────────────────────────────
@@ -359,6 +376,8 @@ let threads = [], type = 'members', show = 'all', current = null, me = null, isA
 // v341: a buyer message that doesn't need an answer (same test as the server)
 const isCloser = (text) => /^\s*(ok(ay)?|k+|kk|thanks?( you)?( so much| a lot)?|thank u|thx|ty|tysm|got it|gotcha|cool|great|perfect|awesome|sounds good|will do|no worries|no problem|np|understood|alright|all right|appreciate it|much appreciated)([\s,.!]+(ok(ay)?|thanks?( you)?|thx|ty|again|man|bro|buddy|sir|so much|a lot|appreciate it))*[\s.!,]*[\u{1F44D}\u{1F64F}\u{1F642}\u{1F60A}\u{263A}️]*\s*$/iu.test(String(text || '')) || /^\s*([\u{1F44D}\u{1F64F}\u{1F642}\u{1F60A}\u{263A}]\uFE0F?\s*)+$/u.test(String(text || ''));
 const needsReply = (t) => (t.needsReply !== undefined ? t.needsReply : !t.last.mine) && !(t.last && t.last.mine);
+const draftsById = {};   // v365: unsent drafts, per conversation (this page only — not saved)
+const discardedIds = new Set();   // v365: you discarded the auto draft — don't write another one this visit
 let followups = [];   // v336: Waiting on me — { id, conversationId, itemId, title, task, since }
 const openFollowup = (convId) => followups.find(f => f.conversationId === convId) || null;
 async function loadFollowups() {
@@ -475,7 +494,9 @@ function bubble(m) {
   b.append(el('span', 'btext', m.text || ''));   // v330: in its own span so a translation can swap in
   if (m.id) b.dataset.mid = m.id;
   (m.media || []).forEach(x => {
-    if (x.type === 'IMAGE') { const a = el('a'); a.href = x.url; a.target = '_blank'; a.rel = 'noopener'; const im = el('img'); im.src = x.url; im.alt = x.name || 'Photo'; a.append(im); b.append(a); }
+    // if (x.type === 'IMAGE') { const a = el('a'); a.href = x.url; a.target = '_blank'; a.rel = 'noopener'; const im = el('img'); im.src = x.url; im.alt = x.name || 'Photo'; a.append(im); b.append(a); }
+    if (x.type === 'IMAGE') { const a = el('a'); a.href = x.url; a.dataset.full = fullSize(x.url); a.className = 'photo-link'; const im = el('img'); im.src = x.url; im.alt = x.name || 'Photo'; a.append(im); b.append(a);
+      a.addEventListener('click', (e) => { e.preventDefault(); openLightbox(a); }); }   // v365: opens here, full size
     else { const a = el('a', '', '\n' + (x.name || 'Attachment')); a.href = x.url; a.target = '_blank'; a.rel = 'noopener'; b.append(a); }
   });
   b.append(el('span', 'bt', m.date ? new Date(m.date).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : ''));
@@ -583,7 +604,7 @@ async function showThread(id) {
       const r = await fetch('/api/threads/' + encodeURIComponent(id) + '/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) });
       const out = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(out.error || 'Not sent');
-      ta.value = '';
+      ta.value = ''; syncDiscard();   // v365
       const m = (out.message) || { text, date: new Date().toISOString(), mine: true };
       m.mine = true;
       if (body.querySelector('.empty')) body.textContent = '';
@@ -600,7 +621,17 @@ async function showThread(id) {
     } catch (e) { toast(e.message, true); }
     finally { send.disabled = false; send.textContent = 'Send'; }
   };
-  comp.append(ta, send);
+  // v365: Discard (next to Send) — clears the draft and the offer / Waiting-on-me boxes
+  const discard = el('button', 'btn btn-sm btn-discard', 'Discard'); discard.type = 'button'; discard.title = 'Throw this draft away';
+  const syncDiscard = () => { discard.classList.toggle('on', !!ta.value.trim()); if (ta.value.trim()) draftsById[id] = ta.value; else delete draftsById[id]; };
+  ta.addEventListener('input', syncDiscard);
+  discard.onclick = () => {
+    ta.value = ''; ta.style.height = ''; syncDiscard(); discardedIds.add(id);
+    pendingOffer = null; discRow.classList.remove('on'); fuRow.classList.remove('on'); enCopy.classList.remove('on'); aiMsg.textContent = 'Draft discarded.';
+    ta.focus();
+  };
+  // comp.append(ta, send);
+  comp.append(ta, discard, send);   // v365
   // v323: AI draft — reads this conversation + the listing, fills the reply box. Nothing is sent until you press Send.
   const ai = el('div', 'th-ai');
   const aiBtn = el('button', 'btn btn-secondary btn-sm', 'AI draft'); aiBtn.type = 'button';
@@ -617,7 +648,7 @@ async function showThread(id) {
       if (!r.ok) throw new Error(out.error || 'No draft');
       if (current !== id) return;
       if (out.noReply) { aiMsg.textContent = out.reason || 'Nothing to answer.'; return; }   // v341: nothing to answer — leave the box alone
-      ta.value = out.draft; ta.focus();
+      ta.value = out.draft; ta.focus(); syncDiscard();   // v365
       ta.style.height = Math.min(180, ta.scrollHeight + 2) + 'px';   // grow to fit the draft
       // aiMsg.textContent = 'Draft ready — check it, edit if needed, then Send.';
       const sc = (out.shipChecks || []).map(x => x.country + ': ' + ({ yes: 'ships', no: 'can\u2019t ship', probably: 'probably ships', unknown: 'unclear' }[x.verdict])).join(', ');
@@ -684,7 +715,48 @@ async function showThread(id) {
   v.append(ai, shipRes, enCopy, discRow, fuRow);   // v339: + English copy
   v.append(comp);
   if (!phone()) ta.focus();
+  // v365: a draft you started here earlier comes back; otherwise maybe write one automatically
+  if (draftsById[id]) { ta.value = draftsById[id]; syncDiscard(); ta.style.height = Math.min(180, ta.scrollHeight + 2) + 'px'; }
+  else if (type === 'members' && !inTrash && needsReply(t) && !discardedIds.has(id)) {
+    msgPrefs().then(p => { if (p && p.autoDraft && current === id && !ta.value.trim()) { aiMsg.textContent = 'Writing a draft automatically…'; aiBtn.click(); } });
+  }
 }
+
+// ─── v365: FULL-SIZE PHOTO VIEWER ────────────────────────────────────────────
+// eBay picture links usually end in a size like s-l500.jpg — s-l1600 is the largest eBay serves.
+function fullSize(u) { return String(u || '').replace(/\/s-l\d+\.(jpg|jpeg|png|webp)/i, '/s-l1600.$1'); }
+let lbList = [], lbIdx = 0;
+function openLightbox(a) {
+  const bub = a.closest('.th-body') || document;
+  lbList = [...bub.querySelectorAll('a.photo-link')];
+  lbIdx = Math.max(0, lbList.indexOf(a));
+  showLightbox();
+}
+function showLightbox() {
+  const lb = document.getElementById('lightbox'), img = lb.querySelector('img');
+  const a = lbList[lbIdx]; if (!a) return;
+  lb.classList.remove('zoom');
+  img.onerror = () => { if (img.src !== a.href) img.src = a.href; };   // the bigger size isn't there — use the original link
+  img.src = a.dataset.full || a.href;
+  lb.querySelector('.lb-count').textContent = lbList.length > 1 ? (lbIdx + 1) + ' of ' + lbList.length : '';
+  lb.querySelectorAll('.lb-nav').forEach(n => { n.style.display = lbList.length > 1 ? '' : 'none'; });
+  lb.classList.add('on');
+}
+function closeLightbox() { document.getElementById('lightbox').classList.remove('on', 'zoom'); }
+(() => {
+  const lb = document.getElementById('lightbox');
+  lb.querySelector('.lb-close').onclick = closeLightbox;
+  lb.querySelector('.lb-prev').onclick = (e) => { e.stopPropagation(); lbIdx = (lbIdx - 1 + lbList.length) % lbList.length; showLightbox(); };
+  lb.querySelector('.lb-next').onclick = (e) => { e.stopPropagation(); lbIdx = (lbIdx + 1) % lbList.length; showLightbox(); };
+  lb.querySelector('img').onclick = (e) => { e.stopPropagation(); lb.classList.toggle('zoom'); };   // click: actual size
+  lb.addEventListener('click', (e) => { if (e.target === lb) closeLightbox(); });
+  document.addEventListener('keydown', (e) => {
+    if (!lb.classList.contains('on')) return;
+    if (e.key === 'Escape') closeLightbox();
+    if (e.key === 'ArrowLeft' && lbList.length > 1) lb.querySelector('.lb-prev').click();
+    if (e.key === 'ArrowRight' && lbList.length > 1) lb.querySelector('.lb-next').click();
+  });
+})();
 
 // ─── v337: LISTING + ORDER STRIP ─────────────────────────────────────────────
 const fmtDay = (iso) => iso ? new Date(iso).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : '';
