@@ -1,4 +1,4 @@
-// PartsLister Pro server — v362
+// PartsLister Pro server — v363
 // v302: dashboard.html is the homepage (/). The listing tool moved to /list.
 // v305: eBay sales connection — real sold orders on the dashboard.
 // v306: asks eBay for two more permissions — fees/payouts and seller metrics.
@@ -158,6 +158,10 @@
 //       if the AI leaves it out, the app adds it ("To know if it fits your vehicle, please compare
 //       the part number … with the one on your original part to see if it's a match."). Settings →
 //       Messages → Your time zone (default Central) for "get back to you by…".
+// v363: the fitment list was cut off at 200 rows, so vehicles further down (2011 Tucson on a
+//       2009–2014 radio) looked "not listed". The app now reads the whole list and sums it up by
+//       make and model with year ranges, and also gives the years in the title. A vehicle in either
+//       one is "listed" — and fit still goes by part number.
 // Accounts with email + password login. Each account's settings (including its
 // own API keys) and history are saved ENCRYPTED in Postgres, so you can log in
 // from any computer and everything is there. Also keeps a lifetime listing count.
@@ -2113,6 +2117,28 @@ const htmlToText = (h) => String(h || '')
   .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
   .replace(/[ \t]+/g, ' ').replace(/\n\s*\n+/g, '\n').trim();
 
+// v363: the whole compatibility list, summed up by make + model with year ranges
+function fitmentSummary(rows) {
+  const groups = new Map();
+  rows.forEach(r => {
+    const y = parseInt(r.Year, 10); if (!y || !r.Make || !r.Model) return;
+    const k = r.Make + ' ' + r.Model;
+    if (!groups.has(k)) groups.set(k, { years: new Set(), trims: new Set() });
+    const g = groups.get(k); g.years.add(y); if (r.Trim) g.trims.add(r.Trim);
+  });
+  const ranges = (ys) => { const a = [...ys].sort((x, y) => x - y), out = []; let st = a[0], pv = a[0];
+    for (let i = 1; i <= a.length; i++) { if (a[i] === pv + 1) { pv = a[i]; continue; } out.push(st === pv ? String(st) : st + '\u2013' + pv); st = pv = a[i]; } return out.join(', '); };
+  return [...groups.entries()].map(([k, g]) => k + ': ' + ranges(g.years) + (g.trims.size ? ' (trims: ' + [...g.trims].slice(0, 12).join(', ') + (g.trims.size > 12 ? ', …' : '') + ')' : ''));
+}
+async function getFitmentRows(userId, itemId) {   // v363
+  try {
+    const xml = await tradingCall(userId, 'GetItem',
+      `<ItemID>${itemId}</ItemID><IncludeItemCompatibilityList>true</IncludeItemCompatibilityList><OutputSelector>ItemCompatibilityList</OutputSelector>`);
+    return xmlAll(xmlTag(xml, 'ItemCompatibilityList') || '', 'Compatibility').map(c => {
+      const o = {}; xmlAll(c, 'NameValueList').forEach(nv => { const n = xmlDecode(xmlTag(nv, 'Name')); if (n) o[n] = xmlDecode(xmlTag(nv, 'Value')); }); return o;
+    });
+  } catch (e) { return []; }
+}
 async function getFitment(userId, itemId) {
   try {
     const xml = await tradingCall(userId, 'GetItem',
@@ -2250,7 +2276,7 @@ const DEFAULT_MSG_INSTRUCTIONS = [
   // 'Fitment questions: if the buyer\'s vehicle is in the fitment list, say it is listed as fitting and suggest they match the part number to their original part. If it is not listed or there is no fitment list, say you can\'t confirm it and ask them to compare the part number on their original part (or send the VIN). Never promise fit.',
   // 'Fitment questions: if the buyer\'s vehicle is in the fitment list, say it is listed as fitting. If it is not listed or there is no fitment list, say you can\'t confirm it and ask for their VIN. Follow the PART NUMBER rule for comparing part numbers. Never promise fit.',   // v332
   // 'Fitment questions: if the buyer\'s vehicle is in the fitment list, say it is listed as fitting. If it is not listed or there is no fitment list, say the listing doesn\'t show their vehicle as a fit, so you can\'t confirm it. Then follow the PART NUMBER rule. Never promise fit.',   // v333
-  'Fitment questions: never say "yes, it fits" or "it will work". If their vehicle is in the fitment list, say it\'s in the listing\'s compatibility list, but fit goes by part number. If it isn\'t listed or there\'s no fitment list, say the listing doesn\'t show their vehicle. Either way, follow the PART NUMBER rule.',   // v359
+  'Fitment questions: never say "yes, it fits" or "it will work". If their vehicle is in the fitment list OR the title covers its year and model (a title range like "2009 2014" includes 2011), say it\'s listed for their vehicle, but fit goes by part number. If it isn\'t listed or there\'s no fitment list, say the listing doesn\'t show their vehicle. Either way, follow the PART NUMBER rule.',   // v359
   'Answer the buyer\'s question directly. Don\'t open by repeating the condition or other listing facts they didn\'t ask about.',   // v333
   // 'Price/offer questions: don\'t invent a price; if the seller gave instructions, follow them, otherwise suggest they send an offer through the listing.',
   'Price/discount questions: if a DISCOUNT section is given, follow it exactly. Otherwise don\'t offer or invent a discount — politely say the price is as listed (unless the seller\'s instructions say otherwise).',   // v331
@@ -2927,7 +2953,9 @@ const draftHandler = async (req, res) => {   // v347: named, so the sandbox down
     let mainPN = null, listingLoaded = false;   // v362: for the part-number check the app adds if the AI leaves it out
     if (itemId) {
       const it = await getItemData(req.user.id, itemId);
-      const fit = await getFitment(req.user.id, itemId);
+      // const fit = await getFitment(req.user.id, itemId);
+      const fitRows = await getFitmentRows(req.user.id, itemId);   // v363: the whole list
+      const fit = fitmentSummary(fitRows);
       if (it.data) {
         const d = it.data;
         listingLoaded = true; mainPN = (partNumbersOf(d.specifics)[0] || {}).value || null;   // v362
@@ -2942,7 +2970,9 @@ const draftHandler = async (req, res) => {   // v347: named, so the sandbox down
           // v332: say plainly whether there is a part number
           // (() => { const pn = partNumbersOf(d.specifics); return pn.length ? 'PART NUMBER: ' + pn.map(x => x.value + ' (' + x.name + ')').join('; ') : 'PART NUMBER: NONE — this listing has no part number.'; })(),
           (() => { const pn = partNumbersOf(d.specifics); return pn.length ? 'PART NUMBER: ' + pn.slice(0, 4).map(x => x.value).join(', ') + (pn.length > 4 ? ' (and ' + (pn.length - 4) + ' more interchange numbers)' : '') + ' — the first is the main one' : 'PART NUMBER: NONE — this listing has no part number.'; })(),   // v348
-          fit.length ? 'Fitment list (vehicles the listing says it fits' + (fit.length >= 200 ? ', first 200' : '') + '):\n' + fit.map(f => '- ' + f).join('\n') : 'Fitment list: none on the listing.',
+          // fit.length ? 'Fitment list (vehicles the listing says it fits' + (fit.length >= 200 ? ', first 200' : '') + '):\n' + fit.map(f => '- ' + f).join('\n') : 'Fitment list: none on the listing.',
+          fit.length ? 'Fitment list (every vehicle the listing\'s compatibility chart covers, by make and model; year ranges include every year between):\n' + fit.map(f => '- ' + f).join('\n') : 'Fitment list: none on the listing.',   // v363
+          (() => { const ys = (String(d.title || '').match(/\b(19[5-9]\d|20[0-4]\d)\b/g) || []).map(Number); return ys.length ? 'Years in the title: ' + (ys.length > 1 ? Math.min(...ys) + '\u2013' + Math.max(...ys) + ' (every year in between)' : ys[0]) + ' — the title\'s years and models count as listed fitment too.' : ''; })(),   // v363
           'Description:\n' + htmlToText(d.description).slice(0, 6000)
         ].filter(Boolean).join('\n');
       } else listing = 'The listing details could not be loaded (' + (it.error || 'unknown') + ').';
@@ -3130,7 +3160,7 @@ const draftHandler = async (req, res) => {   // v347: named, so the sandbox down
       // v359
       // v360
       (() => { const lb = msgs.filter(m => !m.mine).slice(-1)[0]; const age = lb ? (Date.now() - Date.parse(lb.date)) / 86400000 : 0; return age > 2 ? 'The buyer\'s latest message is ' + Math.floor(age) + ' days old: start with a short "Sorry for the slow reply" (once), then answer. Don\'t promise anything by a day that has already passed.' : ''; })(),
-      'FITMENT (always, whatever the instructions above say): never tell the buyer it fits, works, or "yes" because the year, make and model match — the same vehicle can use different part numbers by engine, trim, options or build date. Say the vehicle is (or isn\'t) in the listing\'s compatibility list, and that they need to match the part number on their original part (write the number out, per the PART NUMBER rule). For computer modules and electronics (ECM, PCM, ECU, TCM, BCM, TIPM, ABS module, airbag module, instrument cluster, radio, climate control, fuse box/junction box, key modules): ALWAYS ask them to match the part number, and ALWAYS add: ' + PROGRAMMING_ANSWERS[ms.programming].ai.replace(/^say that /, 'mention that ') + '.',
+      'FITMENT (always, whatever the instructions above say): never tell the buyer it fits, works, or "yes" because the year, make and model match — the same vehicle can use different part numbers by engine, trim, options or build date. Say whether the vehicle is listed (in the compatibility list, or within the title\'s years and models — never say it isn\'t listed when the title covers it), and that they need to match the part number on their original part (write the number out, per the PART NUMBER rule). For computer modules and electronics (ECM, PCM, ECU, TCM, BCM, TIPM, ABS module, airbag module, instrument cluster, radio, climate control, fuse box/junction box, key modules): ALWAYS ask them to match the part number, and ALWAYS add: ' + PROGRAMMING_ANSWERS[ms.programming].ai.replace(/^say that /, 'mention that ') + '.',
       'Programming: only say what the programming rule says. Never say a part "will need" or "typically needs" programming.',
       // 'Part numbers: do NOT add part numbers … to answers about the donor vehicle, mileage, condition, warranty, shipping or price — only when they ask whether it fits or for the part number.',   (v349)
       'Part numbers: do NOT add part numbers to answers about mileage, condition, warranty, shipping or price. DO include the part-number check whenever they ask if it fits / will work, or ask about the engine, diesel or gas, trim, or which vehicle it came from.',   // v362
@@ -4290,5 +4320,5 @@ app.get('*', (req, res) => {
 });
 
 setupDatabase()
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v362 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v363 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });
