@@ -1,4 +1,4 @@
-// PartsLister Pro server — v365
+// PartsLister Pro server — v366
 // v302: dashboard.html is the homepage (/). The listing tool moved to /list.
 // v305: eBay sales connection — real sold orders on the dashboard.
 // v306: asks eBay for two more permissions — fees/payouts and seller metrics.
@@ -167,6 +167,9 @@
 //       boxes, instrument clusters. Radios get "may need a radio code" instead. Mirrors, lights,
 //       switches, motors, trim and plain fuse boxes get no note. The app decides from the title.
 // v365: Settings → Messages → "Write an AI draft automatically" (only for conversations that need a reply).
+// v366: smarter "doesn't need a reply" check (no AI): short messages made only of thank-you / ok /
+//       got-it / received words drop out of Needs reply ("Ok thank you for your help", "Just
+//       purchased. Thank you!"). Anything with a question or any other word stays in.
 // Accounts with email + password login. Each account's settings (including its
 // own API keys) and history are saved ENCRYPTED in Postgres, so you can log in
 // from any computer and everything is there. Also keeps a lifetime listing count.
@@ -2445,7 +2448,26 @@ function msgSettingsOf(settings) {
   };
 }
 // v341: a buyer message that doesn't need an answer ("ok thanks", "got it", "👍")
-const isCloser = (text) => /^\s*(ok(ay)?|k+|kk|thanks?( you)?( so much| a lot)?|thank u|thx|ty|tysm|got it|gotcha|cool|great|perfect|awesome|sounds good|will do|no worries|no problem|np|understood|alright|all right|appreciate it|much appreciated)([\s,.!]+(ok(ay)?|thanks?( you)?|thx|ty|again|man|bro|buddy|sir|so much|a lot|appreciate it))*[\s.!,]*[\u{1F44D}\u{1F64F}\u{1F642}\u{1F60A}\u{263A}️]*\s*$/iu.test(String(text || '')) || /^\s*([\u{1F44D}\u{1F64F}\u{1F642}\u{1F60A}\u{263A}]\uFE0F?\s*)+$/u.test(String(text || ''));
+// const isCloser = (text) => /^\s*(ok(ay)?|k+|kk|thanks?( you)?( so much| a lot)?|thank u|thx|ty|tysm|got it|gotcha|cool|great|perfect|awesome|sounds good|will do|no worries|no problem|np|understood|alright|all right|appreciate it|much appreciated)([\s,.!]+(ok(ay)?|thanks?( you)?|thx|ty|again|man|bro|buddy|sir|so much|a lot|appreciate it))*[\s.!,]*[\u{1F44D}\u{1F64F}\u{1F642}\u{1F60A}\u{263A}️]*\s*$/iu.test(String(text || '')) || /^\s*([\u{1F44D}\u{1F64F}\u{1F642}\u{1F60A}\u{263A}]\uFE0F?\s*)+$/u.test(String(text || ''));   (v341)
+// v366: a smarter "doesn't need a reply" check — a short message (no question mark) made ONLY of
+//       thank-you / okay / got-it words. Any other word (a question, a problem, a part, a date) keeps
+//       it in Needs reply, so a real question is never hidden.
+const CLOSER_WORDS = new Set(('ok okay okey k kk alright aight right sure yes yep yeah yup cool great good perfect awesome excellent wonderful amazing nice fantastic ' +
+  'thanks thank thankyou thx ty tysm tyvm appreciate appreciated appreciated much very so a lot lots again too as always ' +
+  'you u your ya for the it its this that all of in a an and i im ill will we me my sir mam maam bro man buddy friend boss brother dude ' +
+  'got gotcha understood understand noted copy see sounds fair enough no worries problem prob np fine deal done ' +
+  'just purchased bought ordered paid order purchase received receive got arrived came today yesterday quick fast speedy response reply replies help helping info information ' +
+  'matter assistance time patience have nice good great day weekend evening night one blessed take care talk later soon cheers regards best bye goodbye ' +
+  'works worked working well looks look happy pleased glad love it perfectly').split(/\s+/));
+function isCloserSmart(text) {
+  const t = String(text || '').trim();
+  if (!t || t.length > 160 || /\?/.test(t)) return false;
+  const words = t.toLowerCase().replace(/[’']/g, '').replace(/[^a-z\s]/g, ' ').split(/\s+/).filter(Boolean);
+  if (!words.length || words.length > 18) return false;
+  if (!words.some(w => /^(ok|okay|okey|k|kk|alright|aight|thanks|thank|thankyou|thx|ty|tysm|tyvm|appreciate|appreciated|gotcha|got|understood|noted|perfect|great|awesome|cool|sounds|worries|np|cheers|received|purchased|bought|ordered|bye|goodbye)$/.test(w))) return false;   // must actually be a thank-you / ok
+  return words.every(w => CLOSER_WORDS.has(w));
+}
+const isCloser = (text) => isCloserSmart(text) || /^\s*(ok(ay)?|k+|kk|thanks?( you)?( so much| a lot)?|thank u|thx|ty|tysm|got it|gotcha|cool|great|perfect|awesome|sounds good|will do|no worries|no problem|np|understood|alright|all right|appreciate it|much appreciated)([\s,.!]+(ok(ay)?|thanks?( you)?|thx|ty|again|man|bro|buddy|sir|so much|a lot|appreciate it))*[\s.!,]*[\u{1F44D}\u{1F64F}\u{1F642}\u{1F60A}\u{263A}️]*\s*$/iu.test(String(text || '')) || /^\s*([\u{1F44D}\u{1F64F}\u{1F642}\u{1F60A}\u{263A}]\uFE0F?\s*)+$/u.test(String(text || ''));   // v366: + isCloserSmart
 // v356: the offer price — your % off, rounded DOWN to the cent, and always more than 5% below the
 //       listing price (eBay refuses an offer that isn't at least 5% less than Buy It Now)
 function offerPriceFor(price, pct) {
@@ -4336,5 +4358,5 @@ app.get('*', (req, res) => {
 });
 
 setupDatabase()
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v365 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v366 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });
