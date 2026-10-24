@@ -1,4 +1,4 @@
-// PartsLister Pro server — v355
+// PartsLister Pro server — v356
 // v302: dashboard.html is the homepage (/). The listing tool moved to /list.
 // v305: eBay sales connection — real sold orders on the dashboard.
 // v306: asks eBay for two more permissions — fees/payouts and seller metrics.
@@ -138,6 +138,9 @@
 //       see it by entering their ZIP on the listing. No more "check the listing yourself" for flat rate.
 // v355: before a draft offers your discount, the app asks eBay whether this listing has anyone an
 //       offer can be sent to. If not, the draft doesn't promise an offer (no stuck "I sent you 5%").
+// v356: eBay refused offers of exactly 5% off ("price must be at least 5% less than your Buy It
+//       Now"). The offer price is now rounded DOWN and kept at least 1 cent past 5% off, and it's
+//       worked out from the live listing price, not the saved copy.
 // Accounts with email + password login. Each account's settings (including its
 // own API keys) and history are saved ENCRYPTED in Postgres, so you can log in
 // from any computer and everything is there. Also keeps a lifetime listing count.
@@ -2392,6 +2395,15 @@ function msgSettingsOf(settings) {
 }
 // v341: a buyer message that doesn't need an answer ("ok thanks", "got it", "👍")
 const isCloser = (text) => /^\s*(ok(ay)?|k+|kk|thanks?( you)?( so much| a lot)?|thank u|thx|ty|tysm|got it|gotcha|cool|great|perfect|awesome|sounds good|will do|no worries|no problem|np|understood|alright|all right|appreciate it|much appreciated)([\s,.!]+(ok(ay)?|thanks?( you)?|thx|ty|again|man|bro|buddy|sir|so much|a lot|appreciate it))*[\s.!,]*[\u{1F44D}\u{1F64F}\u{1F642}\u{1F60A}\u{263A}️]*\s*$/iu.test(String(text || '')) || /^\s*([\u{1F44D}\u{1F64F}\u{1F642}\u{1F60A}\u{263A}]\uFE0F?\s*)+$/u.test(String(text || ''));
+// v356: the offer price — your % off, rounded DOWN to the cent, and always more than 5% below the
+//       listing price (eBay refuses an offer that isn't at least 5% less than Buy It Now)
+function offerPriceFor(price, pct) {
+  const cents = Math.round(price * 100);
+  let off = Math.floor(cents * (1 - pct / 100));
+  const max5 = Math.floor(cents * 0.95) - 1;   // at least 1 cent past 5% off
+  if (off > max5) off = max5;
+  return off / 100;
+}
 // v331: does the buyer's latest message ask for a lower price?
 function asksForDiscount(text) {
   const t = String(text || '').toLowerCase();
@@ -2676,6 +2688,7 @@ async function returnFacts(userId, itemId, buyer, info) {   // v343: + info (fil
       const sold = parseInt(xmlTag(xmlTag(it, 'SellingStatus') || '', 'QuantitySold') || '0', 10) || 0;
       const left = qty >= 0 ? Math.max(0, qty - sold) : null;
       if (info) info.listingEnded = (st && st !== 'Active') || left === 0;   // v349
+      if (info) info.livePrice = parseFloat(xmlTag(xmlTag(it, 'SellingStatus') || '', 'CurrentPrice') || '') || null;   // v356
       // v354: the listing's US shipping, live
       const sd = xmlTag(it, 'ShippingDetails') || '';
       const opt = xmlAll(sd, 'ShippingServiceOptions')[0] || '';
@@ -2895,7 +2908,8 @@ const draftHandler = async (req, res) => {   // v347: named, so the sandbox down
       // if (lastBuyer && price && asksForDiscount(lastBuyer.text)) {
       // v339: the AI decides whether the buyer is asking for a lower price (it says OFFER: yes)
       if (lastBuyer && price) {
-        const offer = Math.round(price * (1 - ms0.discount.percent / 100) * 100) / 100;
+        // const offer = Math.round(price * (1 - ms0.discount.percent / 100) * 100) / 100;
+        const offer = offerPriceFor(price, ms0.discount.percent);   // v356
         discount = { percent: ms0.discount.percent, price, offerPrice: offer, wordMatch: asksForDiscount(lastBuyer.text) };
       }
     }
@@ -2908,6 +2922,8 @@ const draftHandler = async (req, res) => {   // v347: named, so the sandbox down
     const orderFacts = itemId ? await returnFacts(req.user.id, itemId, buyerName, orderInfo) : '';
     // v349: no discount once this buyer has bought it, or the listing has ended / sold out
     if (discount && ((orderInfo.boughtAt && !orderInfo.cancelled) || orderInfo.listingEnded)) discount = null;
+    // v356: use the live listing price (the saved copy can be out of date)
+    if (discount && orderInfo.livePrice && orderInfo.livePrice !== discount.price) { discount.price = orderInfo.livePrice; discount.offerPrice = offerPriceFor(orderInfo.livePrice, discount.percent); }
     // v355: can eBay actually send an offer on this listing right now? (same check as the Offers panel)
     let discountSkipped = null;
     if (discount && !req._sandbox) {
@@ -4198,5 +4214,5 @@ app.get('*', (req, res) => {
 });
 
 setupDatabase()
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v355 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v356 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });
