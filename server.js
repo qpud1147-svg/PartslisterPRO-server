@@ -1,4 +1,4 @@
-// PartsLister Pro server — v363
+// PartsLister Pro server — v364
 // v302: dashboard.html is the homepage (/). The listing tool moved to /list.
 // v305: eBay sales connection — real sold orders on the dashboard.
 // v306: asks eBay for two more permissions — fees/payouts and seller metrics.
@@ -162,6 +162,10 @@
 //       2009–2014 radio) looked "not listed". The app now reads the whole list and sums it up by
 //       make and model with year ranges, and also gives the years in the title. A vehicle in either
 //       one is "listed" — and fit still goes by part number.
+// v364: the "may need to be programmed" note only goes on parts that can need it — engine /
+//       transmission / body / ABS / airbag / key-immobilizer modules, TIPMs and smart junction
+//       boxes, instrument clusters. Radios get "may need a radio code" instead. Mirrors, lights,
+//       switches, motors, trim and plain fuse boxes get no note. The app decides from the title.
 // Accounts with email + password login. Each account's settings (including its
 // own API keys) and history are saved ENCRYPTED in Postgres, so you can log in
 // from any computer and everything is there. Also keeps a lifetime listing count.
@@ -2475,6 +2479,14 @@ function nextAvailableDay(text, now = new Date(), tz = SELLER_TZ) {
   }
   return null;
 }
+// v364: what kind of part is it? (from the title + category) → which note fit answers get
+function partKind(title, category) {
+  const t = ' ' + String(title || '') + ' ' + String(category || '') + ' ';
+  if (/\b(ECM|ECU|PCM|ECM\/PCM|engine (control|computer)|computer|brain box|TCM|TCU|TCCM|transmission (control|computer)|transfer case (control|module)|BCM|body control|GEM|SJB|smart junction|TIPM|IPDM|totally integrated power|ABS (pump|module|control|unit)|anti[- ]?lock|brake (control )?module|EBCM|airbag (module|control)|SRS|restraint control|RCM|occupant|immobili[sz]er|SKIM|PATS|smart key|keyless (entry )?module|key (fob )?module|instrument cluster|speedometer|gauge cluster|cluster|control module|control unit)\b/i.test(t))
+    return { kind: 'module', note: 'may need programming' };
+  if (/\b(radio|stereo|head unit|receiver|cd player|navigation|nav unit|amplifier|\bamp\b|infotainment)\b/i.test(t)) return { kind: 'radio', note: 'may need a radio code' };
+  return { kind: 'other', note: null };
+}
 // v331: does the buyer's latest message ask for a lower price?
 function asksForDiscount(text) {
   const t = String(text || '').toLowerCase();
@@ -2962,6 +2974,7 @@ const draftHandler = async (req, res) => {   // v347: named, so the sandbox down
         listing = [
           'Title: ' + (d.title || ''),
           'Item number: ' + d.itemId,
+          (() => { const pk = partKind(d.title, d.category); return 'PART TYPE: ' + (pk.kind === 'module' ? 'computer/control module — can need programming to the vehicle' : pk.kind === 'radio' ? 'radio/audio — doesn\'t need programming, but may need a radio (anti-theft) code' : 'not a module — no programming or code needed'); })(),   // v364
           d.price ? 'Price: $' + d.price : '',
           d.condition ? 'Condition: ' + d.condition + (d.conditionNote ? ' — ' + d.conditionNote : '') : '',
           d.category ? 'Category: ' + d.category : '',
@@ -3160,7 +3173,7 @@ const draftHandler = async (req, res) => {   // v347: named, so the sandbox down
       // v359
       // v360
       (() => { const lb = msgs.filter(m => !m.mine).slice(-1)[0]; const age = lb ? (Date.now() - Date.parse(lb.date)) / 86400000 : 0; return age > 2 ? 'The buyer\'s latest message is ' + Math.floor(age) + ' days old: start with a short "Sorry for the slow reply" (once), then answer. Don\'t promise anything by a day that has already passed.' : ''; })(),
-      'FITMENT (always, whatever the instructions above say): never tell the buyer it fits, works, or "yes" because the year, make and model match — the same vehicle can use different part numbers by engine, trim, options or build date. Say whether the vehicle is listed (in the compatibility list, or within the title\'s years and models — never say it isn\'t listed when the title covers it), and that they need to match the part number on their original part (write the number out, per the PART NUMBER rule). For computer modules and electronics (ECM, PCM, ECU, TCM, BCM, TIPM, ABS module, airbag module, instrument cluster, radio, climate control, fuse box/junction box, key modules): ALWAYS ask them to match the part number, and ALWAYS add: ' + PROGRAMMING_ANSWERS[ms.programming].ai.replace(/^say that /, 'mention that ') + '.',
+      'FITMENT (always, whatever the instructions above say): never tell the buyer it fits, works, or "yes" because the year, make and model match — the same vehicle can use different part numbers by engine, trim, options or build date. Say whether the vehicle is listed (in the compatibility list, or within the title\'s years and models — never say it isn\'t listed when the title covers it), and that they need to match the part number on their original part (write the number out, per the PART NUMBER rule). Then use the PART TYPE line: computer/control module → ALWAYS add: ' + PROGRAMMING_ANSWERS[ms.programming].ai.replace(/^say that /, 'mention that ') + '. Radio/audio → don\'t mention programming; add that it may need a radio (anti-theft) code, which a dealer can usually get from the radio\'s serial number. Anything else (mirrors, lights, switches, motors, trim, plain fuse boxes…) → no programming or code note.',   // v364 (v359 put the programming note on radios and fuse boxes too)
       'Programming: only say what the programming rule says. Never say a part "will need" or "typically needs" programming.',
       // 'Part numbers: do NOT add part numbers … to answers about the donor vehicle, mileage, condition, warranty, shipping or price — only when they ask whether it fits or for the part number.',   (v349)
       'Part numbers: do NOT add part numbers to answers about mileage, condition, warranty, shipping or price. DO include the part-number check whenever they ask if it fits / will work, or ask about the engine, diesel or gas, trim, or which vehicle it came from.',   // v362
@@ -4320,5 +4333,5 @@ app.get('*', (req, res) => {
 });
 
 setupDatabase()
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v363 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v364 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });
