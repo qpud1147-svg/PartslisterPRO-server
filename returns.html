@@ -3,13 +3,16 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Returns v369</title>
+<title>PartsLister Pro Returns v370</title>
 <!-- PartsLister Pro — Returns page (v324: new). Returns, "item not received" claims and cases from
      eBay's Post-Order API, read live (nothing saved on the server). Approve / decline / refund from here.
      v325: "Open on eBay" uses the link eBay gives for that return's current stage.
      v369: each return's live stage is checked with eBay first. Approve / Decline / partial refund show
            only while eBay allows them (new requests); Refund shows when eBay allows it and sends
-           eBay's own refund breakdown (item price, shipping…), shown before you confirm. -->
+           eBay's own refund breakdown (item price, shipping…), shown before you confirm.
+     v370: Money section — from eBay's Payments records for the order: after a refund, what the
+           buyer got back, the fee credit eBay gave you, and what it cost you; before a refund,
+           an "about" cost next to the Refund button. -->
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@400;500;600&display=swap');
 
@@ -233,7 +236,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v369</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v370</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -478,6 +481,35 @@ async function showDetail(key) {
       hist.forEach(e => { const row = el('div'); row.append(el('span', '', dateStr(e.when) + ' · ' + nice(e.who) + ' — '), document.createTextNode(nice(e.what) + (e.note ? ': ' + e.note : ''))); h.append(row); });
       hb.append(h);
     });
+    // v370: what the refund costs you, from eBay's Payments records for this order
+    const mb = el('div'); box.append(el('div', 'd-h', 'Money'), mb);
+    mb.append(el('div', 'd-msg', 'Loading from eBay…'));
+    liveP.then(r => {
+      mb.textContent = '';
+      const f = r && r.fees, live = (r && r.summary) || x;
+      if (!f) { mb.append(el('div', 'r-line', 'No order money records from eBay for this return.')); return; }
+      if (f.needScope) { mb.append(el('div', 'r-line', 'To see fees here, reconnect eBay in ⚙ Settings and allow “Fees, payouts & sales tax”.')); return; }
+      if (f.error) { mb.append(el('div', 'r-line', 'Couldn’t read eBay’s money records (' + f.error + ').')); return; }
+      const refunds = f.refunds || [];
+      if (refunds.length) {
+        const given = live.refunded || refunds.reduce((s, t) => s + t.amount, 0);
+        const credit = Math.round(refunds.reduce((s, t) => s + t.credit, 0) * 100) / 100;
+        const cost = Math.round((given - credit) * 100) / 100;
+        const box2 = el('div', 'hist');
+        [['Refunded to buyer', money2.format(given)], ['eBay credited back fees', money2.format(credit)], ['Your cost', money2.format(cost)]].forEach(([a, b]) => { const row = el('div'); row.append(el('span', '', a + ' — '), document.createTextNode(b)); box2.append(row); });
+        mb.append(box2);
+        const ebayAmt = Math.round(refunds.reduce((s, t) => s + t.amount, 0) * 100) / 100;
+        mb.append(el('div', 'r-line', Math.abs(ebayAmt - cost) <= 0.01 ? '✓ Matches eBay’s refund transaction (' + money2.format(ebayAmt) + ' taken from your funds).'
+          : 'eBay’s refund transaction shows ' + money2.format(ebayAmt) + ' — check it on eBay.'));
+        mb.append(el('div', 'r-line', 'Refunded ' + refunds.map(t => dateStr(t.date)).join(', ') + (refunds.some(t => t.status && !/PAYOUT|FUNDS_AVAILABLE|COMPLETED/i.test(t.status)) ? ' · eBay status: ' + refunds.map(t => nice(t.status)).join(', ') : '')));
+      } else if (live.refunded) {
+        mb.append(el('div', 'r-line', 'Refunded ' + money2.format(live.refunded) + '. eBay hasn’t posted the refund in your Payments records yet — check back in a few minutes.'));
+      } else {
+        mb.append(el('div', 'r-line', f.saleFees !== null ? 'No refund yet. eBay charged ' + money2.format(f.saleFees) + ' in fees on this sale.' : 'No refund yet.'));
+      }
+      const link = el('a', 'btn btn-secondary btn-sm', 'Payments on eBay'); link.href = 'https://www.ebay.com/sh/fin'; link.target = '_blank'; link.rel = 'noopener'; link.style.marginTop = '8px';
+      mb.append(link);
+    });
   }
 
   if (view !== 'open') return;
@@ -557,7 +589,16 @@ async function showDetail(key) {
         const rb = el('button', 'btn btn-primary btn-sm', total !== null ? 'Refund ' + money2.format(total) : 'Refund buyer'); rb.type = 'button';
         if (total !== null) {
           rb.onclick = () => act(base + '/refund', { amount: total, comment: note.value }, 'Refund ' + money2.format(total) + ' to ' + (x.buyer || 'the buyer') + ' now?\n\n' + parts + '\n\nThis is eBay’s refund amount for this return. This sends real money.', 'Refund sent.');
-          r3.append(rb, el('span', 'r-line', 'eBay’s refund: ' + parts));
+          // r3.append(rb, el('span', 'r-line', 'eBay’s refund: ' + parts));
+          // v370: + about what it costs you (eBay credits back the sale's fees, scaled to the refund)
+          const f = r && r.fees;
+          let about = '';
+          if (f && f.saleFees !== null && f.saleFees !== undefined && !(f.refunds || []).length) {
+            const share = f.saleBasis > 0 ? Math.min(1, total / f.saleBasis) : 1;
+            const cr = Math.round(f.saleFees * share * 100) / 100;
+            about = ' · Your cost about ' + money2.format(total - cr) + ' (eBay credits back about ' + money2.format(cr) + ' in fees)';
+          }
+          r3.append(rb, el('span', 'r-line', 'eBay’s refund: ' + parts + about));
         } else {
           rb.disabled = true;
           r3.append(rb, el('span', 'r-line', 'eBay didn’t give a refund amount for this return — use Open on eBay below.'));
