@@ -1,4 +1,4 @@
-// PartsLister Pro server — v356
+// PartsLister Pro server — v357
 // v302: dashboard.html is the homepage (/). The listing tool moved to /list.
 // v305: eBay sales connection — real sold orders on the dashboard.
 // v306: asks eBay for two more permissions — fees/payouts and seller metrics.
@@ -141,6 +141,9 @@
 // v356: eBay refused offers of exactly 5% off ("price must be at least 5% less than your Buy It
 //       Now"). The offer price is now rounded DOWN and kept at least 1 cent past 5% off, and it's
 //       worked out from the live listing price, not the saved copy.
+// v357: drafts never invite returns or problems on their own ("let me know if it isn't what you
+//       needed", "you can return it") — returns only come up when the buyer reports a problem or
+//       asks about sending it back.
 // Accounts with email + password login. Each account's settings (including its
 // own API keys) and history are saved ENCRYPTED in Postgres, so you can log in
 // from any computer and everything is there. Also keeps a lifetime listing count.
@@ -3039,7 +3042,9 @@ const draftHandler = async (req, res) => {   // v347: named, so the sandbox down
       'Tracking and delivery: use only the SHIPMENT facts. You may give the carrier, tracking number, shipped date, expected date and delivered date shown there. Never describe where the package is or make up a delivery date.',
       // v336
       // v343
-      'If this buyer has already bought the item and it has shipped or been delivered, never offer to check, measure or photograph the part \u2014 it isn\'t with the seller any more. If TIMELINE says their question came BEFORE they bought it: apologize for the slow reply, say you see they went ahead and bought it (and it was delivered on the date given, if so), and ask them to let you know if it isn\'t what they needed \u2014 then follow the return-window rule.',
+      'If this buyer has already bought the item and it has shipped or been delivered, never offer to check, measure or photograph the part \u2014 it isn\'t with the seller any more. If TIMELINE says their question came BEFORE they bought it: apologize for the slow reply, say you see they went ahead and bought it (and it was delivered on the date given, if so), and thank them for the order \u2014 nothing more (no "let me know if it isn\'t what you needed", no returns).',   // v357 (was: ask them to say if it isn't right, then the return-window rule)
+      // v357
+      'NEVER bring up returns, refunds, the return window or "let me know if there\'s an issue / if it isn\'t what you needed" unless the buyer reports a problem with the part or asks about returning it. Don\'t advertise returns.',
       // v348
       'If ORDER & RETURNS says this order was cancelled or refunded: tell the buyer it shows as cancelled/refunded on your end (don\'t troubleshoot delivery, returns or the part as if it were still open) and ask them to let you know if they have a question about it.',
       // v342
@@ -4214,5 +4219,5 @@ app.get('*', (req, res) => {
 });
 
 setupDatabase()
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v356 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v357 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });
