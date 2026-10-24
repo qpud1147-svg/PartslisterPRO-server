@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Messages v367</title>
+<title>PartsLister Pro Messages v368</title>
 <!-- PartsLister Pro — Messages page (v321: new; v322: conversation threads — the whole back-and-forth
      with each buyer, chat style, from eBay's Message API. Offers from a conversation. The v321
      email-style view is still at /messages/classic). Nothing about your messages is saved on the server.
@@ -29,7 +29,10 @@
      A draft you haven't sent stays put if you open another conversation and come back.
      v366: Discard sits under Send, same size. Smarter "doesn't need a reply" check for Needs reply.
      v367: at the bottom of Needs reply, "Hidden — no reply needed (N)" shows the conversations the
-     check left out, so you can catch a mistake. -->
+     check left out, so you can catch a mistake.
+     v368: nothing jumps around — Discard is always there (greyed out when the box is empty), the
+     status line under AI draft keeps a fixed two-line space, and the offer / Waiting on me /
+     English / ships-to lines appear above the AI draft row instead of pushing it. -->
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@400;500;600&display=swap');
 
@@ -188,11 +191,13 @@
   .th-compose { border-top: 1px solid var(--border); padding: 10px 12px; display: flex; gap: 8px; align-items: flex-end; }
   .th-compose textarea { flex: 1; min-height: 44px; max-height: 180px; resize: vertical; background: var(--surface2); border: 1px solid var(--border); color: var(--text); border-radius: 18px; padding: 10px 14px; font-family: 'Barlow', sans-serif; font-size: 14px; line-height: 1.4; outline: none; }
   .th-compose textarea:focus { border-color: var(--accent); }
+  .th-compose textarea { height: 120px; min-height: 120px; }   /* v368: fixed size so the rows above don't move (scrolls inside; drag the corner to resize) */
   /* v323: AI draft row above the reply box */
   .th-ai { border-top: 1px solid var(--border); padding: 8px 12px 0; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .th-ai input { flex: 1; min-width: 160px; background: var(--surface2); border: 1px solid var(--border); color: var(--text); border-radius: 4px; padding: 6px 10px; font: inherit; font-size: 13px; }
   .th-ai input:focus { border-color: var(--accent); outline: none; }
-  .th-ai .aimsg { font-size: 12px; color: var(--muted); }
+  /* .th-ai .aimsg { font-size: 12px; color: var(--muted); } */
+  .th-ai .aimsg { font-size: 12px; color: var(--muted); flex-basis: 100%; line-height: 1.45; height: 2.9em; overflow-y: auto; padding-bottom: 4px; }   /* v368: fixed space so the buttons don't move */
   /* v329: ships-to check */
   .th-ai select { background: var(--surface2); border: 1px solid var(--border); color: var(--text); border-radius: 4px; padding: 6px 8px; font: inherit; font-size: 13px; color-scheme: dark; max-width: 170px; }
   .ship-res { font-size: 12.5px; padding: 6px 12px 0; line-height: 1.45; }
@@ -243,7 +248,9 @@
   .hidden-note { font-size: 12px; color: var(--muted); padding: 8px 14px; border-bottom: 1px solid var(--border); }
   .send-col { display: flex; flex-direction: column; gap: 6px; }   /* v366: Send on top, Discard under it, same width */
   .send-col .btn { width: 92px; text-align: center; justify-content: center; }
-  .btn-discard.on { display: inline-block; }
+  /* .btn-discard.on { display: inline-block; } */
+  .btn-discard, .btn-discard.on { display: inline-block; }   /* v368: always there… */
+  .btn-discard:disabled { opacity: 0.4; cursor: default; }   /* …greyed out when there's nothing to discard */
   .btn-danger { background: var(--surface2); color: var(--danger); border-color: rgba(224,82,82,0.5); }
   .btn-danger:hover { border-color: var(--danger); color: var(--danger); }
   .th-note { padding: 10px 16px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13px; }
@@ -286,7 +293,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v367</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v368</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -665,11 +672,11 @@ async function showThread(id) {
     finally { send.disabled = false; send.textContent = 'Send'; }
   };
   // v365: Discard (next to Send) — clears the draft and the offer / Waiting-on-me boxes
-  const discard = el('button', 'btn btn-sm btn-discard', 'Discard'); discard.type = 'button'; discard.title = 'Throw this draft away';
-  const syncDiscard = () => { discard.classList.toggle('on', !!ta.value.trim()); if (ta.value.trim()) draftsById[id] = ta.value; else delete draftsById[id]; };
+  const discard = el('button', 'btn btn-sm btn-discard', 'Discard'); discard.type = 'button'; discard.title = 'Throw this draft away'; discard.disabled = true;   // v368: greyed out until there's a draft
+  const syncDiscard = () => { discard.classList.toggle('on', !!ta.value.trim()); discard.disabled = !ta.value.trim(); /* v368 */ if (ta.value.trim()) draftsById[id] = ta.value; else delete draftsById[id]; };
   ta.addEventListener('input', syncDiscard);
   discard.onclick = () => {
-    ta.value = ''; ta.style.height = ''; syncDiscard(); discardedIds.add(id);
+    ta.value = ''; syncDiscard(); discardedIds.add(id);   // v368: the box keeps its size
     pendingOffer = null; discRow.classList.remove('on'); fuRow.classList.remove('on'); enCopy.classList.remove('on'); aiMsg.textContent = 'Draft discarded.';
     ta.focus();
   };
@@ -694,7 +701,7 @@ async function showThread(id) {
       if (current !== id) return;
       if (out.noReply) { aiMsg.textContent = out.reason || 'Nothing to answer.'; return; }   // v341: nothing to answer — leave the box alone
       ta.value = out.draft; ta.focus(); syncDiscard();   // v365
-      ta.style.height = Math.min(180, ta.scrollHeight + 2) + 'px';   // grow to fit the draft
+      // ta.style.height = Math.min(180, ta.scrollHeight + 2) + 'px';   // grow to fit the draft   (v368: fixed size — nothing moves)
       // aiMsg.textContent = 'Draft ready — check it, edit if needed, then Send.';
       const sc = (out.shipChecks || []).map(x => x.country + ': ' + ({ yes: 'ships', no: 'can\u2019t ship', probably: 'probably ships', unknown: 'unclear' }[x.verdict])).join(', ');
       aiMsg.textContent = 'Draft ready — check it, edit if needed, then Send.' + (sc ? ' (Checked shipping — ' + sc + ')' : '');   // v329
@@ -757,11 +764,12 @@ async function showThread(id) {
   // v.append(ai, shipRes);
   // v.append(ai, shipRes, discRow);   // v331: + discount offer box
   // v.append(ai, shipRes, discRow, fuRow);   // v336: + Waiting on me box
-  v.append(ai, shipRes, enCopy, discRow, fuRow);   // v339: + English copy
+  // v.append(ai, shipRes, enCopy, discRow, fuRow);   // v339: + English copy
+  v.append(shipRes, enCopy, discRow, fuRow, ai);   // v368: the changing lines go above the AI draft row, so it stays put
   v.append(comp);
   if (!phone()) ta.focus();
   // v365: a draft you started here earlier comes back; otherwise maybe write one automatically
-  if (draftsById[id]) { ta.value = draftsById[id]; syncDiscard(); ta.style.height = Math.min(180, ta.scrollHeight + 2) + 'px'; }
+  if (draftsById[id]) { ta.value = draftsById[id]; syncDiscard(); }   // v368: no resizing
   else if (type === 'members' && !inTrash && needsReply(t) && !discardedIds.has(id)) {
     msgPrefs().then(p => { if (p && p.autoDraft && current === id && !ta.value.trim()) { aiMsg.textContent = 'Writing a draft automatically…'; aiBtn.click(); } });
   }
