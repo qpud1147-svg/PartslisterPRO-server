@@ -1,4 +1,4 @@
-// PartsLister Pro server — v354
+// PartsLister Pro server — v355
 // v302: dashboard.html is the homepage (/). The listing tool moved to /list.
 // v305: eBay sales connection — real sold orders on the dashboard.
 // v306: asks eBay for two more permissions — fees/payouts and seller metrics.
@@ -136,6 +136,8 @@
 // v354: drafts know the listing's shipping (live from eBay): flat rate → they give the amount,
 //       free → they say free, calculated → shipping depends on the buyer's location and they can
 //       see it by entering their ZIP on the listing. No more "check the listing yourself" for flat rate.
+// v355: before a draft offers your discount, the app asks eBay whether this listing has anyone an
+//       offer can be sent to. If not, the draft doesn't promise an offer (no stuck "I sent you 5%").
 // Accounts with email + password login. Each account's settings (including its
 // own API keys) and history are saved ENCRYPTED in Postgres, so you can log in
 // from any computer and everything is there. Also keeps a lifetime listing count.
@@ -2906,6 +2908,24 @@ const draftHandler = async (req, res) => {   // v347: named, so the sandbox down
     const orderFacts = itemId ? await returnFacts(req.user.id, itemId, buyerName, orderInfo) : '';
     // v349: no discount once this buyer has bought it, or the listing has ended / sold out
     if (discount && ((orderInfo.boughtAt && !orderInfo.cancelled) || orderInfo.listingEnded)) discount = null;
+    // v355: can eBay actually send an offer on this listing right now? (same check as the Offers panel)
+    let discountSkipped = null;
+    if (discount && !req._sandbox) {
+      try {
+        if (!hasScope(conn, INV_SCOPE)) discountSkipped = 'eBay offers need one more permission (⚙ Settings → Admin → Reconnect eBay)';
+        else {
+          let eligible = false;
+          for (let offset = 0; offset < 1000 && !eligible; offset += 200) {
+            const { status, data } = await restCall(req.user.id, 'GET', '/sell/negotiation/v1/find_eligible_items?limit=200&offset=' + offset, null, { 'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US' });
+            const list = (status === 204 || !data) ? [] : (data.eligibleItems || []);
+            if (list.some(x => String(x.listingId) === String(itemId))) eligible = true;
+            if (!data || !data.next || list.length < 200) break;
+          }
+          if (!eligible) discountSkipped = 'eBay has no interested buyers to send an offer to on this listing';
+        }
+      } catch (e) { discountSkipped = 'couldn\u2019t check with eBay (' + String(e.message).slice(0, 80) + ')'; }
+      if (discountSkipped) discount = null;   // → the draft says the price is as listed instead
+    }
     // v350: LATE RETURN — your own extra days, counted from delivery (from the purchase date if eBay has no delivery date)
     let lateReturn = '';
     if (ms0.honorLate.enabled && orderInfo.boughtAt && !orderInfo.cancelled && /Return window: ENDED/.test(orderFacts)) {
@@ -3123,7 +3143,7 @@ const draftHandler = async (req, res) => {   // v347: named, so the sandbox down
     // res.json({ draft: text.slice(0, 2000), usedListing: !!itemId, shipChecks: shipChecks.map(sc => ({ country: sc.country, verdict: sc.verdict })), orderFacts: orderFacts || null });   // v330
     // res.json({ draft: text.slice(0, 2000), usedListing: !!itemId, shipChecks: shipChecks.map(sc => ({ country: sc.country, verdict: sc.verdict })), orderFacts: orderFacts || null, discount });   // v331: + discount
     // res.json({ draft: …, discount, followUp });   // v336: + followUp
-    res.json({ draft: text.slice(0, 2000), usedListing: !!itemId, shipChecks: shipChecks.map(sc => ({ country: sc.country, verdict: sc.verdict })), orderFacts: orderFacts || null, discount, followUp, english });   // v339: + english
+    res.json({ draft: text.slice(0, 2000), usedListing: !!itemId, shipChecks: shipChecks.map(sc => ({ country: sc.country, verdict: sc.verdict })), orderFacts: orderFacts || null, discount, followUp, english, discountSkipped });   // v339: + english, v355: + discountSkipped
   } catch (e) {
     console.error('[draft]', e.message);
     res.status(500).json({ error: 'Could not draft a reply: ' + e.message });
@@ -4178,5 +4198,5 @@ app.get('*', (req, res) => {
 });
 
 setupDatabase()
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v354 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v355 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });

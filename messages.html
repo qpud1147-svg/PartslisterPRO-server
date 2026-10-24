@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Messages v341</title>
+<title>PartsLister Pro Messages v355</title>
 <!-- PartsLister Pro — Messages page (v321: new; v322: conversation threads — the whole back-and-forth
      with each buyer, chat style, from eBay's Message API. Offers from a conversation. The v321
      email-style view is still at /messages/classic). Nothing about your messages is saved on the server.
@@ -21,7 +21,9 @@
      this buyer — not bought / bought / shipped with tracking / delivered.
      v339: when a draft is written in the buyer's language, the English version shows under it.
      v341: "Needs reply" skips conversations you answered last or where the buyer only said "ok thanks";
-     AI draft says when there's nothing to answer instead of writing a note into the reply box. -->
+     AI draft says when there's nothing to answer instead of writing a note into the reply box.
+     v355: if eBay can't send your discount offer on this listing, the draft doesn't promise one and
+     the line under AI draft says why. -->
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@400;500;600&display=swap');
 
@@ -261,7 +263,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v341</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v355</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -620,6 +622,7 @@ async function showThread(id) {
       // aiMsg.textContent = 'Draft ready — check it, edit if needed, then Send.';
       const sc = (out.shipChecks || []).map(x => x.country + ': ' + ({ yes: 'ships', no: 'can\u2019t ship', probably: 'probably ships', unknown: 'unclear' }[x.verdict])).join(', ');
       aiMsg.textContent = 'Draft ready — check it, edit if needed, then Send.' + (sc ? ' (Checked shipping — ' + sc + ')' : '');   // v329
+      if (out.discountSkipped) aiMsg.textContent += ' (No discount offer: ' + out.discountSkipped + '.)';   // v355
       // v330: show what the AI was told about the sale + return window (hover for all of it)
       const rw = /Return window: (INSIDE|ENDED)[^(]*/.exec(out.orderFacts || '');
       if (rw) aiMsg.textContent += ' (Return window: ' + rw[0].replace('Return window: ', '').replace(/ counting.*$/, '').trim() + ')';
