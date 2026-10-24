@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Returns v370</title>
+<title>PartsLister Pro Returns v371</title>
 <!-- PartsLister Pro — Returns page (v324: new). Returns, "item not received" claims and cases from
      eBay's Post-Order API, read live (nothing saved on the server). Approve / decline / refund from here.
      v325: "Open on eBay" uses the link eBay gives for that return's current stage.
@@ -12,7 +12,10 @@
            eBay's own refund breakdown (item price, shipping…), shown before you confirm.
      v370: Money section — from eBay's Payments records for the order: after a refund, what the
            buyer got back, the fee credit eBay gave you, and what it cost you; before a refund,
-           an "about" cost next to the Refund button. -->
+           an "about" cost next to the Refund button.
+     v371: Late returns — returns you agreed to take after eBay's window closed (added when you send
+           your return address in Messages, or by hand). Address sent → Mark received → refund on
+           eBay (picked up automatically). Not received in 30 days → it drops off. -->
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@400;500;600&display=swap');
 
@@ -192,6 +195,15 @@
   .chip.done { color: var(--success); border-color: rgba(76,175,130,0.5); }
   .chip.bad { color: var(--danger); border-color: rgba(224,82,82,0.5); }
   .chip.part { color: var(--text2); border-color: var(--border); }
+  /* v371: Late returns */
+  #late { display: none; margin-bottom: 18px; }
+  #late.on { display: block; }
+  #late .d-h { margin-top: 6px; }
+  .late-row { display: grid; grid-template-columns: 56px 1fr auto; gap: 12px; align-items: center; padding: 10px 12px; border: 1px solid var(--border); border-radius: 6px; margin-bottom: 8px; background: var(--surface); }
+  .late-row img { width: 56px; height: 56px; object-fit: cover; border-radius: 4px; background: var(--surface2); }
+  .late-row .l-acts { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; align-items: center; }
+  .late-row .late-soon { color: #e0a030; font-weight: 600; }
+  @media (max-width: 640px) { .late-row { grid-template-columns: 48px 1fr; } .late-row .l-acts { grid-column: 1 / -1; justify-content: flex-start; } }
   .empty { color: var(--muted); padding: 30px 0; text-align: center; }
   .more { margin: 14px auto 0; display: block; }
   @media (max-width: 700px) {
@@ -236,7 +248,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v370</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v371</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -265,6 +277,7 @@
   <div class="page-note" id="r-note">&nbsp;</div>
   <div class="error-box" id="r-error"></div>
 
+  <div id="late"></div>   <!-- v371: Late returns -->
   <div class="controls">
     <div class="seg" role="group" aria-label="Open or closed" id="seg-view">
       <button type="button" data-view="open">Open</button>
@@ -401,6 +414,7 @@ async function load() {
   if (!me) return;
   isAdmin = !!me.isAdmin;
   setText('r-note', 'Loading from eBay…');
+  loadLate();   // v371
   const d = await getJSON('/api/returns?view=' + view);
   document.getElementById('loading').classList.add('hidden');
   const err = document.getElementById('r-error'); err.style.display = 'none';
@@ -414,6 +428,67 @@ async function load() {
   render();
   const hm = /^#r=(.+)$/.exec(location.hash);
   if (hm) showDetail(decodeURIComponent(hm[1]));
+}
+
+// ─── v371: LATE RETURNS ──────────────────────────────────────────────────────
+async function lateAct(id, action, confirmText) {
+  if (confirmText && !confirm(confirmText)) return;
+  const r = await fetch('/api/late-returns/' + id + '/' + action, { method: 'POST' }).catch(() => null);
+  if (!r || !r.ok) { toast('Couldn’t update it.', true); return; }
+  loadLate();
+}
+async function loadLate() {
+  const box = document.getElementById('late');
+  const d = await getJSON('/api/late-returns');
+  box.textContent = '';
+  const list = (d && d.items) || [];
+  box.classList.toggle('on', !!(d && (d.enabled || list.length)));
+  if (!d || d._signedOut) return;
+  box.append(el('div', 'd-h', 'Late returns' + (list.length ? ' · ' + list.length : '')));
+  if (!list.length) { box.append(el('div', 'r-line', 'None right now. When you send a buyer your return address in Messages, the sale shows up here.')); return; }
+  list.forEach(x => {
+    const row = el('div', 'late-row');
+    const img = el('img'); img.alt = ''; if (x.itemId) { img.dataset.item = x.itemId; img.className = 'o-thumb'; img.style.cssText = 'width:56px;height:56px;'; if (pics[x.itemId]) img.src = pics[x.itemId]; }
+    const mid = el('div');
+    const t = el('div', 'o-title', x.title || titles[x.itemId] || (x.itemId ? 'Item #' + x.itemId : '(no item)'));
+    if (!x.title && x.itemId) t.dataset.title = x.itemId;
+    mid.append(t);
+    mid.append(el('div', 'r-line', ['Order ' + (x.orderId || '?'), x.total !== null ? money2.format(x.total) : null].filter(Boolean).join(' · ')));
+    const l3 = el('div', 'r-line');
+    if (x.refunded) l3.append(el('span', 'chip done', 'Refunded'), document.createTextNode(' ' + dateStr(x.refunded)));
+    else if (x.received) l3.append(el('span', 'chip ship', 'Received'), document.createTextNode(' ' + dateStr(x.received) + ' · refund it on eBay'));
+    else {
+      const left = Math.ceil((new Date(x.dropsOn) - Date.now()) / 86400000);
+      l3.append(el('span', 'chip part', 'Address sent'), document.createTextNode(' ' + dateStr(x.sent) + ' · '));
+      l3.append(el('span', left <= 7 ? 'late-soon' : '', left > 0 ? left + ' day' + (left === 1 ? '' : 's') + ' left' : 'drops off today'));
+    }
+    mid.append(l3);
+    const acts = el('div', 'l-acts');
+    const btn = (label, cls, fn) => { const b = el('button', 'btn btn-sm ' + cls, label); b.type = 'button'; b.onclick = fn; acts.append(b); return b; };
+    if (!x.refunded) {
+      if (!x.received) btn('Mark received', 'btn-primary', () => lateAct(x.id, 'received'));
+      else {
+        const a = el('a', 'btn btn-primary btn-sm', 'Refund on eBay'); a.href = 'https://www.ebay.com/sh/ord'; a.target = '_blank'; a.rel = 'noopener';
+        a.title = 'Opens your eBay orders — search order ' + (x.orderId || '') + ' and refund it there';
+        acts.append(a);
+        if (x.orderId) btn('Copy order #', 'btn-secondary', () => navigator.clipboard.writeText(x.orderId).then(() => toast('Order number copied.'), () => toast('Couldn’t copy.', true)));
+        btn('Mark refunded', 'btn-secondary', () => lateAct(x.id, 'refunded', 'Mark this as refunded? (The app also picks up eBay refunds by itself.)'));
+        btn('Not received', 'btn-secondary', () => lateAct(x.id, 'unreceived'));
+      }
+      btn('Remove', 'btn-secondary', () => lateAct(x.id, 'remove', 'Remove this from Late returns? (e.g. the buyer is keeping it)'));
+    }
+    row.append(img, mid, acts);
+    box.append(row);
+  });
+  // photos / titles
+  const ids = [...new Set(list.map(x => x.itemId).filter(id => id && !(id in titles)))];
+  for (const id of ids) {
+    const d2 = await getJSON('/api/items/' + encodeURIComponent(id));
+    titles[id] = (d2 && d2.item && d2.item.title) || '';
+    pics[id] = (d2 && d2.item && d2.item.pictures && d2.item.pictures[0]) || null;
+  }
+  box.querySelectorAll('img[data-item]').forEach(im => { if (pics[im.dataset.item]) im.src = pics[im.dataset.item]; });
+  box.querySelectorAll('.o-title[data-title]').forEach(t => { if (titles[t.dataset.title]) t.textContent = titles[t.dataset.title]; });
 }
 
 // ─── DETAIL + ACTIONS ────────────────────────────────────────────────────────

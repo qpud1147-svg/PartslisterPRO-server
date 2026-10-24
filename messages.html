@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Messages v368</title>
+<title>PartsLister Pro Messages v371</title>
 <!-- PartsLister Pro — Messages page (v321: new; v322: conversation threads — the whole back-and-forth
      with each buyer, chat style, from eBay's Message API. Offers from a conversation. The v321
      email-style view is still at /messages/classic). Nothing about your messages is saved on the server.
@@ -32,7 +32,9 @@
      check left out, so you can catch a mistake.
      v368: nothing jumps around — Discard is always there (greyed out when the box is empty), the
      status line under AI draft keeps a fixed two-line space, and the offer / Waiting on me /
-     English / ships-to lines appear above the AI draft row instead of pushing it. -->
+     English / ships-to lines appear above the AI draft row instead of pushing it.
+     v371: sending your return address (late returns on in Settings) adds the sale to Late returns on
+     the Returns page. "Add to Late returns" on the order line adds one by hand. -->
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@400;500;600&display=swap');
 
@@ -214,6 +216,7 @@
   .th-info .ti-price { color: var(--accent); font-weight: 600; }
   .th-info .ti-ord { color: var(--text); }
   .th-info .ti-ord.good { color: var(--success); }
+  .th-info .ti-late { margin-left: 6px; }   /* v371 */
   .th-info .ti-trk { font-family: ui-monospace, Menlo, monospace; color: var(--text); user-select: all; }
   .th-info button { background: none; border: 1px solid var(--border); color: var(--accent); border-radius: 4px; font: inherit; font-size: 11px; padding: 1px 6px; cursor: pointer; margin-left: 4px; }
   /* v339: English copy of a draft written in the buyer's language */
@@ -293,7 +296,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v368</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v371</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -651,7 +654,8 @@ async function showThread(id) {
         toast('Offer for ' + money2.format(pendingOffer.offerPrice) + ' sent to interested buyers.');
         pendingOffer = null; discRow.classList.remove('on');
       }
-      const r = await fetch('/api/threads/' + encodeURIComponent(id) + '/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) });
+      // const r = await fetch('/api/threads/' + encodeURIComponent(id) + '/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) });
+      const r = await fetch('/api/threads/' + encodeURIComponent(id) + '/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, itemId: t.itemId || null, buyer: t.other || '' }) });   // v371: + item / buyer for Late returns
       const out = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(out.error || 'Not sent');
       ta.value = ''; syncDiscard();   // v365
@@ -660,6 +664,7 @@ async function showThread(id) {
       if (body.querySelector('.empty')) body.textContent = '';
       body.append(bubble(m)); body.scrollTop = body.scrollHeight;
       t.last = { text: m.text, date: m.date, mine: true }; renderList();
+      if (out.lateReturn === 'added') toast('Sent — added to Late returns.');   // v371
       // v336: the reply promised a follow-up → Waiting on me (unless you unticked it)
       if (fuRow.classList.contains('on') && fuBox.checked) {
         const rf = await fetch('/api/followups', { method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -852,6 +857,20 @@ async function loadInfo(t, id, box, headTitle) {
       l2.append(c);
     });
     if ((o.status === 'shipped' || o.status === 'delivered') && !(o.tracks || []).length) l2.append(document.createTextNode(o.shipError ? ' \u00b7 tracking couldn\u2019t be loaded' : ' \u00b7 no tracking number'));
+    // v371: Late returns — already there, or add it by hand
+    if (d.lateReturn) l2.append(document.createTextNode(' \u00b7 \u21a9 In Late returns' + (d.lateReturn.refunded ? ' (refunded)' : d.lateReturn.received ? ' (received)' : ' since ' + fmtDay(d.lateReturn.sent))));
+    else if (o.status !== 'cancelled') {
+      const lb = el('button', 'ti-late', 'Add to Late returns'); lb.type = 'button';
+      lb.onclick = async () => {
+        lb.disabled = true;
+        const r = await fetch('/api/late-returns', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conversationId: id, itemId: t.itemId, buyer: t.other || '' }) });
+        const out = await r.json().catch(() => ({}));
+        if (!r.ok) { toast(out.error || 'Couldn\u2019t add it.', true); lb.disabled = false; return; }
+        lb.replaceWith(document.createTextNode('\u21a9 In Late returns'));
+        toast(out.existed ? 'Already in Late returns.' : 'Added to Late returns.');
+      };
+      l2.append(lb);
+    }
   }
   box.append(l2);
 }
