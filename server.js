@@ -1,4 +1,4 @@
-// PartsLister Pro server — v366
+// PartsLister Pro server — v369
 // v302: dashboard.html is the homepage (/). The listing tool moved to /list.
 // v305: eBay sales connection — real sold orders on the dashboard.
 // v306: asks eBay for two more permissions — fees/payouts and seller metrics.
@@ -170,6 +170,10 @@
 // v366: smarter "doesn't need a reply" check (no AI): short messages made only of thank-you / ok /
 //       got-it / received words drop out of Needs reply ("Ok thank you for your help", "Just
 //       purchased. Thank you!"). Anything with a question or any other word stays in.
+// v369: Returns — refunds use eBay's own refund breakdown for that return (item price, original
+//       shipping, … each line as eBay estimates it), so eBay no longer refuses with "refund amount
+//       exceeds estimated amount". The return's live stage and eBay's available actions come with
+//       it, so the page only offers Approve on new requests and Refund when eBay allows it.
 // Accounts with email + password login. Each account's settings (including its
 // own API keys) and history are saved ENCRYPTED in Postgres, so you can log in
 // from any computer and everything is there. Also keeps a lifetime listing count.
@@ -3903,6 +3907,17 @@ app.get('/api/returns/summary', requireUser, async (req, res) => {
   } catch (e) { res.json({ connected: true, open: null, error: e.message }); }
 });
 
+// v369: eBay's refund estimate for a return — one line per refund type (item price, original shipping…)
+function returnEstimate(d) {
+  const det = (d && d.detail) || {};
+  const ri = det.refundInfo || (d && d.refundInfo) || {};
+  const est = ri.estimatedRefundDetail || {};
+  const lines = (est.itemizedRefundDetails || est.itemizedRefundDetail || []).map(x => ({
+    type: x.refundFeeType || '', amount: amt(x.estimatedAmount), max: amt(x.maxAmount)
+  })).filter(x => x.type && x.amount !== null);
+  const total = Math.round(lines.reduce((s, x) => s + x.amount, 0) * 100) / 100;
+  return lines.length ? { lines, total } : null;
+}
 // One return in full (history, notes) — shown as-is from eBay
 app.get('/api/returns/return/:id', requireUser, async (req, res) => {
   if (!poId(req.params.id)) return res.status(400).json({ error: 'Bad return number' });
@@ -3912,7 +3927,8 @@ app.get('/api/returns/return/:id', requireUser, async (req, res) => {
     const history = (det.responseHistory || []).map(h => ({
       when: dval(h.creationDate), who: h.author || '', what: h.activity || '', note: (h.notes && (h.notes.content || h.notes)) || ''
     }));
-    res.json({ summary: d && d.summary ? mapReturn(d.summary) : null, history });
+    // res.json({ summary: d && d.summary ? mapReturn(d.summary) : null, history });
+    res.json({ summary: d && d.summary ? mapReturn(d.summary) : null, history, estimate: returnEstimate(d) });   // v369: + eBay's refund breakdown
   } catch (e) {
     console.error('[return]', e.message);
     res.json({ error: 'eBay didn\u2019t give us that return: ' + e.message });
@@ -3948,10 +3964,24 @@ app.post('/api/returns/return/:id/decide', requireUser, express.json(), async (r
 app.post('/api/returns/return/:id/refund', requireUser, express.json(), async (req, res) => {
   const amount = parseFloat((req.body || {}).amount);
   const comment = String((req.body || {}).comment || '').trim().slice(0, 1000);
-  if (!poId(req.params.id) || !(amount > 0)) return res.status(400).json({ error: 'Enter the refund amount.' });
+  // if (!poId(req.params.id) || !(amount > 0)) return res.status(400).json({ error: 'Enter the refund amount.' });
+  if (!poId(req.params.id)) return res.status(400).json({ error: 'Bad return number' });   // v369: the amount comes from eBay's estimate
   try {
-    const money = { value: amount.toFixed(2), currency: 'USD' };
-    const body = { refundDetail: { itemizedRefundDetail: [{ refundAmount: money, refundFeeType: 'PURCHASE_PRICE' }], totalAmount: money } };
+    // const money = { value: amount.toFixed(2), currency: 'USD' };
+    // const body = { refundDetail: { itemizedRefundDetail: [{ refundAmount: money, refundFeeType: 'PURCHASE_PRICE' }], totalAmount: money } };
+    // v369: refund exactly eBay's breakdown for this return (it refused a single full-amount line)
+    const full = await poCall(req.user.id, 'GET', '/return/' + req.params.id + '?fieldgroups=FULL');
+    const est = returnEstimate(full);
+    let body;
+    if (est) {
+      if (amount > 0 && Math.abs(amount - est.total) > 0.01) return res.status(400).json({ error: 'eBay\u2019s refund for this return is ' + est.total.toFixed(2) + ' — the app can only send that amount. For a different amount, use Open on eBay.' });
+      const money = (v) => ({ value: v.toFixed(2), currency: 'USD' });
+      body = { refundDetail: { itemizedRefundDetail: est.lines.map(x => ({ refundAmount: money(x.amount), refundFeeType: x.type })), totalAmount: money(est.total) } };
+    } else {
+      if (!(amount > 0)) return res.status(400).json({ error: 'eBay didn\u2019t give a refund estimate for this return — use Open on eBay to refund it.' });
+      const money = { value: amount.toFixed(2), currency: 'USD' };
+      body = { refundDetail: { itemizedRefundDetail: [{ refundAmount: money, refundFeeType: 'PURCHASE_PRICE' }], totalAmount: money } };
+    }
     if (comment) body.comments = { content: comment };
     const d = await poCall(req.user.id, 'POST', '/return/' + req.params.id + '/issue_refund', body);
     clearReturnCount(req.user.id);
@@ -4358,5 +4388,5 @@ app.get('*', (req, res) => {
 });
 
 setupDatabase()
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v366 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v369 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });

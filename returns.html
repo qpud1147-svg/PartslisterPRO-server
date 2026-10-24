@@ -3,10 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Returns v325</title>
+<title>PartsLister Pro Returns v369</title>
 <!-- PartsLister Pro — Returns page (v324: new). Returns, "item not received" claims and cases from
      eBay's Post-Order API, read live (nothing saved on the server). Approve / decline / refund from here.
-     v325: "Open on eBay" uses the link eBay gives for that return's current stage. -->
+     v325: "Open on eBay" uses the link eBay gives for that return's current stage.
+     v369: each return's live stage is checked with eBay first. Approve / Decline / partial refund show
+           only while eBay allows them (new requests); Refund shows when eBay allows it and sends
+           eBay's own refund breakdown (item price, shipping…), shown before you confirm. -->
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@400;500;600&display=swap');
 
@@ -230,7 +233,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v325</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v369</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -461,10 +464,13 @@ async function showDetail(key) {
   if (x.comments) box.append(el('div', 'quote', '“' + x.comments + '”'));
 
   // history (returns)
+  let liveP = null;   // v369: the return as eBay has it right now (stage, actions, refund breakdown)
   if (x.kind === 'return') {
     const hb = el('div'); box.append(el('div', 'd-h', 'History'), hb);
     hb.append(el('div', 'd-msg', 'Loading from eBay…'));
-    getJSON('/api/returns/return/' + x.id).then(r => {
+    // getJSON('/api/returns/return/' + x.id).then(r => {
+    liveP = getJSON('/api/returns/return/' + x.id);
+    liveP.then(r => {
       hb.textContent = '';
       const hist = (r && r.history) || [];
       if (!hist.length) { hb.append(el('div', 'd-msg', (r && r.error) || 'No history from eBay.')); return; }
@@ -480,30 +486,86 @@ async function showDetail(key) {
   const base = '/api/returns/' + x.kind + '/' + x.id;
 
   if (x.kind === 'return') {
+  // (v325) if (x.kind === 'return') {
+  //   acts.append(el('h4', '', 'Respond'));
+  //   const note = el('textarea'); note.placeholder = 'Note to the buyer (needed to decline; optional otherwise)'; note.maxLength = 1000;
+  //   acts.append(note);
+  //   const keep = el('input'); keep.type = 'checkbox';
+  //   const keepL = el('label'); keepL.append(keep, document.createTextNode('Buyer can keep the item'));
+  //   const r1 = el('div', 'row');
+  //   const ap = el('button', 'btn btn-primary btn-sm', 'Approve return'); ap.type = 'button';
+  //   ap.onclick = () => act(base + '/decide', { decision: 'APPROVE', comment: note.value, keepItem: keep.checked }, 'Approve this return' + (keep.checked ? ' and let the buyer keep the item' : '') + '?', 'Return approved.');
+  //   const de = el('button', 'btn btn-danger btn-sm', 'Decline'); de.type = 'button';
+  //   de.onclick = () => { if (!note.value.trim()) { toast('Type a reason in the note first — eBay needs one to decline.', true); note.focus(); return; } act(base + '/decide', { decision: 'DECLINE', comment: note.value }, 'Decline this return?', 'Return declined.'); };
+  //   r1.append(ap, de, keepL);
+  //   acts.append(r1);
+  //   const r2 = el('div', 'row');
+  //   const pa = el('input'); pa.type = 'number'; pa.min = '1'; pa.step = '0.01'; pa.placeholder = 'Amount $';
+  //   const pb = el('button', 'btn btn-secondary btn-sm', 'Offer partial refund'); pb.type = 'button';
+  //   pb.onclick = () => { const v = parseFloat(pa.value); if (!(v > 0)) { toast('Type the partial refund amount.', true); return; } act(base + '/decide', { decision: 'OFFER_PARTIAL_REFUND', amount: v, comment: note.value, keepItem: true }, 'Offer a partial refund of ' + money2.format(v) + '? The buyer keeps the item if they accept.', 'Partial refund offered.'); };
+  //   r2.append(pa, pb);
+  //   acts.append(r2);
+  //   const r3 = el('div', 'row');
+  //   const ra = el('input'); ra.type = 'number'; ra.min = '1'; ra.step = '0.01'; ra.placeholder = 'Refund $'; if (x.amount) ra.value = x.amount.toFixed(2);
+  //   const rb = el('button', 'btn btn-primary btn-sm', 'Refund buyer'); rb.type = 'button';
+  //   rb.onclick = () => { const v = parseFloat(ra.value); if (!(v > 0)) { toast('Type the refund amount.', true); return; } act(base + '/refund', { amount: v, comment: note.value }, 'Refund ' + money2.format(v) + ' to ' + (x.buyer || 'the buyer') + ' now? This sends real money.', 'Refund sent.'); };
+  //   r3.append(ra, rb, el('span', 'r-line', x.amount ? 'eBay’s estimate: ' + money2.format(x.amount) : ''));
+  //   acts.append(r3);
+    // v369: only offer what eBay allows for this return's live stage
     acts.append(el('h4', '', 'Respond'));
-    const note = el('textarea'); note.placeholder = 'Note to the buyer (needed to decline; optional otherwise)'; note.maxLength = 1000;
-    acts.append(note);
-    const keep = el('input'); keep.type = 'checkbox';
-    const keepL = el('label'); keepL.append(keep, document.createTextNode('Buyer can keep the item'));
-    const r1 = el('div', 'row');
-    const ap = el('button', 'btn btn-primary btn-sm', 'Approve return'); ap.type = 'button';
-    ap.onclick = () => act(base + '/decide', { decision: 'APPROVE', comment: note.value, keepItem: keep.checked }, 'Approve this return' + (keep.checked ? ' and let the buyer keep the item' : '') + '?', 'Return approved.');
-    const de = el('button', 'btn btn-danger btn-sm', 'Decline'); de.type = 'button';
-    de.onclick = () => { if (!note.value.trim()) { toast('Type a reason in the note first — eBay needs one to decline.', true); note.focus(); return; } act(base + '/decide', { decision: 'DECLINE', comment: note.value }, 'Decline this return?', 'Return declined.'); };
-    r1.append(ap, de, keepL);
-    acts.append(r1);
-    const r2 = el('div', 'row');
-    const pa = el('input'); pa.type = 'number'; pa.min = '1'; pa.step = '0.01'; pa.placeholder = 'Amount $';
-    const pb = el('button', 'btn btn-secondary btn-sm', 'Offer partial refund'); pb.type = 'button';
-    pb.onclick = () => { const v = parseFloat(pa.value); if (!(v > 0)) { toast('Type the partial refund amount.', true); return; } act(base + '/decide', { decision: 'OFFER_PARTIAL_REFUND', amount: v, comment: note.value, keepItem: true }, 'Offer a partial refund of ' + money2.format(v) + '? The buyer keeps the item if they accept.', 'Partial refund offered.'); };
-    r2.append(pa, pb);
-    acts.append(r2);
-    const r3 = el('div', 'row');
-    const ra = el('input'); ra.type = 'number'; ra.min = '1'; ra.step = '0.01'; ra.placeholder = 'Refund $'; if (x.amount) ra.value = x.amount.toFixed(2);
-    const rb = el('button', 'btn btn-primary btn-sm', 'Refund buyer'); rb.type = 'button';
-    rb.onclick = () => { const v = parseFloat(ra.value); if (!(v > 0)) { toast('Type the refund amount.', true); return; } act(base + '/refund', { amount: v, comment: note.value }, 'Refund ' + money2.format(v) + ' to ' + (x.buyer || 'the buyer') + ' now? This sends real money.', 'Refund sent.'); };
-    r3.append(ra, rb, el('span', 'r-line', x.amount ? 'eBay’s estimate: ' + money2.format(x.amount) : ''));
-    acts.append(r3);
+    const holder = el('div'); acts.append(holder);
+    const wait = el('div', 'd-msg', 'Checking this return’s status with eBay…');
+    holder.append(wait);
+    liveP.then(r => {
+      wait.remove();
+      const live = (r && r.summary) || x;
+      const opts = (live.options || []).join(' ').toUpperCase();
+      const st = String(live.state || '').toUpperCase() + ' ' + String(live.status || '').toUpperCase();
+      const est = r && r.estimate;
+      const stage = el('div', 'r-line', 'eBay status now: ' + nice(live.status || live.state || 'unknown'));
+      holder.append(stage);
+      if (r && r.error && !r.summary) { holder.append(el('div', 'r-line', 'Couldn’t check with eBay (' + r.error + ') — use Open on eBay below.')); return; }
+      const canDecide = opts ? /APPROVE|DECLINE|DECIDE/.test(opts) : /RETURN_REQUESTED|REQUESTED|PENDING/.test(st) && !/SHIP|DELIVER|CLOSED/.test(st);
+      const canPartial = opts ? /PARTIAL/.test(opts) : canDecide;
+      const canRefund = opts ? (live.options || []).some(o => /REFUND/i.test(o) && !/PARTIAL/i.test(o)) : /SHIPPED|DELIVERED|RECEIVED/.test(st);
+      const note = el('textarea'); note.placeholder = canDecide ? 'Note to the buyer (needed to decline; optional otherwise)' : 'Note to the buyer (optional)'; note.maxLength = 1000;
+      if (canDecide || canPartial || canRefund) holder.append(note);
+      if (canDecide) {
+        const keep = el('input'); keep.type = 'checkbox';
+        const keepL = el('label'); keepL.append(keep, document.createTextNode('Buyer can keep the item'));
+        const r1 = el('div', 'row');
+        const ap = el('button', 'btn btn-primary btn-sm', 'Approve return'); ap.type = 'button';
+        ap.onclick = () => act(base + '/decide', { decision: 'APPROVE', comment: note.value, keepItem: keep.checked }, 'Approve this return' + (keep.checked ? ' and let the buyer keep the item' : '') + '?', 'Return approved.');
+        const de = el('button', 'btn btn-danger btn-sm', 'Decline'); de.type = 'button';
+        de.onclick = () => { if (!note.value.trim()) { toast('Type a reason in the note first — eBay needs one to decline.', true); note.focus(); return; } act(base + '/decide', { decision: 'DECLINE', comment: note.value }, 'Decline this return?', 'Return declined.'); };
+        r1.append(ap, de, keepL);
+        holder.append(r1);
+      }
+      if (canPartial) {
+        const r2 = el('div', 'row');
+        const pa = el('input'); pa.type = 'number'; pa.min = '1'; pa.step = '0.01'; pa.placeholder = 'Amount $';
+        const pb = el('button', 'btn btn-secondary btn-sm', 'Offer partial refund'); pb.type = 'button';
+        pb.onclick = () => { const v = parseFloat(pa.value); if (!(v > 0)) { toast('Type the partial refund amount.', true); return; } act(base + '/decide', { decision: 'OFFER_PARTIAL_REFUND', amount: v, comment: note.value, keepItem: true }, 'Offer a partial refund of ' + money2.format(v) + '? The buyer keeps the item if they accept.', 'Partial refund offered.'); };
+        r2.append(pa, pb);
+        holder.append(r2);
+      }
+      if (canRefund) {
+        const r3 = el('div', 'row');
+        const NAMES = { PURCHASE_PRICE: 'Item price', ORIGINAL_SHIPPING: 'Original shipping', RETURN_SHIPPING: 'Return shipping', RESTOCKING_FEE: 'Restocking fee', OTHER_FEES: 'Other fees' };
+        const parts = est ? est.lines.map(l => (NAMES[l.type] || nice(l.type)) + ' ' + money2.format(l.amount)).join(' + ') : '';
+        const total = est ? est.total : null;
+        const rb = el('button', 'btn btn-primary btn-sm', total !== null ? 'Refund ' + money2.format(total) : 'Refund buyer'); rb.type = 'button';
+        if (total !== null) {
+          rb.onclick = () => act(base + '/refund', { amount: total, comment: note.value }, 'Refund ' + money2.format(total) + ' to ' + (x.buyer || 'the buyer') + ' now?\n\n' + parts + '\n\nThis is eBay’s refund amount for this return. This sends real money.', 'Refund sent.');
+          r3.append(rb, el('span', 'r-line', 'eBay’s refund: ' + parts));
+        } else {
+          rb.disabled = true;
+          r3.append(rb, el('span', 'r-line', 'eBay didn’t give a refund amount for this return — use Open on eBay below.'));
+        }
+        holder.append(r3);
+      }
+      if (!canDecide && !canPartial && !canRefund) holder.append(el('div', 'r-line', 'Nothing to do here right now — eBay is waiting on the buyer or the item. Use Open on eBay below to see more.'));
+    });
   } else if (x.kind === 'inquiry') {
     acts.append(el('h4', '', 'Respond'));
     const r1 = el('div', 'row');
