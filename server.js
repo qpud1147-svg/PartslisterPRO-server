@@ -1,4 +1,4 @@
-// PartsLister Pro server — v359
+// PartsLister Pro server — v361
 // v302: dashboard.html is the homepage (/). The listing tool moved to /list.
 // v305: eBay sales connection — real sold orders on the dashboard.
 // v306: asks eBay for two more permissions — fees/payouts and seller metrics.
@@ -149,6 +149,11 @@
 //       fit depends on the part number — match it to the original part. Computer modules (ECM,
 //       PCM, TCM, BCM, TIPM, ABS module, clusters, radios…) always get the part-number check and
 //       the "may need to be programmed" note.
+// v360: the "No discount offer: …" note only shows when the buyer actually asked about price.
+//       Replies to messages more than 2 days old start with a short "sorry for the slow reply".
+// v361: "I'll get back to you by…" uses the NEXT of your available days, worked out from today's
+//       date in your time zone (Friday night → Monday, not Wednesday). Diesel / gas / engine-size
+//       questions: fit goes by part number, so the draft asks them to match it.
 // Accounts with email + password login. Each account's settings (including its
 // own API keys) and history are saved ENCRYPTED in Postgres, so you can log in
 // from any computer and everything is there. Also keeps a lifetime listing count.
@@ -2413,6 +2418,31 @@ function offerPriceFor(price, pct) {
   if (off > max5) off = max5;
   return off / 100;
 }
+// v361: the next day you're available, from your "When you're available" text ("Monday, Wednesday
+//       and Friday afternoons", "Mon/Wed/Fri 12-4"). Today counts only if it's before the end time
+//       (an "X-4" range ends at 4 pm; "afternoon(s)" ends at 5 pm; otherwise noon).
+const SELLER_TZ = 'America/Chicago';
+function nextAvailableDay(text, now = new Date()) {
+  const t = String(text || '').toLowerCase();
+  const names = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+  const short = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+  let days = names.map((n, i) => new RegExp('\\b(' + n + 's?|' + short[i] + (i === 2 ? '|tues' : i === 4 ? '|thur|thurs' : '') + ')\\b').test(t) ? i : -1).filter(i => i >= 0);
+  if (/\bweekdays?\b/.test(t)) days = days.concat([1, 2, 3, 4, 5]);
+  if (/\bweekends?\b/.test(t)) days = days.concat([0, 6]);
+  if (/\b(every ?day|daily)\b/.test(t)) days = [0, 1, 2, 3, 4, 5, 6];
+  if (!days.length) return null;
+  const local = new Date(now.toLocaleString('en-US', { timeZone: SELLER_TZ }));   // wall-clock time in your time zone
+  const range = /(\d{1,2})(?::\d\d)?\s*(am|pm)?\s*(?:-|–|to)\s*(\d{1,2})(?::\d\d)?\s*(am|pm)?/.exec(t);
+  let endHour = /afternoon/.test(t) ? 17 : /morning/.test(t) ? 12 : /evening/.test(t) ? 21 : 12;
+  if (range) { let e = parseInt(range[3], 10); if (range[4] === 'pm' || (!range[4] && e < 9)) e += e < 12 ? 12 : 0; endHour = e; }
+  for (let add = 0; add < 8; add++) {
+    const d = new Date(local.getFullYear(), local.getMonth(), local.getDate() + add);
+    if (!days.includes(d.getDay())) continue;
+    if (add === 0 && local.getHours() >= endHour) continue;   // today's window is over
+    return { add, label: (add === 0 ? 'today (' : add === 1 ? 'tomorrow (' : '') + d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }) + (add <= 1 ? ')' : '') };
+  }
+  return null;
+}
 // v331: does the buyer's latest message ask for a lower price?
 function asksForDiscount(text) {
   const t = String(text || '').toLowerCase();
@@ -2949,7 +2979,8 @@ const draftHandler = async (req, res) => {   // v347: named, so the sandbox down
           if (!eligible) discountSkipped = 'eBay has no interested buyers to send an offer to on this listing';
         }
       } catch (e) { discountSkipped = 'couldn\u2019t check with eBay (' + String(e.message).slice(0, 80) + ')'; }
-      if (discountSkipped) discount = null;   // → the draft says the price is as listed instead
+      // if (discountSkipped) discount = null;   // → the draft says the price is as listed instead
+      if (discountSkipped) { const asked = discount.wordMatch; discount = null; if (!asked) discountSkipped = null; }   // v360: no offer either way; the note only when they asked about price
     }
     // v350: LATE RETURN — your own extra days, counted from delivery (from the purchase date if eBay has no delivery date)
     let lateReturn = '';
@@ -3058,13 +3089,20 @@ const draftHandler = async (req, res) => {   // v347: named, so the sandbox down
       'If LISTING STATUS says ENDED or SOLD OUT and this buyer has not bought the item: start by saying sorry, this one has sold / is no longer available. Don\'t walk them through fitment or part numbers for it, but still answer any simple question briefly if the facts allow.',
       'Never make up anything about the seller or the part that isn\'t in the sections given: where the part is, whether the seller has it on hand, the seller\'s schedule, or reasons why something can\'t be done. If you don\'t know, say less.',
       'Requests for more photos, measurements or a closer look at the part: ' + PHOTO_REQUESTS[ms.photoRequests].ai + '.',
-      ms.availability ? 'When the reply says the seller will check something, take photos or get back to them, use the seller\'s availability for when: "' + ms.availability + '". Never promise a sooner time.' : 'When the reply says the seller will check something or get back to them, don\'t name a day or time.',
+      // ms.availability ? 'When the reply says … use the seller\'s availability for when: "' + ms.availability + '". Never promise a sooner time.' : '…',   (v336)
+      (() => {   // v361: name the NEXT available day, worked out here
+        if (!ms.availability) return 'When the reply says the seller will check something or get back to them, don\'t name a day or time.';
+        const nd = nextAvailableDay(ms.availability);
+        return nd ? 'When the reply says the seller will check something, take photos or get back to them, say by ' + nd.label + ' — that is the seller\'s next available day (availability: "' + ms.availability + '"). Use only that day; never a different or sooner one.'
+          : 'When the reply says the seller will check something, take photos or get back to them, use the seller\'s availability for when: "' + ms.availability + '". Never promise a sooner time.';
+      })(),
       // v339: common questions
       // 'Tested / working / warranty questions: ' + TESTED_ANSWERS[ms.tested].ai + '. Never claim it was tested or works unless the LISTING says so.',
       // 'Tested / working / warranty questions (including …): ' + TESTED_ANSWERS[ms.tested].ai + '. The seller does NOT test parts: …',   // v340
       'Tested / working / warranty questions (including "did you test it before you removed it?", "is it working?", "was it checked?"): ' + TESTS_PARTS[ms.testsParts].ai + ' Then ' + TESTED_ANSWERS[ms.tested].ai + '.',   // v341
       'Programming questions (does it need programming / coding to the VIN): ' + PROGRAMMING_ANSWERS[ms.programming].ai + '. If they ask the seller to program it: ' + (ms.offersProgramming ? 'say you can and they should message you to arrange it.' : 'say you don\'t offer programming.'),
       'Donor vehicle questions (what year/model/VIN/mileage/engine it came from, right-hand drive, etc.): ' + DONOR_ANSWERS[ms.donor].ai + '.',
+      'Diesel or gas / engine size / trim questions ("did it come out of a diesel?", "is it for the 5.7?"): don\'t guess — say what matters is the part number, and ask them to match the part number on their original part (PART NUMBER rule). Even a part from the same engine type may not fit if the number differs.',   // v361
       'Has it shipped / when will it ship: use ORDER & RETURNS and SHIPMENT. If it has shipped, give the shipped date, carrier and tracking number. If it hasn\'t shipped: ' + SHIP_WHEN[ms.shipWhen].ai + (ms.shipDays ? ' (the seller ships: ' + ms.shipDays + ')' : '') + '. Never promise a specific day you weren\'t given.',
       'If the SHIPPING CHECK says NO for the buyer\'s country (or they ask you to enable shipping to their country): ' + INTL_NO[ms.intlNo].ai + '.',
       // v345
@@ -3080,6 +3118,8 @@ const draftHandler = async (req, res) => {   // v347: named, so the sandbox down
       'Never describe the part as "working", "in working condition" or "good working condition", even if the listing says so. Say it is used, and give the condition notes only if they ask about condition.',
       'If the buyer gives THEIR VIN to check fitment' + (ms.fitment.askVin ? ': say you\'ll check it and get back to them.' : ': say you aren\'t able to check fitment by VIN, then use the fitment list and the PART NUMBER rule. Don\'t confuse their VIN with the donor vehicle\'s VIN.'),
       // v359
+      // v360
+      (() => { const lb = msgs.filter(m => !m.mine).slice(-1)[0]; const age = lb ? (Date.now() - Date.parse(lb.date)) / 86400000 : 0; return age > 2 ? 'The buyer\'s latest message is ' + Math.floor(age) + ' days old: start with a short "Sorry for the slow reply" (once), then answer. Don\'t promise anything by a day that has already passed.' : ''; })(),
       'FITMENT (always, whatever the instructions above say): never tell the buyer it fits, works, or "yes" because the year, make and model match — the same vehicle can use different part numbers by engine, trim, options or build date. Say the vehicle is (or isn\'t) in the listing\'s compatibility list, and that they need to match the part number on their original part (write the number out, per the PART NUMBER rule). For computer modules and electronics (ECM, PCM, ECU, TCM, BCM, TIPM, ABS module, airbag module, instrument cluster, radio, climate control, fuse box/junction box, key modules): ALWAYS ask them to match the part number, and ALWAYS add: ' + PROGRAMMING_ANSWERS[ms.programming].ai.replace(/^say that /, 'mention that ') + '.',
       'Programming: only say what the programming rule says. Never say a part "will need" or "typically needs" programming.',
       'Part numbers: do NOT add part numbers or "compare part numbers" to answers about the donor vehicle, mileage, condition, warranty, shipping or price — only when they ask whether it fits or for the part number.',
@@ -4227,5 +4267,5 @@ app.get('*', (req, res) => {
 });
 
 setupDatabase()
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v359 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v361 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });
