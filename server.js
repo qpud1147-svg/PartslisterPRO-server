@@ -1,4 +1,4 @@
-// PartsLister Pro server — v357
+// PartsLister Pro server — v359
 // v302: dashboard.html is the homepage (/). The listing tool moved to /list.
 // v305: eBay sales connection — real sold orders on the dashboard.
 // v306: asks eBay for two more permissions — fees/payouts and seller metrics.
@@ -144,6 +144,11 @@
 // v357: drafts never invite returns or problems on their own ("let me know if it isn't what you
 //       needed", "you can return it") — returns only come up when the buyer reports a problem or
 //       asks about sending it back.
+// v359: (v358 undone — built from v357.) Fitment answers never say "yes, it fits" because the year /
+//       make / model match. The draft says the vehicle is in the listing's compatibility list but
+//       fit depends on the part number — match it to the original part. Computer modules (ECM,
+//       PCM, TCM, BCM, TIPM, ABS module, clusters, radios…) always get the part-number check and
+//       the "may need to be programmed" note.
 // Accounts with email + password login. Each account's settings (including its
 // own API keys) and history are saved ENCRYPTED in Postgres, so you can log in
 // from any computer and everything is there. Also keeps a lifetime listing count.
@@ -2235,7 +2240,8 @@ const DEFAULT_MSG_INSTRUCTIONS = [
   'Write the reply the seller will send, answering the buyer\'s latest message.',
   // 'Fitment questions: if the buyer\'s vehicle is in the fitment list, say it is listed as fitting and suggest they match the part number to their original part. If it is not listed or there is no fitment list, say you can\'t confirm it and ask them to compare the part number on their original part (or send the VIN). Never promise fit.',
   // 'Fitment questions: if the buyer\'s vehicle is in the fitment list, say it is listed as fitting. If it is not listed or there is no fitment list, say you can\'t confirm it and ask for their VIN. Follow the PART NUMBER rule for comparing part numbers. Never promise fit.',   // v332
-  'Fitment questions: if the buyer\'s vehicle is in the fitment list, say it is listed as fitting. If it is not listed or there is no fitment list, say the listing doesn\'t show their vehicle as a fit, so you can\'t confirm it. Then follow the PART NUMBER rule. Never promise fit.',   // v333
+  // 'Fitment questions: if the buyer\'s vehicle is in the fitment list, say it is listed as fitting. If it is not listed or there is no fitment list, say the listing doesn\'t show their vehicle as a fit, so you can\'t confirm it. Then follow the PART NUMBER rule. Never promise fit.',   // v333
+  'Fitment questions: never say "yes, it fits" or "it will work". If their vehicle is in the fitment list, say it\'s in the listing\'s compatibility list, but fit goes by part number. If it isn\'t listed or there\'s no fitment list, say the listing doesn\'t show their vehicle. Either way, follow the PART NUMBER rule.',   // v359
   'Answer the buyer\'s question directly. Don\'t open by repeating the condition or other listing facts they didn\'t ask about.',   // v333
   // 'Price/offer questions: don\'t invent a price; if the seller gave instructions, follow them, otherwise suggest they send an offer through the listing.',
   'Price/discount questions: if a DISCOUNT section is given, follow it exactly. Otherwise don\'t offer or invent a discount — politely say the price is as listed (unless the seller\'s instructions say otherwise).',   // v331
@@ -3073,6 +3079,8 @@ const draftHandler = async (req, res) => {   // v347: named, so the sandbox down
       'Buyers\' photos and attachments that are NOT attached here: you can NOT see them. If they ask you to look at a photo (does this match, is this compatible), never say it matches or doesn\'t — ' + PHOTO_REQUESTS.check_back.ai + ' (they sent a photo).',
       'Never describe the part as "working", "in working condition" or "good working condition", even if the listing says so. Say it is used, and give the condition notes only if they ask about condition.',
       'If the buyer gives THEIR VIN to check fitment' + (ms.fitment.askVin ? ': say you\'ll check it and get back to them.' : ': say you aren\'t able to check fitment by VIN, then use the fitment list and the PART NUMBER rule. Don\'t confuse their VIN with the donor vehicle\'s VIN.'),
+      // v359
+      'FITMENT (always, whatever the instructions above say): never tell the buyer it fits, works, or "yes" because the year, make and model match — the same vehicle can use different part numbers by engine, trim, options or build date. Say the vehicle is (or isn\'t) in the listing\'s compatibility list, and that they need to match the part number on their original part (write the number out, per the PART NUMBER rule). For computer modules and electronics (ECM, PCM, ECU, TCM, BCM, TIPM, ABS module, airbag module, instrument cluster, radio, climate control, fuse box/junction box, key modules): ALWAYS ask them to match the part number, and ALWAYS add: ' + PROGRAMMING_ANSWERS[ms.programming].ai.replace(/^say that /, 'mention that ') + '.',
       'Programming: only say what the programming rule says. Never say a part "will need" or "typically needs" programming.',
       'Part numbers: do NOT add part numbers or "compare part numbers" to answers about the donor vehicle, mileage, condition, warranty, shipping or price — only when they ask whether it fits or for the part number.',
       'Questions about a detail of the part that the LISTING doesn\'t answer (features like cornering lights or navigation, clips, connectors, color, corrosion, what\'s included): ' + PHOTO_REQUESTS[ms.photoRequests].ai + '. Never guess.',
@@ -4219,5 +4227,5 @@ app.get('*', (req, res) => {
 });
 
 setupDatabase()
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v357 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v359 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });
