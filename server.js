@@ -1,4 +1,4 @@
-// PartsLister Pro server — v376
+// PartsLister Pro server — v378
 // v302: dashboard.html is the homepage (/). The listing tool moved to /list.
 // v305: eBay sales connection — real sold orders on the dashboard.
 // v306: asks eBay for two more permissions — fees/payouts and seller metrics.
@@ -170,6 +170,12 @@
 // v366: smarter "doesn't need a reply" check (no AI): short messages made only of thank-you / ok /
 //       got-it / received words drop out of Needs reply ("Ok thank you for your help", "Just
 //       purchased. Thank you!"). Anything with a question or any other word stays in.
+// v378: PIGTAILS — a title with plugs / pigtail / connector(s) / wiring harness is the wiring, not the
+//       module, even when it names one ("ECM PCM WIRING HARNESS PLUGS"). Drafts never say it needs
+//       programming (if asked: no — it's just wires and plugs), and the part number is described as
+//       the module the plugs connect to.
+// v377: Late returns on, but the buyer asked AFTER your extra days → the draft politely says the return
+//       window has passed. No "I'll look into it / get back to you" promise.
 // v376: Late returns count up to when the buyer FIRST ASKED (their first message after buying), not
 //       today — a buyer who asked in time still gets your address even if you reply late. Your
 //       availability understands day ranges ("Mon-Fri", "Tuesday through Thursday" = every day in
@@ -2570,6 +2576,9 @@ function nextAvailableDay(text, now = new Date(), tz = SELLER_TZ) {
 // v364: what kind of part is it? (from the title + category) → which note fit answers get
 function partKind(title, category) {
   const t = ' ' + String(title || '') + ' ' + String(category || '') + ' ';
+  // v378: pigtails / connector plugs / harnesses — checked first, since their titles name the module they plug into
+  if (/\b(pig ?tails?|plugs?|connectors?|wiring harness(es)?|wire harness(es)?|harness(es)?)\b/i.test(String(title || '')) && !/\b(spark|glow) plugs?\b/i.test(String(title || '')))
+    return { kind: 'pigtail', note: null };
   if (/\b(ECM|ECU|PCM|ECM\/PCM|engine (control|computer)|computer|brain box|TCM|TCU|TCCM|transmission (control|computer)|transfer case (control|module)|BCM|body control|GEM|SJB|smart junction|TIPM|IPDM|totally integrated power|ABS (pump|module|control|unit)|anti[- ]?lock|brake (control )?module|EBCM|airbag (module|control)|SRS|restraint control|RCM|occupant|immobili[sz]er|SKIM|PATS|smart key|keyless (entry )?module|key (fob )?module|instrument cluster|speedometer|gauge cluster|cluster|control module|control unit)\b/i.test(t))
     return { kind: 'module', note: 'may need programming' };
   if (/\b(radio|stereo|head unit|receiver|cd player|navigation|nav unit|amplifier|\bamp\b|infotainment)\b/i.test(t)) return { kind: 'radio', note: 'may need a radio code' };
@@ -3063,7 +3072,7 @@ const draftHandler = async (req, res) => {   // v347: named, so the sandbox down
         listing = [
           'Title: ' + (d.title || ''),
           'Item number: ' + d.itemId,
-          (() => { const pk = partKind(d.title, d.category); return 'PART TYPE: ' + (pk.kind === 'module' ? 'computer/control module — can need programming to the vehicle' : pk.kind === 'radio' ? 'radio/audio — doesn\'t need programming, but may need a radio (anti-theft) code' : 'not a module — no programming or code needed'); })(),   // v364
+          (() => { const pk = partKind(d.title, d.category); return 'PART TYPE: ' + (pk.kind === 'pigtail' ? 'wiring pigtail / connector plugs — just the wires and plugs, NOT the module itself. It never needs programming or a code. Any part number listed is the module these plugs connect to.' : pk.kind === 'module' ? 'computer/control module — can need programming to the vehicle' : pk.kind === 'radio' ? 'radio/audio — doesn\'t need programming, but may need a radio (anti-theft) code' : 'not a module — no programming or code needed'); })(),   // v364
           d.price ? 'Price: $' + d.price : '',
           d.condition ? 'Condition: ' + d.condition + (d.conditionNote ? ' — ' + d.conditionNote : '') : '',
           d.category ? 'Category: ' + d.category : '',
@@ -3141,6 +3150,8 @@ const draftHandler = async (req, res) => {   // v347: named, so the sandbox down
       lateInfo = { ok: askedDay <= ms0.honorLate.days, askedDay, days: ms0.honorLate.days, asked: askedAt.toISOString() };
       if (askedDay <= ms0.honorLate.days) lateReturn = 'The eBay return window has closed, but the seller accepts returns up to ' + ms0.honorLate.days + ' days after delivery, and this buyer asked on ' + askedText + ' — day ' + askedDay + ' after delivery, inside that' + (lateReply ? ' (the seller is replying late, which is not the buyer\'s fault, so the seller still honors it)' : '') + '. If they want to return it or say it doesn\'t work: say the eBay return window has closed, but they can still ship it back '
         + (ms0.honorLate.address ? 'to this address: ' + ms0.honorLate.address.replace(/\s*\n\s*/g, ', ') : '(say you\'ll send them the return address)') + ' — and ask them to please mail it within 2 weeks, and you\'ll refund them once it arrives (no calendar date).';
+      // v377: past your extra days → just say the window has passed
+      else lateReturn = 'The buyer asked on ' + askedText + ' — day ' + askedDay + ' after delivery, which is PAST both eBay\'s return window and the seller\'s own ' + ms0.honorLate.days + '-day late-return limit. If they want to return it or say it doesn\'t work: politely say sorry, the return window has passed, so you can\'t take it back. Do NOT offer to look into it, check, or get back to them, and don\'t name a day. Never call it "sold as-is" and never blame eBay.';
     }
     if (false) {   // v371 version below, kept for reference (v376: replaced above)
       const from = orderInfo.deliveredAt || orderInfo.boughtAt;
@@ -3258,7 +3269,7 @@ const draftHandler = async (req, res) => {   // v347: named, so the sandbox down
       // 'Tested / working / warranty questions: ' + TESTED_ANSWERS[ms.tested].ai + '. Never claim it was tested or works unless the LISTING says so.',
       // 'Tested / working / warranty questions (including …): ' + TESTED_ANSWERS[ms.tested].ai + '. The seller does NOT test parts: …',   // v340
       'Tested / working / warranty questions (including "did you test it before you removed it?", "is it working?", "was it checked?"): ' + TESTS_PARTS[ms.testsParts].ai + ' Then ' + TESTED_ANSWERS[ms.tested].ai + '.',   // v341
-      'Programming questions (does it need programming / coding to the VIN): ' + PROGRAMMING_ANSWERS[ms.programming].ai + '. If they ask the seller to program it: ' + (ms.offersProgramming ? 'say you can and they should message you to arrange it.' : 'say you don\'t offer programming.'),
+      'Programming questions (does it need programming / coding to the VIN): if the PART TYPE line says wiring pigtail / connector plugs, say no programming is needed — it\'s just the wires and plugs. Otherwise: ' + PROGRAMMING_ANSWERS[ms.programming].ai + '. If they ask the seller to program it: ' + (ms.offersProgramming ? 'say you can and they should message you to arrange it.' : 'say you don\'t offer programming.'),
       'Donor vehicle questions (what year/model/VIN/mileage/engine it came from, right-hand drive, etc.): ' + DONOR_ANSWERS[ms.donor].ai + '.',
       'Diesel or gas / engine size / trim questions ("did it come out of a diesel?", "is it for the 5.7?"): don\'t guess — say what matters is the part number, and ask them to match the part number on their original part (PART NUMBER rule). Even a part from the same engine type may not fit if the number differs.',   // v361
       'Has it shipped / when will it ship: use ORDER & RETURNS and SHIPMENT. If it has shipped, give the shipped date, carrier and tracking number. If it hasn\'t shipped: ' + SHIP_WHEN[ms.shipWhen].ai + (ms.shipDays ? ' (the seller ships: ' + ms.shipDays + ')' : '') + '. Never promise a specific day you weren\'t given.',
@@ -3278,7 +3289,7 @@ const draftHandler = async (req, res) => {   // v347: named, so the sandbox down
       // v359
       // v360
       (() => { const lb = msgs.filter(m => !m.mine).slice(-1)[0]; const age = lb ? (Date.now() - Date.parse(lb.date)) / 86400000 : 0; return age > 2 ? 'The buyer\'s latest message is ' + Math.floor(age) + ' days old: start with a short "Sorry for the slow reply" (once), then answer. Don\'t promise anything by a day that has already passed.' : ''; })(),
-      'FITMENT (always, whatever the instructions above say): never tell the buyer it fits, works, or "yes" because the year, make and model match — the same vehicle can use different part numbers by engine, trim, options or build date. Say whether the vehicle is listed (in the compatibility list, or within the title\'s years and models — never say it isn\'t listed when the title covers it), and that they need to match the part number on their original part (write the number out, per the PART NUMBER rule). Then use the PART TYPE line: computer/control module → ALWAYS add: ' + PROGRAMMING_ANSWERS[ms.programming].ai.replace(/^say that /, 'mention that ') + '. Radio/audio → don\'t mention programming; add that it may need a radio (anti-theft) code, which a dealer can usually get from the radio\'s serial number. Anything else (mirrors, lights, switches, motors, trim, plain fuse boxes…) → no programming or code note.',   // v364 (v359 put the programming note on radios and fuse boxes too)
+      'FITMENT (always, whatever the instructions above say): never tell the buyer it fits, works, or "yes" because the year, make and model match — the same vehicle can use different part numbers by engine, trim, options or build date. Say whether the vehicle is listed (in the compatibility list, or within the title\'s years and models — never say it isn\'t listed when the title covers it), and that they need to match the part number on their original part (write the number out, per the PART NUMBER rule). Then use the PART TYPE line: wiring pigtail / connector plugs → never say it needs programming or a code (if they ask, say no — it\'s just the wires and plugs); for the part number, ask them to compare it with the number on their module (the part these plugs connect to). Computer/control module → ALWAYS add: ' + PROGRAMMING_ANSWERS[ms.programming].ai.replace(/^say that /, 'mention that ') + '. Radio/audio → don\'t mention programming; add that it may need a radio (anti-theft) code, which a dealer can usually get from the radio\'s serial number. Anything else (mirrors, lights, switches, motors, trim, plain fuse boxes…) → no programming or code note.',   // v364 (v359 put the programming note on radios and fuse boxes too)
       'Programming: only say what the programming rule says. Never say a part "will need" or "typically needs" programming.',
       // 'Part numbers: do NOT add part numbers … to answers about the donor vehicle, mileage, condition, warranty, shipping or price — only when they ask whether it fits or for the part number.',   (v349)
       'Part numbers: do NOT add part numbers to answers about mileage, condition, warranty, shipping or price. DO include the part-number check whenever they ask if it fits / will work, or ask about the engine, diesel or gas, trim, or which vehicle it came from.',   // v362
@@ -4764,5 +4775,5 @@ app.get('*', (req, res) => {
 });
 
 setupDatabase()
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v376 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v378 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });
