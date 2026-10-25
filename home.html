@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Home v324</title>
+<title>PartsLister Pro Home v380</title>
+<!-- v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
 <!-- PartsLister Pro — Home page (v316: new; v317: cut to three tiles — Sales, Active listings, Needs attention; v318: tabs Home / Sales / Active / Listings). Shares the sign-in, account and
      eBay connection with the Sales page (/sales) and the listing tool (/list). -->
 <style>
@@ -119,7 +120,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v324</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v380</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -194,6 +195,49 @@
 </main>
 
 <script>
+// ─── v380: SAVED COPY ────────────────────────────────────────────────────────
+// Coming back to this page shows what it loaded last time right away, then quietly checks eBay and
+// updates the page if anything changed. Kept in this browser tab only (sessionStorage): gone when
+// you close the tab or log out — never saved on the server or on disk.
+const pageCache = { urls: [], rerun: null };
+(function () {
+  const realFetch = window.fetch.bind(window);
+  const KEY = 'plp-cache:';
+  const first = new Set(), fresh = new Map();
+  let pending = 0, changed = false;
+  const isGet = (opt) => !opt || !opt.method || String(opt.method).toUpperCase() === 'GET';
+  const want = (url, opt) => typeof url === 'string' && isGet(opt) && pageCache.urls.some(r => r.test(url));
+  const read = (url) => { try { return sessionStorage.getItem(KEY + url); } catch (e) { return null; } };
+  const write = (url, text) => { try { if (!/"(loading|checking)":true/.test(text)) sessionStorage.setItem(KEY + url, text); } catch (e) { /* full or blocked — fine */ } };
+  const asResponse = (text) => new Response(text, { status: 200, headers: { 'Content-Type': 'application/json' } });
+  window.fetch = async function (url, opt) {
+    if (typeof url === 'string' && url === '/api/logout') { try { Object.keys(sessionStorage).filter(k => k.startsWith(KEY)).forEach(k => sessionStorage.removeItem(k)); } catch (e) { /* fine */ } }
+    if (!want(url, opt)) return realFetch(url, opt);
+    const f = fresh.get(url);
+    if (f && Date.now() - f.at < 60000) { fresh.delete(url); if (f.status === 200) return asResponse(f.text); }
+    if (!first.has(url)) {
+      first.add(url);
+      const saved = read(url);
+      if (saved !== null) {
+        pending++;
+        realFetch(url, opt).then(async r => {
+          const text = await r.text();
+          if (r.status === 200) write(url, text);
+          else { try { sessionStorage.removeItem(KEY + url); } catch (e) { /* fine */ } }
+          fresh.set(url, { at: Date.now(), status: r.status, text });
+          if (r.status !== 200 || text !== saved) changed = true;
+        }).catch(() => {}).finally(() => {
+          if (--pending === 0 && changed) { changed = false; if (pageCache.rerun) pageCache.rerun(); }
+        });
+        return asResponse(saved);
+      }
+    }
+    const r = await realFetch(url, opt);
+    if (r.status === 200) r.clone().text().then(t => write(url, t)).catch(() => {});
+    return r;
+  };
+})();
+pageCache.urls = [/^\/api\/me$/, /^\/api\/sales\?/, /^\/api\/fees\?/, /^\/api\/listings\/summary$/, /^\/api\/messages\/summary$/, /^\/api\/returns\/summary$/];   // v380
 // ─── SHARED (same on Home and Listings) ─────────────────────────────────────
 const EBAY_TZ = 'America/Los_Angeles';   // eBay counts days in Pacific time
 const money0 = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
@@ -354,6 +398,7 @@ async function loadHome() {
   clearTimeout(window._homeTimer);
   window._homeTimer = setTimeout(loadHome, (sales && sales.syncing) || (listings && listings.checking) ? 5000 : 5 * 60000);
 }
+pageCache.rerun = () => loadHome();   // v380: fresh data from eBay → draw the page again
 loadHome();
 </script>
 </body>

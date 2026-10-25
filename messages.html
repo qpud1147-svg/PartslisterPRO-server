@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Messages v376</title>
+<title>PartsLister Pro Messages v380</title>
+<!-- v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
 <!-- PartsLister Pro — Messages page (v321: new; v322: conversation threads — the whole back-and-forth
      with each buyer, chat style, from eBay's Message API. Offers from a conversation. The v321
      email-style view is still at /messages/classic). Nothing about your messages is saved on the server.
@@ -298,7 +299,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v376</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v380</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -355,6 +356,49 @@
 <div class="lightbox" id="lightbox" role="dialog" aria-label="Photo"><button type="button" class="lb-close" title="Close (Esc)">×</button><button type="button" class="lb-nav lb-prev" title="Previous">‹</button><img alt=""><button type="button" class="lb-nav lb-next" title="Next">›</button><div class="lb-count"></div></div>
 
 <script>
+// ─── v380: SAVED COPY ────────────────────────────────────────────────────────
+// Coming back to this page shows what it loaded last time right away, then quietly checks eBay and
+// updates the page if anything changed. Kept in this browser tab only (sessionStorage): gone when
+// you close the tab or log out — never saved on the server or on disk.
+const pageCache = { urls: [], rerun: null };
+(function () {
+  const realFetch = window.fetch.bind(window);
+  const KEY = 'plp-cache:';
+  const first = new Set(), fresh = new Map();
+  let pending = 0, changed = false;
+  const isGet = (opt) => !opt || !opt.method || String(opt.method).toUpperCase() === 'GET';
+  const want = (url, opt) => typeof url === 'string' && isGet(opt) && pageCache.urls.some(r => r.test(url));
+  const read = (url) => { try { return sessionStorage.getItem(KEY + url); } catch (e) { return null; } };
+  const write = (url, text) => { try { if (!/"(loading|checking)":true/.test(text)) sessionStorage.setItem(KEY + url, text); } catch (e) { /* full or blocked — fine */ } };
+  const asResponse = (text) => new Response(text, { status: 200, headers: { 'Content-Type': 'application/json' } });
+  window.fetch = async function (url, opt) {
+    if (typeof url === 'string' && url === '/api/logout') { try { Object.keys(sessionStorage).filter(k => k.startsWith(KEY)).forEach(k => sessionStorage.removeItem(k)); } catch (e) { /* fine */ } }
+    if (!want(url, opt)) return realFetch(url, opt);
+    const f = fresh.get(url);
+    if (f && Date.now() - f.at < 60000) { fresh.delete(url); if (f.status === 200) return asResponse(f.text); }
+    if (!first.has(url)) {
+      first.add(url);
+      const saved = read(url);
+      if (saved !== null) {
+        pending++;
+        realFetch(url, opt).then(async r => {
+          const text = await r.text();
+          if (r.status === 200) write(url, text);
+          else { try { sessionStorage.removeItem(KEY + url); } catch (e) { /* fine */ } }
+          fresh.set(url, { at: Date.now(), status: r.status, text });
+          if (r.status !== 200 || text !== saved) changed = true;
+        }).catch(() => {}).finally(() => {
+          if (--pending === 0 && changed) { changed = false; if (pageCache.rerun) pageCache.rerun(); }
+        });
+        return asResponse(saved);
+      }
+    }
+    const r = await realFetch(url, opt);
+    if (r.status === 200) r.clone().text().then(t => write(url, t)).catch(() => {});
+    return r;
+  };
+})();
+pageCache.urls = [/^\/api\/me$/, /^\/api\/threads\?/, /^\/api\/followups$/, /^\/api\/msg-settings$/];   // v380
 // ─── SHARED (same on Home and Listings) ─────────────────────────────────────
 const EBAY_TZ = 'America/Los_Angeles';   // eBay counts days in Pacific time
 const money0 = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
@@ -1013,6 +1057,7 @@ document.querySelectorAll('#seg-show button').forEach(b => b.addEventListener('c
 let st; document.getElementById('t-search').addEventListener('input', () => { clearTimeout(st); st = setTimeout(renderList, 120); });
 loadList();
 setInterval(() => { if (!document.hidden && !document.querySelector('.th-compose textarea:focus') && !document.querySelector('.offers.open')) loadList(); }, 3 * 60000);
+pageCache.rerun = () => loadList();   // v380: fresh data from eBay → draw the page again
 </script>
 </body>
 </html>
