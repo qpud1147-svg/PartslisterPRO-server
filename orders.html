@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Orders v380</title>
-<!-- v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
+<title>PartsLister Pro Orders v381</title>
+<!-- v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
 <!-- PartsLister Pro — Orders page (v319: new). Your sold items from eBay, newest first.
      v320: item photos, and click an order to see the listing (photos, description, item specifics).
      Shares the sign-in, account and eBay connection with the other pages. -->
@@ -204,7 +204,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v380</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v381</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -266,6 +266,8 @@
 // Coming back to this page shows what it loaded last time right away, then quietly checks eBay and
 // updates the page if anything changed. Kept in this browser tab only (sessionStorage): gone when
 // you close the tab or log out — never saved on the server or on disk.
+// v381: + remembers you're signed in (no sign-in screen flash) and, a few seconds after a page
+//       loads, quietly loads the other pages' data so their first open is instant too.
 const pageCache = { urls: [], rerun: null };
 (function () {
   const realFetch = window.fetch.bind(window);
@@ -277,9 +279,12 @@ const pageCache = { urls: [], rerun: null };
   const read = (url) => { try { return sessionStorage.getItem(KEY + url); } catch (e) { return null; } };
   const write = (url, text) => { try { if (!/"(loading|checking)":true/.test(text)) sessionStorage.setItem(KEY + url, text); } catch (e) { /* full or blocked — fine */ } };
   const asResponse = (text) => new Response(text, { status: 200, headers: { 'Content-Type': 'application/json' } });
+  const signedIn = (yes) => { try { if (yes) sessionStorage.setItem('plp-signed-in', '1'); else sessionStorage.removeItem('plp-signed-in'); } catch (e) { /* fine */ } };   // v381
+  const clearAll = () => { try { Object.keys(sessionStorage).filter(k => k.startsWith('plp-')).forEach(k => sessionStorage.removeItem(k)); } catch (e) { /* fine */ } };
+  const watch = (url, r) => { if (url === '/api/me') { if (r.status === 200) signedIn(true); else if (r.status === 401) clearAll(); } };   // v381
   window.fetch = async function (url, opt) {
-    if (typeof url === 'string' && url === '/api/logout') { try { Object.keys(sessionStorage).filter(k => k.startsWith(KEY)).forEach(k => sessionStorage.removeItem(k)); } catch (e) { /* fine */ } }
-    if (!want(url, opt)) return realFetch(url, opt);
+    if (typeof url === 'string' && url === '/api/logout') clearAll();
+    if (!want(url, opt)) { const r = await realFetch(url, opt); watch(url, r); return r; }
     const f = fresh.get(url);
     if (f && Date.now() - f.at < 60000) { fresh.delete(url); if (f.status === 200) return asResponse(f.text); }
     if (!first.has(url)) {
@@ -288,6 +293,7 @@ const pageCache = { urls: [], rerun: null };
       if (saved !== null) {
         pending++;
         realFetch(url, opt).then(async r => {
+          watch(url, r);
           const text = await r.text();
           if (r.status === 200) write(url, text);
           else { try { sessionStorage.removeItem(KEY + url); } catch (e) { /* fine */ } }
@@ -300,9 +306,23 @@ const pageCache = { urls: [], rerun: null };
       }
     }
     const r = await realFetch(url, opt);
+    watch(url, r);
     if (r.status === 200) r.clone().text().then(t => write(url, t)).catch(() => {});
     return r;
   };
+  // v381: load the other pages' data in the background (only what this tab doesn't have yet), one at a time
+  const LA = encodeURIComponent('America/Los_Angeles');
+  let ordersDays = 31; try { ordersDays = parseInt(localStorage.getItem('plp_orders_days'), 10) || 31; } catch (e) { /* default */ }
+  const ALL = ['/api/me', '/api/sales?tz=' + LA, '/api/fees?tz=' + LA, '/api/listings/summary', '/api/messages/summary', '/api/returns/summary',
+    '/api/orders/list?days=' + ordersDays + '&tz=' + LA, '/api/threads?type=members', '/api/followups', '/api/msg-settings',
+    '/api/returns?view=open', '/api/late-returns', '/api/listings/daily'];
+  setTimeout(async () => {
+    try { if (!sessionStorage.getItem('plp-signed-in')) return; } catch (e) { return; }
+    for (const url of ALL) {
+      if (read(url) !== null || first.has(url)) continue;
+      try { const r = await realFetch(url); if (r.status === 401) { clearAll(); return; } if (r.status === 200) write(url, await r.text()); } catch (e) { /* skip */ }
+    }
+  }, 3000);
 })();
 pageCache.urls = [/^\/api\/me$/, /^\/api\/orders\/list\?/, /^\/api\/items\/thumbs\?/];   // v380
 // ─── SHARED (same on Home and Listings) ─────────────────────────────────────
