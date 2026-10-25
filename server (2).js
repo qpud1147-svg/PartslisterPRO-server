@@ -1,4 +1,4 @@
-// PartsLister Pro server — v374
+// PartsLister Pro server — v375
 // v302: dashboard.html is the homepage (/). The listing tool moved to /list.
 // v305: eBay sales connection — real sold orders on the dashboard.
 // v306: asks eBay for two more permissions — fees/payouts and seller metrics.
@@ -170,6 +170,8 @@
 // v366: smarter "doesn't need a reply" check (no AI): short messages made only of thank-you / ok /
 //       got-it / received words drop out of Needs reply ("Ok thank you for your help", "Just
 //       purchased. Thank you!"). Anything with a question or any other word stays in.
+// v375: Listings per day loads in the background — the page asks every few seconds instead of waiting
+//       on one long request (which could time out and show "Could not reach the server").
 // v374: LISTINGS PER DAY (Active page) — every listing that went up in the last 90 days, from eBay's
 //       GetSellerList by start date (includes ones that since sold or ended), counted per day in your
 //       time zone (Settings → Messages). Kept in memory 30 minutes; nothing saved.
@@ -4625,7 +4627,8 @@ app.get('/api/listings/daily', requireUser, async (req, res) => {
                    e => listedCache.set(req.user.id, { at: Date.now(), error: e.message }));
     }
     let starts;
-    if (c.promise) starts = await c.promise.catch(e => { throw e; });
+    // if (c.promise) starts = await c.promise.catch(e => { throw e; });
+    if (c.promise) return res.json({ connected: true, loading: true });   // v375: still asking eBay — the page checks back
     else if (c.error) { listedCache.delete(req.user.id); throw new Error(c.error); }
     else starts = c.data;
     // count per day / per hour in your time zone
@@ -4728,5 +4731,5 @@ app.get('*', (req, res) => {
 });
 
 setupDatabase()
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v374 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v375 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });

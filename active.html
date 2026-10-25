@@ -3,11 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Active v374</title>
+<title>PartsLister Pro Active v375</title>
 <!-- PartsLister Pro — Active page (v316: new as the Listings page, listings.html; v318: renamed Active, active.html, at /active). Shares the sign-in, account and
      eBay connection with the Sales page (/sales) and the listing tool (/list).
      v374: Listings per day chart — Today (by hour) · 7 Day · 31 Day · 90 Day, from eBay's listing start
-     dates (includes listings that since sold or ended), in your time zone. -->
+     dates (includes listings that since sold or ended), in your time zone.
+     v375: loads in the background (checks back every few seconds) and says exactly what went wrong. -->
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@400;500;600&display=swap');
 
@@ -149,7 +150,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v374</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v375</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -315,10 +316,29 @@ function niceStep(v) { if (v <= 1) return 1; const e = Math.pow(10, Math.floor(M
 const dLabel = (k, opts) => new Date(k + 'T12:00:00Z').toLocaleDateString('en-US', Object.assign({ timeZone: 'UTC' }, opts));
 const hourLabel = (h) => (h % 12 || 12) + (h < 12 ? ' AM' : ' PM');
 
+let dailyTimer = null, dailyTries = 0;
 async function loadDaily(refresh) {
+  clearTimeout(dailyTimer);
   if (!daily) setText('lc-note', 'Loading from eBay…');
-  const d = await getJSON('/api/listings/daily' + (refresh ? '?refresh=1' : ''));
-  if (!d || d._signedOut) { setText('lc-note', 'Could not reach the server.'); return; }
+  // const d = await getJSON('/api/listings/daily' + (refresh ? '?refresh=1' : ''));
+  // if (!d || d._signedOut) { setText('lc-note', 'Could not reach the server.'); return; }
+  // v375: say what actually went wrong
+  let d = null;
+  try {
+    const r = await fetch('/api/listings/daily' + (refresh ? '?refresh=1' : ''));
+    if (r.status === 404) { setText('lc-note', 'The server doesn’t have this feature yet — make sure the new server.js is deployed (line 1 should say v375).'); return; }
+    if (r.status === 401) { location.href = '/sales?next=' + encodeURIComponent(location.pathname); return; }
+    if (!r.ok) { setText('lc-note', 'The server had a problem (HTTP ' + r.status + ') — press Refresh from eBay to try again.'); return; }
+    d = await r.json();
+  } catch (e) { setText('lc-note', 'Couldn’t reach the server — check your connection and press Refresh from eBay.'); return; }
+  if (d.loading) {   // eBay is still sending the listings — check back
+    dailyTries++;
+    setText('lc-note', 'Loading your listings from eBay… (this can take a minute the first time)');
+    if (dailyTries < 60) dailyTimer = setTimeout(() => loadDaily(false), 3000);
+    else setText('lc-note', 'eBay is taking a long time — press Refresh from eBay to try again.');
+    return;
+  }
+  dailyTries = 0;
   if (!d.connected) { setText('lc-note', 'Connect eBay to see this.'); return; }
   if (d.error) { setText('lc-note', d.error); return; }
   daily = d;
