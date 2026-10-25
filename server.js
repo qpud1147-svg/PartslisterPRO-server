@@ -1,4 +1,4 @@
-// PartsLister Pro server — v375
+// PartsLister Pro server — v376
 // v302: dashboard.html is the homepage (/). The listing tool moved to /list.
 // v305: eBay sales connection — real sold orders on the dashboard.
 // v306: asks eBay for two more permissions — fees/payouts and seller metrics.
@@ -170,6 +170,10 @@
 // v366: smarter "doesn't need a reply" check (no AI): short messages made only of thank-you / ok /
 //       got-it / received words drop out of Needs reply ("Ok thank you for your help", "Just
 //       purchased. Thank you!"). Anything with a question or any other word stays in.
+// v376: Late returns count up to when the buyer FIRST ASKED (their first message after buying), not
+//       today — a buyer who asked in time still gets your address even if you reply late. Your
+//       availability understands day ranges ("Mon-Fri", "Tuesday through Thursday" = every day in
+//       between, not just the two ends). The draft says which day it used and why.
 // v375: Listings per day loads in the background — the page asks every few seconds instead of waiting
 //       on one long request (which could time out and show "Could not reach the server").
 // v374: LISTINGS PER DAY (Active page) — every listing that went up in the last 90 days, from eBay's
@@ -2537,6 +2541,16 @@ function nextAvailableDay(text, now = new Date(), tz = SELLER_TZ) {
   const names = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
   const short = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
   let days = names.map((n, i) => new RegExp('\\b(' + n + 's?|' + short[i] + (i === 2 ? '|tues' : i === 4 ? '|thur|thurs' : '') + ')\\b').test(t) ? i : -1).filter(i => i >= 0);
+  // v376: ranges — "mon-fri", "monday through friday", "tue–thu" mean every day in between
+  const dayIdx = (w) => { w = w.toLowerCase(); const i = short.findIndex(s => w.startsWith(s)); return i; };
+  const dayWord = '(sun|mon|tue|wed|thu|fri|sat)[a-z]*';
+  const rangeRe = new RegExp('\\b' + dayWord + '\\s*(?:-|–|—|to|through|thru|till|until)\\s*' + dayWord + '\\b', 'g');
+  let rm;
+  while ((rm = rangeRe.exec(t))) {
+    const a = dayIdx(rm[1]), b = dayIdx(rm[2]);
+    if (a < 0 || b < 0) continue;
+    for (let k = a; ; k = (k + 1) % 7) { days.push(k); if (k === b) break; }
+  }
   if (/\bweekdays?\b/.test(t)) days = days.concat([1, 2, 3, 4, 5]);
   if (/\bweekends?\b/.test(t)) days = days.concat([0, 6]);
   if (/\b(every ?day|daily)\b/.test(t)) days = [0, 1, 2, 3, 4, 5, 6];
@@ -3112,7 +3126,23 @@ const draftHandler = async (req, res) => {   // v347: named, so the sandbox down
     }
     // v350: LATE RETURN — your own extra days, counted from delivery (from the purchase date if eBay has no delivery date)
     let lateReturn = '';
+    let lateInfo = null;   // v376: shown under the draft
+    // if (ms0.honorLate.enabled && orderInfo.boughtAt && !orderInfo.cancelled && /Return window: ENDED/.test(orderFacts)) {
+    //   const from = orderInfo.deliveredAt || orderInfo.boughtAt;
+    //   const left = … (counted to today)
     if (ms0.honorLate.enabled && orderInfo.boughtAt && !orderInfo.cancelled && /Return window: ENDED/.test(orderFacts)) {
+      // v376: counted up to when the buyer FIRST ASKED (their first message after buying), not today
+      const from = orderInfo.deliveredAt || orderInfo.boughtAt;
+      const firstAsk = msgs.find(m => !m.mine && m.date && new Date(m.date) >= new Date(orderInfo.boughtAt));
+      const askedAt = firstAsk ? new Date(firstAsk.date) : new Date();
+      const askedDay = Math.max(0, Math.floor((askedAt.getTime() - new Date(from).getTime()) / 86400000));
+      const askedText = askedAt.toLocaleDateString('en-US', { weekday: 'short', month: 'long', day: 'numeric', timeZone: 'America/Los_Angeles' });
+      const lateReply = Date.now() - askedAt.getTime() > 2 * 86400000;
+      lateInfo = { ok: askedDay <= ms0.honorLate.days, askedDay, days: ms0.honorLate.days, asked: askedAt.toISOString() };
+      if (askedDay <= ms0.honorLate.days) lateReturn = 'The eBay return window has closed, but the seller accepts returns up to ' + ms0.honorLate.days + ' days after delivery, and this buyer asked on ' + askedText + ' — day ' + askedDay + ' after delivery, inside that' + (lateReply ? ' (the seller is replying late, which is not the buyer\'s fault, so the seller still honors it)' : '') + '. If they want to return it or say it doesn\'t work: say the eBay return window has closed, but they can still ship it back '
+        + (ms0.honorLate.address ? 'to this address: ' + ms0.honorLate.address.replace(/\s*\n\s*/g, ', ') : '(say you\'ll send them the return address)') + ' — and ask them to please mail it within 2 weeks, and you\'ll refund them once it arrives (no calendar date).';
+    }
+    if (false) {   // v371 version below, kept for reference (v376: replaced above)
       const from = orderInfo.deliveredAt || orderInfo.boughtAt;
       const left = ms0.honorLate.days - Math.floor((Date.now() - new Date(from).getTime()) / 86400000);
       const lastDay = new Date(new Date(from).getTime() + ms0.honorLate.days * 86400000).toLocaleDateString('en-US', { weekday: 'short', month: 'long', day: 'numeric', timeZone: 'America/Los_Angeles' });
@@ -3356,7 +3386,10 @@ const draftHandler = async (req, res) => {   // v347: named, so the sandbox down
     // res.json({ draft: text.slice(0, 2000), usedListing: !!itemId, shipChecks: shipChecks.map(sc => ({ country: sc.country, verdict: sc.verdict })), orderFacts: orderFacts || null });   // v330
     // res.json({ draft: text.slice(0, 2000), usedListing: !!itemId, shipChecks: shipChecks.map(sc => ({ country: sc.country, verdict: sc.verdict })), orderFacts: orderFacts || null, discount });   // v331: + discount
     // res.json({ draft: …, discount, followUp });   // v336: + followUp
-    res.json({ draft: text.slice(0, 2000), usedListing: !!itemId, shipChecks: shipChecks.map(sc => ({ country: sc.country, verdict: sc.verdict })), orderFacts: orderFacts || null, discount, followUp, english, discountSkipped });   // v339: + english, v355: + discountSkipped
+    // res.json({ draft: text.slice(0, 2000), usedListing: !!itemId, shipChecks: shipChecks.map(sc => ({ country: sc.country, verdict: sc.verdict })), orderFacts: orderFacts || null, discount, followUp, english, discountSkipped });   // v339: + english, v355: + discountSkipped
+    const nextDay = ms.availability ? nextAvailableDay(ms.availability, new Date(), ms.timezone) : null;   // v376: shown under the draft
+    res.json({ draft: text.slice(0, 2000), usedListing: !!itemId, shipChecks: shipChecks.map(sc => ({ country: sc.country, verdict: sc.verdict })), orderFacts: orderFacts || null, discount, followUp, english, discountSkipped,
+      lateInfo, nextDay: nextDay ? nextDay.label : null, availability: ms.availability || null });   // v376
   } catch (e) {
     console.error('[draft]', e.message);
     res.status(500).json({ error: 'Could not draft a reply: ' + e.message });
@@ -4731,5 +4764,5 @@ app.get('*', (req, res) => {
 });
 
 setupDatabase()
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v375 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v376 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });

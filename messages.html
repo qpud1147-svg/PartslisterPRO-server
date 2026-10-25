@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Messages v371</title>
+<title>PartsLister Pro Messages v376</title>
 <!-- PartsLister Pro — Messages page (v321: new; v322: conversation threads — the whole back-and-forth
      with each buyer, chat style, from eBay's Message API. Offers from a conversation. The v321
      email-style view is still at /messages/classic). Nothing about your messages is saved on the server.
@@ -34,7 +34,9 @@
      status line under AI draft keeps a fixed two-line space, and the offer / Waiting on me /
      English / ships-to lines appear above the AI draft row instead of pushing it.
      v371: sending your return address (late returns on in Settings) adds the sale to Late returns on
-     the Returns page. "Add to Late returns" on the order line adds one by hand. -->
+     the Returns page. "Add to Late returns" on the order line adds one by hand.
+     v376: under the draft — the day "get back to you by" uses (from your availability) and whether a
+     late return counts (days from delivery to when the buyer first asked). -->
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@400;500;600&display=swap');
 
@@ -296,7 +298,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v371</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v376</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -711,6 +713,9 @@ async function showThread(id) {
       const sc = (out.shipChecks || []).map(x => x.country + ': ' + ({ yes: 'ships', no: 'can\u2019t ship', probably: 'probably ships', unknown: 'unclear' }[x.verdict])).join(', ');
       aiMsg.textContent = 'Draft ready — check it, edit if needed, then Send.' + (sc ? ' (Checked shipping — ' + sc + ')' : '');   // v329
       if (out.discountSkipped) aiMsg.textContent += ' (No discount offer: ' + out.discountSkipped + '.)';   // v355
+      // v376: why it picked that day / whether the late return counts
+      if (out.lateInfo) aiMsg.textContent += ' (Late return: buyer asked on day ' + out.lateInfo.askedDay + ' after delivery — ' + (out.lateInfo.ok ? 'inside' : 'past') + ' your ' + out.lateInfo.days + ' days.)';
+      if (out.nextDay && /\bget back\b|\bby (today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i.test(out.draft || '')) aiMsg.textContent += ' (Next available day from your settings: ' + out.nextDay + ' — your availability: “' + out.availability + '”.)';
       // v330: show what the AI was told about the sale + return window (hover for all of it)
       const rw = /Return window: (INSIDE|ENDED)[^(]*/.exec(out.orderFacts || '');
       if (rw) aiMsg.textContent += ' (Return window: ' + rw[0].replace('Return window: ', '').replace(/ counting.*$/, '').trim() + ')';
