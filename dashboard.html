@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Sales v381</title>
-<!-- v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
+<title>PartsLister Pro Sales v382</title>
+<!-- v382: switching views is instant; browser reload / Refresh really reloads. v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@400;500;600&display=swap');
 
@@ -531,7 +531,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v381</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v382</span></div>
   </a>
   <!-- v316: switch pages -->
   <nav class="page-tabs" aria-label="Pages">
@@ -1014,7 +1014,10 @@
 // you close the tab or log out — never saved on the server or on disk.
 // v381: + remembers you're signed in (no sign-in screen flash) and, a few seconds after a page
 //       loads, quietly loads the other pages' data so their first open is instant too.
-const pageCache = { urls: [], rerun: null };
+// v382: switching views on a page (Open/Closed, Buyers/From eBay, 7/31/90 days…) uses the saved copy too.
+//       Reloading the browser page, or pressing a Refresh button, really reloads from eBay.
+const pageCache = { urls: [], rerun: null, liveUntil: 0, live() { this.liveUntil = Date.now() + 3000; } };
+try { if ((performance.getEntriesByType('navigation')[0] || {}).type === 'reload') pageCache.liveUntil = Date.now() + 5000; } catch (e) { /* fine */ }
 (function () {
   const realFetch = window.fetch.bind(window);
   const KEY = 'plp-cache:';
@@ -1033,8 +1036,9 @@ const pageCache = { urls: [], rerun: null };
     if (!want(url, opt)) { const r = await realFetch(url, opt); watch(url, r); return r; }
     const f = fresh.get(url);
     if (f && Date.now() - f.at < 60000) { fresh.delete(url); if (f.status === 200) return asResponse(f.text); }
-    if (!first.has(url)) {
-      first.add(url);
+    // if (!first.has(url)) {   (v381: only the first time on this page)
+    first.add(url);
+    if (Date.now() >= pageCache.liveUntil) {   // v382: every time, unless you just reloaded or pressed Refresh
       const saved = read(url);
       if (saved !== null) {
         pending++;
@@ -1061,7 +1065,9 @@ const pageCache = { urls: [], rerun: null };
   let ordersDays = 31; try { ordersDays = parseInt(localStorage.getItem('plp_orders_days'), 10) || 31; } catch (e) { /* default */ }
   const ALL = ['/api/me', '/api/sales?tz=' + LA, '/api/fees?tz=' + LA, '/api/listings/summary', '/api/messages/summary', '/api/returns/summary',
     '/api/orders/list?days=' + ordersDays + '&tz=' + LA, '/api/threads?type=members', '/api/followups', '/api/msg-settings',
-    '/api/returns?view=open', '/api/late-returns', '/api/listings/daily'];
+    '/api/returns?view=open', '/api/late-returns', '/api/listings/daily',
+    // v382: the other views, so switching is instant
+    '/api/threads?type=ebay', '/api/returns?view=closed'].concat([7, 31, 90, 365].filter(d => d !== ordersDays).map(d => '/api/orders/list?days=' + d + '&tz=' + LA));
   setTimeout(async () => {
     try { if (!sessionStorage.getItem('plp-signed-in')) return; } catch (e) { return; }
     for (const url of ALL) {
@@ -1618,7 +1624,7 @@ async function loadSales() {
   renderBadge();
   clearTimeout(pollTimer);
   // if (salesInfo.syncing) pollTimer = setTimeout(refreshSales, 4000);
-  if (salesInfo.syncing) pollTimer = setTimeout(refreshSales, manualRefresh ? 1500 : 4000);   // v311: faster while you wait
+  if (salesInfo.syncing) pollTimer = setTimeout(liveRefresh, manualRefresh ? 1500 : 4000);   // v311: faster while you wait
   else if (manualRefresh) {                                                                   // v311: your refresh finished
     manualRefresh = false;
     if (salesInfo.lastError) showToast('eBay refresh had a problem — click the badge for details.', true);
@@ -1626,6 +1632,7 @@ async function loadSales() {
   }
 }
 
+const liveRefresh = () => { pageCache.live(); refreshSales(); };   // v382: checking eBay while it updates — never the saved copy
 async function refreshSales() {
   await loadSales();
   renderTaxToggle();   // v309
@@ -1683,7 +1690,7 @@ async function badgeClick() {
   try { await fetch('/api/ebay/sync', { method: 'POST' }); }
   catch (e) { manualRefresh = false; showToast('Could not reach the server.', true); }
   clearTimeout(pollTimer);
-  pollTimer = setTimeout(refreshSales, 1500);
+  pollTimer = setTimeout(liveRefresh, 1500);
 }
 
 // Coming back from eBay's sign-in
@@ -1743,7 +1750,7 @@ async function loadFees() {
   feesInfo = d;
   feesByDay = new Map((d.days || []).map(([key, fees, penalty]) => [key, [fees, penalty]]));
   // keep checking while the first fee import runs
-  if (d.reason === 'importing') { clearTimeout(pollTimer); pollTimer = setTimeout(refreshSales, 4000); }
+  if (d.reason === 'importing') { clearTimeout(pollTimer); pollTimer = setTimeout(liveRefresh, 4000); }
 }
 
 function renderFees(salesTotal) {
@@ -2123,7 +2130,7 @@ function connectEbay() {
 async function syncNow() {
   await fetch('/api/ebay/sync', { method: 'POST' }).catch(() => {});
   showToast('Updating your sales from eBay…');
-  setTimeout(refreshSales, 800);
+  setTimeout(liveRefresh, 800);
 }
 
 async function disconnectEbay() {
