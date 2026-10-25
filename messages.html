@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Messages v381</title>
-<!-- v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
+<title>PartsLister Pro Messages v382</title>
+<!-- v382: switching views is instant; browser reload / Refresh really reloads. v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
 <!-- PartsLister Pro — Messages page (v321: new; v322: conversation threads — the whole back-and-forth
      with each buyer, chat style, from eBay's Message API. Offers from a conversation. The v321
      email-style view is still at /messages/classic). Nothing about your messages is saved on the server.
@@ -299,7 +299,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v381</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v382</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -362,7 +362,10 @@
 // you close the tab or log out — never saved on the server or on disk.
 // v381: + remembers you're signed in (no sign-in screen flash) and, a few seconds after a page
 //       loads, quietly loads the other pages' data so their first open is instant too.
-const pageCache = { urls: [], rerun: null };
+// v382: switching views on a page (Open/Closed, Buyers/From eBay, 7/31/90 days…) uses the saved copy too.
+//       Reloading the browser page, or pressing a Refresh button, really reloads from eBay.
+const pageCache = { urls: [], rerun: null, liveUntil: 0, live() { this.liveUntil = Date.now() + 3000; } };
+try { if ((performance.getEntriesByType('navigation')[0] || {}).type === 'reload') pageCache.liveUntil = Date.now() + 5000; } catch (e) { /* fine */ }
 (function () {
   const realFetch = window.fetch.bind(window);
   const KEY = 'plp-cache:';
@@ -381,8 +384,9 @@ const pageCache = { urls: [], rerun: null };
     if (!want(url, opt)) { const r = await realFetch(url, opt); watch(url, r); return r; }
     const f = fresh.get(url);
     if (f && Date.now() - f.at < 60000) { fresh.delete(url); if (f.status === 200) return asResponse(f.text); }
-    if (!first.has(url)) {
-      first.add(url);
+    // if (!first.has(url)) {   (v381: only the first time on this page)
+    first.add(url);
+    if (Date.now() >= pageCache.liveUntil) {   // v382: every time, unless you just reloaded or pressed Refresh
       const saved = read(url);
       if (saved !== null) {
         pending++;
@@ -409,7 +413,9 @@ const pageCache = { urls: [], rerun: null };
   let ordersDays = 31; try { ordersDays = parseInt(localStorage.getItem('plp_orders_days'), 10) || 31; } catch (e) { /* default */ }
   const ALL = ['/api/me', '/api/sales?tz=' + LA, '/api/fees?tz=' + LA, '/api/listings/summary', '/api/messages/summary', '/api/returns/summary',
     '/api/orders/list?days=' + ordersDays + '&tz=' + LA, '/api/threads?type=members', '/api/followups', '/api/msg-settings',
-    '/api/returns?view=open', '/api/late-returns', '/api/listings/daily'];
+    '/api/returns?view=open', '/api/late-returns', '/api/listings/daily',
+    // v382: the other views, so switching is instant
+    '/api/threads?type=ebay', '/api/returns?view=closed'].concat([7, 31, 90, 365].filter(d => d !== ordersDays).map(d => '/api/orders/list?days=' + d + '&tz=' + LA));
   setTimeout(async () => {
     try { if (!sessionStorage.getItem('plp-signed-in')) return; } catch (e) { return; }
     for (const url of ALL) {
@@ -593,7 +599,7 @@ async function loadList() {
   me = d.me || me;
   threads = d.threads || [];
   setText('t-note', 'From eBay · checked ' + new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) + ' · ');
-  const r = el('button', '', 'Refresh'); r.type = 'button'; r.onclick = loadList;
+  const r = el('button', '', 'Refresh'); r.type = 'button'; r.onclick = () => { pageCache.live(); loadList(); };   // v382: Refresh really asks eBay
   document.getElementById('t-note').append(r);
   renderList();
   const hm = /^#c=(.+)$/.exec(location.hash);
@@ -1076,7 +1082,7 @@ document.querySelectorAll('#seg-show button').forEach(b => b.addEventListener('c
 }));
 let st; document.getElementById('t-search').addEventListener('input', () => { clearTimeout(st); st = setTimeout(renderList, 120); });
 loadList();
-setInterval(() => { if (!document.hidden && !document.querySelector('.th-compose textarea:focus') && !document.querySelector('.offers.open')) loadList(); }, 3 * 60000);
+setInterval(() => { if (!document.hidden && !document.querySelector('.th-compose textarea:focus') && !document.querySelector('.offers.open')) { pageCache.live(); loadList(); } }, 3 * 60000);   // v382: live
 pageCache.rerun = () => loadList();   // v380: fresh data from eBay → draw the page again
 </script>
 </body>

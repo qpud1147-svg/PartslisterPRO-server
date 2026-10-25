@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Active v381</title>
-<!-- v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
+<title>PartsLister Pro Active v382</title>
+<!-- v382: switching views is instant; browser reload / Refresh really reloads. v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
 <!-- PartsLister Pro — Active page (v316: new as the Listings page, listings.html; v318: renamed Active, active.html, at /active). Shares the sign-in, account and
      eBay connection with the Sales page (/sales) and the listing tool (/list).
      v374: Listings per day chart — Today (by hour) · 7 Day · 31 Day · 90 Day, from eBay's listing start
@@ -126,6 +126,17 @@
   .tooltip .tt-value { display: block; font-family: 'Barlow Condensed', sans-serif; font-size: 22px; font-weight: 700; color: var(--text); line-height: 1.1; }
   @media (max-width: 700px) { .range-picker { margin-left: 0; } .range-picker button { padding: 6px 9px; font-size: 13px; } #lchart-wrap { height: 230px; } .lstats { gap: 18px; } .lstat .v { font-size: 26px; } }
 
+  /* v382: the same "eBay · updated … · ↻" box as the Sales page */
+  .title-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
+  .title-row .page-title { margin-bottom: 0; }
+  .sample-badge { font-family: 'Barlow Condensed', sans-serif; font-size: 11px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--text); border: 1px solid var(--border); background: var(--surface2); border-radius: 3px; padding: 3px 8px; cursor: pointer; }
+  .sample-badge:hover { border-color: var(--accent); }
+  .sample-badge:disabled { cursor: default; }
+  .sample-badge .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--success); margin-right: 6px; vertical-align: 1px; }
+  .sample-badge.warn .dot { background: var(--danger); }
+  .sample-badge.busy .dot { background: var(--accent); animation: pulse 1s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: 0.3; } }
+
   #loading { position: fixed; inset: 0; background: var(--bg); z-index: 100; display: flex; align-items: center; justify-content: center; color: var(--muted); font-family: 'Barlow Condensed', sans-serif; letter-spacing: 2px; text-transform: uppercase; }
   #loading.hidden { display: none; }
 
@@ -151,7 +162,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v381</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v382</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -178,8 +189,10 @@
 
 <main>
   <!-- <div class="page-title">Listings</div> -->
-  <div class="page-title">Active listings</div>   <!-- v318 -->
-  <div class="page-note"><span id="l-note">&nbsp;</span> <button type="button" id="l-refresh" onclick="refreshListings()">Refresh from eBay</button></div>
+  <!-- <div class="page-title">Active listings</div>   v318 -->
+  <div class="title-row"><div class="page-title">Active listings</div>
+    <button type="button" class="sample-badge" id="l-badge" onclick="refreshListings()">eBay</button></div>   <!-- v382: same box as Sales -->
+  <div class="page-note" style="display:none"><span id="l-note">&nbsp;</span> <button type="button" id="l-refresh" onclick="refreshListings()">Refresh from eBay</button></div>   <!-- v382: replaced by the box above -->
   <div class="error-box" id="l-error"></div>
 
   <div class="grid">
@@ -240,7 +253,10 @@
 // you close the tab or log out — never saved on the server or on disk.
 // v381: + remembers you're signed in (no sign-in screen flash) and, a few seconds after a page
 //       loads, quietly loads the other pages' data so their first open is instant too.
-const pageCache = { urls: [], rerun: null };
+// v382: switching views on a page (Open/Closed, Buyers/From eBay, 7/31/90 days…) uses the saved copy too.
+//       Reloading the browser page, or pressing a Refresh button, really reloads from eBay.
+const pageCache = { urls: [], rerun: null, liveUntil: 0, live() { this.liveUntil = Date.now() + 3000; } };
+try { if ((performance.getEntriesByType('navigation')[0] || {}).type === 'reload') pageCache.liveUntil = Date.now() + 5000; } catch (e) { /* fine */ }
 (function () {
   const realFetch = window.fetch.bind(window);
   const KEY = 'plp-cache:';
@@ -259,8 +275,9 @@ const pageCache = { urls: [], rerun: null };
     if (!want(url, opt)) { const r = await realFetch(url, opt); watch(url, r); return r; }
     const f = fresh.get(url);
     if (f && Date.now() - f.at < 60000) { fresh.delete(url); if (f.status === 200) return asResponse(f.text); }
-    if (!first.has(url)) {
-      first.add(url);
+    // if (!first.has(url)) {   (v381: only the first time on this page)
+    first.add(url);
+    if (Date.now() >= pageCache.liveUntil) {   // v382: every time, unless you just reloaded or pressed Refresh
       const saved = read(url);
       if (saved !== null) {
         pending++;
@@ -287,7 +304,9 @@ const pageCache = { urls: [], rerun: null };
   let ordersDays = 31; try { ordersDays = parseInt(localStorage.getItem('plp_orders_days'), 10) || 31; } catch (e) { /* default */ }
   const ALL = ['/api/me', '/api/sales?tz=' + LA, '/api/fees?tz=' + LA, '/api/listings/summary', '/api/messages/summary', '/api/returns/summary',
     '/api/orders/list?days=' + ordersDays + '&tz=' + LA, '/api/threads?type=members', '/api/followups', '/api/msg-settings',
-    '/api/returns?view=open', '/api/late-returns', '/api/listings/daily'];
+    '/api/returns?view=open', '/api/late-returns', '/api/listings/daily',
+    // v382: the other views, so switching is instant
+    '/api/threads?type=ebay', '/api/returns?view=closed'].concat([7, 31, 90, 365].filter(d => d !== ordersDays).map(d => '/api/orders/list?days=' + d + '&tz=' + LA));
   setTimeout(async () => {
     try { if (!sessionStorage.getItem('plp-signed-in')) return; } catch (e) { return; }
     for (const url of ALL) {
@@ -345,6 +364,7 @@ async function loadListings(refresh) {
   setText('l-lifetime', Number(d.listedLifetime || 0).toLocaleString());
   if (!d.connected) {
     setText('l-note', 'eBay isn’t connected yet' + (me.isAdmin ? ' — connect it in Settings → Admin.' : '.'));
+    document.getElementById('l-badge').textContent = 'eBay isn’t connected';   // v382
     btn.style.display = 'none';
     return;
   }
@@ -359,12 +379,22 @@ async function loadListings(refresh) {
     setText('l-avg', d.activeCount ? money2.format((d.activeValue || 0) / d.activeCount) : '—');
   }
   setText('l-note', d.lastCheck ? 'From eBay · checked ' + timeAgo(d.lastCheck) + ' ·' : 'Checking eBay for the first time — this can take a minute ·');
+  // v382: the box
+  const bg = document.getElementById('l-badge');
+  bg.className = 'sample-badge'; bg.textContent = '';
+  const dot = document.createElement('span'); dot.className = 'dot';
+  let bt;
+  if (d.checking || (d.activeCount === null && !d.error)) { bg.classList.add('busy'); bt = d.lastCheck ? 'eBay · updating…' : 'eBay · checking…'; bg.title = 'Checking your listings on eBay'; }
+  else if (d.error) { bg.classList.add('warn'); bt = 'eBay · problem · ↻'; bg.title = d.error + ' — click to try again'; }
+  else { bt = 'eBay · updated ' + timeAgo(d.lastCheck) + ' · ↻'; bg.title = 'Click to refresh from eBay now. It also refreshes on its own every hour.'; }
+  bg.append(dot, document.createTextNode(bt));
+  bg.disabled = !!d.checking;
   if (d.error) {
     err.textContent = 'eBay didn’t give us your listings: ' + d.error;
     err.style.display = 'block';
   }
   clearTimeout(pollTimer);
-  if (d.checking || d.activeCount === null && !d.error) pollTimer = setTimeout(() => loadListings(false), 3000);
+  if (d.checking || d.activeCount === null && !d.error) pollTimer = setTimeout(() => { pageCache.live(); loadListings(false); }, 3000);   // v382: live while eBay is checking
 }
 // function refreshListings() { loadListings(true); }
 function refreshListings() { loadListings(true); loadDaily(true); }   // v374: + the per-day chart
@@ -399,7 +429,7 @@ async function loadDaily(refresh) {
   if (d.loading) {   // eBay is still sending the listings — check back
     dailyTries++;
     setText('lc-note', 'Loading your listings from eBay… (this can take a minute the first time)');
-    if (dailyTries < 60) dailyTimer = setTimeout(() => loadDaily(false), 3000);
+    if (dailyTries < 60) dailyTimer = setTimeout(() => { pageCache.live(); loadDaily(false); }, 3000);   // v382
     else setText('lc-note', 'eBay is taking a long time — press Refresh from eBay to try again.');
     return;
   }
