@@ -590,6 +590,21 @@ function weatherPixels(px, w, h, amount) {   // px = RGBA of a black & white pic
     if (nz < a * 0.5 + (edge ? a * 0.18 : 0)) { px[i * 4] = px[i * 4 + 1] = px[i * 4 + 2] = 255; }
   }
 }
+function gravelPixels(px, w, h, amount) {   // v394: GRAVEL — pixels get knocked sideways in chunks, so edges break into coarse grains (sand is fine; this is gravel)
+  const a = Math.max(0, Math.min(100, amount)) / 100;
+  const chunk = Math.max(2, Math.round(w * (0.004 + 0.007 * a)));   // grain size grows with the slider
+  const mag = a * w * 0.03 + 1;                                      // how far a grain can be thrown
+  const src = new Uint8Array(w * h); for (let i = 0; i < w * h; i++) src[i] = px[i * 4] < 128 ? 1 : 0;
+  const at = (x, y) => (x < 0 || y < 0 || x >= w || y >= h) ? 0 : src[y * w + x];
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const bx = Math.floor(x / chunk), by = Math.floor(y / chunk);
+    let sx = x + (wHash(bx, by, 21) - 0.5) * 2 * mag, sy = y + (wHash(bx, by, 22) - 0.5) * 2 * mag;   // each chunk has its own throw
+    sx += (wHash(x, y, 23) - 0.5) * chunk;  sy += (wHash(x, y, 24) - 0.5) * chunk;                       // plus a little single-pixel grit
+    let v = at(Math.round(sx), Math.round(sy));
+    if (v && a > 0.5 && wHash(bx, by, 25) < (a - 0.5) * 0.5) v = 0;   // at high settings some whole grains drop out, even in the middle
+    const o = (y * w + x) * 4; px[o] = px[o + 1] = px[o + 2] = v ? 0 : 255; px[o + 3] = 255;
+  }
+}
 function boxBlur(src, dst, w, h, r, horiz) {   // one running-sum pass
   const len = horiz ? w : h, cnt = horiz ? h : w, stride = horiz ? 1 : w, lineStep = horiz ? w : 1, k = 2 * r + 1;
   for (let l = 0; l < cnt; l++) {
@@ -625,12 +640,12 @@ function grayPixels(px, w, h, fuzzy, fade, spots) {   // blur → lighter ink �
   }
   for (let i = 0; i < n; i++) { const v = dk[i] ? 0 : 255; px[i * 4] = px[i * 4 + 1] = px[i * 4 + 2] = v; px[i * 4 + 3] = 255; }
 }
-const hasLook = (r) => r.weather > 0 || r.fuzzy > 0 || r.fade > 0 || r.spots > 0;
+const hasLook = (r) => r.weather > 0 || r.gravel > 0 || r.fuzzy > 0 || r.fade > 0 || r.spots > 0;
 function weatherLogo(src, r) {
   return new Promise((resolve) => {
-    const wv = parseInt(r.weather, 10) || 0, fz = parseInt(r.fuzzy, 10) || 0, fd = parseInt(r.fade, 10) || 0, sp = parseInt(r.spots, 10) || 0;
-    if (!src || !(wv > 0 || fz > 0 || fd > 0 || sp > 0)) return resolve(src);
-    const key = [wv, fz, fd, sp, src.length, src.slice(-60)].join('|');
+    const wv = parseInt(r.weather, 10) || 0, gr = parseInt(r.gravel, 10) || 0, fz = parseInt(r.fuzzy, 10) || 0, fd = parseInt(r.fade, 10) || 0, sp = parseInt(r.spots, 10) || 0;
+    if (!src || !(wv > 0 || gr > 0 || fz > 0 || fd > 0 || sp > 0)) return resolve(src);
+    const key = [wv, gr, fz, fd, sp, src.length, src.slice(-60)].join('|');
     if (weatherCache.has(key)) return resolve(weatherCache.get(key));
     const img = new Image();
     img.onload = () => {
@@ -638,6 +653,7 @@ function weatherLogo(src, r) {
       const x = c.getContext('2d'); x.drawImage(img, 0, 0);
       const d = x.getImageData(0, 0, w, h);
       if (wv > 0) weatherPixels(d.data, w, h, wv);
+      if (gr > 0) gravelPixels(d.data, w, h, gr);   // v394
       if (fz > 0 || fd > 0 || sp > 0) grayPixels(d.data, w, h, fz, fd, sp);
       x.putImageData(d, 0, 0);
       const out = c.toDataURL('image/png'); weatherCache.set(key, out); resolve(out);
@@ -763,7 +779,7 @@ function yardRow(y) {
         const body = document.createElement('div'); body.className = 'yt-rb';
         let html = '<div class="yt-grid">';
         if (r.type === 'text') html += pick('font', 'Font', Object.keys(FONT_STACKS).map(f => [f, f]), r) + pick('align', 'Position', AL, r) + sl('size', 'Text size', 1, r) + '<label class="yt-chk"><input type="checkbox" data-k="bold"' + (r.bold ? ' checked' : '') + '> Bold</label>';
-        if (r.type === 'logo') html += pick('align', 'Position', AL, r) + sl('width', 'Logo size', 1, r) + sl('weather', 'Weathered look', 0, r) + sl('fuzzy', 'Fuzzy', 0, r) + sl('fade', 'Faded gray', 0, r) + sl('spots', 'Spots', 0, r);
+        if (r.type === 'logo') html += pick('align', 'Position', AL, r) + sl('width', 'Logo size', 1, r) + sl('weather', 'Weathered look', 0, r) + sl('gravel', 'Gravel (chunky grit)', 0, r) + sl('fuzzy', 'Fuzzy', 0, r) + sl('fade', 'Faded gray', 0, r) + sl('spots', 'Spots', 0, r);
         if (r.type === 'barcode') html += '<div><label>Barcode numbers (blank = each ticket\u2019s own number)</label><input data-k="value" maxlength="40" placeholder="e.g. 12345678" value="' + esc(r.value || '') + '"></div>' + pick('align', 'Position', AL, r) + sl('width', 'Barcode width', 1, r) + sl('height', 'Barcode height', 1, r);
         if (r.type !== 'line') html += sl('top', 'Space above', 0, r) + sl('bottom', 'Space below', 0, r);
         else html += sl('top', 'Space above', 0, r) + sl('bottom', 'Space below', 0, r);
