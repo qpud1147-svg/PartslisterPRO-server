@@ -3928,19 +3928,22 @@ app.post('/api/late-returns/:id/:action', requireUser, async (req, res) => {
 const TICKET_TEMPLATE = '{logo}\n{big}{yard}\nENTRY TICKET\nADMIT ONE\n--------------------------------\nValid: {valid}\nSold: {date} {time}\nPrice: {price}\n--------------------------------\nTicket #{number}\n{barcode}\nThank you!';
 // v390: ticket designer — everything is clamped here so a saved design can never break printing
 const TICKET_FONTS = ['Courier New', 'Arial', 'Helvetica', 'Times New Roman', 'Georgia', 'Verdana', 'Trebuchet MS', 'Impact', 'Arial Black'];
-function cleanDesign(d) {
-  d = (d && typeof d === 'object') ? d : {};
+function cleanRow(r) {
+  r = (r && typeof r === 'object') ? r : {};
   const n = (v, def, lo = 1, hi = 100) => { v = parseInt(v, 10); return Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : def; };
   const al = (v, def) => ['left', 'center', 'right'].includes(v) ? v : def;
-  return {
-    font: TICKET_FONTS.includes(d.font) ? d.font : 'Courier New',
-    textSize: n(d.textSize, 45), bigSize: n(d.bigSize, 70), lineSpacing: n(d.lineSpacing, 35),
-    bold: !!d.bold, align: al(d.align, 'center'),
-    logoAlign: al(d.logoAlign, 'center'), logoTop: n(d.logoTop, 0, 0), logoBottom: n(d.logoBottom, 10, 0),
-    barcode: String(d.barcode || '').replace(/[^\x20-\x7E]/g, '').trim().slice(0, 40),   // '' = use each ticket's own number
-    barAlign: al(d.barAlign, 'center'), barWidth: n(d.barWidth, 75), barHeight: n(d.barHeight, 22),
-    barTop: n(d.barTop, 5, 0), barBottom: n(d.barBottom, 5, 0)
-  };
+  const type = ['text', 'line', 'logo', 'barcode'].includes(r.type) ? r.type : 'text';
+  const out = { type, align: al(r.align, 'center'), top: n(r.top, 0, 0), bottom: n(r.bottom, type === 'text' ? 0 : 5, 0) };
+  if (type === 'text') Object.assign(out, { text: String(r.text || '').replace(/[\r\n]+/g, ' ').slice(0, 200), font: TICKET_FONTS.includes(r.font) ? r.font : 'Courier New', size: n(r.size, 45), bold: !!r.bold });
+  if (type === 'logo') out.width = n(r.width, 70);
+  if (type === 'barcode') Object.assign(out, { value: String(r.value || '').replace(/[^\x20-\x7E]/g, '').trim().slice(0, 40), width: n(r.width, 75), height: n(r.height, 22) });   // value '' = each ticket's own number
+  return out;
+}
+// v391: a ticket is a list of rows (text, divider line, logo, barcode) — each row has its own font, size and position
+function cleanDesign(d) {
+  d = (d && typeof d === 'object') ? d : {};
+  const rows = Array.isArray(d.rows) ? d.rows.slice(0, 60).map(cleanRow) : null;
+  return { rows: rows && rows.length ? rows : null };   // null = not redesigned yet (the page builds rows from the old ticket text)
 }
 async function ticketSettings(userId) {
   // const r = await pool.query('SELECT time, width, randomize FROM ticket_settings …');   (v388)
@@ -4038,7 +4041,7 @@ app.post('/api/tickets/yards/:id/print', requireUser, express.json(), async (req
     // an advance ticket always says which day it's good for, even if the ticket text has no {valid}
     if (advance && !tpl.includes('{valid}')) tpl += '\n{big}VALID FOR {valid}';
     const text = tpl.replace(/\{(yard|date|time|price|number|valid)\}/g, (m, k) => ({ yard: y.name, date, time, price, number, valid })[k]);
-    res.json({ ok: true, text, number, width: st.width, yard: y.name, logo: y.logo || null, logoSize: y.logo_size || 70, design: cleanDesign(y.design), advance });
+    res.json({ ok: true, text, number, template: tpl, vals: { yard: y.name, date, time, price, number, valid }, width: st.width, yard: y.name, logo: y.logo || null, logoSize: y.logo_size || 70, design: cleanDesign(y.design), advance });
   } catch (e) { console.error('[tickets print]', e.message); res.status(500).json({ error: 'Could not print the ticket' }); }
 });
 
