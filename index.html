@@ -9,7 +9,8 @@
   // refresh, overriding anything init does.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 </script>
-<title>PartsLister Pro v383</title>
+<title>PartsLister Pro v384</title>
+<!-- v384: cleaner Listing Tool — decorative emojis removed (kept: ⚙ settings, 📋 copy, 🎨 color picker), the "e.g." / "auto-filled" hint text removed, and the days-ahead box sits inside the Scheduled Listing button so both buttons stay centered. -->
 <!-- v383: Scheduled Listing — a dropdown next to the button picks how many days ahead (1–21); your choice is saved with your settings. -->
 <!-- v381: no sign-in screen flash when you're already signed in in this tab (the other pages remember it). -->
 <!-- auth removed -->
@@ -907,7 +908,7 @@
     <!-- v302: logo goes to the dashboard -->
     <a href="/" title="Dashboard" style="text-decoration:none;color:inherit;">
       <div class="logo"><span>PARTS</span>LISTER</div>
-      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v383</span></div>
+      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v384</span></div>
     </a>
     <!-- v303: removed — the logo is the dashboard button
     <a href="/" class="btn btn-secondary btn-sm" title="Back to your dashboard" style="font-size:11px;padding:4px 10px;text-decoration:none;margin-left:6px;">⌂ Dashboard</a>
@@ -917,10 +918,10 @@
 
   <!-- All header buttons — right-aligned, order: View Sold, View Active, List Pigtail, List Other Side, count, My Store, ⚙ -->
   <div style="display:flex;align-items:center;gap:6px;margin-left:auto;flex-shrink:0;">
-    <button class="btn btn-secondary btn-sm" id="ebay-open-sold-btn" onclick="openEbaySold()" disabled style="font-size:11px;padding:4px 10px;">🔗 View Sold</button>
-    <button class="btn btn-secondary btn-sm" id="ebay-open-active-btn" onclick="openEbayActive()" disabled style="font-size:11px;padding:4px 10px;">🔗 View Active</button>
+    <button class="btn btn-secondary btn-sm" id="ebay-open-sold-btn" onclick="openEbaySold()" disabled style="font-size:11px;padding:4px 10px;">View Sold</button>
+    <button class="btn btn-secondary btn-sm" id="ebay-open-active-btn" onclick="openEbayActive()" disabled style="font-size:11px;padding:4px 10px;">View Active</button>
     <div style="position:relative;">
-      <button id="pigtail-header-btn" onclick="togglePigtailMenu()" style="font-size:11px;padding:4px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;font-family:Barlow Condensed,sans-serif;font-weight:700;letter-spacing:0.06em;color:var(--text);cursor:pointer;display:flex;align-items:center;gap:5px;white-space:nowrap;">🔌 List Pigtail <span style="opacity:0.5;font-size:10px;">▾</span></button>
+      <button id="pigtail-header-btn" onclick="togglePigtailMenu()" style="font-size:11px;padding:4px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;font-family:Barlow Condensed,sans-serif;font-weight:700;letter-spacing:0.06em;color:var(--text);cursor:pointer;display:flex;align-items:center;gap:5px;white-space:nowrap;">List Pigtail <span style="opacity:0.5;font-size:10px;">▾</span></button>
       <div id="pigtail-menu" style="display:none;position:absolute;top:calc(100% + 4px);right:0;min-width:220px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;z-index:1000;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,0.4);">
         <div style="padding:6px 10px;font-size:10px;color:var(--muted);font-family:Barlow Condensed,sans-serif;letter-spacing:0.1em;text-transform:uppercase;border-bottom:1px solid var(--border);">Recent Listings</div>
         <div id="pigtail-history-list"><div style="padding:10px;font-size:12px;color:var(--muted);text-align:center;">No recent listings yet</div></div>
@@ -948,7 +949,7 @@
       <span id="lifetime-count-num" style="font-size:18px;font-weight:800;color:var(--text);line-height:1;">0</span>
     </div>
     -->
-    <button class="btn btn-secondary btn-sm" id="my-store-btn" onclick="openMyStore()" style="font-size:11px;padding:4px 10px;border-color:var(--accent);color:var(--accent);">🏪 My Store</button>
+    <button class="btn btn-secondary btn-sm" id="my-store-btn" onclick="openMyStore()" style="font-size:11px;padding:4px 10px;border-color:var(--accent);color:var(--accent);">My Store</button>
     <button class="btn-settings" onclick="openSettings()">⚙</button>
   </div>
 </header>
@@ -968,16 +969,16 @@
       <div class="card-body">
         <div class="drop-zone" id="drop-zone" style="margin-bottom:8px;">
           <input type="file" accept="image/*" multiple id="photo-input" onchange="handlePhotos(this.files)">
-          <div class="drop-icon">📷</div>
+          <!-- <div class="drop-icon">📷</div>   v384 -->
           <div class="drop-title">Drop photos here</div>
-          <div class="drop-sub">Part photos + SKU + BIN + vehicle sticker</div>
+          <!-- <div class="drop-sub">Part photos + SKU + BIN + vehicle sticker</div>   v384 -->
         </div>
         <div class="photo-strip" id="photo-strip"></div>
-        <div id="low-res-warning">⚠️ <strong>Low-resolution photos detected</strong> — these images weren't fully loaded from your Apple Shared Album. Please remove the highlighted photos and re-upload after they've fully downloaded.</div>
-        <div id="photo-count-warning" style="display:none;margin-top:6px;padding:8px 10px;background:rgba(224,82,82,0.12);border:1px solid #e05252;border-radius:6px;font-size:12px;color:#e05252;">⚠️ <strong>Too many photos</strong> — eBay allows a maximum of 24. Only the first 24 will be uploaded.</div>
+        <div id="low-res-warning">⚠ <strong>Low-resolution photos detected</strong> — these images weren't fully loaded from your Apple Shared Album. Please remove the highlighted photos and re-upload after they've fully downloaded.</div>
+        <div id="photo-count-warning" style="display:none;margin-top:6px;padding:8px 10px;background:rgba(224,82,82,0.12);border:1px solid #e05252;border-radius:6px;font-size:12px;color:#e05252;">⚠ <strong>Too many photos</strong> — eBay allows a maximum of 24. Only the first 24 will be uploaded.</div>
         <div id="trash-all-wrap" style="display:none;margin-top:6px;">
           <div id="photo-tools-wrap" style="display:flex;align-items:center;gap:12px;">
-            <button onclick="trashAllPhotos()" style="background:none;border:none;cursor:pointer;color:var(--danger);font-size:11px;padding:0;display:flex;align-items:center;gap:4px;" title="Remove all photos">🗑 Remove all photos</button>
+            <button onclick="trashAllPhotos()" style="background:none;border:none;cursor:pointer;color:var(--danger);font-size:11px;padding:0;display:flex;align-items:center;gap:4px;" title="Remove all photos">Remove all photos</button>
             <div style="display:flex;align-items:center;gap:6px;margin-left:auto;">
               <input type="checkbox" id="rotate-mode-toggle" onchange="setRotateMode(this.checked)" title="Rotate mode — click photos to select them" style="appearance:none;-webkit-appearance:none;width:22px;height:22px;border:1px solid var(--border);border-radius:4px;background:var(--surface);cursor:pointer;margin:0;flex-shrink:0;transition:background 0.15s,border-color 0.15s;">
               <button id="rotate-selected-btn" class="disabled" onclick="rotateSelectedPhotos()" title="Rotate selected photos 90°" style="width:22px;height:22px;display:flex;align-items:center;justify-content:center;padding:0;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--muted);font-size:13px;line-height:1;cursor:pointer;flex-shrink:0;transition:color 0.15s,border-color 0.15s;">↻</button>
@@ -1008,8 +1009,8 @@
 
         <!-- Mode Toggle -->
         <div style="display:flex;gap:8px;margin-bottom:14px;">
-          <button class="btn btn-primary btn-sm" id="mode-pn-btn" onclick="setMode('partnumber')" style="flex:1;font-size:12px;">🔢 Has Part Number</button>
-          <button class="btn btn-secondary btn-sm" id="mode-np-btn" onclick="setMode('nopartnumber')" style="flex:1;font-size:12px;">🔍 No Part Number</button>
+          <button class="btn btn-primary btn-sm" id="mode-pn-btn" onclick="setMode('partnumber')" style="flex:1;font-size:12px;">Has Part Number</button>
+          <button class="btn btn-secondary btn-sm" id="mode-np-btn" onclick="setMode('nopartnumber')" style="flex:1;font-size:12px;">No Part Number</button>
         </div>
 
         <!-- HAS PART NUMBER MODE -->
@@ -1017,9 +1018,9 @@
           <div class="part-ai-result" id="ai-result-box">
             <span id="ai-result-text" style="color:var(--muted)">Upload photos to extract part number automatically</span>
           </div>
-          <label>Part Number (Verify or Edit)</label>
+          <label>Part Number</label>
           <div class="flex-row">
-            <input type="text" id="part-number" placeholder="Auto-filled from photo..." oninput="updatePartNumber()" onblur="cleanPartNumberOnBlur()" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+            <input type="text" id="part-number" placeholder="" oninput="updatePartNumber()" onblur="cleanPartNumberOnBlur()" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
             <button class="btn btn-secondary btn-sm" onclick="document.getElementById('part-number').value='';updatePartNumber();" title="Clear" style="padding:4px 8px;">✕</button>
             <button class="btn btn-secondary btn-sm" onclick="copyPartNumber()" title="Copy">📋</button>
           </div>
@@ -1040,10 +1041,10 @@
             <label>Year Make Model</label>
             <input type="text" id="np-vehicle" placeholder="" autocomplete="off" oninput="parseVehicleInput();updateNoPartSearch()">
             <div style="margin-top:6px;">
-              <button id="identify-part-btn" onclick="identifyPart()" style="background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:4px 10px;font-size:12px;font-weight:600;color:var(--accent);cursor:pointer;font-family:'Barlow Condensed',sans-serif;letter-spacing:0.5px;">🔍 Identify Part</button>
+              <button id="identify-part-btn" onclick="identifyPart()" style="background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:4px 10px;font-size:12px;font-weight:600;color:var(--accent);cursor:pointer;font-family:'Barlow Condensed',sans-serif;letter-spacing:0.5px;">Identify Part</button>
             </div>
             <div id="vehicle-guess-wrap" style="display:none;margin-top:8px;">
-              <div style="font-size:11px;color:var(--muted);margin-bottom:4px;">Suggested vehicles — click to use:</div>
+              <div style="font-size:11px;color:var(--muted);margin-bottom:4px;">Suggested vehicles</div>
               <div id="vehicle-guess-list" style="display:flex;flex-direction:column;gap:4px;"></div>
             </div>
           </div>
@@ -1057,7 +1058,7 @@
           <input type="hidden" id="np-make">
           <input type="hidden" id="np-model">
           <div class="field" style="margin-bottom:4px;">
-            <label>Part Description <span style="color:var(--muted);font-size:10px;font-weight:400;text-transform:none">— auto-filled from photos</span></label>
+            <label>Part Description</label>
             <input type="text" id="np-desc" placeholder="" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" oninput="updateNoPartSearch()" onblur="syncColorFromDesc()">
           </div>
           <div id="material-picker-wrap" style="display:none;flex-wrap:wrap;gap:6px;margin-bottom:6px;padding:8px;background:var(--surface);border:1px solid var(--border);border-radius:4px;"></div>
@@ -1102,23 +1103,23 @@
         <br>
         <!-- Has Part Number mode: search eBay sold listings -->
         <button class="btn btn-primary" id="pn-pick-btn" onclick="pickActiveListings()" disabled style="border-radius:4px;">
-          🏷 Pick
+          Pick
         </button>
         <button class="btn btn-secondary" id="search-btn" onclick="searchEbay(false)" disabled style="width:100%;font-size:13px;padding:7px;margin-top:4px;">
-          🔍 Best Match
+          Best Match
         </button>
         <button class="btn btn-secondary" id="vm-btn-pn" onclick="searchEbayVisualMatch()" disabled style="width:100%;font-size:13px;padding:7px;margin-top:4px;">
-          🖼 Visual Match
+          Visual Match
         </button>
 
         <button id="clear-cache-btn" onclick="clearSearchCache()" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:11px;padding:4px 0;margin-top:4px;" onmouseover="this.style.color='var(--accent)'" onmouseout="this.style.color='var(--muted)'" title="Clear cached results">↺ Clear cached results</button>
 
         <!-- No Part Number mode: search similar listings -->
         <button class="btn btn-primary" id="np-ss-btn" onclick="openSellSimilarFromNP()" disabled style="display:none;">
-          🏷 Pick
+          Pick
         </button>
         <button class="btn btn-secondary" id="vm-btn-np" onclick="openSellSimilarFromNPVisualMatch()" disabled style="display:none;width:100%;font-size:13px;padding:7px;margin-top:4px;">
-          🖼 Visual Match
+          Visual Match
         </button>
 
         <div id="search-status" style="margin-top:10px;display:none;"></div>
@@ -1142,7 +1143,7 @@
           <div id="ss-mode-badge" style="font-family:'Barlow Condensed',sans-serif;font-size:18px;font-weight:900;letter-spacing:1px;color:var(--accent);white-space:nowrap;flex-shrink:0;padding-top:5px;">Similar</div>
           <div style="flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:6px;">
             <div style="display:flex;align-items:center;background:var(--surface2);border:1px solid var(--border);border-radius:24px;padding:7px 14px;gap:8px;min-width:0;overflow:hidden;">
-              <span style="color:var(--muted);font-size:14px;cursor:pointer;" onclick="ssSearchFromInput()" title="Search">🔍</span>
+              <span style="color:var(--muted);font-size:14px;cursor:pointer;" onclick="ssSearchFromInput()" title="Search">Search</span>
               <input type="text" id="ss-refine-query" placeholder="Search similar listings..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" style="flex:1;min-width:0;background:none;border:none;outline:none;padding:0;font-family:'Barlow',sans-serif;font-size:13px;color:var(--text);" onkeydown="if(event.key==='Enter'){ssSearchFromInput();}">
             </div>
           </div>
@@ -1189,7 +1190,7 @@
           <div id="al-mode-badge" style="font-family:'Barlow Condensed',sans-serif;font-size:18px;font-weight:900;letter-spacing:1px;color:var(--accent);white-space:nowrap;flex-shrink:0;padding-top:5px;">—</div>
           <div style="flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:6px;">
             <div style="display:flex;align-items:center;background:var(--surface2);border:1px solid var(--border);border-radius:24px;padding:7px 14px;gap:8px;min-width:0;overflow:hidden;">
-              <span style="color:var(--muted);font-size:14px;cursor:pointer;" onclick="alSearchFromInput()" title="Search">🔍</span>
+              <span style="color:var(--muted);font-size:14px;cursor:pointer;" onclick="alSearchFromInput()" title="Search">Search</span>
               <input type="text" id="al-query-input" placeholder="Search active listings..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" style="flex:1;min-width:0;background:none;border:none;outline:none;padding:0;font-family:'Barlow',sans-serif;font-size:13px;color:var(--text);" onkeydown="if(event.key==='Enter'){alSearchFromInput();}">
             </div>
           </div>
@@ -1226,7 +1227,7 @@
           <div style="font-family:'Barlow Condensed',sans-serif;font-size:18px;font-weight:900;letter-spacing:1px;color:var(--accent);white-space:nowrap;flex-shrink:0;">VISUAL MATCH</div>
           <div style="flex:1;font-size:11px;color:var(--muted);">Pick the listings that match your part</div>
           <span id="vm-select-count" style="font-size:11px;color:var(--muted);">0 selected</span>
-          <button onclick="vmGenerateFromSelected()" id="vm-generate-btn" style="font-size:12px;font-family:'Barlow Condensed',sans-serif;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;padding:6px 16px;background:var(--accent);border:none;border-radius:4px;color:#000;cursor:pointer;opacity:0.4;pointer-events:none;">⚡ Generate</button>
+          <button onclick="vmGenerateFromSelected()" id="vm-generate-btn" style="font-size:12px;font-family:'Barlow Condensed',sans-serif;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;padding:6px 16px;background:var(--accent);border:none;border-radius:4px;color:#000;cursor:pointer;opacity:0.4;pointer-events:none;">Generate</button>
           <button onclick="closeVisualMatch()" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:18px;line-height:1;flex-shrink:0;" title="Close">✕</button>
         </div>
         <div id="vm-status" style="font-size:12px;color:var(--muted);"></div>
@@ -1240,9 +1241,9 @@
     <div id="ms-overlay" style="display:none;position:absolute;top:0;left:0;right:0;bottom:0;background:var(--bg);z-index:100;overflow-y:auto;border-radius:8px;">
       <div style="position:sticky;top:0;background:var(--bg);z-index:1;padding:16px 16px 0 16px;">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
-          <div style="font-family:'Barlow Condensed',sans-serif;font-size:20px;font-weight:900;letter-spacing:1px;color:var(--accent);white-space:nowrap;flex-shrink:0;">🏪 MY STORE</div>
+          <div style="font-family:'Barlow Condensed',sans-serif;font-size:20px;font-weight:900;letter-spacing:1px;color:var(--accent);white-space:nowrap;flex-shrink:0;">MY STORE</div>
           <div style="flex:1;display:flex;align-items:center;background:var(--surface2);border:1px solid var(--border);border-radius:24px;overflow:hidden;">
-            <span style="color:var(--muted);font-size:14px;padding:0 10px;">🔍</span>
+            <span style="padding:0 5px;"></span>
             <input id="ms-search-input" type="text" placeholder="Search your store..." style="flex:1;background:none;border:none;outline:none;font-size:13px;color:var(--text);padding:7px 0;" onkeydown="if(event.key==='Enter')searchMyStore()">
             <button onclick="searchMyStore()" style="background:var(--accent);color:#000;border:none;padding:7px 14px;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:12px;letter-spacing:0.05em;cursor:pointer;">GO</button>
           </div>
@@ -1264,11 +1265,10 @@
       <div style="margin-bottom:8px;margin-top:-4px;">
         <div style="display:flex;gap:6px;align-items:center;margin-bottom:4px;">
           <label style="margin:0;font-size:10px;opacity:0.7;text-transform:uppercase;letter-spacing:0.5px;">Refinement Notes</label>
-          <span style="font-size:10px;color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0;">(optional — e.g. "blind spot" "lid only" "set of 4")</span>
         </div>
         <div style="display:flex;gap:6px;">
-          <input type="text" id="refinement-notes" placeholder="Add details to refine the listing..." style="flex:1;font-size:12px;" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
-          <button onclick="regenListing()" id="regen-btn" style="white-space:nowrap;padding:0 14px;font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--muted);cursor:pointer;transition:border-color 0.15s,color 0.15s;" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)';" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--muted)';">🔄 Regenerate</button>
+          <input type="text" id="refinement-notes" placeholder="" style="flex:1;font-size:12px;" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+          <button onclick="regenListing()" id="regen-btn" style="white-space:nowrap;padding:0 14px;font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--muted);cursor:pointer;transition:border-color 0.15s,color 0.15s;" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)';" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--muted)';">Regenerate</button>
         </div>
       </div>
 
@@ -1278,7 +1278,7 @@
           <label style="margin:0">Listing Title</label>
           <span class="title-chars" id="title-chars">0 / 80</span>
         </div>
-        <input type="text" id="listing-title" placeholder="Auto-filled after search..." oninput="updateTitleCount()" maxlength="90">
+        <input type="text" id="listing-title" placeholder="" oninput="updateTitleCount()" maxlength="90">
       </div>
 
       <!-- Row 1: Price + Part Number + SKU/BIN -->
@@ -1298,7 +1298,7 @@
         </div>
         <div class="field">
           <label>SKU / BIN</label>
-          <input type="text" id="sku-bin" placeholder="e.g. 0967 CA3" style="color:var(--accent);font-weight:600;" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" oninput="updateBinWarning()">
+          <input type="text" id="sku-bin" placeholder="" style="color:var(--accent);font-weight:600;" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" oninput="updateBinWarning()">
           <input type="hidden" id="sku-field">
           <input type="hidden" id="bin-field">
         </div>
@@ -1307,11 +1307,11 @@
       <!-- Row 2: Category (merged ID + Name) -->
       <div style="margin-bottom:16px;">
         <div class="field">
-          <label>Category <span style="color:var(--muted);font-size:10px;font-weight:400;text-transform:none">— auto-selected or type to search</span></label>
+          <label>Category</label>
           <div class="cat-search-wrap">
-            <input type="text" id="ebay-category" placeholder="e.g. 33614 — ECUs, ECMs &amp; Computers" oninput="filterCategories(this.value); syncCategoryIdFromDisplay();" onfocus="showCategoryDropdown()" autocomplete="off" style="font-family:monospace;font-size:12px;">
+            <input type="text" id="ebay-category" placeholder="" oninput="filterCategories(this.value); syncCategoryIdFromDisplay();" onfocus="showCategoryDropdown()" autocomplete="off" style="font-family:monospace;font-size:12px;">
             <button type="button" class="cat-chevron-btn" onclick="toggleCategorySuggestions()" title="Show related categories">▾ More</button>
-            <button type="button" class="cat-chevron-btn" onclick="openDataPool()" title="View data pool listings" style="border-left:none;">🔍 Pool</button>
+            <button type="button" class="cat-chevron-btn" onclick="openDataPool()" title="View data pool listings" style="border-left:none;">Pool</button>
             <div class="cat-dropdown" id="cat-dropdown"></div>
             <div class="cat-suggestions" id="cat-suggestions">
               <div class="cat-suggestions-title">Related categories — click to switch</div>
@@ -1327,26 +1327,26 @@
         <div class="form-grid" style="margin-bottom:8px;">
           <div class="field">
             <label>Year Range</label>
-            <input type="text" id="year-range" placeholder="e.g. 2010-2015">
+            <input type="text" id="year-range" placeholder="">
           </div>
           <div class="field">
             <label>Make</label>
-            <input type="text" id="make" placeholder="e.g. Ford">
+            <input type="text" id="make" placeholder="">
           </div>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px;">
           <div class="field">
             <label>Model</label>
-            <input type="text" id="model" placeholder="e.g. F-150">
+            <input type="text" id="model" placeholder="">
           </div>
           <div class="field">
             <label>Type</label>
-            <input type="text" id="part-type" placeholder="e.g. Side Mirror" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+            <input type="text" id="part-type" placeholder="" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
           </div>
           <div class="field">
             <label>Color</label>
             <div style="display:flex;gap:6px;align-items:center;position:relative;">
-              <input type="text" id="color" placeholder="If applicable" style="flex:1;">
+              <input type="text" id="color" placeholder="" style="flex:1;">
               <button id="color-swatch-btn" onclick="toggleInlineColorPicker(event)" title="Pick color" style="width:28px;height:28px;border-radius:4px;border:1px solid var(--border);background:var(--surface);cursor:pointer;font-size:14px;padding:0;flex-shrink:0;opacity:0.5;transition:opacity 0.15s;" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.5'">🎨</button>
               <div id="inline-color-picker" style="display:none;position:absolute;top:34px;right:0;z-index:200;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:8px;box-shadow:0 4px 16px rgba(0,0,0,0.4);flex-wrap:wrap;gap:6px;width:236px;"></div>
             </div>
@@ -1354,16 +1354,16 @@
         </div>
         <div class="field">
           <label>Placement on Vehicle</label>
-          <input type="text" id="location" placeholder="e.g. Front Left, Driver Side">
+          <input type="text" id="location" placeholder="">
         </div>
       </div>
 
       <!-- Interchange / Keywords -->
       <div style="margin-bottom:16px;">
-        <label>Interchange Part Number (65 chars max)</label>
+        <label>Interchange Part Number</label>
         <div class="interchange-fields" id="interchange-fields">
           <div class="interchange-row">
-            <input type="text" class="interchange-input" maxlength="65" oninput="updateInterchangeCount(this)" placeholder="Interchange Part Number...">
+            <input type="text" class="interchange-input" maxlength="65" oninput="updateInterchangeCount(this)" placeholder="">
             <span class="char-count">0/65</span>
           </div>
 
@@ -1398,7 +1398,7 @@
       <input type="hidden" id="warranty" value="30 Day Warranty">
 
       <div class="field" style="margin-bottom:12px;">
-        <label>Package Dimensions & Weight <span style="font-size:10px;color:var(--muted);font-weight:400;">(optional — for calculated shipping)</span></label>
+        <label>Package Dimensions & Weight</label>
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px;">
           <div>
             <div style="font-size:10px;color:var(--muted);margin-bottom:3px;">Length (in)</div>
@@ -1424,25 +1424,25 @@
       <!-- Launch / Actions -->
       <div style="display:flex;gap:10px;margin-bottom:8px;">
         <button class="btn btn-secondary" onclick="refreshListing()" title="Refresh listing fields" style="padding:12px 14px;font-size:16px;">
-          🔄
+          ↻
         </button>
         <div style="flex:1;display:flex;flex-direction:column;gap:6px;">
           <!-- Missing BIN warning (shows only when no BIN code) -->
-          <div id="bin-warning" style="display:none;padding:6px 10px;background:rgba(224,168,0,0.12);border:1px solid #e0a800;border-radius:4px;color:#e0a800;font-size:11px;font-weight:600;line-height:1.3;">⚠ No BIN location — add a bin sticker photo or type the code (e.g. BF8)</div>
+          <div id="bin-warning" style="display:none;padding:6px 10px;background:rgba(224,168,0,0.12);border:1px solid #e0a800;border-radius:4px;color:#e0a800;font-size:11px;font-weight:600;line-height:1.3;">⚠ No BIN location</div>
           <!-- v383: + how many days ahead (saved with your settings) -->
-          <div style="display:flex;gap:6px;">
-          <button class="btn btn-secondary" id="draft-btn" onclick="saveToDraft()" style="flex:1;font-size:12px;padding:8px;" disabled>
-            📋 Scheduled Listing
+          <div style="position:relative;">   <!-- v384: the days box sits inside the button's right edge, so the button stays full width -->
+          <button class="btn btn-secondary" id="draft-btn" onclick="saveToDraft()" style="width:100%;font-size:12px;padding:8px;" disabled>
+            Scheduled Listing
           </button>
-          <select id="schedule-days" title="How many days ahead eBay schedules it (eBay allows up to 21)" onchange="setScheduleDays(this.value)" style="width:auto;font-size:12px;padding:6px 8px;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:4px;cursor:pointer;"></select>
+          <select id="schedule-days" title="How many days ahead eBay schedules it (eBay allows up to 21)" onchange="setScheduleDays(this.value)" style="position:absolute;right:4px;top:50%;transform:translateY(-50%);width:auto;font-size:11px;padding:2px 4px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:3px;cursor:pointer;"></select>
           </div>
           <button class="btn" id="launch-btn" onclick="launchToEbay()" style="width:100%;background:#0064d2;color:#fff;font-size:13px;padding:9px;opacity:0.85;" disabled>
-            🚀 Launch to eBay
+            Launch to eBay
           </button>
 
         </div>
         <button class="btn btn-danger" onclick="discardListing()" title="Discard this listing" style="padding:12px 14px;font-size:16px;">
-          🗑
+          ✕
         </button>
       </div>
       <!-- Height is reserved up front so the bar and status line appearing
@@ -1562,7 +1562,7 @@
       </div>
         <hr>
         <div style="font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--accent);margin-bottom:10px;">Part Identification (SerpApi)</div>
-      <p style="font-size:11px;color:var(--muted);margin-bottom:10px;">Optional. Enables Google Lens reverse-image lookup for the 🔍 Identify Part button, making part identification much more accurate. Get a key at serpapi.com (free tier available). If left blank, Identify Part falls back to AI-only identification.</p>
+      <p style="font-size:11px;color:var(--muted);margin-bottom:10px;">Optional. Enables Google Lens reverse-image lookup for the Identify Part button, making part identification much more accurate. Get a key at serpapi.com (free tier available). If left blank, Identify Part falls back to AI-only identification.</p>
       <div class="field" style="margin-bottom:8px;">
         <label>SerpApi Key</label>
         <input type="password" id="serpapi-key" placeholder="your-serpapi-key">
@@ -1659,11 +1659,11 @@
               <img id="sku-example-img" src="" style="width:100%;border-radius:4px;display:block;">
               <button onclick="event.stopPropagation();clearStickerExample('sku')" style="position:absolute;top:2px;right:2px;background:rgba(0,0,0,0.7);border:none;color:#fff;border-radius:3px;width:20px;height:20px;cursor:pointer;font-size:12px;line-height:1;">✕</button>
             </div>
-            <div id="sku-example-placeholder" style="color:var(--muted);font-size:11px;">📷 Drop example</div>
+            <div id="sku-example-placeholder" style="color:var(--muted);font-size:11px;">Drop example</div>
           </div>
           <div style="font-size:10px;color:var(--muted);margin-top:4px;">Warranty Void barcode sticker</div>
           <input type="text" id="sku-answer-input" placeholder="e.g. 1177  (last 4 digits)" style="margin-top:6px;width:100%;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:5px 8px;font-size:11px;" title="Enter the correct SKU value from this sticker so Claude can verify its reading">
-          <div style="font-size:10px;color:var(--muted);margin-top:3px;">✏️ Known answer (optional)</div>
+          <div style="font-size:10px;color:var(--muted);margin-top:3px;">Known answer</div>
         </div>
 
         <div>
@@ -1674,11 +1674,11 @@
               <img id="bin-example-img" src="" style="width:100%;border-radius:4px;display:block;">
               <button onclick="event.stopPropagation();clearStickerExample('bin')" style="position:absolute;top:2px;right:2px;background:rgba(0,0,0,0.7);border:none;color:#fff;border-radius:3px;width:20px;height:20px;cursor:pointer;font-size:12px;line-height:1;">✕</button>
             </div>
-            <div id="bin-example-placeholder" style="color:var(--muted);font-size:11px;">📷 Drop example</div>
+            <div id="bin-example-placeholder" style="color:var(--muted);font-size:11px;">Drop example</div>
           </div>
           <div style="font-size:10px;color:var(--muted);margin-top:4px;">Location code label (BF2, CA3…)</div>
           <input type="text" id="bin-answer-input" placeholder="e.g. BF8" style="margin-top:6px;width:100%;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:5px 8px;font-size:11px;" title="Enter the correct BIN code from this sticker so Claude can verify its reading">
-          <div style="font-size:10px;color:var(--muted);margin-top:3px;">✏️ Known answer (optional)</div>
+          <div style="font-size:10px;color:var(--muted);margin-top:3px;">Known answer</div>
         </div>
 
         <div>
@@ -1689,11 +1689,11 @@
               <img id="vehicle-example-img" src="" style="width:100%;border-radius:4px;display:block;">
               <button onclick="event.stopPropagation();clearStickerExample('vehicle')" style="position:absolute;top:2px;right:2px;background:rgba(0,0,0,0.7);border:none;color:#fff;border-radius:3px;width:20px;height:20px;cursor:pointer;font-size:12px;line-height:1;">✕</button>
             </div>
-            <div id="vehicle-example-placeholder" style="color:var(--muted);font-size:11px;">📷 Drop example</div>
+            <div id="vehicle-example-placeholder" style="color:var(--muted);font-size:11px;">Drop example</div>
           </div>
           <div style="font-size:10px;color:var(--muted);margin-top:4px;">Salvage yard inventory sticker</div>
           <input type="text" id="vehicle-answer-input" placeholder="e.g. 2009 INFINITI G37" style="margin-top:6px;width:100%;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:5px 8px;font-size:11px;" title="Enter the correct year/make/model from this sticker so Claude can verify its reading">
-          <div style="font-size:10px;color:var(--muted);margin-top:3px;">✏️ Known answer (optional)</div>
+          <div style="font-size:10px;color:var(--muted);margin-top:3px;">Known answer</div>
         </div>
 
       </div>
@@ -1746,7 +1746,7 @@
           <textarea id="prompt-identify-input" rows="6" style="flex:1;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:6px 8px;font-size:11px;resize:vertical;font-family:monospace;line-height:1.4;"></textarea>
           <button onclick="document.getElementById('prompt-identify-input').value=DEFAULT_PROMPT_IDENTIFY" style="white-space:nowrap;padding:5px 10px;font-size:11px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--muted);cursor:pointer;">Use Default</button>
         </div>
-        <div style="font-size:10px;color:var(--muted);margin-top:4px;">Runs when you click 🔍 Identify Part. Controls the year/make/model guess chips. Edit this to make guesses shorter/broader so eBay searches return more results. Placeholders: <code style="font-size:10px;">{AI_OVERVIEW} {EXACT_TEXT} {MATCH_TEXT} {KG_TEXT}</code></div>
+        <div style="font-size:10px;color:var(--muted);margin-top:4px;">Runs when you click Identify Part. Controls the year/make/model guess chips. Edit this to make guesses shorter/broader so eBay searches return more results. Placeholders: <code style="font-size:10px;">{AI_OVERVIEW} {EXACT_TEXT} {MATCH_TEXT} {KG_TEXT}</code></div>
       </div>
 
       <hr>
@@ -1828,7 +1828,7 @@
         </div>
         <hr>
         <div style="font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--accent);margin-bottom:10px;">Visual Match Pool</div>
-        <p style="font-size:11px;color:var(--muted);margin-bottom:10px;">Use the 🖼 Visual Match button (below the search buttons in either mode) to open a pool overlay of the fetched eBay listings. The AI compares your uploaded photo against each listing thumbnail and pre-sorts them into Matched and Flagged tiers. You pick which listings to use before the title and category are generated. This makes listings more accurate when the same part number covers different physical variants (finishes, logo colors, digital vs analog, optional features, quantity).</p>
+        <p style="font-size:11px;color:var(--muted);margin-bottom:10px;">Use the Visual Match button (below the search buttons in either mode) to open a pool overlay of the fetched eBay listings. The AI compares your uploaded photo against each listing thumbnail and pre-sorts them into Matched and Flagged tiers. You pick which listings to use before the title and category are generated. This makes listings more accurate when the same part number covers different physical variants (finishes, logo colors, digital vs analog, optional features, quantity).</p>
         <div class="field" style="margin-bottom:10px;">
           <label>Listings to compare (fewer = faster)</label>
           <input type="number" id="visual-match-limit" min="3" max="50" placeholder="15" style="max-width:120px;">
@@ -1886,7 +1886,7 @@
       </div>
 
       <hr>
-      <button class="btn btn-primary" onclick="saveSettings()">💾 Save Settings</button>
+      <button class="btn btn-primary" onclick="saveSettings()">Save Settings</button>
     </div>
   </div>
 </div>
@@ -1895,7 +1895,7 @@
 <div id="dp-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:1000;overflow-y:auto;">
   <div style="max-width:800px;margin:40px auto;background:var(--bg);border:1px solid var(--border);border-radius:8px;overflow:hidden;">
     <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--border);background:var(--surface);">
-      <div style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--accent);">🔍 Data Pool <span id="dp-count" style="font-size:11px;opacity:0.6;font-weight:400;"></span></div>
+      <div style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--accent);">Data Pool <span id="dp-count" style="font-size:11px;opacity:0.6;font-weight:400;"></span></div>
       <button onclick="document.getElementById('dp-overlay').style.display='none'" style="background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer;padding:0 4px;">✕</button>
     </div>
     <div id="dp-list" style="padding:12px;display:flex;flex-direction:column;gap:8px;max-height:70vh;overflow-y:auto;"></div>
@@ -3218,7 +3218,7 @@ async function fetchEbayTitles(searchQuery, useZip = false) {
 }
 
 // ─── VISUAL MATCH POOL ────────────────────────────────────────────────────────
-// Triggered by the 🖼 Visual Match button. The AI compares the user's main
+// Triggered by the Visual Match button. The AI compares the user's main
 // The AI compares the user's main uploaded photo against each fetched listing
 // thumbnail and pre-sorts them into Matched / Flagged tiers. The user picks
 // which listings to use, then Generate runs title/category generation on only
@@ -3500,7 +3500,7 @@ async function vmGenerateFromSelected() {
   await searchEbay(false, { overrideTitles: titles, overrideCategory: sortedCats[0] || null });
 }
 
-// Force visual match regardless of the settings toggle (triggered by the 🖼 button)
+// Force visual match regardless of the settings toggle (triggered by the Visual Match button)
 async function searchEbayVisualMatch() {
   closeLightbox();
   const partNum = document.getElementById('part-number').value.trim();
@@ -4771,7 +4771,7 @@ async function regenListing() {
   const btn = document.getElementById('regen-btn');
   const _origBtnText = btn.textContent;
   btn.disabled = true;
-  btn.textContent = '⏳ Regenerating...';
+  btn.textContent = 'Regenerating...';
 
   const _gs = document.getElementById('global-status');
   const _gsT = document.getElementById('global-status-text');
@@ -4937,7 +4937,7 @@ async function launchToEbay() {
     if (_lGs) { _lGs.style.display = 'none'; _lGs.className = 'platform-badge'; }
   };
   btn.disabled = true;
-  btn.textContent = '⏳ Launching...';
+  btn.textContent = 'Launching...';
   _launchProgressStart();
   statusEl.style.display = 'block';
   statusEl.style.color = 'var(--muted)';
@@ -5126,7 +5126,7 @@ async function launchToEbay() {
     _launchProgressEnd(false);
   } finally {
     btn.disabled = false;
-    btn.textContent = '🚀 Launch to eBay';
+    btn.textContent = 'Launch to eBay';
     _clearLaunchStatus();
   }
 }
@@ -5162,7 +5162,7 @@ async function saveToDraft() {
     if (_dGs) { _dGs.style.display = 'none'; _dGs.className = 'platform-badge'; }
   };
   btn.disabled = true;
-  btn.textContent = '⏳ Scheduling...';
+  btn.textContent = 'Scheduling...';
   _setDraftStatus('Scheduling listing on eBay...');
 
   try {
@@ -5324,7 +5324,7 @@ async function saveToDraft() {
     showNotif('⚠ Schedule failed: ' + e.message, true);
   } finally {
     btn.disabled = false;
-    btn.textContent = '📋 Scheduled Listing';
+    btn.textContent = 'Scheduled Listing';
     _clearDraftStatus();
   }
 }
@@ -6618,7 +6618,7 @@ async function identifyPart() {
 
   const btn = document.getElementById('identify-part-btn');
   const origText = btn ? btn.textContent : '';
-  if (btn) { btn.disabled = true; btn.textContent = '⏳ Identifying...'; }
+  if (btn) { btn.disabled = true; btn.textContent = 'Identifying...'; }
 
   try {
     // 1. Upload the main photo to Cloudinary to get a public URL for Google Lens
@@ -6743,7 +6743,7 @@ async function identifyPart() {
     console.error('[IdentifyPart] error', e);
     showNotif('⚠ Identification failed: ' + (e && e.message ? e.message : String(e)), true);
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = origText || '🔍 Identify Part'; }
+    if (btn) { btn.disabled = false; btn.textContent = origText || 'Identify Part'; }
   }
 }
 
@@ -6777,8 +6777,8 @@ function renderVehicleGuesses(guesses, partType) {
     if (!v) return;
     const chip = document.createElement('button');
     // Color by rank: 1st = green, 2nd = yellow, 3rd+ = orange
-    const dot = idx === 0 ? '🟢' : idx === 1 ? '🟡' : '🟠';
-    const baseLabel = dot + ' ' + v;
+    // const dot = idx === 0 ? '🟢' : idx === 1 ? '🟡' : '🟠';   (v384: no colored dots)
+    const baseLabel = v;
     chip._baseLabel = baseLabel;
     chip.textContent = baseLabel;
     chip.style.cssText = BASE_STYLE;
@@ -7711,7 +7711,7 @@ async function pickSellSimilar(item) {
   window._lc.pickedTitle = cleanTitle;
   window._lc.pickedItem = item; // Store full item for pool viewer
   window._lc.source = 'picked';
-  showNotif('⏳ Filling out listing fields...');
+  showNotif('Filling out listing fields...');
 
   if (!settings.apiKey) { showNotif('✓ Title copied! Add API key in Settings to auto-fill fields.'); return; }
 
@@ -7877,7 +7877,7 @@ async function ssGenerateFromSelected() {
 
   // Multiple selections — build pool from all selected titles
   closeSellSimilar();
-  showNotif('⏳ Generating from ' + selected.length + ' selected listings...');
+  showNotif('Generating from ' + selected.length + ' selected listings...');
 
   const _gs = document.getElementById('global-status');
   const _gsT = document.getElementById('global-status-text');
