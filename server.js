@@ -1,4 +1,8 @@
-// PartsLister Pro server — v389
+// PartsLister Pro server — v399
+// v399: TICKET DESIGNER — a yard's ticket is a list of rows (text, divider, logo, barcode) saved with the yard (yards.design). Each text row keeps its
+//       own font (any plain font name), size 1–100 and boldness 0–100; the logo keeps size, position and its weathered / gravel / fuzzy / faded / spots
+//       settings; the barcode keeps its numbers (Code 128), size and position. Everything is clamped in cleanRow() so a saved design can't break printing.
+//       Home gets "Duplicate" (saves a copy of a yard as a new yard). Version jumped from 389 to 399 on purpose; count up from here.
 // v389: yard tickets are now sold tickets — each one prints the REAL date and time it was sold, its own
 //       ticket number and a barcode of that number ({barcode}). "Sell for tomorrow" makes an advance ticket
 //       marked VALID FOR tomorrow's date (it still shows when it was really sold). {logo} puts the logo on
@@ -392,7 +396,7 @@ async function setupDatabase() {
     CREATE INDEX IF NOT EXISTS ticket_prints_user ON ticket_prints (user_id, printed_at);
     ALTER TABLE yards ADD COLUMN IF NOT EXISTS logo TEXT;                                 -- v387: ticket logo (small black & white image)
     ALTER TABLE yards ADD COLUMN IF NOT EXISTS logo_size INTEGER NOT NULL DEFAULT 70;     -- v387: % of the paper width
-    ALTER TABLE yards ADD COLUMN IF NOT EXISTS design JSONB;                              -- v390: ticket designer settings (font, sizes, logo + barcode position)
+    ALTER TABLE yards ADD COLUMN IF NOT EXISTS design JSONB;                              -- v399: ticket designer settings (font, sizes, logo + barcode position)
     CREATE TABLE IF NOT EXISTS ticket_settings (
       user_id    INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
       time       TEXT NOT NULL DEFAULT '09:00',
@@ -3926,7 +3930,7 @@ app.post('/api/late-returns/:id/:action', requireUser, async (req, res) => {
 // v389: {date} {time} = when the ticket was really sold; {valid} = the day it's good for; {number} = its own
 //       ticket number; {barcode} = a barcode of that number; {logo} = your logo; {big} = this line large
 const TICKET_TEMPLATE = '{logo}\n{big}{yard}\nENTRY TICKET\nADMIT ONE\n--------------------------------\nValid: {valid}\nSold: {date} {time}\nPrice: {price}\n--------------------------------\nTicket #{number}\n{barcode}\nThank you!';
-// v390: ticket designer — everything is clamped here so a saved design can never break printing
+// v399: ticket designer — everything is clamped here so a saved design can never break printing
 const TICKET_FONTS = ['Courier New', 'Arial', 'Helvetica', 'Times New Roman', 'Georgia', 'Verdana', 'Trebuchet MS', 'Impact', 'Arial Black'];
 function cleanRow(r) {
   r = (r && typeof r === 'object') ? r : {};
@@ -3934,12 +3938,12 @@ function cleanRow(r) {
   const al = (v, def) => ['left', 'center', 'right'].includes(v) ? v : def;
   const type = ['text', 'line', 'logo', 'barcode'].includes(r.type) ? r.type : 'text';
   const out = { type, align: al(r.align, 'center'), top: n(r.top, 0, 0), bottom: n(r.bottom, type === 'text' ? 0 : 5, 0) };
-  if (type === 'text') Object.assign(out, { text: String(r.text || '').replace(/[\r\n]+/g, ' ').slice(0, 200), font: TICKET_FONTS.includes(r.font) ? r.font : 'Courier New', size: n(r.size, 45), bold: !!r.bold });
+  if (type === 'text') Object.assign(out, { text: String(r.text || '').replace(/[\r\n]+/g, ' ').slice(0, 200), font: /^[A-Za-z0-9 \-]{1,40}$/.test(String(r.font || '')) ? String(r.font) : 'Courier New', size: n(r.size, 45), boldness: n(r.boldness, r.bold ? 75 : 0, 0) });
   if (type === 'logo') Object.assign(out, { width: n(r.width, 70), weather: n(r.weather, 0, 0), gravel: n(r.gravel, 0, 0), fuzzy: n(r.fuzzy, 0, 0), fade: n(r.fade, 0, 0), spots: n(r.spots, 0, 0) });
   if (type === 'barcode') Object.assign(out, { value: String(r.value || '').replace(/[^\x20-\x7E]/g, '').trim().slice(0, 40), width: n(r.width, 75), height: n(r.height, 22) });   // value '' = each ticket's own number
   return out;
 }
-// v391: a ticket is a list of rows (text, divider line, logo, barcode) — each row has its own font, size and position
+// v399: a ticket is a list of rows (text, divider line, logo, barcode) — each row has its own font, size and position
 function cleanDesign(d) {
   d = (d && typeof d === 'object') ? d : {};
   const rows = Array.isArray(d.rows) ? d.rows.slice(0, 60).map(cleanRow) : null;
@@ -3980,7 +3984,7 @@ app.post('/api/tickets/yards', requireUser, express.json({ limit: '3mb' }), asyn
     else if (/^data:image\/(png|jpeg);base64,[A-Za-z0-9+/=]+$/.test(b.logo) && b.logo.length <= 2000000) logo = b.logo;
     else return res.status(400).json({ error: 'That logo file didn\u2019t work — use a PNG or JPG picture.' });
   }
-  const logoSize = Math.max(1, Math.min(100, parseInt(b.logoSize, 10) || 70));   // v390: any size 1–100
+  const logoSize = Math.max(1, Math.min(100, parseInt(b.logoSize, 10) || 70));   // v399: any size 1–100
   const design = JSON.stringify(cleanDesign(b.design));
   const name = String(b.name || '').trim().slice(0, 80);
   const price = Math.max(0, Math.min(10000, parseFloat(b.price) || 0));

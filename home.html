@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Home v389</title>
+<title>PartsLister Pro Home v399</title>
+<!-- v399: TICKET DESIGNER — each yard's ticket is a list of rows (text, divider, logo, barcode). Every text row has its own font (list or any font name), size 1–100, boldness 0–100 and position; the logo has size, position, a drop box and weathered / gravel / fuzzy / faded gray / spots looks (or one tap "Match sticker look"); the barcode is typed in (Code 128) with its own size and position. Every slider also has a number box. "Duplicate" copies a yard's whole ticket so you can change a few things instead of starting over. -->
 <!-- v389: yard tickets are sold tickets — real sale date and time, a ticket number and barcode, "Sell for tomorrow" advance tickets marked VALID FOR, {logo} and {big} tags anywhere, and Money made. The saved time and Randomize are gone. -->
 <!-- v388: yard tickets — "Randomize" (up to an hour later than your time, never earlier) and "Print tomorrow's" on each yard. -->
 <!-- v387: yard tickets — + a logo per yard (Manage → Upload logo; prints black & white at the top), and a big lifetime ticket count. -->
@@ -156,6 +157,9 @@
   .yt-drop.over, .yt-drop:hover { border-color: var(--accent); color: var(--accent); }
   .yt-drop img { display: block; max-height: 60px; max-width: 100%; margin: 0 auto 6px; background: #fff; }
   .yt-add { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+  .yt-sn { display: flex; gap: 8px; align-items: center; }
+  .yt-sn input[type=range] { flex: 1; min-width: 0; }
+  .yt-grid .yt-sn input[type=number] { width: 62px; flex: none; }
   .yt-logo-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
   .yt-saved .v.count { color: var(--text); }
   .yt-prev hr { border: none; border-top: 1px dashed #000; margin: 4px 0; }
@@ -184,7 +188,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v389</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v399</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -282,7 +286,7 @@
     </div>
     <div id="yt-list"></div>
     <button type="button" class="btn btn-secondary btn-sm" onclick="addYardRow()">+ Add a yard</button>
-    <div class="yt-note">Each yard’s ticket is a list of rows. Click a row to change its font, size (1–100), bold and position, use the arrows to move it up or down, and add text, divider, logo or barcode rows. In a text row these fill in when you sell a ticket: {yard} {price} {number}, {date} and {time} (when it was sold) and {valid} (the day it’s good for). Fonts come from the computer that prints, so pick one that computer has.</div>
+    <div class="yt-note">Each yard’s ticket is a list of rows. Click a row to change its font, size (1–100), boldness (0–100) and position (every slider also has a number box), use the arrows to move it up or down, and add text, divider, logo or barcode rows. Use Duplicate to copy a whole ticket and change just a few things. In a text row these fill in when you sell a ticket: {yard} {price} {number}, {date} and {time} (when it was sold) and {valid} (the day it’s good for). Fonts come from the computer that prints, so pick one that computer has.</div>
   </div>
 </div>
 <iframe id="yt-frame" title="Ticket" style="position:fixed;width:0;height:0;border:0;left:-9999px;"></iframe>
@@ -522,7 +526,7 @@ let tickets = null;
 const esc = (s) => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 // v389: Code 128 barcode of the ticket number (code set C — digit pairs), drawn as SVG
 const C128 = ['212222','222122','222221','121223','121322','131222','122213','122312','132212','221213','221312','231212','112232','122132','122231','113222','123122','123221','223211','221132','221231','213212','223112','312131','311222','321122','321221','312212','322112','322211','212123','212321','232121','111323','131123','131321','112313','132113','132311','211313','231113','231311','112133','112331','132131','113123','113321','133121','313121','211331','231131','213113','213311','213131','311123','311321','331121','312113','312311','332111','314111','221411','431111','111224','111422','121124','121421','141122','141221','112214','112412','122114','122411','142112','142211','241211','221114','413111','241112','134111','111242','121142','121241','114212','124112','124211','411212','421112','421211','212141','214121','412121','111143','111341','131141','114113','114311','411113','411311','113141','114131','311141','411131','211412','211214','211232','2331112'];
-function barcodeSVG(value, style) {   // v390: exact Code 128 — even-length digits use set C, anything else set B
+function barcodeSVG(value, style) {   // v399: exact Code 128 — even-length digits use set C, anything else set B
   value = String(value || '').replace(/[^\x20-\x7E]/g, ''); if (!value) return '';
   const codes = [];
   if (/^\d+$/.test(value) && value.length % 2 === 0) { codes.push(105); for (let i = 0; i < value.length; i += 2) codes.push(parseInt(value.slice(i, i + 2), 10)); }
@@ -533,11 +537,15 @@ function barcodeSVG(value, style) {   // v390: exact Code 128 — even-length di
   codes.forEach(c => { C128[c].split('').forEach((w, k) => { w = +w; if (k % 2 === 0) bars += '<rect x="' + x + '" y="0" width="' + w + '" height="40"/>'; x += w; }); });
   return '<svg class="bc" style="' + (style || '') + '" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + (x + 10) + ' 40" preserveAspectRatio="none" shape-rendering="crispEdges" fill="#000">' + bars + '</svg>';
 }
-// v390: TICKET DESIGNER — one set of functions draws both the preview and the real printout, so they always match
+// v399: TICKET DESIGNER — one set of functions draws both the preview and the real printout, so they always match
 const FONT_STACKS = { 'Century Schoolbook': "'Century Schoolbook', 'New Century Schoolbook', 'TeX Gyre Schola', C059, Georgia, serif", 'Charter': "Charter, 'Bitstream Charter', Georgia, serif", 'Libre Baskerville': "'Libre Baskerville', Georgia, serif", 'Lora': "Lora, Georgia, serif", 'Merriweather': "Merriweather, Georgia, serif", 'PT Serif': "'PT Serif', Georgia, serif", 'Source Serif 4': "'Source Serif 4', Georgia, serif", 'Crimson Pro': "'Crimson Pro', Georgia, serif", 'Noto Serif': "'Noto Serif', Georgia, serif", 'Courier New': '\'Courier New\', Courier, monospace', 'Arial': 'Arial, Helvetica, sans-serif', 'Helvetica': 'Helvetica, Arial, sans-serif', 'Times New Roman': '\'Times New Roman\', Times, serif', 'Georgia': 'Georgia, serif', 'Verdana': 'Verdana, Geneva, sans-serif', 'Trebuchet MS': '\'Trebuchet MS\', sans-serif', 'Impact': 'Impact, \'Arial Narrow\', sans-serif', 'Arial Black': '\'Arial Black\', Arial, sans-serif' };
-// v395: fonts loaded from Google Fonts into the ticket (the page already uses Google Fonts), so they print the same on any computer
+// v399: fonts loaded from Google Fonts into the ticket (the page already uses Google Fonts), so they print the same on any computer
 const WEB_FONTS = { 'Libre Baskerville': 'Libre+Baskerville:wght@400;700', 'Lora': 'Lora:wght@400;700', 'Merriweather': 'Merriweather:wght@400;700', 'PT Serif': 'PT+Serif:wght@400;700', 'Source Serif 4': 'Source+Serif+4:wght@400;700', 'Crimson Pro': 'Crimson+Pro:wght@400;700', 'Noto Serif': 'Noto+Serif:wght@400;700' };
 const fontStack = (name) => FONT_STACKS[name] || (/^[A-Za-z0-9 \-]{1,40}$/.test(name || '') ? "'" + name + "', serif" : FONT_STACKS['Courier New']);   // any font name typed in works if that computer has it
+function boldCSS(r) {   // v399: boldness 0–100 — a thickening outline works on every font (smooth steps); from 75 up the font's real bold is used as well
+  const b = Math.max(0, Math.min(100, r.boldness !== undefined ? (+r.boldness || 0) : (r.bold ? 75 : 0)));
+  return 'font-weight:' + (b >= 75 ? 700 : 400) + ';' + (b > 0 ? '-webkit-text-stroke:' + (b * 0.0008).toFixed(4) + 'em #000;' : '');
+}
 function webFontImport(rows) {
   const fam = [...new Set((rows || []).filter(r => r.type === 'text' && WEB_FONTS[r.font]).map(r => WEB_FONTS[r.font]))];
   return fam.length ? "@import url('https://fonts.googleapis.com/css2?family=" + fam.join('&family=') + "&display=swap');" : '';
@@ -548,7 +556,7 @@ function ticketCSS(w, rows) {
     + 'body{width:' + w + 'mm;box-sizing:border-box;padding:3mm ' + (w === 58 ? 2 : 4) + 'mm 6mm;line-height:1.3}'
     + '.l{white-space:pre-wrap;word-break:break-word}hr{border:none;border-top:1px dashed #000}img.logo,svg.bc{display:block}';
 }
-// v391: turn an old-style ticket (text with {logo} {big} {barcode} tags) into rows, so existing yards keep their look
+// v399: turn an old-style ticket (text with {logo} {big} {barcode} tags) into rows, so existing yards keep their look
 function rowsFromTemplate(tpl, logoSize) {
   const out = [], lines = String(tpl || '').split('\n');
   const hasLogo = lines.some(l => l.trim() === '{logo}'), hasBig = lines.some(l => l.includes('{big}'));
@@ -559,7 +567,7 @@ function rowsFromTemplate(tpl, logoSize) {
     if (t === '{barcode}') return out.push({ type: 'barcode', align: 'center', value: '', width: 75, height: 22, top: 5, bottom: 5 });
     if (/^[-=_*]{4,}$/.test(t)) return out.push({ type: 'line', align: 'center', top: 10, bottom: 10 });
     const big = l.includes('{big}') || (!hasBig && !hasLogo && i === 0 && lines.length > 1);
-    out.push({ type: 'text', text: l.replace(/\{big\}/g, ''), font: 'Courier New', size: big ? 70 : 45, bold: big, align: 'center', top: 0, bottom: 0 });
+    out.push({ type: 'text', text: l.replace(/\{big\}/g, ''), font: 'Courier New', size: big ? 70 : 45, boldness: big ? 75 : 0, align: 'center', top: 0, bottom: 0 });
   });
   return out;
 }
@@ -570,14 +578,14 @@ function ticketHTML(rows, logo, number, w) {
     if (r.type === 'logo') return (r.img || logo) ? '<img class="logo" alt="" src="' + esc(r.img || logo) + '" style="width:' + (r.width || 70) + '%;' + mg(r.align) + 'margin-top:' + mm(r.top) + ';margin-bottom:' + mm(r.bottom) + '">' : '';
     if (r.type === 'barcode') return barcodeSVG(r.value || number, 'width:' + (r.width || 75) + '%;height:' + (4 + ((r.height || 22) / 100) * 36).toFixed(1) + 'mm;' + mg(r.align) + 'margin-top:' + mm(r.top) + ';margin-bottom:' + mm(r.bottom));
     if (r.type === 'line') return '<hr style="margin:' + mm(r.top) + ' 0 ' + mm(r.bottom) + '">';
-    return '<div class="l" style="font-family:' + fontStack(r.font) + ';font-size:' + ptOf(r.size, w).toFixed(2) + 'pt;font-weight:' + (r.bold ? 700 : 400) + ';text-align:' + (r.align || 'center') + ';margin-top:' + mm(r.top) + ';margin-bottom:' + mm(r.bottom) + '">' + (esc(r.text || '') || '&nbsp;') + '</div>';
+    return '<div class="l" style="font-family:' + fontStack(r.font) + ';font-size:' + ptOf(r.size, w).toFixed(2) + 'pt;' + boldCSS(r) + 'text-align:' + (r.align || 'center') + ';margin-top:' + mm(r.top) + ';margin-bottom:' + mm(r.bottom) + '">' + (esc(r.text || '') || '&nbsp;') + '</div>';
   }).join('');
 }
-// v391: fill {yard} {price} … into every text row
+// v399: fill {yard} {price} … into every text row
 function fillRows(rows, vals) {
   return (rows || []).map(r => r.type === 'text' ? Object.assign({}, r, { text: String(r.text || '').replace(/\{(yard|date|time|price|number|valid)\}/g, (m, k) => vals[k]) }) : r);
 }
-// v393: WEATHERED / STICKER-LOOK LOGO. Sliders: Weathered (worn patches + rough edges), Fuzzy (soft blur), Faded gray (lighter ink), Spots (light pits).
+// v399: WEATHERED / STICKER-LOOK LOGO. Sliders: Weathered (worn patches + rough edges), Fuzzy (soft blur), Faded gray (lighter ink), Spots (light pits).
 // A receipt printer only prints black dots, so gray is made with fine dots (dithering). Seeded, so the preview and every printed ticket match.
 const weatherCache = new Map();
 const wHash = (i, j, s) => { let n = (Math.imul(i, 374761393) + Math.imul(j, 668265263) + Math.imul(s, 1274126177)) | 0; n = Math.imul(n ^ (n >>> 13), 1274126177); return ((n ^ (n >>> 16)) >>> 0) / 4294967295; };
@@ -597,7 +605,7 @@ function weatherPixels(px, w, h, amount) {   // px = RGBA of a black & white pic
     if (nz < a * 0.5 + (edge ? a * 0.18 : 0)) { px[i * 4] = px[i * 4 + 1] = px[i * 4 + 2] = 255; }
   }
 }
-function gravelPixels(px, w, h, amount) {   // v394: GRAVEL — pixels get knocked sideways in chunks, so edges break into coarse grains (sand is fine; this is gravel)
+function gravelPixels(px, w, h, amount) {   // v399: GRAVEL — pixels get knocked sideways in chunks, so edges break into coarse grains (sand is fine; this is gravel)
   const a = Math.max(0, Math.min(100, amount)) / 100;
   const chunk = Math.max(2, Math.round(w * (0.004 + 0.007 * a)));   // grain size grows with the slider
   const mag = a * w * 0.03 + 1;                                      // how far a grain can be thrown
@@ -660,7 +668,7 @@ function weatherLogo(src, r) {
       const x = c.getContext('2d'); x.drawImage(img, 0, 0);
       const d = x.getImageData(0, 0, w, h);
       if (wv > 0) weatherPixels(d.data, w, h, wv);
-      if (gr > 0) gravelPixels(d.data, w, h, gr);   // v394
+      if (gr > 0) gravelPixels(d.data, w, h, gr);   // v399
       if (fz > 0 || fd > 0 || sp > 0) grayPixels(d.data, w, h, fz, fd, sp);
       x.putImageData(d, 0, 0);
       const out = c.toDataURL('image/png'); weatherCache.set(key, out); resolve(out);
@@ -708,17 +716,17 @@ async function printTicket(id, btn, advance) {   // v389: advance = sold today, 
     const w = d.width === 58 ? 58 : 80;
     const doc = document.getElementById('yt-frame').contentDocument;
     doc.open();
-    // v391: rows from the yard's saved design (an old yard: built from its ticket text), filled in with this sale
+    // v399: rows from the yard's saved design (an old yard: built from its ticket text), filled in with this sale
     let rows = d.design && d.design.rows ? d.design.rows : rowsFromTemplate(d.template, d.logoSize);
-    if (d.advance && !rows.some(r => r.type === 'text' && /\{valid\}/.test(r.text || ''))) rows = rows.concat([{ type: 'text', text: 'VALID FOR {valid}', font: 'Courier New', size: 70, bold: true, align: 'center', top: 2, bottom: 0 }]);
-    rows = await applyWeather(fillRows(rows, d.vals), d.logo);   // v392: weathered logo
+    if (d.advance && !rows.some(r => r.type === 'text' && /\{valid\}/.test(r.text || ''))) rows = rows.concat([{ type: 'text', text: 'VALID FOR {valid}', font: 'Courier New', size: 70, boldness: 75, align: 'center', top: 2, bottom: 0 }]);
+    rows = await applyWeather(fillRows(rows, d.vals), d.logo);   // v399: weathered logo
     doc.write('<!doctype html><html><head><meta charset="utf-8"><title>Ticket</title><style>' + ticketCSS(w, rows) + '</style></head><body>' + ticketHTML(rows, d.logo, d.number, w) + '</body></html>');
     doc.close();
     // setTimeout(() => { … f.print(); }, 150);
     const fw = document.getElementById('yt-frame').contentWindow;   // v387: wait for the logo to load before printing
     const go = () => { fw.focus(); fw.print(); };
     const im = doc.querySelector('img');
-    const fontsOk = Promise.race([doc.fonts && doc.fonts.ready ? doc.fonts.ready : Promise.resolve(), new Promise(r => setTimeout(r, 3000))]);   // v395: wait for the ticket's fonts (max 3 s)
+    const fontsOk = Promise.race([doc.fonts && doc.fonts.ready ? doc.fonts.ready : Promise.resolve(), new Promise(r => setTimeout(r, 3000))]);   // v399: wait for the ticket's fonts (max 3 s)
     if (im && !im.complete) { im.onload = im.onerror = () => fontsOk.then(() => setTimeout(go, 50)); } else fontsOk.then(() => setTimeout(go, 150));
     pageCache.live(); loadTickets();
   } catch (e) { alert(e.message); }
@@ -736,6 +744,7 @@ function sampleVals(y) {   // v389: the preview uses right now as the sale time
 function yardRow(y) {
   const row = document.createElement('div'); row.className = 'yt-edit';
   let rows = (y.design && y.design.rows) ? JSON.parse(JSON.stringify(y.design.rows)) : rowsFromTemplate(y.template || tickets.defaultTemplate, y.logoSize || 70);
+  rows.forEach(r => { if (r.type === 'text' && r.boldness === undefined) { r.boldness = r.bold ? 75 : 0; delete r.bold; } });   // v399: old Bold on/off → boldness number
   let sel = -1, logo = y.logo || null, logoChanged = false;
   const AL = [['left', 'Left'], ['center', 'Center'], ['right', 'Right']];
   const NAMES = { text: 'Text', line: 'Divider', logo: 'Logo', barcode: 'Barcode' };
@@ -743,7 +752,7 @@ function yardRow(y) {
     + '<div><label>Ticket price</label><input class="p" type="number" min="0" step="0.01" style="width:100px"></div></div>'
     + '<label>Ticket rows</label><div class="yt-rows"></div>'
     + '<div class="yt-add"><button type="button" class="btn btn-secondary btn-sm" data-add="text">+ Text</button><button type="button" class="btn btn-secondary btn-sm" data-add="line">+ Divider</button><button type="button" class="btn btn-secondary btn-sm" data-add="logo">+ Logo</button><button type="button" class="btn btn-secondary btn-sm" data-add="barcode">+ Barcode</button></div>'
-    + '<div class="yt-row" style="margin:12px 0 0;"><button type="button" class="btn btn-secondary btn-sm s">Save</button><button type="button" class="btn btn-secondary btn-sm d">Remove</button></div></div>'
+    + '<div class="yt-row" style="margin:12px 0 0;"><button type="button" class="btn btn-secondary btn-sm s">Save</button><button type="button" class="btn btn-secondary btn-sm dup" title="Make a new ticket from this one, then change what you like">Duplicate</button><button type="button" class="btn btn-secondary btn-sm d">Remove</button></div></div>'
     + '<div><label>Preview (real size)</label><iframe class="yt-pv" title="Ticket preview"></iframe></div>';
   const n = row.querySelector('.n'), p = row.querySelector('.p'), fr = row.querySelector('.yt-pv'), list = row.querySelector('.yt-rows');
   n.value = y.name || ''; p.value = y.price !== undefined ? Number(y.price).toFixed(2) : '';
@@ -751,7 +760,7 @@ function yardRow(y) {
   let pvTok = 0;
   const preview = async () => {
     const tok = ++pvTok, w = paper();
-    const shown = await applyWeather(fillRows(rows, sampleVals({ name: n.value, price: parseFloat(p.value) || 0 })), logo);   // v392
+    const shown = await applyWeather(fillRows(rows, sampleVals({ name: n.value, price: parseFloat(p.value) || 0 })), logo);   // v399
     const doc = fr.contentDocument; if (!doc || tok !== pvTok) return;
     fr.style.width = Math.round(w * 3.7795) + 'px';   // real paper width on screen
     doc.open();
@@ -759,10 +768,10 @@ function yardRow(y) {
     doc.close();
     const fit = () => { fr.style.height = doc.documentElement.scrollHeight + 'px'; };
     fit(); doc.querySelectorAll('img').forEach(i => { i.onload = fit; });
-    if (doc.fonts && doc.fonts.ready) doc.fonts.ready.then(fit);   // v395: web fonts change the line heights
+    if (doc.fonts && doc.fonts.ready) doc.fonts.ready.then(fit);   // v399: web fonts change the line heights
   };
   row.redraw = preview;
-  const sl = (k, label, min, r) => '<div class="yt-sl"><label>' + label + ' <b>' + (r[k] === undefined ? '' : r[k]) + '</b></label><input type="range" data-k="' + k + '" min="' + min + '" max="100" value="' + (r[k] === undefined ? min : r[k]) + '"></div>';
+  const sl = (k, label, min, r) => { const v = r[k] === undefined ? min : r[k]; return '<div class="yt-sl"><label>' + label + '</label><div class="yt-sn"><input type="range" data-k="' + k + '" min="' + min + '" max="100" value="' + v + '"><input type="number" data-k="' + k + '" min="' + min + '" max="100" step="1" value="' + v + '"></div></div>'; };   // v399: slider + number box
   const pick = (k, label, opts, r) => '<div><label>' + label + '</label><select data-k="' + k + '">' + opts.map(o => '<option value="' + o[0] + '"' + (r[k] === o[0] ? ' selected' : '') + '>' + o[1] + '</option>').join('') + '</select></div>';
   const summary = (r) => r.type === 'line' ? '- - - - - - - -' : r.type === 'logo' ? (logo ? 'Your logo' : 'No logo uploaded yet') : 'Barcode: ' + (r.value ? r.value : 'each ticket\u2019s number');
   const drawList = () => {
@@ -787,7 +796,7 @@ function yardRow(y) {
       if (i === sel) {
         const body = document.createElement('div'); body.className = 'yt-rb';
         let html = '<div class="yt-grid">';
-        if (r.type === 'text') html += '<div><label>Font</label><select class="fsel">' + Object.keys(FONT_STACKS).map(f => '<option value="' + f + '"' + (r.font === f ? ' selected' : '') + '>' + f + '</option>').join('') + '<option value="__custom"' + (FONT_STACKS[r.font] ? '' : ' selected') + '>Other (type a font name)\u2026</option></select><input class="fcus" maxlength="40" placeholder="Font name on the printing computer" style="margin-top:4px;' + (FONT_STACKS[r.font] ? 'display:none' : '') + '" value="' + (FONT_STACKS[r.font] ? '' : esc(r.font || '')) + '"></div>' + pick('align', 'Position', AL, r) + sl('size', 'Text size', 1, r) + '<label class="yt-chk"><input type="checkbox" data-k="bold"' + (r.bold ? ' checked' : '') + '> Bold</label>';
+        if (r.type === 'text') html += '<div><label>Font</label><select class="fsel">' + Object.keys(FONT_STACKS).map(f => '<option value="' + f + '"' + (r.font === f ? ' selected' : '') + '>' + f + '</option>').join('') + '<option value="__custom"' + (FONT_STACKS[r.font] ? '' : ' selected') + '>Other (type a font name)\u2026</option></select><input class="fcus" maxlength="40" placeholder="Font name on the printing computer" style="margin-top:4px;' + (FONT_STACKS[r.font] ? 'display:none' : '') + '" value="' + (FONT_STACKS[r.font] ? '' : esc(r.font || '')) + '"></div>' + pick('align', 'Position', AL, r) + sl('size', 'Text size', 1, r) + sl('boldness', 'Boldness (0 = normal)', 0, r);
         if (r.type === 'logo') html += pick('align', 'Position', AL, r) + sl('width', 'Logo size', 1, r) + sl('weather', 'Weathered look', 0, r) + sl('gravel', 'Gravel (chunky grit)', 0, r) + sl('fuzzy', 'Fuzzy', 0, r) + sl('fade', 'Faded gray', 0, r) + sl('spots', 'Spots', 0, r);
         if (r.type === 'barcode') html += '<div><label>Barcode numbers (blank = each ticket\u2019s own number)</label><input data-k="value" maxlength="40" placeholder="e.g. 12345678" value="' + esc(r.value || '') + '"></div>' + pick('align', 'Position', AL, r) + sl('width', 'Barcode width', 1, r) + sl('height', 'Barcode height', 1, r);
         if (r.type !== 'line') html += sl('top', 'Space above', 0, r) + sl('bottom', 'Space below', 0, r);
@@ -798,13 +807,17 @@ function yardRow(y) {
         body.innerHTML = html;
         body.querySelectorAll('[data-k]').forEach(c => {
           const k = c.dataset.k, up = () => {
-            r[k] = c.type === 'checkbox' ? c.checked : c.type === 'range' ? parseInt(c.value, 10) : c.value;
-            if (c.type === 'range') { const b = c.previousElementSibling && c.previousElementSibling.querySelector('b'); if (b) b.textContent = c.value; }
+            if (c.type === 'range' || c.type === 'number') {
+              let v = parseInt(c.value, 10); if (!Number.isFinite(v)) return;   // empty while typing
+              v = Math.max(parseInt(c.min, 10), Math.min(parseInt(c.max, 10), v)); r[k] = v;
+              body.querySelectorAll('[data-k="' + k + '"]').forEach(o => { if (o !== c && (o.type === 'range' || o.type === 'number')) o.value = v; });   // slider and number box stay together
+            } else r[k] = c.type === 'checkbox' ? c.checked : c.value;
             preview();
           };
-          c.addEventListener('input', up); c.addEventListener('change', up);
+          c.addEventListener('input', up);
+          c.addEventListener('change', () => { if (c.type === 'number' && r[k] !== undefined) c.value = r[k]; up(); });
         });
-        const fs = body.querySelector('.fsel'), fc = body.querySelector('.fcus');   // v395: font list + any font name
+        const fs = body.querySelector('.fsel'), fc = body.querySelector('.fcus');   // v399: font list + any font name
         if (fs) {
           fs.onchange = () => { if (fs.value === '__custom') { fc.style.display = ''; fc.focus(); r.font = fc.value.trim() || r.font; } else { fc.style.display = 'none'; r.font = fs.value; } preview(); };
           fc.oninput = () => { r.font = fc.value.trim() || 'Courier New'; preview(); };
@@ -817,7 +830,7 @@ function yardRow(y) {
           ['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add('over'); }));
           ['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove('over'); }));
           drop.addEventListener('drop', (e) => take(e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]));
-          body.querySelector('.stk').onclick = () => { Object.assign(r, { weather: 25, fuzzy: 35, fade: 45, spots: 35 }); drawList(); preview(); };   // v393: one-tap gray, fuzzy, spotted look
+          body.querySelector('.stk').onclick = () => { Object.assign(r, { weather: 25, fuzzy: 35, fade: 45, spots: 35 }); drawList(); preview(); };   // v399: one-tap gray, fuzzy, spotted look
           const lr = body.querySelector('.lr'); if (lr) lr.onclick = () => { logo = null; logoChanged = true; drawList(); preview(); };
         }
         el.append(body);
@@ -825,16 +838,24 @@ function yardRow(y) {
       list.append(el);
     });
   };
-  const NEW = { text: { type: 'text', text: '', font: 'Courier New', size: 45, bold: false, align: 'center', top: 0, bottom: 0 }, line: { type: 'line', align: 'center', top: 10, bottom: 10 }, logo: { type: 'logo', align: 'center', width: 70, top: 0, bottom: 10 }, barcode: { type: 'barcode', align: 'center', value: '', width: 75, height: 22, top: 5, bottom: 5 } };
+  const NEW = { text: { type: 'text', text: '', font: 'Courier New', size: 45, boldness: 0, align: 'center', top: 0, bottom: 0 }, line: { type: 'line', align: 'center', top: 10, bottom: 10 }, logo: { type: 'logo', align: 'center', width: 70, top: 0, bottom: 10 }, barcode: { type: 'barcode', align: 'center', value: '', width: 75, height: 22, top: 5, bottom: 5 } };
   row.querySelectorAll('[data-add]').forEach(bt => bt.onclick = () => { rows.push(JSON.parse(JSON.stringify(NEW[bt.dataset.add]))); sel = rows.length - 1; drawList(); preview(); });
   [n, p].forEach(x => x.addEventListener('input', preview));
   drawList(); setTimeout(preview, 60);   // after the row is on the page (the preview frame needs to exist first)
   row.querySelector('.s').onclick = async () => {
     const lg = rows.find(r => r.type === 'logo');
-    const r = await fetch('/api/tickets/yards', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ id: y.id || null, name: n.value, price: p.value, template: y.template || tickets.defaultTemplate, logoSize: lg ? lg.width : 70, design: { rows } }, logoChanged ? { logo: logo || '' } : {})) });   // v391: + rows
+    const r = await fetch('/api/tickets/yards', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ id: y.id || null, name: n.value, price: p.value, template: y.template || tickets.defaultTemplate, logoSize: lg ? lg.width : 70, design: { rows } }, logoChanged ? { logo: logo || '' } : {})) });   // v399: + rows
     const res = await r.json().catch(() => ({}));
     if (!r.ok) { alert(res.error || 'Couldn\u2019t save'); return; }
     pageCache.live(); await loadTickets(); drawYardEditor();
+  };
+  row.querySelector('.dup').onclick = async () => {   // v399: copy this yard's whole ticket (what you see now, saved or not) as a new yard
+    const lg = rows.find(r => r.type === 'logo');
+    const r = await fetch('/api/tickets/yards', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: null, name: ((n.value || '').trim() || 'Yard').slice(0, 74) + ' copy', price: p.value, template: y.template || tickets.defaultTemplate, logoSize: lg ? lg.width : 70, design: { rows }, logo: logo || '' }) });
+    const res = await r.json().catch(() => ({}));
+    if (!r.ok) { alert(res.error || 'Couldn\u2019t duplicate'); return; }
+    pageCache.live(); await loadTickets(); drawYardEditor();
+    const all = document.querySelectorAll('#yt-list .yt-edit'); if (all.length) all[all.length - 1].scrollIntoView({ block: 'center' });
   };
   row.querySelector('.d').onclick = async () => {
     if (!y.id) { row.remove(); return; }
@@ -866,7 +887,7 @@ function logoToPrintable(file) {
 }
 function drawYardEditor() {
   document.getElementById('yt-width').value = String(tickets.settings.width);
-  document.getElementById('yt-width').onchange = () => document.querySelectorAll('#yt-list .yt-edit').forEach(r => r.redraw && r.redraw());   // v390
+  document.getElementById('yt-width').onchange = () => document.querySelectorAll('#yt-list .yt-edit').forEach(r => r.redraw && r.redraw());   // v399
   const list = document.getElementById('yt-list'); list.textContent = '';
   tickets.yards.forEach(y => list.append(yardRow(y)));
 }
