@@ -1,4 +1,4 @@
-// PartsLister Pro server — v379
+// PartsLister Pro server — v386
 // v302: dashboard.html is the homepage (/). The listing tool moved to /list.
 // v305: eBay sales connection — real sold orders on the dashboard.
 // v306: asks eBay for two more permissions — fees/payouts and seller metrics.
@@ -170,6 +170,10 @@
 // v366: smarter "doesn't need a reply" check (no AI): short messages made only of thank-you / ok /
 //       got-it / received words drop out of Needs reply ("Ok thank you for your help", "Just
 //       purchased. Thank you!"). Anything with a question or any other word stays in.
+// v386: YARD TICKETS — print your yard entry ticket from Home on a receipt printer. Each yard has a
+//       name, a ticket price and the ticket's text (with {date} {time} {price} {yard} {number} filled in
+//       when you print). One saved time for all yards; today's date fills in by itself. Every print is
+//       logged, so Home shows "Money saved" (week / month / year / lifetime) and a print count per yard.
 // v379: pigtails — don't bring up programming at all (only answer it if the buyer asks).
 // v378: PIGTAILS — a title with plugs / pigtail / connector(s) / wiring harness is the wiring, not the
 //       module, even when it names one ("ECM PCM WIRING HARNESS PLUGS"). Drafts never say it needs
@@ -360,6 +364,29 @@ async function setupDatabase() {
       refund_amount   NUMERIC(12,2)
     );
     CREATE INDEX IF NOT EXISTS late_returns_user ON late_returns (user_id);
+    CREATE TABLE IF NOT EXISTS yards (                                                    -- v386: yard tickets
+      id         SERIAL PRIMARY KEY,
+      user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      name       TEXT NOT NULL,
+      price      NUMERIC(10,2) NOT NULL DEFAULT 0,
+      template   TEXT,
+      sort       INTEGER NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    CREATE TABLE IF NOT EXISTS ticket_prints (
+      id         SERIAL PRIMARY KEY,
+      user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      yard_id    INTEGER,
+      yard_name  TEXT,
+      price      NUMERIC(10,2) NOT NULL DEFAULT 0,
+      printed_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    CREATE INDEX IF NOT EXISTS ticket_prints_user ON ticket_prints (user_id, printed_at);
+    CREATE TABLE IF NOT EXISTS ticket_settings (
+      user_id    INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      time       TEXT NOT NULL DEFAULT '09:00',
+      width      INTEGER NOT NULL DEFAULT 80
+    );
     ALTER TABLE ebay_connections ADD COLUMN IF NOT EXISTS active_count INTEGER;          -- v316: live listings on eBay
     ALTER TABLE ebay_connections ADD COLUMN IF NOT EXISTS active_value NUMERIC(14,2);    -- v316: their asking prices added up
     ALTER TABLE ebay_connections ADD COLUMN IF NOT EXISTS active_sync TIMESTAMPTZ;       -- v316: when that was last checked
@@ -3881,6 +3908,81 @@ app.post('/api/late-returns/:id/:action', requireUser, async (req, res) => {
   catch (e) { res.status(500).json({ error: 'Could not update it' }); }
 });
 
+// ─── v386: YARD TICKETS ──────────────────────────────────────────────────────
+const TICKET_TEMPLATE = '{yard}\nENTRY TICKET\nADMIT ONE\n--------------------------------\nDate: {date}\nTime: {time}\nPrice: {price}\n--------------------------------\nTicket #{number}\nThank you!';
+async function ticketSettings(userId) {
+  const r = await pool.query('SELECT time, width FROM ticket_settings WHERE user_id = $1', [userId]);
+  return r.rows[0] ? { time: r.rows[0].time, width: r.rows[0].width } : { time: '09:00', width: 80 };
+}
+app.get('/api/tickets', requireUser, async (req, res) => {
+  try {
+    // first time: a sample yard so there's something to print (edit or remove it in Manage)
+    const first = await pool.query('INSERT INTO ticket_settings (user_id) VALUES ($1) ON CONFLICT (user_id) DO NOTHING RETURNING user_id', [req.user.id]);
+    if (first.rows.length) await pool.query('INSERT INTO yards (user_id, name, price, template, sort) VALUES ($1, $2, $3, NULL, 1)', [req.user.id, 'Sample Yard', 2]);
+    const yards = (await pool.query('SELECT id, name, price, template FROM yards WHERE user_id = $1 ORDER BY sort, id', [req.user.id])).rows;
+    const tz = msgSettingsOf(await getUserSettings(req.user.id)).timezone || 'America/Chicago';
+    // money saved — week (since Monday), month, year, lifetime — counted in your time zone
+    const sums = (await pool.query(`SELECT yard_id,
+        COUNT(*)::int AS prints,
+        COALESCE(SUM(price), 0)::float AS total,
+        COALESCE(SUM(price) FILTER (WHERE printed_at >= date_trunc('week',  now() AT TIME ZONE $2) AT TIME ZONE $2), 0)::float AS week,
+        COALESCE(SUM(price) FILTER (WHERE printed_at >= date_trunc('month', now() AT TIME ZONE $2) AT TIME ZONE $2), 0)::float AS month,
+        COALESCE(SUM(price) FILTER (WHERE printed_at >= date_trunc('year',  now() AT TIME ZONE $2) AT TIME ZONE $2), 0)::float AS year
+      FROM ticket_prints WHERE user_id = $1 GROUP BY yard_id`, [req.user.id, tz])).rows;
+    const by = new Map(sums.map(s => [s.yard_id, s]));
+    const tot = sums.reduce((a, s) => ({ week: a.week + s.week, month: a.month + s.month, year: a.year + s.year, total: a.total + s.total, prints: a.prints + s.prints }), { week: 0, month: 0, year: 0, total: 0, prints: 0 });
+    res.json({ settings: await ticketSettings(req.user.id), tz, defaultTemplate: TICKET_TEMPLATE, saved: tot,
+      yards: yards.map(y => { const s = by.get(y.id) || {}; return { id: y.id, name: y.name, price: Number(y.price), template: y.template || TICKET_TEMPLATE, prints: s.prints || 0, saved: s.total || 0 }; }) });
+  } catch (e) { console.error('[tickets]', e.message); res.status(500).json({ error: 'Could not load yard tickets' }); }
+});
+app.post('/api/tickets/yards', requireUser, express.json(), async (req, res) => {
+  const b = req.body || {};
+  const name = String(b.name || '').trim().slice(0, 80);
+  const price = Math.max(0, Math.min(10000, parseFloat(b.price) || 0));
+  const template = String(b.template || '').replace(/\r/g, '').slice(0, 2000) || null;
+  if (!name) return res.status(400).json({ error: 'Give the yard a name.' });
+  try {
+    const id = parseInt(b.id, 10);
+    if (id > 0) await pool.query('UPDATE yards SET name = $3, price = $4, template = $5 WHERE id = $1 AND user_id = $2', [id, req.user.id, name, price, template]);
+    else await pool.query('INSERT INTO yards (user_id, name, price, template, sort) VALUES ($1, $2, $3, $4, (SELECT COALESCE(MAX(sort), 0) + 1 FROM yards WHERE user_id = $1))', [req.user.id, name, price, template]);
+    res.json({ ok: true });
+  } catch (e) { console.error('[tickets save]', e.message); res.status(500).json({ error: 'Could not save the yard' }); }
+});
+app.post('/api/tickets/yards/:id/delete', requireUser, async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (!(id > 0)) return res.status(400).json({ error: 'Bad yard' });
+  try { await pool.query('DELETE FROM yards WHERE id = $1 AND user_id = $2', [id, req.user.id]); res.json({ ok: true }); }   // its print log (money saved) is kept
+  catch (e) { res.status(500).json({ error: 'Could not remove it' }); }
+});
+app.post('/api/tickets/settings', requireUser, express.json(), async (req, res) => {
+  const b = req.body || {};
+  const time = /^([01]\d|2[0-3]):[0-5]\d$/.test(String(b.time || '')) ? String(b.time) : null;
+  const width = [58, 80].includes(parseInt(b.width, 10)) ? parseInt(b.width, 10) : null;
+  if (!time || !width) return res.status(400).json({ error: 'Pick a time and a paper width.' });
+  try {
+    await pool.query(`INSERT INTO ticket_settings (user_id, time, width) VALUES ($1, $2, $3)
+      ON CONFLICT (user_id) DO UPDATE SET time = EXCLUDED.time, width = EXCLUDED.width`, [req.user.id, time, width]);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: 'Could not save' }); }
+});
+// Print: logs it (adds the price to Money saved) and sends back the filled-in ticket
+app.post('/api/tickets/yards/:id/print', requireUser, async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  try {
+    const y = (await pool.query('SELECT id, name, price, template FROM yards WHERE id = $1 AND user_id = $2', [id, req.user.id])).rows[0];
+    if (!y) return res.status(404).json({ error: 'That yard isn\u2019t set up anymore.' });
+    const st = await ticketSettings(req.user.id);
+    const tz = msgSettingsOf(await getUserSettings(req.user.id)).timezone || 'America/Chicago';
+    const n = (await pool.query('INSERT INTO ticket_prints (user_id, yard_id, yard_name, price) VALUES ($1, $2, $3, $4) RETURNING (SELECT COUNT(*) FROM ticket_prints WHERE user_id = $1 AND yard_id = $2) + 1 AS n', [req.user.id, y.id, y.name, y.price])).rows[0].n;
+    const date = new Date().toLocaleDateString('en-US', { timeZone: tz, month: '2-digit', day: '2-digit', year: 'numeric' });
+    const [hh, mm] = st.time.split(':').map(Number);
+    const time = ((hh % 12) || 12) + ':' + String(mm).padStart(2, '0') + ' ' + (hh < 12 ? 'AM' : 'PM');
+    const price = '$' + Number(y.price).toFixed(2);
+    const text = String(y.template || TICKET_TEMPLATE).replace(/\{(yard|date|time|price|number)\}/g, (m, k) => ({ yard: y.name, date, time, price, number: String(n) })[k]);
+    res.json({ ok: true, text, width: st.width, yard: y.name });
+  } catch (e) { console.error('[tickets print]', e.message); res.status(500).json({ error: 'Could not print the ticket' }); }
+});
+
 // ─── v322: OFFERS ────────────────────────────────────────────────────────────
 // • Best Offers a buyer sent on an item → accept / counter / decline (Trading API)
 // • "Send offer" → eBay's Negotiation API sends it to EVERYONE interested in the
@@ -4776,5 +4878,5 @@ app.get('*', (req, res) => {
 });
 
 setupDatabase()
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v379 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v386 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });
