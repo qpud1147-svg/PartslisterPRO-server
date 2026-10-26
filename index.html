@@ -9,7 +9,8 @@
   // refresh, overriding anything init does.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 </script>
-<title>PartsLister Pro v384</title>
+<title>PartsLister Pro v385</title>
+<!-- v385: photo drop box back to its old height; the right side moved up to fill the gap above Refinement Notes. -->
 <!-- v384: cleaner Listing Tool — decorative emojis removed (kept: ⚙ settings, 📋 copy, 🎨 color picker), the "e.g." / "auto-filled" hint text removed, and the days-ahead box sits inside the Scheduled Listing button so both buttons stay centered. -->
 <!-- v383: Scheduled Listing — a dropdown next to the button picks how many days ahead (1–21); your choice is saved with your settings. -->
 <!-- v381: no sign-in screen flash when you're already signed in in this tab (the other pages remember it). -->
@@ -908,7 +909,7 @@
     <!-- v302: logo goes to the dashboard -->
     <a href="/" title="Dashboard" style="text-decoration:none;color:inherit;">
       <div class="logo"><span>PARTS</span>LISTER</div>
-      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v384</span></div>
+      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v385</span></div>
     </a>
     <!-- v303: removed — the logo is the dashboard button
     <a href="/" class="btn btn-secondary btn-sm" title="Back to your dashboard" style="font-size:11px;padding:4px 10px;text-decoration:none;margin-left:6px;">⌂ Dashboard</a>
@@ -967,7 +968,7 @@
         <div class="card-title">Upload Part Photos</div>
       </div>
       <div class="card-body">
-        <div class="drop-zone" id="drop-zone" style="margin-bottom:8px;">
+        <div class="drop-zone" id="drop-zone" style="margin-bottom:8px;min-height:140px;display:flex;flex-direction:column;align-items:center;justify-content:center;">   <!-- v385: same height as before the icon/text came out -->
           <input type="file" accept="image/*" multiple id="photo-input" onchange="handlePhotos(this.files)">
           <!-- <div class="drop-icon">📷</div>   v384 -->
           <div class="drop-title">Drop photos here</div>
@@ -1256,13 +1257,13 @@
     </div>
 
     <!-- TABS -->
-    <div class="tab-bar">
+    <div class="tab-bar" style="margin-bottom:0;">   <!-- v385: empty — no gap above Refinement Notes -->
     </div>
 
     <!-- LISTING TAB -->
     <div class="tab-content active" id="listing-view">
       <!-- Refinement Notes + Regenerate -->
-      <div style="margin-bottom:8px;margin-top:-4px;">
+      <div style="margin-bottom:8px;margin-top:0;">   <!-- v385: was margin-top:-4px -->
         <div style="display:flex;gap:6px;align-items:center;margin-bottom:4px;">
           <label style="margin:0;font-size:10px;opacity:0.7;text-transform:uppercase;letter-spacing:0.5px;">Refinement Notes</label>
         </div>
