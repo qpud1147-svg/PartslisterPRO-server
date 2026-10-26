@@ -392,6 +392,7 @@ async function setupDatabase() {
     CREATE INDEX IF NOT EXISTS ticket_prints_user ON ticket_prints (user_id, printed_at);
     ALTER TABLE yards ADD COLUMN IF NOT EXISTS logo TEXT;                                 -- v387: ticket logo (small black & white image)
     ALTER TABLE yards ADD COLUMN IF NOT EXISTS logo_size INTEGER NOT NULL DEFAULT 70;     -- v387: % of the paper width
+    ALTER TABLE yards ADD COLUMN IF NOT EXISTS design JSONB;                              -- v390: ticket designer settings (font, sizes, logo + barcode position)
     CREATE TABLE IF NOT EXISTS ticket_settings (
       user_id    INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
       time       TEXT NOT NULL DEFAULT '09:00',
@@ -3925,6 +3926,22 @@ app.post('/api/late-returns/:id/:action', requireUser, async (req, res) => {
 // v389: {date} {time} = when the ticket was really sold; {valid} = the day it's good for; {number} = its own
 //       ticket number; {barcode} = a barcode of that number; {logo} = your logo; {big} = this line large
 const TICKET_TEMPLATE = '{logo}\n{big}{yard}\nENTRY TICKET\nADMIT ONE\n--------------------------------\nValid: {valid}\nSold: {date} {time}\nPrice: {price}\n--------------------------------\nTicket #{number}\n{barcode}\nThank you!';
+// v390: ticket designer — everything is clamped here so a saved design can never break printing
+const TICKET_FONTS = ['Courier New', 'Arial', 'Helvetica', 'Times New Roman', 'Georgia', 'Verdana', 'Trebuchet MS', 'Impact', 'Arial Black'];
+function cleanDesign(d) {
+  d = (d && typeof d === 'object') ? d : {};
+  const n = (v, def, lo = 1, hi = 100) => { v = parseInt(v, 10); return Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : def; };
+  const al = (v, def) => ['left', 'center', 'right'].includes(v) ? v : def;
+  return {
+    font: TICKET_FONTS.includes(d.font) ? d.font : 'Courier New',
+    textSize: n(d.textSize, 45), bigSize: n(d.bigSize, 70), lineSpacing: n(d.lineSpacing, 35),
+    bold: !!d.bold, align: al(d.align, 'center'),
+    logoAlign: al(d.logoAlign, 'center'), logoTop: n(d.logoTop, 0, 0), logoBottom: n(d.logoBottom, 10, 0),
+    barcode: String(d.barcode || '').replace(/[^\x20-\x7E]/g, '').trim().slice(0, 40),   // '' = use each ticket's own number
+    barAlign: al(d.barAlign, 'center'), barWidth: n(d.barWidth, 75), barHeight: n(d.barHeight, 22),
+    barTop: n(d.barTop, 5, 0), barBottom: n(d.barBottom, 5, 0)
+  };
+}
 async function ticketSettings(userId) {
   // const r = await pool.query('SELECT time, width, randomize FROM ticket_settings …');   (v388)
   const r = await pool.query('SELECT width FROM ticket_settings WHERE user_id = $1', [userId]);   // v389: paper width only
@@ -3935,7 +3952,7 @@ app.get('/api/tickets', requireUser, async (req, res) => {
     // first time: a sample yard so there's something to print (edit or remove it in Manage)
     const first = await pool.query('INSERT INTO ticket_settings (user_id) VALUES ($1) ON CONFLICT (user_id) DO NOTHING RETURNING user_id', [req.user.id]);
     if (first.rows.length) await pool.query('INSERT INTO yards (user_id, name, price, template, sort) VALUES ($1, $2, $3, NULL, 1)', [req.user.id, 'Sample Yard', 2]);
-    const yards = (await pool.query('SELECT id, name, price, template, logo, logo_size FROM yards WHERE user_id = $1 ORDER BY sort, id', [req.user.id])).rows;   // v387: + logo
+    const yards = (await pool.query('SELECT id, name, price, template, logo, logo_size, design FROM yards WHERE user_id = $1 ORDER BY sort, id', [req.user.id])).rows;   // v387: + logo
     const tz = msgSettingsOf(await getUserSettings(req.user.id)).timezone || 'America/Chicago';
     // money made from tickets sold — week (since Monday), month, year, lifetime — counted in your time zone
     const sums = (await pool.query(`SELECT yard_id,
@@ -3947,8 +3964,8 @@ app.get('/api/tickets', requireUser, async (req, res) => {
       FROM ticket_prints WHERE user_id = $1 GROUP BY yard_id`, [req.user.id, tz])).rows;
     const by = new Map(sums.map(s => [s.yard_id, s]));
     const tot = sums.reduce((a, s) => ({ week: a.week + s.week, month: a.month + s.month, year: a.year + s.year, total: a.total + s.total, prints: a.prints + s.prints }), { week: 0, month: 0, year: 0, total: 0, prints: 0 });
-    res.json({ settings: await ticketSettings(req.user.id), tz, defaultTemplate: TICKET_TEMPLATE, made: tot,   // v389: saved → made (money from tickets sold)
-      yards: yards.map(y => { const s = by.get(y.id) || {}; return { id: y.id, name: y.name, price: Number(y.price), template: y.template || TICKET_TEMPLATE, logo: y.logo || null, logoSize: y.logo_size || 70, sold: s.prints || 0, made: s.total || 0 }; }) });
+    res.json({ settings: await ticketSettings(req.user.id), tz, defaultTemplate: TICKET_TEMPLATE, defaultDesign: cleanDesign({}), made: tot,   // v389: saved → made (money from tickets sold)
+      yards: yards.map(y => { const s = by.get(y.id) || {}; return { id: y.id, name: y.name, price: Number(y.price), template: y.template || TICKET_TEMPLATE, logo: y.logo || null, logoSize: y.logo_size || 70, design: cleanDesign(y.design), sold: s.prints || 0, made: s.total || 0 }; }) });
   } catch (e) { console.error('[tickets]', e.message); res.status(500).json({ error: 'Could not load yard tickets' }); }
 });
 app.post('/api/tickets/yards', requireUser, express.json({ limit: '3mb' }), async (req, res) => {   // v387: room for a logo
@@ -3960,7 +3977,8 @@ app.post('/api/tickets/yards', requireUser, express.json({ limit: '3mb' }), asyn
     else if (/^data:image\/(png|jpeg);base64,[A-Za-z0-9+/=]+$/.test(b.logo) && b.logo.length <= 2000000) logo = b.logo;
     else return res.status(400).json({ error: 'That logo file didn\u2019t work — use a PNG or JPG picture.' });
   }
-  const logoSize = [30, 50, 70, 100].includes(parseInt(b.logoSize, 10)) ? parseInt(b.logoSize, 10) : 70;
+  const logoSize = Math.max(1, Math.min(100, parseInt(b.logoSize, 10) || 70));   // v390: any size 1–100
+  const design = JSON.stringify(cleanDesign(b.design));
   const name = String(b.name || '').trim().slice(0, 80);
   const price = Math.max(0, Math.min(10000, parseFloat(b.price) || 0));
   const template = String(b.template || '').replace(/\r/g, '').slice(0, 2000) || null;
@@ -3970,9 +3988,9 @@ app.post('/api/tickets/yards', requireUser, express.json({ limit: '3mb' }), asyn
     // if (id > 0) await pool.query('UPDATE yards SET name = $3, price = $4, template = $5 WHERE id = $1 AND user_id = $2', [id, req.user.id, name, price, template]);
     // else await pool.query('INSERT INTO yards (user_id, name, price, template, sort) VALUES (…)', [req.user.id, name, price, template]);
     if (id > 0) {
-      await pool.query('UPDATE yards SET name = $3, price = $4, template = $5, logo_size = $6 WHERE id = $1 AND user_id = $2', [id, req.user.id, name, price, template, logoSize]);
+      await pool.query('UPDATE yards SET name = $3, price = $4, template = $5, logo_size = $6, design = $7::jsonb WHERE id = $1 AND user_id = $2', [id, req.user.id, name, price, template, logoSize, design]);
       if (logo !== undefined) await pool.query('UPDATE yards SET logo = $3 WHERE id = $1 AND user_id = $2', [id, req.user.id, logo]);
-    } else await pool.query('INSERT INTO yards (user_id, name, price, template, logo, logo_size, sort) VALUES ($1, $2, $3, $4, $5, $6, (SELECT COALESCE(MAX(sort), 0) + 1 FROM yards WHERE user_id = $1))', [req.user.id, name, price, template, logo || null, logoSize]);   // v387: + logo
+    } else await pool.query('INSERT INTO yards (user_id, name, price, template, logo, logo_size, design, sort) VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, (SELECT COALESCE(MAX(sort), 0) + 1 FROM yards WHERE user_id = $1))', [req.user.id, name, price, template, logo || null, logoSize, design]);   // v387: + logo
     res.json({ ok: true });
   } catch (e) { console.error('[tickets save]', e.message); res.status(500).json({ error: 'Could not save the yard' }); }
 });
@@ -3999,7 +4017,7 @@ app.post('/api/tickets/settings', requireUser, express.json(), async (req, res) 
 app.post('/api/tickets/yards/:id/print', requireUser, express.json(), async (req, res) => {
   const id = parseInt(req.params.id, 10);
   try {
-    const y = (await pool.query('SELECT id, name, price, template, logo, logo_size FROM yards WHERE id = $1 AND user_id = $2', [id, req.user.id])).rows[0];
+    const y = (await pool.query('SELECT id, name, price, template, logo, logo_size, design FROM yards WHERE id = $1 AND user_id = $2', [id, req.user.id])).rows[0];
     if (!y) return res.status(404).json({ error: 'That yard isn\u2019t set up anymore.' });
     const st = await ticketSettings(req.user.id);
     const tz = msgSettingsOf(await getUserSettings(req.user.id)).timezone || 'America/Chicago';
@@ -4020,7 +4038,7 @@ app.post('/api/tickets/yards/:id/print', requireUser, express.json(), async (req
     // an advance ticket always says which day it's good for, even if the ticket text has no {valid}
     if (advance && !tpl.includes('{valid}')) tpl += '\n{big}VALID FOR {valid}';
     const text = tpl.replace(/\{(yard|date|time|price|number|valid)\}/g, (m, k) => ({ yard: y.name, date, time, price, number, valid })[k]);
-    res.json({ ok: true, text, number, width: st.width, yard: y.name, logo: y.logo || null, logoSize: y.logo_size || 70, advance });
+    res.json({ ok: true, text, number, width: st.width, yard: y.name, logo: y.logo || null, logoSize: y.logo_size || 70, design: cleanDesign(y.design), advance });
   } catch (e) { console.error('[tickets print]', e.message); res.status(500).json({ error: 'Could not print the ticket' }); }
 });
 

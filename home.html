@@ -122,19 +122,27 @@
   .yt-yard .go { font-family: 'Barlow Condensed', sans-serif; font-size: 12px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--accent); margin-top: 8px; }
   #yt-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 50; display: none; align-items: flex-start; justify-content: center; overflow-y: auto; padding: 30px 12px; }
   #yt-modal.open { display: flex; }
-  .yt-box { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; width: 100%; max-width: 760px; padding: 20px; }
+  .yt-box { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; width: 100%; max-width: 980px; padding: 20px; }
   .yt-box h3 { font-family: 'Barlow Condensed', sans-serif; font-size: 22px; font-weight: 700; margin-bottom: 12px; display: flex; align-items: center; }
   .yt-box h3 .btn { margin-left: auto; }
   .yt-box label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
   .yt-box input, .yt-box select, .yt-box textarea { background: var(--surface2); border: 1px solid var(--border); border-radius: 4px; color: var(--text); padding: 7px 9px; font: inherit; font-size: 13px; }
   .yt-box textarea { width: 100%; font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
   .yt-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 14px; }
-  .yt-edit { border: 1px solid var(--border); border-radius: 6px; padding: 12px; margin-bottom: 10px; display: grid; grid-template-columns: 1fr 220px; gap: 12px; }
+  .yt-edit { border: 1px solid var(--border); border-radius: 6px; padding: 12px; margin-bottom: 10px; display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 14px; }
   .yt-prev { background: #fff; color: #000; font-family: ui-monospace, Menlo, monospace; font-size: 11px; padding: 10px 8px; border-radius: 3px; text-align: center; white-space: pre-wrap; line-height: 1.35; align-self: start; }
   .yt-prev .t1 { font-weight: 700; font-size: 14px; }
   .yt-prev img { display: block; margin: 0 auto 4px; max-width: 100%; }
   .yt-prev .big { font-weight: 700; font-size: 14px; }
   .yt-prev svg { display: block; margin: 2px auto; max-width: 100%; height: 36px; }
+  .yt-des { border-top: 1px solid var(--border); margin-top: 10px; padding-top: 8px; }
+  .yt-des summary { cursor: pointer; font-weight: 600; font-size: 13px; padding: 2px 0 8px; }
+  .yt-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px; align-items: end; }
+  .yt-grid > div { min-width: 0; }
+  .yt-grid select, .yt-grid input:not([type=checkbox]) { width: 100%; }
+  .yt-sl label b { float: right; color: var(--text); font-weight: 600; }
+  .yt-box input[type=range] { padding: 0; border: 0; background: none; accent-color: var(--accent); }
+  .yt-pv { display: block; border: 1px solid var(--border); background: #fff; border-radius: 3px; max-width: 100%; }
   .yt-logo-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
   .yt-saved .v.count { color: var(--text); }
   .yt-prev hr { border: none; border-top: 1px dashed #000; margin: 4px 0; }
@@ -261,7 +269,7 @@
     </div>
     <div id="yt-list"></div>
     <button type="button" class="btn btn-secondary btn-sm" onclick="addYardRow()">+ Add a yard</button>
-    <div class="yt-note">In the ticket text, these fill in when you sell a ticket: {yard} {price} {number}, {date} and {time} (when it was sold) and {valid} (the day it's good for). Put {logo} or {barcode} on a line of its own to place them there, and start a line with {big} to print it large. Without {logo}, the logo prints at the top; without any {big}, the first line prints large. A line of dashes prints as a divider.</div>
+    <div class="yt-note">In the ticket text, these fill in when you sell a ticket: {yard} {price} {number}, {date} and {time} (when it was sold) and {valid} (the day it's good for). Put {logo} or {barcode} on a line of its own to place them there, and start a line with {big} to print it large. Start a line with {size=1} to {size=100} for any text size, or {left} / {center} / {right} to align that line. Without {logo}, the logo prints at the top; without any {big}, the first line prints large. A line of dashes prints as a divider. Fonts come from the computer that prints, so pick one that computer has.</div>
   </div>
 </div>
 <iframe id="yt-frame" title="Ticket" style="position:fixed;width:0;height:0;border:0;left:-9999px;"></iframe>
@@ -501,29 +509,46 @@ let tickets = null;
 const esc = (s) => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 // v389: Code 128 barcode of the ticket number (code set C — digit pairs), drawn as SVG
 const C128 = ['212222','222122','222221','121223','121322','131222','122213','122312','132212','221213','221312','231212','112232','122132','122231','113222','123122','123221','223211','221132','221231','213212','223112','312131','311222','321122','321221','312212','322112','322211','212123','212321','232121','111323','131123','131321','112313','132113','132311','211313','231113','231311','112133','112331','132131','113123','113321','133121','313121','211331','231131','213113','213311','213131','311123','311321','331121','312113','312311','332111','314111','221411','431111','111224','111422','121124','121421','141122','141221','112214','112412','122114','122411','142112','142211','241211','221114','413111','241112','134111','111242','121142','121241','114212','124112','124211','411212','421112','421211','212141','214121','412121','111143','111341','131141','114113','114311','411113','411311','113141','114131','311141','411131','211412','211214','211232','2331112'];
-function barcodeSVG(digits) {
-  digits = String(digits || '').replace(/\D/g, ''); if (!digits) return '';
-  if (digits.length % 2) digits = '0' + digits;
-  const codes = [105]; for (let i = 0; i < digits.length; i += 2) codes.push(parseInt(digits.slice(i, i + 2), 10));
-  let sum = 105; for (let i = 1; i < codes.length; i++) sum += i * codes[i];
+function barcodeSVG(value, style) {   // v390: exact Code 128 — even-length digits use set C, anything else set B
+  value = String(value || '').replace(/[^\x20-\x7E]/g, ''); if (!value) return '';
+  const codes = [];
+  if (/^\d+$/.test(value) && value.length % 2 === 0) { codes.push(105); for (let i = 0; i < value.length; i += 2) codes.push(parseInt(value.slice(i, i + 2), 10)); }
+  else { codes.push(104); for (const ch of value) codes.push(ch.charCodeAt(0) - 32); }
+  let sum = codes[0]; for (let i = 1; i < codes.length; i++) sum += i * codes[i];
   codes.push(sum % 103, 106);
   let x = 10, bars = '';   // 10-module quiet zone each side
   codes.forEach(c => { C128[c].split('').forEach((w, k) => { w = +w; if (k % 2 === 0) bars += '<rect x="' + x + '" y="0" width="' + w + '" height="40"/>'; x += w; }); });
-  return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + (x + 10) + ' 40" preserveAspectRatio="none" shape-rendering="crispEdges" fill="#000">' + bars + '</svg>';
+  return '<svg class="bc" style="' + (style || '') + '" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + (x + 10) + ' 40" preserveAspectRatio="none" shape-rendering="crispEdges" fill="#000">' + bars + '</svg>';
 }
-// function ticketHTML(text, logo, logoSize) {   (v387: logo on top, first line big)
-function ticketHTML(text, logo, logoSize, number) {   // v389: {logo} / {barcode} lines, {big} lines
+// v390: TICKET DESIGNER — one set of functions draws both the preview and the real printout, so they always match
+const FONT_STACKS = { 'Courier New': '"Courier New", Courier, monospace', 'Arial': 'Arial, Helvetica, sans-serif', 'Helvetica': 'Helvetica, Arial, sans-serif', 'Times New Roman': '"Times New Roman", Times, serif', 'Georgia': 'Georgia, serif', 'Verdana': 'Verdana, Geneva, sans-serif', 'Trebuchet MS': '"Trebuchet MS", sans-serif', 'Impact': 'Impact, "Arial Narrow", sans-serif', 'Arial Black': '"Arial Black", Arial, sans-serif' };
+function ptOf(size, w) { return (3 + (Math.max(1, Math.min(100, +size || 45)) - 1) * 0.19) * (w === 58 ? 0.82 : 1); }   // size 1–100 → points (45 ≈ 11 pt, 70 ≈ 16 pt on 80 mm)
+function ticketCSS(w, d) {
+  d = d || {};
+  return '@page{size:' + w + 'mm auto;margin:0}html,body{margin:0;padding:0;background:#fff;color:#000}'
+    + 'body{width:' + w + 'mm;box-sizing:border-box;padding:3mm ' + (w === 58 ? 2 : 4) + 'mm 6mm;font-family:' + (FONT_STACKS[d.font] || FONT_STACKS['Courier New']) + ';font-size:' + ptOf(d.textSize || 45, w).toFixed(2) + 'pt;line-height:' + (1 + (d.lineSpacing || 35) / 100) + ';text-align:' + (d.align || 'center') + ';font-weight:' + (d.bold ? 700 : 400) + '}'
+    + '.l{white-space:pre-wrap;word-break:break-word}.big{font-weight:700;font-size:' + ptOf(d.bigSize || 70, w).toFixed(2) + 'pt}'
+    + 'hr{border:none;border-top:1px dashed #000;margin:2mm 0}img.logo,svg.bc{display:block}';
+}
+function ticketHTML(text, logo, d, number, w) {
+  d = d || {};
+  const mg = (a) => a === 'left' ? 'margin-left:0;margin-right:auto;' : a === 'right' ? 'margin-left:auto;margin-right:0;' : 'margin-left:auto;margin-right:auto;';
+  const mm = (v, def) => ((v === undefined || v === null || v === '' ? def : +v) * 0.2).toFixed(1) + 'mm';   // 0–100 → 0–20 mm
   const lines = String(text).split('\n');
-  const img = logo ? '<img src="' + esc(logo) + '" alt="" style="width:' + (logoSize || 70) + '%">' : '';
+  if (d.barcode && !lines.some(l => l.trim() === '{barcode}')) lines.push('{barcode}');   // a barcode you typed always prints
+  const img = logo ? '<img class="logo" alt="" src="' + esc(logo) + '" style="width:' + (d.logoSize || 70) + '%;' + mg(d.logoAlign) + 'margin-top:' + mm(d.logoTop, 0) + ';margin-bottom:' + mm(d.logoBottom, 10) + '">' : '';
   const hasLogo = lines.some(l => l.trim() === '{logo}'), hasBig = lines.some(l => l.includes('{big}'));
   return (hasLogo ? '' : img) + lines.map((l, i) => {
     const t = l.trim();
     if (t === '{logo}') return img;
-    if (t === '{barcode}') return barcodeSVG(number);
+    if (t === '{barcode}') return barcodeSVG(d.barcode || number, 'width:' + (d.barWidth || 75) + '%;height:' + (4 + ((d.barHeight || 22) / 100) * 36).toFixed(1) + 'mm;' + mg(d.barAlign) + 'margin-top:' + mm(d.barTop, 5) + ';margin-bottom:' + mm(d.barBottom, 5));
     if (/^[-=_*]{4,}$/.test(t)) return '<hr>';
-    const big = l.includes('{big}') || (!hasBig && !hasLogo && i === 0);
-    const body = l.replace(/\{big\}/g, '');
-    return '<div' + (big ? ' class="big"' : '') + '>' + (esc(body) || '&nbsp;') + '</div>';
+    let body = l, st = '';
+    const sm = body.match(/\{size=(\d{1,3})\}/); if (sm) { st += 'font-size:' + ptOf(sm[1], w).toFixed(2) + 'pt;'; body = body.replace(sm[0], ''); }
+    const am = body.match(/\{(left|center|right)\}/); if (am) { st += 'text-align:' + am[1] + ';'; body = body.replace(am[0], ''); }
+    const big = body.includes('{big}') || (!hasBig && !hasLogo && i === 0);
+    body = body.replace(/\{big\}/g, '');
+    return '<div class="l' + (big ? ' big' : '') + '"' + (st ? ' style="' + st + '"' : '') + '>' + (esc(body) || '&nbsp;') + '</div>';
   }).join('');
 }
 async function loadTickets() {
@@ -562,14 +587,8 @@ async function printTicket(id, btn, advance) {   // v389: advance = sold today, 
     const w = d.width === 58 ? 58 : 80;
     const doc = document.getElementById('yt-frame').contentDocument;
     doc.open();
-    doc.write('<!doctype html><html><head><meta charset="utf-8"><title>Ticket</title><style>'
-      + '@page { size: ' + w + 'mm auto; margin: 0; }'
-      + 'html, body { margin: 0; padding: 0; background: #fff; color: #000; }'
-      + 'body { width: ' + w + 'mm; box-sizing: border-box; padding: 3mm ' + (w === 58 ? 2 : 4) + 'mm 6mm; font-family: "Courier New", ui-monospace, monospace; font-size: ' + (w === 58 ? 9 : 11) + 'pt; line-height: 1.35; text-align: center; }'
-      + 'img { display: block; margin: 0 auto 2mm; max-width: 100%; } '   // v387: logo
-      + '.big { font-weight: 700; font-size: ' + (w === 58 ? 12 : 15) + 'pt; } div { white-space: pre-wrap; word-break: break-word; } hr { border: none; border-top: 1px dashed #000; margin: 2mm 0; }'
-      + 'svg { display: block; margin: 1mm auto; width: ' + (w === 58 ? 44 : 60) + 'mm; height: 12mm; }'   // v389: barcode
-      + '</style></head><body>' + ticketHTML(d.text, d.logo, d.logoSize, d.number) + '</body></html>');
+    const dz = Object.assign({}, d.design, { logoSize: d.logoSize });   // v390: the yard's saved design
+    doc.write('<!doctype html><html><head><meta charset="utf-8"><title>Ticket</title><style>' + ticketCSS(w, dz) + '</style></head><body>' + ticketHTML(d.text, d.logo, dz, d.number, w) + '</body></html>');
     doc.close();
     // setTimeout(() => { … f.print(); }, 150);
     const fw = document.getElementById('yt-frame').contentWindow;   // v387: wait for the logo to load before printing
@@ -591,22 +610,51 @@ function sampleFill(text) {   // v389: the preview uses right now as the sale ti
 }
 function yardRow(y) {
   const row = document.createElement('div'); row.className = 'yt-edit';
+  const D0 = Object.assign({}, tickets.defaultDesign || {}, y.design || {}, { logoSize: y.logoSize || 70 });
+  const sl = (k, label, min) => '<div class="yt-sl"><label>' + label + ' <b data-o="' + k + '"></b></label><input type="range" data-k="' + k + '" min="' + (min === undefined ? 1 : min) + '" max="100"></div>';
+  const sel = (k, label, opts) => '<div><label>' + label + '</label><select data-k="' + k + '">' + opts.map(o => '<option value="' + o[0] + '">' + o[1] + '</option>').join('') + '</select></div>';
+  const AL = [['left', 'Left'], ['center', 'Center'], ['right', 'Right']];
   row.innerHTML = '<div><div class="yt-row" style="margin-bottom:8px;"><div style="flex:1"><label>Yard name</label><input class="n" style="width:100%"></div>'
     + '<div><label>Ticket price</label><input class="p" type="number" min="0" step="0.01" style="width:100px"></div></div>'
-    + '<label>Ticket text</label><textarea class="t" rows="10"></textarea>'
-    + '<div class="yt-logo-row"><input type="file" class="lf" accept="image/*" style="display:none"><button type="button" class="btn btn-secondary btn-sm lu">Upload logo</button>'
-    + '<button type="button" class="btn btn-secondary btn-sm lr">Remove logo</button><label style="margin:0 0 0 6px">Logo size</label>'
-    + '<select class="ls"><option value="30">Small</option><option value="50">Medium</option><option value="70">Large</option><option value="100">Full width</option></select></div>'   // v387
-    + '<div class="yt-row" style="margin:8px 0 0;"><button type="button" class="btn btn-secondary btn-sm s">Save</button><button type="button" class="btn btn-secondary btn-sm d">Remove</button></div></div>'
-    + '<div><label>Preview</label><div class="yt-prev"></div></div>';
-  const n = row.querySelector('.n'), p = row.querySelector('.p'), t = row.querySelector('.t'), pv = row.querySelector('.yt-prev');
+    + '<label>Ticket text</label><textarea class="t" rows="8"></textarea>'
+    + '<details class="yt-des" open><summary>Text</summary><div class="yt-grid">'
+    + sel('font', 'Font', Object.keys(FONT_STACKS).map(f => [f, f])) + sel('align', 'Text position', AL)
+    + sl('textSize', 'Text size') + sl('bigSize', 'Big line size') + sl('lineSpacing', 'Line spacing')
+    + '<label class="yt-chk"><input type="checkbox" data-k="bold"> Bold all text</label></div></details>'
+    + '<details class="yt-des" open><summary>Logo</summary>'
+    + '<div class="yt-logo-row" style="margin:0 0 8px"><input type="file" class="lf" accept="image/*" style="display:none"><button type="button" class="btn btn-secondary btn-sm lu">Upload logo</button><button type="button" class="btn btn-secondary btn-sm lr">Remove logo</button></div>'
+    + '<div class="yt-grid">' + sl('logoSize', 'Logo size') + sel('logoAlign', 'Logo position', AL) + sl('logoTop', 'Space above', 0) + sl('logoBottom', 'Space below', 0) + '</div></details>'
+    + '<details class="yt-des" open><summary>Barcode</summary><div class="yt-grid">'
+    + '<div><label>Barcode numbers (blank = each ticket\u2019s own number)</label><input data-k="barcode" maxlength="40" placeholder="e.g. 12345678"></div>' + sel('barAlign', 'Barcode position', AL)
+    + sl('barWidth', 'Barcode width') + sl('barHeight', 'Barcode height') + sl('barTop', 'Space above', 0) + sl('barBottom', 'Space below', 0) + '</div></details>'
+    + '<div class="yt-row" style="margin:12px 0 0;"><button type="button" class="btn btn-secondary btn-sm s">Save</button><button type="button" class="btn btn-secondary btn-sm d">Remove</button></div></div>'
+    + '<div><label>Preview (real size)</label><iframe class="yt-pv" title="Ticket preview"></iframe></div>';
+  const n = row.querySelector('.n'), p = row.querySelector('.p'), t = row.querySelector('.t'), fr = row.querySelector('.yt-pv');
   n.value = y.name || ''; p.value = y.price !== undefined ? Number(y.price).toFixed(2) : ''; t.value = y.template || tickets.defaultTemplate;
+  const ctl = {}, out = {};
+  row.querySelectorAll('[data-k]').forEach(el => { ctl[el.dataset.k] = el; });
+  row.querySelectorAll('[data-o]').forEach(el => { out[el.dataset.o] = el; });
+  Object.keys(ctl).forEach(k => { const el = ctl[k]; if (el.type === 'checkbox') el.checked = !!D0[k]; else el.value = D0[k] === undefined ? '' : D0[k]; });
+  const getD = () => { const d = {}; Object.keys(ctl).forEach(k => { const el = ctl[k]; d[k] = el.type === 'checkbox' ? el.checked : el.type === 'range' ? parseInt(el.value, 10) : el.value; }); return d; };
   // v387: logo — made black & white and shrunk to receipt-printer size on this page before it's saved
   let logo = y.logo || null, logoChanged = false;
-  const lf = row.querySelector('.lf'), ls = row.querySelector('.ls'), lr = row.querySelector('.lr');
-  ls.value = String(y.logoSize || 70);
-  const draw = () => { pv.innerHTML = ticketHTML(sampleFill(t.value)({ name: n.value, price: parseFloat(p.value) || 0 }), logo, parseInt(ls.value, 10), '000123'); lr.style.display = logo ? '' : 'none'; };
-  [n, p, t].forEach(x => x.addEventListener('input', draw)); ls.addEventListener('change', draw); draw();
+  const lf = row.querySelector('.lf'), lr = row.querySelector('.lr');
+  const draw = () => {
+    const d = getD(); Object.keys(out).forEach(k => { out[k].textContent = d[k]; });
+    lr.style.display = logo ? '' : 'none';
+    const w = parseInt(document.getElementById('yt-width').value, 10) === 58 ? 58 : 80;
+    const doc = fr.contentDocument; if (!doc) return;
+    fr.style.width = Math.round(w * 3.7795) + 'px';   // real paper width on screen
+    doc.open();
+    doc.write('<!doctype html><html><head><meta charset="utf-8"><style>' + ticketCSS(w, d) + '</style></head><body>' + ticketHTML(sampleFill(t.value)({ name: n.value, price: parseFloat(p.value) || 0 }), logo, d, '000123', w) + '</body></html>');
+    doc.close();
+    const fit = () => { fr.style.height = doc.documentElement.scrollHeight + 'px'; };
+    fit(); doc.querySelectorAll('img').forEach(i => { i.onload = fit; });
+  };
+  row.redraw = draw;
+  [n, p, t].forEach(x => x.addEventListener('input', draw));
+  Object.keys(ctl).forEach(k => { ctl[k].addEventListener('input', draw); ctl[k].addEventListener('change', draw); });
+  setTimeout(draw, 60);   // after the row is on the page (the preview frame needs to exist first)
   row.querySelector('.lu').onclick = () => lf.click();
   lr.onclick = () => { logo = null; logoChanged = true; draw(); };
   lf.onchange = async () => {
@@ -615,9 +663,10 @@ function yardRow(y) {
     lf.value = '';
   };
   row.querySelector('.s').onclick = async () => {
-    const r = await fetch('/api/tickets/yards', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ id: y.id || null, name: n.value, price: p.value, template: t.value, logoSize: ls.value }, logoChanged ? { logo: logo || '' } : {})) });   // v387: + logo
-    const d = await r.json().catch(() => ({}));
-    if (!r.ok) { alert(d.error || 'Couldn’t save'); return; }
+    const d = getD();
+    const r = await fetch('/api/tickets/yards', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ id: y.id || null, name: n.value, price: p.value, template: t.value, logoSize: d.logoSize, design: d }, logoChanged ? { logo: logo || '' } : {})) });   // v390: + design
+    const res = await r.json().catch(() => ({}));
+    if (!r.ok) { alert(res.error || 'Couldn’t save'); return; }
     pageCache.live(); await loadTickets(); drawYardEditor();
   };
   row.querySelector('.d').onclick = async () => {
@@ -650,6 +699,7 @@ function logoToPrintable(file) {
 }
 function drawYardEditor() {
   document.getElementById('yt-width').value = String(tickets.settings.width);
+  document.getElementById('yt-width').onchange = () => document.querySelectorAll('#yt-list .yt-edit').forEach(r => r.redraw && r.redraw());   // v390
   const list = document.getElementById('yt-list'); list.textContent = '';
   tickets.yards.forEach(y => list.append(yardRow(y)));
 }
