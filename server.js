@@ -1,4 +1,9 @@
-// PartsLister Pro server — v388
+// PartsLister Pro server — v389
+// v389: yard tickets are now sold tickets — each one prints the REAL date and time it was sold, its own
+//       ticket number and a barcode of that number ({barcode}). "Sell for tomorrow" makes an advance ticket
+//       marked VALID FOR tomorrow's date (it still shows when it was really sold). {logo} puts the logo on
+//       any line, {big} makes a line large. The saved time and Randomize are gone. Home shows money made.
+//       Also fixed: ticket_settings was changed before it was created (broke setup on a new database).
 // v302: dashboard.html is the homepage (/). The listing tool moved to /list.
 // v305: eBay sales connection — real sold orders on the dashboard.
 // v306: asks eBay for two more permissions — fees/payouts and seller metrics.
@@ -387,12 +392,13 @@ async function setupDatabase() {
     CREATE INDEX IF NOT EXISTS ticket_prints_user ON ticket_prints (user_id, printed_at);
     ALTER TABLE yards ADD COLUMN IF NOT EXISTS logo TEXT;                                 -- v387: ticket logo (small black & white image)
     ALTER TABLE yards ADD COLUMN IF NOT EXISTS logo_size INTEGER NOT NULL DEFAULT 70;     -- v387: % of the paper width
-    ALTER TABLE ticket_settings ADD COLUMN IF NOT EXISTS randomize BOOLEAN NOT NULL DEFAULT FALSE;   -- v388: up to an hour later than the saved time
     CREATE TABLE IF NOT EXISTS ticket_settings (
       user_id    INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
       time       TEXT NOT NULL DEFAULT '09:00',
       width      INTEGER NOT NULL DEFAULT 80
     );
+    -- ALTER TABLE ticket_settings ADD COLUMN IF NOT EXISTS randomize BOOLEAN NOT NULL DEFAULT FALSE;   (v388 — v389: no longer used; it also ran before the table was created)
+    ALTER TABLE ticket_prints ADD COLUMN IF NOT EXISTS valid_for DATE;                    -- v389: the day an advance ticket is good for (NULL = the day it was sold)
     ALTER TABLE ebay_connections ADD COLUMN IF NOT EXISTS active_count INTEGER;          -- v316: live listings on eBay
     ALTER TABLE ebay_connections ADD COLUMN IF NOT EXISTS active_value NUMERIC(14,2);    -- v316: their asking prices added up
     ALTER TABLE ebay_connections ADD COLUMN IF NOT EXISTS active_sync TIMESTAMPTZ;       -- v316: when that was last checked
@@ -3915,10 +3921,14 @@ app.post('/api/late-returns/:id/:action', requireUser, async (req, res) => {
 });
 
 // ─── v386: YARD TICKETS ──────────────────────────────────────────────────────
-const TICKET_TEMPLATE = '{yard}\nENTRY TICKET\nADMIT ONE\n--------------------------------\nDate: {date}\nTime: {time}\nPrice: {price}\n--------------------------------\nTicket #{number}\nThank you!';
+// const TICKET_TEMPLATE = '{yard}\nENTRY TICKET\nADMIT ONE\n…Date: {date}\nTime: {time}…';   (v386)
+// v389: {date} {time} = when the ticket was really sold; {valid} = the day it's good for; {number} = its own
+//       ticket number; {barcode} = a barcode of that number; {logo} = your logo; {big} = this line large
+const TICKET_TEMPLATE = '{logo}\n{big}{yard}\nENTRY TICKET\nADMIT ONE\n--------------------------------\nValid: {valid}\nSold: {date} {time}\nPrice: {price}\n--------------------------------\nTicket #{number}\n{barcode}\nThank you!';
 async function ticketSettings(userId) {
-  const r = await pool.query('SELECT time, width, randomize FROM ticket_settings WHERE user_id = $1', [userId]);   // v388: + randomize
-  return r.rows[0] ? { time: r.rows[0].time, width: r.rows[0].width, randomize: !!r.rows[0].randomize } : { time: '09:00', width: 80, randomize: false };
+  // const r = await pool.query('SELECT time, width, randomize FROM ticket_settings …');   (v388)
+  const r = await pool.query('SELECT width FROM ticket_settings WHERE user_id = $1', [userId]);   // v389: paper width only
+  return { width: r.rows[0] ? r.rows[0].width : 80 };
 }
 app.get('/api/tickets', requireUser, async (req, res) => {
   try {
@@ -3927,7 +3937,7 @@ app.get('/api/tickets', requireUser, async (req, res) => {
     if (first.rows.length) await pool.query('INSERT INTO yards (user_id, name, price, template, sort) VALUES ($1, $2, $3, NULL, 1)', [req.user.id, 'Sample Yard', 2]);
     const yards = (await pool.query('SELECT id, name, price, template, logo, logo_size FROM yards WHERE user_id = $1 ORDER BY sort, id', [req.user.id])).rows;   // v387: + logo
     const tz = msgSettingsOf(await getUserSettings(req.user.id)).timezone || 'America/Chicago';
-    // money saved — week (since Monday), month, year, lifetime — counted in your time zone
+    // money made from tickets sold — week (since Monday), month, year, lifetime — counted in your time zone
     const sums = (await pool.query(`SELECT yard_id,
         COUNT(*)::int AS prints,
         COALESCE(SUM(price), 0)::float AS total,
@@ -3937,8 +3947,8 @@ app.get('/api/tickets', requireUser, async (req, res) => {
       FROM ticket_prints WHERE user_id = $1 GROUP BY yard_id`, [req.user.id, tz])).rows;
     const by = new Map(sums.map(s => [s.yard_id, s]));
     const tot = sums.reduce((a, s) => ({ week: a.week + s.week, month: a.month + s.month, year: a.year + s.year, total: a.total + s.total, prints: a.prints + s.prints }), { week: 0, month: 0, year: 0, total: 0, prints: 0 });
-    res.json({ settings: await ticketSettings(req.user.id), tz, defaultTemplate: TICKET_TEMPLATE, saved: tot,
-      yards: yards.map(y => { const s = by.get(y.id) || {}; return { id: y.id, name: y.name, price: Number(y.price), template: y.template || TICKET_TEMPLATE, logo: y.logo || null, logoSize: y.logo_size || 70, prints: s.prints || 0, saved: s.total || 0 }; }) });
+    res.json({ settings: await ticketSettings(req.user.id), tz, defaultTemplate: TICKET_TEMPLATE, made: tot,   // v389: saved → made (money from tickets sold)
+      yards: yards.map(y => { const s = by.get(y.id) || {}; return { id: y.id, name: y.name, price: Number(y.price), template: y.template || TICKET_TEMPLATE, logo: y.logo || null, logoSize: y.logo_size || 70, sold: s.prints || 0, made: s.total || 0 }; }) });
   } catch (e) { console.error('[tickets]', e.message); res.status(500).json({ error: 'Could not load yard tickets' }); }
 });
 app.post('/api/tickets/yards', requireUser, express.json({ limit: '3mb' }), async (req, res) => {   // v387: room for a logo
@@ -3969,46 +3979,48 @@ app.post('/api/tickets/yards', requireUser, express.json({ limit: '3mb' }), asyn
 app.post('/api/tickets/yards/:id/delete', requireUser, async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (!(id > 0)) return res.status(400).json({ error: 'Bad yard' });
-  try { await pool.query('DELETE FROM yards WHERE id = $1 AND user_id = $2', [id, req.user.id]); res.json({ ok: true }); }   // its print log (money saved) is kept
+  try { await pool.query('DELETE FROM yards WHERE id = $1 AND user_id = $2', [id, req.user.id]); res.json({ ok: true }); }   // its sales log (money made) is kept
   catch (e) { res.status(500).json({ error: 'Could not remove it' }); }
 });
 app.post('/api/tickets/settings', requireUser, express.json(), async (req, res) => {
   const b = req.body || {};
-  const time = /^([01]\d|2[0-3]):[0-5]\d$/.test(String(b.time || '')) ? String(b.time) : null;
+  // v389: paper width only (the saved time and Randomize are gone — every ticket shows when it was really sold)
   const width = [58, 80].includes(parseInt(b.width, 10)) ? parseInt(b.width, 10) : null;
-  if (!time || !width) return res.status(400).json({ error: 'Pick a time and a paper width.' });
-  const randomize = !!b.randomize;   // v388
+  if (!width) return res.status(400).json({ error: 'Pick a paper width.' });
   try {
-    await pool.query(`INSERT INTO ticket_settings (user_id, time, width, randomize) VALUES ($1, $2, $3, $4)
-      ON CONFLICT (user_id) DO UPDATE SET time = EXCLUDED.time, width = EXCLUDED.width, randomize = EXCLUDED.randomize`, [req.user.id, time, width, randomize]);
+    await pool.query(`INSERT INTO ticket_settings (user_id, width) VALUES ($1, $2)
+      ON CONFLICT (user_id) DO UPDATE SET width = EXCLUDED.width`, [req.user.id, width]);
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: 'Could not save' }); }
 });
-// Print: logs it (adds the price to Money saved) and sends back the filled-in ticket
-app.post('/api/tickets/yards/:id/print', requireUser, express.json(), async (req, res) => {   // v388: { tomorrow }
+// Sell: logs the sale (adds the price to Money made) and sends back the filled-in ticket.
+// v389: the date and time are the real moment of the sale. { advance: true } = a ticket sold today that is
+//       good for tomorrow; it says VALID FOR tomorrow's date and still shows the real sale date and time.
+app.post('/api/tickets/yards/:id/print', requireUser, express.json(), async (req, res) => {
   const id = parseInt(req.params.id, 10);
   try {
-    const y = (await pool.query('SELECT id, name, price, template, logo, logo_size FROM yards WHERE id = $1 AND user_id = $2', [id, req.user.id])).rows[0];   // v387: + logo
+    const y = (await pool.query('SELECT id, name, price, template, logo, logo_size FROM yards WHERE id = $1 AND user_id = $2', [id, req.user.id])).rows[0];
     if (!y) return res.status(404).json({ error: 'That yard isn\u2019t set up anymore.' });
     const st = await ticketSettings(req.user.id);
     const tz = msgSettingsOf(await getUserSettings(req.user.id)).timezone || 'America/Chicago';
-    const n = (await pool.query('INSERT INTO ticket_prints (user_id, yard_id, yard_name, price) VALUES ($1, $2, $3, $4) RETURNING (SELECT COUNT(*) FROM ticket_prints WHERE user_id = $1 AND yard_id = $2) + 1 AS n', [req.user.id, y.id, y.name, y.price])).rows[0].n;
-    // const date = new Date().toLocaleDateString('en-US', { timeZone: tz, month: '2-digit', day: '2-digit', year: 'numeric' });
-    // v388: today's date in your time zone, or tomorrow's
-    const today = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
-    const [ty, tm, td] = today.split('-').map(Number);
-    const day = new Date(Date.UTC(ty, tm - 1, td + ((req.body || {}).tomorrow ? 1 : 0)));
-    const date = String(day.getUTCMonth() + 1).padStart(2, '0') + '/' + String(day.getUTCDate()).padStart(2, '0') + '/' + day.getUTCFullYear();
-    // const [hh, mm] = st.time.split(':').map(Number);
-    let [hh, mm] = st.time.split(':').map(Number);
-    if (st.randomize) {   // v388: anywhere from the saved time to an hour later — never earlier
-      const t = Math.min(23 * 60 + 59, hh * 60 + mm + crypto.randomInt(0, 61));
-      hh = Math.floor(t / 60); mm = t % 60;
-    }
-    const time = ((hh % 12) || 12) + ':' + String(mm).padStart(2, '0') + ' ' + (hh < 12 ? 'AM' : 'PM');
+    const advance = !!(req.body || {}).advance;
+    const now = new Date();
+    const todayKey = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
+    const [ty, tm, td] = todayKey.split('-').map(Number);
+    const validDay = new Date(Date.UTC(ty, tm - 1, td + (advance ? 1 : 0)));
+    const validKey = validDay.toISOString().slice(0, 10);
+    const row = (await pool.query('INSERT INTO ticket_prints (user_id, yard_id, yard_name, price, printed_at, valid_for) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
+      [req.user.id, y.id, y.name, y.price, now, validKey])).rows[0];
+    let number = String(row.id).padStart(6, '0'); if (number.length % 2) number = '0' + number;   // unique per ticket, even length so the barcode (Code 128-C) encodes it exactly
+    const date = new Intl.DateTimeFormat('en-US', { timeZone: tz, month: '2-digit', day: '2-digit', year: 'numeric' }).format(now);
+    const time = new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: 'numeric', minute: '2-digit', hour12: true }).format(now);
+    const valid = String(validDay.getUTCMonth() + 1).padStart(2, '0') + '/' + String(validDay.getUTCDate()).padStart(2, '0') + '/' + validDay.getUTCFullYear() + (advance ? ' (advance)' : '');
     const price = '$' + Number(y.price).toFixed(2);
-    const text = String(y.template || TICKET_TEMPLATE).replace(/\{(yard|date|time|price|number)\}/g, (m, k) => ({ yard: y.name, date, time, price, number: String(n) })[k]);
-    res.json({ ok: true, text, width: st.width, yard: y.name, logo: y.logo || null, logoSize: y.logo_size || 70 });   // v387: + logo
+    let tpl = String(y.template || TICKET_TEMPLATE);
+    // an advance ticket always says which day it's good for, even if the ticket text has no {valid}
+    if (advance && !tpl.includes('{valid}')) tpl += '\n{big}VALID FOR {valid}';
+    const text = tpl.replace(/\{(yard|date|time|price|number|valid)\}/g, (m, k) => ({ yard: y.name, date, time, price, number, valid })[k]);
+    res.json({ ok: true, text, number, width: st.width, yard: y.name, logo: y.logo || null, logoSize: y.logo_size || 70, advance });
   } catch (e) { console.error('[tickets print]', e.message); res.status(500).json({ error: 'Could not print the ticket' }); }
 });
 
@@ -4907,5 +4919,5 @@ app.get('*', (req, res) => {
 });
 
 setupDatabase()
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v388 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v389 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });
