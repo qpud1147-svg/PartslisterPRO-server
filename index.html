@@ -9,7 +9,9 @@
   // refresh, overriding anything init does.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 </script>
-<title>PartsLister Pro v326</title>
+<title>PartsLister Pro v383</title>
+<!-- v383: Scheduled Listing — a dropdown next to the button picks how many days ahead (1–21); your choice is saved with your settings. -->
+<!-- v381: no sign-in screen flash when you're already signed in in this tab (the other pages remember it). -->
 <!-- auth removed -->
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@400;500;600&display=swap');
@@ -877,6 +879,7 @@
 <!-- AUTH REMOVED -->
 <!-- v301: SIGN-IN SCREEN -->
 <div id="auth-overlay">
+<script>try { if (sessionStorage.getItem('plp-signed-in')) document.getElementById('auth-overlay').classList.add('hidden'); } catch (e) { /* show it */ }</script>   <!-- v381: signed in this tab → no sign-in screen flash -->
   <div class="auth-box">
     <div class="auth-logo"><span>PARTS</span>LISTER</div>
     <div class="auth-sub">Pro</div>
@@ -904,7 +907,7 @@
     <!-- v302: logo goes to the dashboard -->
     <a href="/" title="Dashboard" style="text-decoration:none;color:inherit;">
       <div class="logo"><span>PARTS</span>LISTER</div>
-      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v326</span></div>
+      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v383</span></div>
     </a>
     <!-- v303: removed — the logo is the dashboard button
     <a href="/" class="btn btn-secondary btn-sm" title="Back to your dashboard" style="font-size:11px;padding:4px 10px;text-decoration:none;margin-left:6px;">⌂ Dashboard</a>
@@ -1426,9 +1429,13 @@
         <div style="flex:1;display:flex;flex-direction:column;gap:6px;">
           <!-- Missing BIN warning (shows only when no BIN code) -->
           <div id="bin-warning" style="display:none;padding:6px 10px;background:rgba(224,168,0,0.12);border:1px solid #e0a800;border-radius:4px;color:#e0a800;font-size:11px;font-weight:600;line-height:1.3;">⚠ No BIN location — add a bin sticker photo or type the code (e.g. BF8)</div>
-          <button class="btn btn-secondary" id="draft-btn" onclick="saveToDraft()" style="width:100%;font-size:12px;padding:8px;" disabled>
+          <!-- v383: + how many days ahead (saved with your settings) -->
+          <div style="display:flex;gap:6px;">
+          <button class="btn btn-secondary" id="draft-btn" onclick="saveToDraft()" style="flex:1;font-size:12px;padding:8px;" disabled>
             📋 Scheduled Listing
           </button>
+          <select id="schedule-days" title="How many days ahead eBay schedules it (eBay allows up to 21)" onchange="setScheduleDays(this.value)" style="width:auto;font-size:12px;padding:6px 8px;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:4px;cursor:pointer;"></select>
+          </div>
           <button class="btn" id="launch-btn" onclick="launchToEbay()" style="width:100%;background:#0064d2;color:#fff;font-size:13px;padding:9px;opacity:0.85;" disabled>
             🚀 Launch to eBay
           </button>
@@ -2192,6 +2199,7 @@ function init() {
     const savedQueue = localStorage.getItem('plp_queue');
     if (savedQueue) { queue = JSON.parse(savedQueue); renderQueue(); }
     document.getElementById('part-number').value = '';
+    fillScheduleDays();   // v383
     applyDefaultShipping();
     applyDefaultDescription();
     window.scrollTo(0, 0);
@@ -5230,7 +5238,8 @@ async function saveToDraft() {
     // Schedule 90 days out — this creates a real Scheduled listing in eBay Seller Hub
     // which appears under Listings > Scheduled and can be edited/activated/cancelled there.
     // This is the standard method used by third-party tools to create eBay "drafts".
-    const scheduleDate = new Date(Date.now() + 20 * 24 * 60 * 60 * 1000).toISOString(); // eBay max is 21 days
+    // const scheduleDate = new Date(Date.now() + 20 * 24 * 60 * 60 * 1000).toISOString(); // eBay max is 21 days
+    const scheduleDate = new Date(Date.now() + scheduleDaysValue() * 24 * 60 * 60 * 1000).toISOString();   // v383: your choice, 1–21 days (eBay's max is 21)
 
     _setDraftStatus('Scheduling listing on eBay...');
     const xml = `<?xml version="1.0" encoding="utf-8"?>
@@ -5318,6 +5327,25 @@ async function saveToDraft() {
     btn.textContent = '📋 Scheduled Listing';
     _clearDraftStatus();
   }
+}
+
+// v383: Scheduled Listing — days ahead (1–21), saved with your settings
+function scheduleDaysValue() {
+  const d = parseInt(settings.scheduleDays, 10);
+  return d >= 1 && d <= 21 ? d : 20;   // 20 = what it always used before
+}
+function fillScheduleDays() {
+  const sel = document.getElementById('schedule-days');
+  if (!sel) return;
+  if (!sel.options.length) for (let d = 1; d <= 21; d++) { const o = document.createElement('option'); o.value = d; o.textContent = d + (d === 1 ? ' day' : ' days'); sel.append(o); }
+  sel.value = String(scheduleDaysValue());
+}
+function setScheduleDays(v) {
+  const d = parseInt(v, 10);
+  if (!(d >= 1 && d <= 21)) return;
+  settings.scheduleDays = d;
+  _saveUserData();
+  showNotif('✓ Scheduled listings go up ' + d + (d === 1 ? ' day' : ' days') + ' ahead');
 }
 
 function escXml(str) {
@@ -8513,6 +8541,7 @@ async function _authSubmit(mode) {
 
 async function _logout() {
   if (_saveTimer) await _flushUserData();
+  try { Object.keys(sessionStorage).filter(k => k.startsWith('plp-')).forEach(k => sessionStorage.removeItem(k)); } catch (e) { /* fine */ }   // v381: forget this tab's saved pages
   await fetch('/api/logout', { method: 'POST' }).catch(() => {});
   // location.reload();
   location.href = '/';   // v302: back to the dashboard sign-in
@@ -8543,7 +8572,7 @@ async function _bootstrap() {
   try { r = await fetch('/api/data'); }
   catch (e) { _showAuth('Could not reach the server.'); return; }
   // if (r.status === 401) { _showAuth(''); return; }
-  if (r.status === 401) { location.href = '/'; return; }   // v302: sign in on the dashboard
+  if (r.status === 401) { try { sessionStorage.removeItem('plp-signed-in'); } catch (e) { /* fine */ } location.href = '/'; return; }   // v302: sign in on the dashboard (v381: + forget "signed in")
   if (!r.ok) { _showAuth('The server had a problem loading your account.'); return; }
   const d = await r.json();
   window._serverSettingsJSON = d.settings ? JSON.stringify(d.settings) : null;
@@ -8556,6 +8585,7 @@ async function _bootstrap() {
   if (emailEl) emailEl.textContent = d.account.email + (d.account.isAdmin ? '  (admin)' : '');
   _renderCount(d.account.listingCount);
   document.getElementById('auth-overlay').classList.add('hidden');
+  try { sessionStorage.setItem('plp-signed-in', '1'); } catch (e) { /* fine */ }   // v381
 }
 
 _bootstrap();
