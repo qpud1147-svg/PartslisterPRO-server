@@ -1,4 +1,4 @@
-// PartsLister Pro server — v386
+// PartsLister Pro server — v388
 // v302: dashboard.html is the homepage (/). The listing tool moved to /list.
 // v305: eBay sales connection — real sold orders on the dashboard.
 // v306: asks eBay for two more permissions — fees/payouts and seller metrics.
@@ -170,6 +170,9 @@
 // v366: smarter "doesn't need a reply" check (no AI): short messages made only of thank-you / ok /
 //       got-it / received words drop out of Needs reply ("Ok thank you for your help", "Just
 //       purchased. Thank you!"). Anything with a question or any other word stays in.
+// v388: yard tickets — "Randomize" picks a time up to an hour LATER than your saved time (never earlier),
+//       and "Print tomorrow's" prints a yard's ticket with tomorrow's date.
+// v387: yard tickets — + a logo per yard (uploaded in Manage, prints at the top in black & white).
 // v386: YARD TICKETS — print your yard entry ticket from Home on a receipt printer. Each yard has a
 //       name, a ticket price and the ticket's text (with {date} {time} {price} {yard} {number} filled in
 //       when you print). One saved time for all yards; today's date fills in by itself. Every print is
@@ -382,6 +385,9 @@ async function setupDatabase() {
       printed_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
     CREATE INDEX IF NOT EXISTS ticket_prints_user ON ticket_prints (user_id, printed_at);
+    ALTER TABLE yards ADD COLUMN IF NOT EXISTS logo TEXT;                                 -- v387: ticket logo (small black & white image)
+    ALTER TABLE yards ADD COLUMN IF NOT EXISTS logo_size INTEGER NOT NULL DEFAULT 70;     -- v387: % of the paper width
+    ALTER TABLE ticket_settings ADD COLUMN IF NOT EXISTS randomize BOOLEAN NOT NULL DEFAULT FALSE;   -- v388: up to an hour later than the saved time
     CREATE TABLE IF NOT EXISTS ticket_settings (
       user_id    INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
       time       TEXT NOT NULL DEFAULT '09:00',
@@ -3911,15 +3917,15 @@ app.post('/api/late-returns/:id/:action', requireUser, async (req, res) => {
 // ─── v386: YARD TICKETS ──────────────────────────────────────────────────────
 const TICKET_TEMPLATE = '{yard}\nENTRY TICKET\nADMIT ONE\n--------------------------------\nDate: {date}\nTime: {time}\nPrice: {price}\n--------------------------------\nTicket #{number}\nThank you!';
 async function ticketSettings(userId) {
-  const r = await pool.query('SELECT time, width FROM ticket_settings WHERE user_id = $1', [userId]);
-  return r.rows[0] ? { time: r.rows[0].time, width: r.rows[0].width } : { time: '09:00', width: 80 };
+  const r = await pool.query('SELECT time, width, randomize FROM ticket_settings WHERE user_id = $1', [userId]);   // v388: + randomize
+  return r.rows[0] ? { time: r.rows[0].time, width: r.rows[0].width, randomize: !!r.rows[0].randomize } : { time: '09:00', width: 80, randomize: false };
 }
 app.get('/api/tickets', requireUser, async (req, res) => {
   try {
     // first time: a sample yard so there's something to print (edit or remove it in Manage)
     const first = await pool.query('INSERT INTO ticket_settings (user_id) VALUES ($1) ON CONFLICT (user_id) DO NOTHING RETURNING user_id', [req.user.id]);
     if (first.rows.length) await pool.query('INSERT INTO yards (user_id, name, price, template, sort) VALUES ($1, $2, $3, NULL, 1)', [req.user.id, 'Sample Yard', 2]);
-    const yards = (await pool.query('SELECT id, name, price, template FROM yards WHERE user_id = $1 ORDER BY sort, id', [req.user.id])).rows;
+    const yards = (await pool.query('SELECT id, name, price, template, logo, logo_size FROM yards WHERE user_id = $1 ORDER BY sort, id', [req.user.id])).rows;   // v387: + logo
     const tz = msgSettingsOf(await getUserSettings(req.user.id)).timezone || 'America/Chicago';
     // money saved — week (since Monday), month, year, lifetime — counted in your time zone
     const sums = (await pool.query(`SELECT yard_id,
@@ -3932,19 +3938,31 @@ app.get('/api/tickets', requireUser, async (req, res) => {
     const by = new Map(sums.map(s => [s.yard_id, s]));
     const tot = sums.reduce((a, s) => ({ week: a.week + s.week, month: a.month + s.month, year: a.year + s.year, total: a.total + s.total, prints: a.prints + s.prints }), { week: 0, month: 0, year: 0, total: 0, prints: 0 });
     res.json({ settings: await ticketSettings(req.user.id), tz, defaultTemplate: TICKET_TEMPLATE, saved: tot,
-      yards: yards.map(y => { const s = by.get(y.id) || {}; return { id: y.id, name: y.name, price: Number(y.price), template: y.template || TICKET_TEMPLATE, prints: s.prints || 0, saved: s.total || 0 }; }) });
+      yards: yards.map(y => { const s = by.get(y.id) || {}; return { id: y.id, name: y.name, price: Number(y.price), template: y.template || TICKET_TEMPLATE, logo: y.logo || null, logoSize: y.logo_size || 70, prints: s.prints || 0, saved: s.total || 0 }; }) });
   } catch (e) { console.error('[tickets]', e.message); res.status(500).json({ error: 'Could not load yard tickets' }); }
 });
-app.post('/api/tickets/yards', requireUser, express.json(), async (req, res) => {
+app.post('/api/tickets/yards', requireUser, express.json({ limit: '3mb' }), async (req, res) => {   // v387: room for a logo
   const b = req.body || {};
+  // v387: logo — a PNG/JPEG data URL (made black & white and shrunk on the page); '' removes it; left out = keep it
+  let logo;
+  if (typeof b.logo === 'string') {
+    if (b.logo === '') logo = null;
+    else if (/^data:image\/(png|jpeg);base64,[A-Za-z0-9+/=]+$/.test(b.logo) && b.logo.length <= 2000000) logo = b.logo;
+    else return res.status(400).json({ error: 'That logo file didn\u2019t work — use a PNG or JPG picture.' });
+  }
+  const logoSize = [30, 50, 70, 100].includes(parseInt(b.logoSize, 10)) ? parseInt(b.logoSize, 10) : 70;
   const name = String(b.name || '').trim().slice(0, 80);
   const price = Math.max(0, Math.min(10000, parseFloat(b.price) || 0));
   const template = String(b.template || '').replace(/\r/g, '').slice(0, 2000) || null;
   if (!name) return res.status(400).json({ error: 'Give the yard a name.' });
   try {
     const id = parseInt(b.id, 10);
-    if (id > 0) await pool.query('UPDATE yards SET name = $3, price = $4, template = $5 WHERE id = $1 AND user_id = $2', [id, req.user.id, name, price, template]);
-    else await pool.query('INSERT INTO yards (user_id, name, price, template, sort) VALUES ($1, $2, $3, $4, (SELECT COALESCE(MAX(sort), 0) + 1 FROM yards WHERE user_id = $1))', [req.user.id, name, price, template]);
+    // if (id > 0) await pool.query('UPDATE yards SET name = $3, price = $4, template = $5 WHERE id = $1 AND user_id = $2', [id, req.user.id, name, price, template]);
+    // else await pool.query('INSERT INTO yards (user_id, name, price, template, sort) VALUES (…)', [req.user.id, name, price, template]);
+    if (id > 0) {
+      await pool.query('UPDATE yards SET name = $3, price = $4, template = $5, logo_size = $6 WHERE id = $1 AND user_id = $2', [id, req.user.id, name, price, template, logoSize]);
+      if (logo !== undefined) await pool.query('UPDATE yards SET logo = $3 WHERE id = $1 AND user_id = $2', [id, req.user.id, logo]);
+    } else await pool.query('INSERT INTO yards (user_id, name, price, template, logo, logo_size, sort) VALUES ($1, $2, $3, $4, $5, $6, (SELECT COALESCE(MAX(sort), 0) + 1 FROM yards WHERE user_id = $1))', [req.user.id, name, price, template, logo || null, logoSize]);   // v387: + logo
     res.json({ ok: true });
   } catch (e) { console.error('[tickets save]', e.message); res.status(500).json({ error: 'Could not save the yard' }); }
 });
@@ -3959,27 +3977,38 @@ app.post('/api/tickets/settings', requireUser, express.json(), async (req, res) 
   const time = /^([01]\d|2[0-3]):[0-5]\d$/.test(String(b.time || '')) ? String(b.time) : null;
   const width = [58, 80].includes(parseInt(b.width, 10)) ? parseInt(b.width, 10) : null;
   if (!time || !width) return res.status(400).json({ error: 'Pick a time and a paper width.' });
+  const randomize = !!b.randomize;   // v388
   try {
-    await pool.query(`INSERT INTO ticket_settings (user_id, time, width) VALUES ($1, $2, $3)
-      ON CONFLICT (user_id) DO UPDATE SET time = EXCLUDED.time, width = EXCLUDED.width`, [req.user.id, time, width]);
+    await pool.query(`INSERT INTO ticket_settings (user_id, time, width, randomize) VALUES ($1, $2, $3, $4)
+      ON CONFLICT (user_id) DO UPDATE SET time = EXCLUDED.time, width = EXCLUDED.width, randomize = EXCLUDED.randomize`, [req.user.id, time, width, randomize]);
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: 'Could not save' }); }
 });
 // Print: logs it (adds the price to Money saved) and sends back the filled-in ticket
-app.post('/api/tickets/yards/:id/print', requireUser, async (req, res) => {
+app.post('/api/tickets/yards/:id/print', requireUser, express.json(), async (req, res) => {   // v388: { tomorrow }
   const id = parseInt(req.params.id, 10);
   try {
-    const y = (await pool.query('SELECT id, name, price, template FROM yards WHERE id = $1 AND user_id = $2', [id, req.user.id])).rows[0];
+    const y = (await pool.query('SELECT id, name, price, template, logo, logo_size FROM yards WHERE id = $1 AND user_id = $2', [id, req.user.id])).rows[0];   // v387: + logo
     if (!y) return res.status(404).json({ error: 'That yard isn\u2019t set up anymore.' });
     const st = await ticketSettings(req.user.id);
     const tz = msgSettingsOf(await getUserSettings(req.user.id)).timezone || 'America/Chicago';
     const n = (await pool.query('INSERT INTO ticket_prints (user_id, yard_id, yard_name, price) VALUES ($1, $2, $3, $4) RETURNING (SELECT COUNT(*) FROM ticket_prints WHERE user_id = $1 AND yard_id = $2) + 1 AS n', [req.user.id, y.id, y.name, y.price])).rows[0].n;
-    const date = new Date().toLocaleDateString('en-US', { timeZone: tz, month: '2-digit', day: '2-digit', year: 'numeric' });
-    const [hh, mm] = st.time.split(':').map(Number);
+    // const date = new Date().toLocaleDateString('en-US', { timeZone: tz, month: '2-digit', day: '2-digit', year: 'numeric' });
+    // v388: today's date in your time zone, or tomorrow's
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+    const [ty, tm, td] = today.split('-').map(Number);
+    const day = new Date(Date.UTC(ty, tm - 1, td + ((req.body || {}).tomorrow ? 1 : 0)));
+    const date = String(day.getUTCMonth() + 1).padStart(2, '0') + '/' + String(day.getUTCDate()).padStart(2, '0') + '/' + day.getUTCFullYear();
+    // const [hh, mm] = st.time.split(':').map(Number);
+    let [hh, mm] = st.time.split(':').map(Number);
+    if (st.randomize) {   // v388: anywhere from the saved time to an hour later — never earlier
+      const t = Math.min(23 * 60 + 59, hh * 60 + mm + crypto.randomInt(0, 61));
+      hh = Math.floor(t / 60); mm = t % 60;
+    }
     const time = ((hh % 12) || 12) + ':' + String(mm).padStart(2, '0') + ' ' + (hh < 12 ? 'AM' : 'PM');
     const price = '$' + Number(y.price).toFixed(2);
     const text = String(y.template || TICKET_TEMPLATE).replace(/\{(yard|date|time|price|number)\}/g, (m, k) => ({ yard: y.name, date, time, price, number: String(n) })[k]);
-    res.json({ ok: true, text, width: st.width, yard: y.name });
+    res.json({ ok: true, text, width: st.width, yard: y.name, logo: y.logo || null, logoSize: y.logo_size || 70 });   // v387: + logo
   } catch (e) { console.error('[tickets print]', e.message); res.status(500).json({ error: 'Could not print the ticket' }); }
 });
 
@@ -4878,5 +4907,5 @@ app.get('*', (req, res) => {
 });
 
 setupDatabase()
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v386 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v388 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });

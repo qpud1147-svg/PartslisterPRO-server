@@ -3,7 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Home v386</title>
+<title>PartsLister Pro Home v388</title>
+<!-- v388: yard tickets — "Randomize" (up to an hour later than your time, never earlier) and "Print tomorrow's" on each yard. -->
+<!-- v387: yard tickets — + a logo per yard (Manage → Upload logo; prints black & white at the top), and a big lifetime ticket count. -->
 <!-- v386: Yard tickets — print your entry ticket on the receipt printer, with Money saved and a print count per yard. -->
 <!-- v382: switching views is instant; browser reload / Refresh really reloads. v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
 <!-- PartsLister Pro — Home page (v316: new; v317: cut to three tiles — Sales, Active listings, Needs attention; v318: tabs Home / Sales / Active / Listings). Shares the sign-in, account and
@@ -112,6 +114,10 @@
   .yt-yard:hover { border-color: var(--accent); }
   .yt-yard .n { font-family: 'Barlow Condensed', sans-serif; font-size: 18px; font-weight: 700; }
   .yt-yard .p { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .yt-yard .tm { display: inline-block; margin-top: 6px; font-size: 12px; color: var(--text2); border: 1px solid var(--border); border-radius: 4px; padding: 2px 8px; background: var(--surface); }
+  .yt-yard .tm:hover { border-color: var(--accent); color: var(--accent); }
+  .yt-chk { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text2); padding-bottom: 8px; cursor: pointer; }
+  .yt-chk input { width: auto; }
   .yt-yard .go { font-family: 'Barlow Condensed', sans-serif; font-size: 12px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--accent); margin-top: 8px; }
   #yt-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 50; display: none; align-items: flex-start; justify-content: center; overflow-y: auto; padding: 30px 12px; }
   #yt-modal.open { display: flex; }
@@ -125,6 +131,9 @@
   .yt-edit { border: 1px solid var(--border); border-radius: 6px; padding: 12px; margin-bottom: 10px; display: grid; grid-template-columns: 1fr 220px; gap: 12px; }
   .yt-prev { background: #fff; color: #000; font-family: ui-monospace, Menlo, monospace; font-size: 11px; padding: 10px 8px; border-radius: 3px; text-align: center; white-space: pre-wrap; line-height: 1.35; align-self: start; }
   .yt-prev .t1 { font-weight: 700; font-size: 14px; }
+  .yt-prev img { display: block; margin: 0 auto 4px; max-width: 100%; }
+  .yt-logo-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+  .yt-saved .v.count { color: var(--text); }
   .yt-prev hr { border: none; border-top: 1px dashed #000; margin: 4px 0; }
   .yt-note { font-size: 12px; color: var(--muted); margin-top: 4px; }
   @media (max-width: 700px) { .yt-edit { grid-template-columns: 1fr; } }
@@ -151,7 +160,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v386</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v388</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -232,6 +241,7 @@
       <div><div class="v" id="yt-month">—</div><div class="k">This month</div></div>
       <div><div class="v" id="yt-year">—</div><div class="k">This year</div></div>
       <div><div class="v" id="yt-life">—</div><div class="k" id="yt-life-k">Lifetime</div></div>
+      <div><div class="v count" id="yt-count">—</div><div class="k">Tickets printed · lifetime</div></div>   <!-- v387 -->
     </div>
     <div class="yt-yards" id="yt-yards"></div>
   </div>
@@ -243,6 +253,7 @@
     <h3>Yard tickets <button type="button" class="btn btn-secondary btn-sm" onclick="closeYards()">Close</button></h3>
     <div class="yt-row">
       <div><label>Time on every ticket</label><input type="time" id="yt-time" step="60"></div>
+      <label class="yt-chk"><input type="checkbox" id="yt-rand"> Randomize — up to an hour later (never earlier)</label>   <!-- v388 -->
       <div><label>Receipt paper width</label><select id="yt-width"><option value="80">80 mm</option><option value="58">58 mm</option></select></div>
       <button type="button" class="btn btn-secondary btn-sm" onclick="saveTicketSettings()">Save</button>
     </div>
@@ -486,8 +497,9 @@ async function loadHome() {
 // ─── v386: YARD TICKETS ──────────────────────────────────────────────────────
 let tickets = null;
 const esc = (s) => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
-function ticketHTML(text) {   // the ticket's lines → receipt markup (first line big, dash lines = divider)
-  return String(text).split('\n').map((l, i) => /^\s*[-=_*]{4,}\s*$/.test(l) ? '<hr>' : '<div' + (i === 0 ? ' class="t1"' : '') + '>' + (esc(l) || '&nbsp;') + '</div>').join('');
+// function ticketHTML(text) {   (v386)
+function ticketHTML(text, logo, logoSize) {   // the ticket's lines → receipt markup (logo on top, first line big, dash lines = divider)
+  return (logo ? '<img src="' + esc(logo) + '" alt="" style="width:' + (logoSize || 70) + '%">' : '') + String(text).split('\n').map((l, i) => /^\s*[-=_*]{4,}\s*$/.test(l) ? '<hr>' : '<div' + (i === 0 ? ' class="t1"' : '') + '>' + (esc(l) || '&nbsp;') + '</div>').join('');
 }
 async function loadTickets() {
   const d = await getJSON('/api/tickets');
@@ -496,22 +508,29 @@ async function loadTickets() {
   const s = d.saved || {};
   setText('yt-week', money2.format(s.week || 0)); setText('yt-month', money2.format(s.month || 0));
   setText('yt-year', money2.format(s.year || 0)); setText('yt-life', money2.format(s.total || 0));
-  setText('yt-life-k', 'Lifetime · ' + (s.prints || 0) + ' ticket' + (s.prints === 1 ? '' : 's'));
+  // setText('yt-life-k', 'Lifetime · ' + (s.prints || 0) + ' ticket' + (s.prints === 1 ? '' : 's'));
+  setText('yt-count', String(s.prints || 0));   // v387: its own big number
   const box = document.getElementById('yt-yards'); box.textContent = '';
   if (!d.yards.length) { const n = document.createElement('div'); n.className = 'yt-note'; n.textContent = 'No yards yet — press Manage to add one.'; box.append(n); return; }
   d.yards.forEach(y => {
     const b = document.createElement('button'); b.type = 'button'; b.className = 'yt-yard';
-    b.innerHTML = '<div class="n"></div><div class="p"></div><div class="go">Print ticket</div>';
+    // b.innerHTML = '<div class="n"></div><div class="p"></div><div class="go">Print ticket</div>';
+    b.innerHTML = '<div class="n"></div><div class="p"></div><div class="go">Print ticket</div><span class="tm" role="button" tabindex="0">Print tomorrow’s</span>';   // v388
+    const tm = b.querySelector('.tm');
+    tm.onclick = (e) => { e.stopPropagation(); printTicket(y.id, b, true); };
+    tm.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); printTicket(y.id, b, true); } };
     b.querySelector('.n').textContent = y.name;
     b.querySelector('.p').textContent = money2.format(y.price) + ' · printed ' + y.prints + (y.prints === 1 ? ' time' : ' times');
     b.onclick = () => printTicket(y.id, b);
     box.append(b);
   });
 }
-async function printTicket(id, btn) {
+// async function printTicket(id, btn) {
+async function printTicket(id, btn, tomorrow) {   // v388: + tomorrow
   if (btn) btn.disabled = true;
   try {
-    const r = await fetch('/api/tickets/yards/' + id + '/print', { method: 'POST' });
+    // const r = await fetch('/api/tickets/yards/' + id + '/print', { method: 'POST' });
+    const r = await fetch('/api/tickets/yards/' + id + '/print', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tomorrow: !!tomorrow }) });
     const d = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(d.error || 'Couldn’t print');
     const w = d.width === 58 ? 58 : 80;
@@ -521,10 +540,15 @@ async function printTicket(id, btn) {
       + '@page { size: ' + w + 'mm auto; margin: 0; }'
       + 'html, body { margin: 0; padding: 0; background: #fff; color: #000; }'
       + 'body { width: ' + w + 'mm; box-sizing: border-box; padding: 3mm ' + (w === 58 ? 2 : 4) + 'mm 6mm; font-family: "Courier New", ui-monospace, monospace; font-size: ' + (w === 58 ? 9 : 11) + 'pt; line-height: 1.35; text-align: center; }'
+      + 'img { display: block; margin: 0 auto 2mm; max-width: 100%; } '   // v387: logo
       + '.t1 { font-weight: 700; font-size: ' + (w === 58 ? 12 : 15) + 'pt; } div { white-space: pre-wrap; word-break: break-word; } hr { border: none; border-top: 1px dashed #000; margin: 2mm 0; }'
-      + '</style></head><body>' + ticketHTML(d.text) + '</body></html>');
+      + '</style></head><body>' + ticketHTML(d.text, d.logo, d.logoSize) + '</body></html>');
     doc.close();
-    setTimeout(() => { const f = document.getElementById('yt-frame').contentWindow; f.focus(); f.print(); }, 150);
+    // setTimeout(() => { … f.print(); }, 150);
+    const fw = document.getElementById('yt-frame').contentWindow;   // v387: wait for the logo to load before printing
+    const go = () => { fw.focus(); fw.print(); };
+    const im = doc.querySelector('img');
+    if (im && !im.complete) { im.onload = im.onerror = () => setTimeout(go, 50); } else setTimeout(go, 150);
     pageCache.live(); loadTickets();
   } catch (e) { alert(e.message); }
   finally { if (btn) btn.disabled = false; }
@@ -544,14 +568,28 @@ function yardRow(y) {
   row.innerHTML = '<div><div class="yt-row" style="margin-bottom:8px;"><div style="flex:1"><label>Yard name</label><input class="n" style="width:100%"></div>'
     + '<div><label>Ticket price</label><input class="p" type="number" min="0" step="0.01" style="width:100px"></div></div>'
     + '<label>Ticket text</label><textarea class="t" rows="10"></textarea>'
+    + '<div class="yt-logo-row"><input type="file" class="lf" accept="image/*" style="display:none"><button type="button" class="btn btn-secondary btn-sm lu">Upload logo</button>'
+    + '<button type="button" class="btn btn-secondary btn-sm lr">Remove logo</button><label style="margin:0 0 0 6px">Logo size</label>'
+    + '<select class="ls"><option value="30">Small</option><option value="50">Medium</option><option value="70">Large</option><option value="100">Full width</option></select></div>'   // v387
     + '<div class="yt-row" style="margin:8px 0 0;"><button type="button" class="btn btn-secondary btn-sm s">Save</button><button type="button" class="btn btn-secondary btn-sm d">Remove</button></div></div>'
     + '<div><label>Preview</label><div class="yt-prev"></div></div>';
   const n = row.querySelector('.n'), p = row.querySelector('.p'), t = row.querySelector('.t'), pv = row.querySelector('.yt-prev');
   n.value = y.name || ''; p.value = y.price !== undefined ? Number(y.price).toFixed(2) : ''; t.value = y.template || tickets.defaultTemplate;
-  const draw = () => { pv.innerHTML = ticketHTML(sampleFill(t.value)({ name: n.value, price: parseFloat(p.value) || 0, prints: y.prints })); };
-  [n, p, t].forEach(x => x.addEventListener('input', draw)); draw();
+  // v387: logo — made black & white and shrunk to receipt-printer size on this page before it's saved
+  let logo = y.logo || null, logoChanged = false;
+  const lf = row.querySelector('.lf'), ls = row.querySelector('.ls'), lr = row.querySelector('.lr');
+  ls.value = String(y.logoSize || 70);
+  const draw = () => { pv.innerHTML = ticketHTML(sampleFill(t.value)({ name: n.value, price: parseFloat(p.value) || 0, prints: y.prints }), logo, parseInt(ls.value, 10)); lr.style.display = logo ? '' : 'none'; };
+  [n, p, t].forEach(x => x.addEventListener('input', draw)); ls.addEventListener('change', draw); draw();
+  row.querySelector('.lu').onclick = () => lf.click();
+  lr.onclick = () => { logo = null; logoChanged = true; draw(); };
+  lf.onchange = async () => {
+    const f = lf.files && lf.files[0]; if (!f) return;
+    try { logo = await logoToPrintable(f); logoChanged = true; draw(); } catch (e) { alert('That picture couldn’t be read — try a PNG or JPG.'); }
+    lf.value = '';
+  };
   row.querySelector('.s').onclick = async () => {
-    const r = await fetch('/api/tickets/yards', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: y.id || null, name: n.value, price: p.value, template: t.value }) });
+    const r = await fetch('/api/tickets/yards', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ id: y.id || null, name: n.value, price: p.value, template: t.value, logoSize: ls.value }, logoChanged ? { logo: logo || '' } : {})) });   // v387: + logo
     const d = await r.json().catch(() => ({}));
     if (!r.ok) { alert(d.error || 'Couldn’t save'); return; }
     pageCache.live(); await loadTickets(); drawYardEditor();
@@ -564,15 +602,36 @@ function yardRow(y) {
   };
   return row;
 }
+// v387: a picture → black & white PNG, at most 576 px wide (an 80 mm receipt printer's full width)
+function logoToPrintable(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image(), url = URL.createObjectURL(file);
+    img.onload = () => {
+      const w = Math.min(576, img.naturalWidth), h = Math.round(img.naturalHeight * w / img.naturalWidth);
+      const c = document.createElement('canvas'); c.width = w; c.height = h;
+      const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, w, h); x.drawImage(img, 0, 0, w, h);
+      const d = x.getImageData(0, 0, w, h), px = d.data;
+      for (let i = 0; i < px.length; i += 4) {   // grayscale, then black or white (receipt printers have no gray)
+        const g = 0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2];
+        const v = g < 160 ? 0 : 255; px[i] = px[i + 1] = px[i + 2] = v; px[i + 3] = 255;
+      }
+      x.putImageData(d, 0, 0); URL.revokeObjectURL(url);
+      resolve(c.toDataURL('image/png'));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('bad image')); };
+    img.src = url;
+  });
+}
 function drawYardEditor() {
   document.getElementById('yt-time').value = tickets.settings.time;
   document.getElementById('yt-width').value = String(tickets.settings.width);
+  document.getElementById('yt-rand').checked = !!tickets.settings.randomize;   // v388
   const list = document.getElementById('yt-list'); list.textContent = '';
   tickets.yards.forEach(y => list.append(yardRow(y)));
 }
 function addYardRow() { document.getElementById('yt-list').append(yardRow({ name: '', price: 0 })); }
 async function saveTicketSettings() {
-  const r = await fetch('/api/tickets/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ time: document.getElementById('yt-time').value, width: document.getElementById('yt-width').value }) });
+  const r = await fetch('/api/tickets/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ time: document.getElementById('yt-time').value, width: document.getElementById('yt-width').value, randomize: document.getElementById('yt-rand').checked }) });   // v388: + randomize
   const d = await r.json().catch(() => ({}));
   if (!r.ok) { alert(d.error || 'Couldn’t save'); return; }
   pageCache.live(); await loadTickets(); drawYardEditor();
