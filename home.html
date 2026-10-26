@@ -560,7 +560,7 @@ function ticketHTML(rows, logo, number, w) {
   const mg = (a) => a === 'left' ? 'margin-left:0;margin-right:auto;' : a === 'right' ? 'margin-left:auto;margin-right:0;' : 'margin-left:auto;margin-right:auto;';
   const mm = (v) => ((+v || 0) * 0.2).toFixed(1) + 'mm';   // 0–100 → 0–20 mm
   return (rows || []).map(r => {
-    if (r.type === 'logo') return logo ? '<img class="logo" alt="" src="' + esc(logo) + '" style="width:' + (r.width || 70) + '%;' + mg(r.align) + 'margin-top:' + mm(r.top) + ';margin-bottom:' + mm(r.bottom) + '">' : '';
+    if (r.type === 'logo') return (r.img || logo) ? '<img class="logo" alt="" src="' + esc(r.img || logo) + '" style="width:' + (r.width || 70) + '%;' + mg(r.align) + 'margin-top:' + mm(r.top) + ';margin-bottom:' + mm(r.bottom) + '">' : '';
     if (r.type === 'barcode') return barcodeSVG(r.value || number, 'width:' + (r.width || 75) + '%;height:' + (4 + ((r.height || 22) / 100) * 36).toFixed(1) + 'mm;' + mg(r.align) + 'margin-top:' + mm(r.top) + ';margin-bottom:' + mm(r.bottom));
     if (r.type === 'line') return '<hr style="margin:' + mm(r.top) + ' 0 ' + mm(r.bottom) + '">';
     return '<div class="l" style="font-family:' + (FONT_STACKS[r.font] || FONT_STACKS['Courier New']) + ';font-size:' + ptOf(r.size, w).toFixed(2) + 'pt;font-weight:' + (r.bold ? 700 : 400) + ';text-align:' + (r.align || 'center') + ';margin-top:' + mm(r.top) + ';margin-bottom:' + mm(r.bottom) + '">' + (esc(r.text || '') || '&nbsp;') + '</div>';
@@ -569,6 +569,45 @@ function ticketHTML(rows, logo, number, w) {
 // v391: fill {yard} {price} … into every text row
 function fillRows(rows, vals) {
   return (rows || []).map(r => r.type === 'text' ? Object.assign({}, r, { text: String(r.text || '').replace(/\{(yard|date|time|price|number|valid)\}/g, (m, k) => vals[k]) }) : r);
+}
+// v392: WEATHERED LOGO — wears the black & white logo down (rough edges, worn-away patches, specks). Seeded, so the preview and every printed ticket match.
+const weatherCache = new Map();
+function weatherPixels(px, w, h, amount) {   // px = RGBA of a black & white picture, changed in place
+  const a = Math.max(0, Math.min(100, amount)) / 100;
+  const hash = (i, j, s) => { let n = (Math.imul(i, 374761393) + Math.imul(j, 668265263) + Math.imul(s, 1274126177)) | 0; n = Math.imul(n ^ (n >>> 13), 1274126177); return ((n ^ (n >>> 16)) >>> 0) / 4294967295; };
+  const vn = (X, Y, cell, s) => {   // smooth blotchy noise
+    const gx = X / cell, gy = Y / cell, i = Math.floor(gx), j = Math.floor(gy), fx = gx - i, fy = gy - j;
+    const u = fx * fx * (3 - 2 * fx), v = fy * fy * (3 - 2 * fy);
+    return hash(i, j, s) * (1 - u) * (1 - v) + hash(i + 1, j, s) * u * (1 - v) + hash(i, j + 1, s) * (1 - u) * v + hash(i + 1, j + 1, s) * u * v;
+  };
+  const src = new Uint8Array(w * h); for (let i = 0; i < w * h; i++) src[i] = px[i * 4] < 128 ? 1 : 0;
+  const coarse = Math.max(8, w / 14), mid = Math.max(4, w / 55);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = y * w + x; if (!src[i]) continue;
+    const edge = x === 0 || !src[i - 1] || x === w - 1 || !src[i + 1] || y === 0 || !src[i - w] || y === h - 1 || !src[i + w];
+    const nz = Math.max(0, Math.min(1, (0.4 * vn(x, y, coarse, 1) + 0.3 * vn(x, y, mid, 2) + 0.3 * hash(x, y, 3) - 0.2) / 0.6));   // stretched so the slider feels even
+    if (nz < a * 0.5 + (edge ? a * 0.18 : 0)) { px[i * 4] = px[i * 4 + 1] = px[i * 4 + 2] = 255; }
+  }
+}
+function weatherLogo(src, amount) {
+  return new Promise((resolve) => {
+    amount = parseInt(amount, 10) || 0;
+    if (!src || amount <= 0) return resolve(src);
+    const key = amount + '|' + src.length + '|' + src.slice(-60);
+    if (weatherCache.has(key)) return resolve(weatherCache.get(key));
+    const img = new Image();
+    img.onload = () => {
+      const w = img.naturalWidth, h = img.naturalHeight, c = document.createElement('canvas'); c.width = w; c.height = h;
+      const x = c.getContext('2d'); x.drawImage(img, 0, 0);
+      const d = x.getImageData(0, 0, w, h); weatherPixels(d.data, w, h, amount); x.putImageData(d, 0, 0);
+      const out = c.toDataURL('image/png'); weatherCache.set(key, out); resolve(out);
+    };
+    img.onerror = () => resolve(src);
+    img.src = src;
+  });
+}
+async function applyWeather(rows, logo) {   // each logo row gets its own weathered picture
+  return Promise.all((rows || []).map(async r => r.type === 'logo' && r.weather > 0 ? Object.assign({}, r, { img: await weatherLogo(logo, r.weather) }) : r));
 }
 async function loadTickets() {
   const d = await getJSON('/api/tickets');
@@ -609,7 +648,7 @@ async function printTicket(id, btn, advance) {   // v389: advance = sold today, 
     // v391: rows from the yard's saved design (an old yard: built from its ticket text), filled in with this sale
     let rows = d.design && d.design.rows ? d.design.rows : rowsFromTemplate(d.template, d.logoSize);
     if (d.advance && !rows.some(r => r.type === 'text' && /\{valid\}/.test(r.text || ''))) rows = rows.concat([{ type: 'text', text: 'VALID FOR {valid}', font: 'Courier New', size: 70, bold: true, align: 'center', top: 2, bottom: 0 }]);
-    rows = fillRows(rows, d.vals);
+    rows = await applyWeather(fillRows(rows, d.vals), d.logo);   // v392: weathered logo
     doc.write('<!doctype html><html><head><meta charset="utf-8"><title>Ticket</title><style>' + ticketCSS(w) + '</style></head><body>' + ticketHTML(rows, d.logo, d.number, w) + '</body></html>');
     doc.close();
     // setTimeout(() => { … f.print(); }, 150);
@@ -645,11 +684,14 @@ function yardRow(y) {
   const n = row.querySelector('.n'), p = row.querySelector('.p'), fr = row.querySelector('.yt-pv'), list = row.querySelector('.yt-rows');
   n.value = y.name || ''; p.value = y.price !== undefined ? Number(y.price).toFixed(2) : '';
   const paper = () => parseInt(document.getElementById('yt-width').value, 10) === 58 ? 58 : 80;
-  const preview = () => {
-    const w = paper(), doc = fr.contentDocument; if (!doc) return;
+  let pvTok = 0;
+  const preview = async () => {
+    const tok = ++pvTok, w = paper();
+    const shown = await applyWeather(fillRows(rows, sampleVals({ name: n.value, price: parseFloat(p.value) || 0 })), logo);   // v392
+    const doc = fr.contentDocument; if (!doc || tok !== pvTok) return;
     fr.style.width = Math.round(w * 3.7795) + 'px';   // real paper width on screen
     doc.open();
-    doc.write('<!doctype html><html><head><meta charset="utf-8"><style>' + ticketCSS(w) + '</style></head><body>' + ticketHTML(fillRows(rows, sampleVals({ name: n.value, price: parseFloat(p.value) || 0 })), logo, '000123', w) + '</body></html>');
+    doc.write('<!doctype html><html><head><meta charset="utf-8"><style>' + ticketCSS(w) + '</style></head><body>' + ticketHTML(shown, logo, '000123', w) + '</body></html>');
     doc.close();
     const fit = () => { fr.style.height = doc.documentElement.scrollHeight + 'px'; };
     fit(); doc.querySelectorAll('img').forEach(i => { i.onload = fit; });
@@ -681,7 +723,7 @@ function yardRow(y) {
         const body = document.createElement('div'); body.className = 'yt-rb';
         let html = '<div class="yt-grid">';
         if (r.type === 'text') html += pick('font', 'Font', Object.keys(FONT_STACKS).map(f => [f, f]), r) + pick('align', 'Position', AL, r) + sl('size', 'Text size', 1, r) + '<label class="yt-chk"><input type="checkbox" data-k="bold"' + (r.bold ? ' checked' : '') + '> Bold</label>';
-        if (r.type === 'logo') html += pick('align', 'Position', AL, r) + sl('width', 'Logo size', 1, r);
+        if (r.type === 'logo') html += pick('align', 'Position', AL, r) + sl('width', 'Logo size', 1, r) + sl('weather', 'Weathered look', 0, r);
         if (r.type === 'barcode') html += '<div><label>Barcode numbers (blank = each ticket\u2019s own number)</label><input data-k="value" maxlength="40" placeholder="e.g. 12345678" value="' + esc(r.value || '') + '"></div>' + pick('align', 'Position', AL, r) + sl('width', 'Barcode width', 1, r) + sl('height', 'Barcode height', 1, r);
         if (r.type !== 'line') html += sl('top', 'Space above', 0, r) + sl('bottom', 'Space below', 0, r);
         else html += sl('top', 'Space above', 0, r) + sl('bottom', 'Space below', 0, r);
