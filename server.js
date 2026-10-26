@@ -3935,7 +3935,7 @@ function cleanRow(r) {
   const type = ['text', 'line', 'logo', 'barcode'].includes(r.type) ? r.type : 'text';
   const out = { type, align: al(r.align, 'center'), top: n(r.top, 0, 0), bottom: n(r.bottom, type === 'text' ? 0 : 5, 0) };
   if (type === 'text') Object.assign(out, { text: String(r.text || '').replace(/[\r\n]+/g, ' ').slice(0, 200), font: TICKET_FONTS.includes(r.font) ? r.font : 'Courier New', size: n(r.size, 45), bold: !!r.bold });
-  if (type === 'logo') Object.assign(out, { width: n(r.width, 70), weather: n(r.weather, 0, 0) });
+  if (type === 'logo') Object.assign(out, { width: n(r.width, 70), weather: n(r.weather, 0, 0), fuzzy: n(r.fuzzy, 0, 0), fade: n(r.fade, 0, 0), spots: n(r.spots, 0, 0) });
   if (type === 'barcode') Object.assign(out, { value: String(r.value || '').replace(/[^\x20-\x7E]/g, '').trim().slice(0, 40), width: n(r.width, 75), height: n(r.height, 22) });   // value '' = each ticket's own number
   return out;
 }
