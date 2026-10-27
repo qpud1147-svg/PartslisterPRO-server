@@ -1,4 +1,5 @@
-// PartsLister Pro server — v408
+// PartsLister Pro server — v409
+// v409: yard tickets — the whole-ticket text look and the Look checkboxes are gone; every text row and the logo each have the full set of sliders (boldness, thinner, lighter, weathered, gravel, fuzzy, faded gray, spots).
 // v408: yard tickets — each text row has a Look checkbox (row.useLook, default on): the whole-ticket text look only changes the rows that are checked.
 // v406: yard tickets — a whole-ticket Boldness for the text (design.textLook.bold) and a Lighter slider for the logo (less ink).
 // v405: yard tickets — a text look for the whole ticket (design.textLook: lighter, weathered, gravel, fuzzy, faded gray, spots — text only, not the logo), saved per yard.
@@ -3952,8 +3953,9 @@ function cleanRow(r) {
   const al = (v, def) => ['left', 'center', 'right'].includes(v) ? v : def;
   const type = ['text', 'line', 'logo', 'barcode'].includes(r.type) ? r.type : 'text';
   const out = { type, align: al(r.align, 'center'), top: n(r.top, 0, -15), bottom: n(r.bottom, type === 'text' ? 0 : 5, 0) };   // v404: top can be -15…100
-  if (type === 'text') Object.assign(out, { text: String(r.text || '').replace(/[\r\n]+/g, ' ').slice(0, 200), font: /^[A-Za-z0-9 \-]{1,40}$/.test(String(r.font || '')) ? String(r.font) : 'Courier New', size: n(r.size, 45), boldness: n(r.boldness, r.bold ? 75 : 0, 0), hasDate: !!r.hasDate, useLook: r.useLook !== false });   // v408: + useLook   // v400: + hasDate
-  if (type === 'logo') Object.assign(out, { width: n(r.width, 70), weather: n(r.weather, 0, 0), gravel: n(r.gravel, 0, 0), fuzzy: n(r.fuzzy, 0, 0), fade: n(r.fade, 0, 0), spots: n(r.spots, 0, 0), lighter: n(r.lighter, 0, 0) });   // v406: + lighter
+  if (type === 'text') Object.assign(out, { text: String(r.text || '').replace(/[\r\n]+/g, ' ').slice(0, 200), font: /^[A-Za-z0-9 \-]{1,40}$/.test(String(r.font || '')) ? String(r.font) : 'Courier New', size: n(r.size, 45), boldness: n(r.boldness, r.bold ? 75 : 0, 0), hasDate: !!r.hasDate, thin: n(r.thin, 0, 0), lighter: n(r.lighter, 0, 0), weather: n(r.weather, 0, 0), gravel: n(r.gravel, 0, 0), fuzzy: n(r.fuzzy, 0, 0), fade: n(r.fade, 0, 0), spots: n(r.spots, 0, 0) });   // v409: the full set of looks on every text row (v408's useLook is gone)
+  if (type === 'text' && r.useLook === false) out.useLook = false;   // only so an old ticket's Look checkboxes can still be folded into its rows by the page   // v400: + hasDate
+  if (type === 'logo') Object.assign(out, { width: n(r.width, 70), weather: n(r.weather, 0, 0), gravel: n(r.gravel, 0, 0), fuzzy: n(r.fuzzy, 0, 0), fade: n(r.fade, 0, 0), spots: n(r.spots, 0, 0), lighter: n(r.lighter, 0, 0), boldness: n(r.boldness, 0, 0), thin: n(r.thin, 0, 0) });   // v406: + lighter; v409: + boldness, thinner
   if (type === 'line') Object.assign(out, { style: ['dashes', 'dots', 'solid', 'double'].includes(r.style) ? r.style : 'dashes', thickness: n(r.thickness, 10), dash: n(r.dash, 6), gap: n(r.gap, 6), width: n(r.width, 100) });   // v400: divider styles
   if (type === 'barcode') Object.assign(out, { value: String(r.value || '').replace(/[^\x20-\x7E]/g, '').trim().slice(0, 40), width: n(r.width, 75), height: n(r.height, 22) });   // value '' = each ticket's own number
   return out;
@@ -3968,7 +3970,10 @@ function cleanDesign(d) {
   // return { rows: rows && rows.length ? rows : null, printTime, randomize: !!d.randomize };   // rows null = not redesigned yet (the page builds rows from the old ticket text)   (v400)
   const tl = (d.textLook && typeof d.textLook === 'object') ? d.textLook : {}, tn = (v) => { v = parseInt(v, 10); return Number.isFinite(v) ? Math.max(0, Math.min(100, v)) : 0; };
   const textLook = { bold: tn(tl.bold), lighter: tn(tl.lighter), weather: tn(tl.weather), gravel: tn(tl.gravel), fuzzy: tn(tl.fuzzy), fade: tn(tl.fade), spots: tn(tl.spots) };   // v405: 0–100 each
-  return { rows: rows && rows.length ? rows : null, printTime, randomize: !!d.randomize, textLook };   // rows null = not redesigned yet (the page builds rows from the old ticket text)
+  // return { rows: rows && rows.length ? rows : null, printTime, randomize: !!d.randomize, textLook };   (v405–v408)
+  // v409: no whole-ticket text look any more. An old ticket that has one keeps it until it is saved again — the page folds it into that ticket's rows.
+  const legacy = Object.keys(textLook).some(k => textLook[k] > 0);
+  return Object.assign({ rows: rows && rows.length ? rows : null, printTime, randomize: !!d.randomize }, legacy ? { textLook } : {});   // rows null = not redesigned yet (the page builds rows from the old ticket text)
 }
 // v400: the time printed on a ticket. No set time → null (the real time sold). Randomize adds 0–30 minutes, never earlier, never past 11:59 PM.
 function pickTicketTime(printTime, randomize, rand = Math.random) {
@@ -5239,5 +5244,6 @@ setupDatabase()
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v404 listening on ' + PORT)))   // v405: version in the startup log
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v405 listening on ' + PORT)))   // v406: version in the startup log
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v406 listening on ' + PORT)))   // v408: version in the startup log
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v408 listening on ' + PORT)))
+  // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v408 listening on ' + PORT)))   // v409: version in the startup log
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v409 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Home v408</title>
+<title>PartsLister Pro Home v409</title>
 <!-- v400: yard tickets — divider styles (tiny dashes, dots, solid, double) with thickness, dash length, gap, width and position; mark one text row "This row has the date" ({date} there is the ticket's own day — tomorrow's for "Sell for tomorrow"); a print time per yard with a Randomize switch (adds 0–30 minutes, never earlier). -->
 <!-- v399: TICKET DESIGNER — each yard's ticket is a list of rows (text, divider, logo, barcode). Every text row has its own font (list or any font name), size 1–100, boldness 0–100 and position; the logo has size, position, a drop box and weathered / gravel / fuzzy / faded gray / spots looks (or one tap "Match sticker look"); the barcode is typed in (Code 128) with its own size and position. Every slider also has a number box. "Duplicate" copies a yard's whole ticket so you can change a few things instead of starting over. -->
 <!-- v389: yard tickets are sold tickets — real sale date and time, a ticket number and barcode, "Sell for tomorrow" advance tickets marked VALID FOR, {logo} and {big} tags anywhere, and Money made. The saved time and Randomize are gone. -->
@@ -203,7 +203,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v408</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v409</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -589,7 +589,8 @@ const fontStack = (name) => FONT_STACKS[name] || (/^[A-Za-z0-9 \-]{1,40}$/.test(
 // }
 function boldCSS(r) {   // v405: boldness 0–100 thickens (black outline); "lighter" (0–100, set for the whole ticket) takes it away again — a white outline eats the letters' edges, so it goes thinner than normal even at boldness 0
   // const b = Math.max(0, Math.min(100, r.boldness !== undefined ? (+r.boldness || 0) : (r.bold ? 75 : 0))), l = Math.max(0, Math.min(100, +r.lighter || 0)), net = b - l;
-  const b = Math.max(0, Math.min(100, r.boldness !== undefined ? (+r.boldness || 0) : (r.bold ? 75 : 0))), lb = Math.max(0, Math.min(100, +r.lookBold || 0)), l = Math.max(0, Math.min(100, +r.lighter || 0)), net = Math.min(100, b + lb) - l;   // v406: + the whole ticket's boldness
+  // const b = Math.max(0, Math.min(100, r.boldness !== undefined ? (+r.boldness || 0) : (r.bold ? 75 : 0))), lb = Math.max(0, Math.min(100, +r.lookBold || 0)), l = Math.max(0, Math.min(100, +r.lighter || 0)), net = Math.min(100, b + lb) - l;   // v406
+  const b = Math.max(0, Math.min(100, r.boldness !== undefined ? (+r.boldness || 0) : (r.bold ? 75 : 0))), l = Math.max(0, Math.min(100, +r.thin || 0)), net = b - l;   // v409: each row's own Boldness and Thinner
   return 'font-weight:' + (net >= 75 ? 700 : 400) + ';' + (net > 0 ? '-webkit-text-stroke:' + (net * 0.0008).toFixed(4) + 'em #000;' : net < 0 ? '-webkit-text-stroke:' + (-net * 0.0008).toFixed(4) + 'em #fff;' : '');
 }
 function webFontImport(rows) {
@@ -665,6 +666,20 @@ const wVn = (X, Y, cell, s) => {   // smooth blotchy noise
   const u = fx * fx * (3 - 2 * fx), v = fy * fy * (3 - 2 * fy);
   return wHash(i, j, s) * (1 - u) * (1 - v) + wHash(i + 1, j, s) * u * (1 - v) + wHash(i, j + 1, s) * (1 - u) * v + wHash(i + 1, j + 1, s) * u * v;
 };
+function morphPixels(px, w, h, grow, thin) {   // v409: Boldness / Thinner for the logo — the black parts get thicker or thinner
+  const rg = Math.round(grow / 100 * w * 0.008), rt = Math.round(thin / 100 * w * 0.006);
+  if (rg <= 0 && rt <= 0) return;
+  let a = new Uint8Array(w * h); for (let i = 0; i < w * h; i++) a[i] = px[i * 4] < 128 ? 1 : 0;
+  const run = (src, r, mx) => {   // square window max (thicker) or min (thinner), done across then down
+    const t = new Uint8Array(w * h), o = new Uint8Array(w * h);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { let v = mx ? 0 : 1; for (let k = -r; k <= r; k++) { const s = src[y * w + Math.min(w - 1, Math.max(0, x + k))]; if (mx ? s : !s) { v = mx ? 1 : 0; break; } } t[y * w + x] = v; }
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { let v = mx ? 0 : 1; for (let k = -r; k <= r; k++) { const s = t[Math.min(h - 1, Math.max(0, y + k)) * w + x]; if (mx ? s : !s) { v = mx ? 1 : 0; break; } } o[y * w + x] = v; }
+    return o;
+  };
+  if (rt > 0) a = run(a, rt, false);
+  if (rg > 0) a = run(a, rg, true);
+  for (let i = 0; i < w * h; i++) { const v = a[i] ? 0 : 255; px[i * 4] = px[i * 4 + 1] = px[i * 4 + 2] = v; px[i * 4 + 3] = 255; }
+}
 function weatherPixels(px, w, h, amount, ref) {   // v405: ref = the size the effect is scaled to (the picture's width for a logo; about 12 × the letter height for text)   // px = RGBA of a black & white picture, changed in place
   const a = Math.max(0, Math.min(100, amount)) / 100;
   const src = new Uint8Array(w * h); for (let i = 0; i < w * h; i++) src[i] = px[i * 4] < 128 ? 1 : 0;
@@ -734,18 +749,19 @@ function grayPixels(px, w, h, fuzzy, fade, spots, ref, lighter) {   // v406: lig
   }
   for (let i = 0; i < n; i++) { const v = dk[i] ? 0 : 255; px[i * 4] = px[i * 4 + 1] = px[i * 4 + 2] = v; px[i * 4 + 3] = 255; }
 }
-const hasLook = (r) => r.weather > 0 || r.gravel > 0 || r.fuzzy > 0 || r.fade > 0 || r.spots > 0 || r.lighter > 0;   // v406: + lighter
+const hasLook = (r) => r.weather > 0 || r.gravel > 0 || r.fuzzy > 0 || r.fade > 0 || r.spots > 0 || r.lighter > 0 || r.boldness > 0 || r.thin > 0;   // v406: + lighter; v409: + boldness, thinner
 function weatherLogo(src, r) {
   return new Promise((resolve) => {
-    const wv = parseInt(r.weather, 10) || 0, gr = parseInt(r.gravel, 10) || 0, fz = parseInt(r.fuzzy, 10) || 0, fd = parseInt(r.fade, 10) || 0, sp = parseInt(r.spots, 10) || 0, lt = parseInt(r.lighter, 10) || 0;   // v406: + lighter
-    if (!src || !(wv > 0 || gr > 0 || fz > 0 || fd > 0 || sp > 0 || lt > 0)) return resolve(src);
-    const key = [wv, gr, fz, fd, sp, lt, src.length, src.slice(-60)].join('|');
+    const wv = parseInt(r.weather, 10) || 0, gr = parseInt(r.gravel, 10) || 0, fz = parseInt(r.fuzzy, 10) || 0, fd = parseInt(r.fade, 10) || 0, sp = parseInt(r.spots, 10) || 0, lt = parseInt(r.lighter, 10) || 0, bd = parseInt(r.boldness, 10) || 0, th = parseInt(r.thin, 10) || 0;   // v406: + lighter; v409: + boldness, thinner
+    if (!src || !(wv > 0 || gr > 0 || fz > 0 || fd > 0 || sp > 0 || lt > 0 || bd > 0 || th > 0)) return resolve(src);
+    const key = [wv, gr, fz, fd, sp, lt, bd, th, src.length, src.slice(-60)].join('|');
     if (weatherCache.has(key)) return resolve(weatherCache.get(key));
     const img = new Image();
     img.onload = () => {
       const w = img.naturalWidth, h = img.naturalHeight, c = document.createElement('canvas'); c.width = w; c.height = h;
       const x = c.getContext('2d'); x.drawImage(img, 0, 0);
       const d = x.getImageData(0, 0, w, h);
+      if (bd > 0 || th > 0) morphPixels(d.data, w, h, bd, th);   // v409
       if (wv > 0) weatherPixels(d.data, w, h, wv);
       if (gr > 0) gravelPixels(d.data, w, h, gr);   // v399
       // if (fz > 0 || fd > 0 || sp > 0) grayPixels(d.data, w, h, fz, fd, sp);
@@ -776,14 +792,14 @@ function ensureFont(name) {   // Google Fonts a ticket uses must also be loaded 
   return fontReady.get(name);
 }
 const textCache = new Map();
-async function textImage(r, look, w) {
+async function textImage(r, w) {   // v409: each row's own looks (the whole-ticket look is gone)
   const text = String(r.text || '').trim(); if (!text) return null;
   const pad = w === 58 ? 2 : 4, W = Math.round((w - 2 * pad) * TEXT_DPMM);
   const px = ptOf(r.size, w) * 203 / 72, lh = px * 1.3;   // 1 pt = 1/72 in; the ticket's line height is 1.3
   // const b = Math.max(0, Math.min(100, r.boldness !== undefined ? (+r.boldness || 0) : (r.bold ? 75 : 0))), l = Math.max(0, Math.min(100, +r.lighter || 0)), net = b - l;
-  const b = Math.max(0, Math.min(100, r.boldness !== undefined ? (+r.boldness || 0) : (r.bold ? 75 : 0))), lb = Math.max(0, Math.min(100, +r.lookBold || 0)), l = Math.max(0, Math.min(100, +r.lighter || 0)), net = Math.min(100, b + lb) - l;   // v406
-  const wv = +look.weather || 0, gr = +look.gravel || 0, fz = +look.fuzzy || 0, fd = +look.fade || 0, sp = +look.spots || 0;
-  const key = [text, r.font, r.size, net, r.align, w, wv, gr, fz, fd, sp].join('|');
+  const b = Math.max(0, Math.min(100, r.boldness !== undefined ? (+r.boldness || 0) : (r.bold ? 75 : 0))), l = Math.max(0, Math.min(100, +r.thin || 0)), net = b - l;   // v409
+  const wv = +r.weather || 0, gr = +r.gravel || 0, fz = +r.fuzzy || 0, fd = +r.fade || 0, sp = +r.spots || 0, lt = +r.lighter || 0;
+  const key = [text, r.font, r.size, net, r.align, w, wv, gr, fz, fd, sp, lt].join('|');
   if (textCache.has(key)) return textCache.get(key);
   await ensureFont(r.font);
   const font = (net >= 75 ? '700 ' : '400 ') + px.toFixed(2) + 'px ' + fontStack(r.font);
@@ -810,21 +826,42 @@ async function textImage(r, look, w) {
   if (wv > 0) weatherPixels(d.data, W, H, wv, ref);
   // if (gr > 0) gravelPixels(d.data, W, H, gr, ref);
   if (gr > 0) gravelPixels(d.data, W, H, gr, ref, true);   // v407: the gentler text curve
-  if (fz > 0 || fd > 0 || sp > 0) grayPixels(d.data, W, H, fz, fd, sp, ref);
+  // if (fz > 0 || fd > 0 || sp > 0) grayPixels(d.data, W, H, fz, fd, sp, ref);
+  if (fz > 0 || fd > 0 || sp > 0 || lt > 0) grayPixels(d.data, W, H, fz, fd, sp, ref, lt);   // v409: + Lighter (less ink)
   x.putImageData(d, 0, 0);
   const out = c.toDataURL('image/png'); textCache.set(key, out); return out;
 }
-async function applyTextLook(rows, look, w) {
-  look = look || {};
-  const lighter = Math.max(0, Math.min(100, parseInt(look.lighter, 10) || 0)), lookBold = Math.max(0, Math.min(100, parseInt(look.bold, 10) || 0)), fx = ['weather', 'gravel', 'fuzzy', 'fade', 'spots'].some(k => (parseInt(look[k], 10) || 0) > 0);   // v406: + bold
-  if (!lighter && !lookBold && !fx) return rows;
+// v405–v408 whole-ticket version, replaced in v409:
+// async function applyTextLook(rows, look, w) {
+//   look = look || {};
+//   const lighter = Math.max(0, Math.min(100, parseInt(look.lighter, 10) || 0)), lookBold = Math.max(0, Math.min(100, parseInt(look.bold, 10) || 0)), fx = ['weather', 'gravel', 'fuzzy', 'fade', 'spots'].some(k => (parseInt(look[k], 10) || 0) > 0);   // v406: + bold
+//   if (!lighter && !lookBold && !fx) return rows;
+//   return Promise.all((rows || []).map(async r => {
+//     if (r.type !== 'text' || r.useLook === false) return r;   // v408: a row with its Look box unchecked keeps its own settings
+//     // const r2 = Object.assign({}, r, { lighter });
+//     const r2 = Object.assign({}, r, { lighter, lookBold });   // v406
+//     if (fx) { try { const u = await textImage(r2, look, w); if (u) r2.timg = u; } catch (e) { /* keep the live text */ } }
+//     return r2;
+//   }));
+// }
+// v409: a text row that has any of Weathered / Gravel / Fuzzy / Faded gray / Spots / Lighter is drawn as a picture; Boldness and Thinner just change the live text
+async function applyTextLook(rows, w) {
   return Promise.all((rows || []).map(async r => {
-    if (r.type !== 'text' || r.useLook === false) return r;   // v408: a row with its Look box unchecked keeps its own settings
-    // const r2 = Object.assign({}, r, { lighter });
-    const r2 = Object.assign({}, r, { lighter, lookBold });   // v406
-    if (fx) { try { const u = await textImage(r2, look, w); if (u) r2.timg = u; } catch (e) { /* keep the live text */ } }
-    return r2;
+    if (r.type !== 'text' || !['weather', 'gravel', 'fuzzy', 'fade', 'spots', 'lighter'].some(k => (+r[k] || 0) > 0)) return r;
+    try { const u = await textImage(r, w); return u ? Object.assign({}, r, { timg: u }) : r; } catch (e) { return r; }   // on any trouble keep the live text
   }));
+}
+// v409: a ticket saved with v405–v408's whole-ticket look gets it copied into its own rows (rows whose Look box was unchecked are left alone)
+function foldTextLook(design, rows) {
+  const tl = design && design.textLook, any = tl && ['bold', 'lighter', 'weather', 'gravel', 'fuzzy', 'fade', 'spots'].some(k => (+tl[k] || 0) > 0);
+  return (rows || []).map(r => {
+    if (r.type !== 'text') return r;
+    const c = Object.assign({}, r), use = r.useLook !== false; delete c.useLook;
+    if (!any || !use) return c;
+    c.boldness = Math.min(100, (+c.boldness || 0) + (+tl.bold || 0)); c.thin = Math.min(100, (+c.thin || 0) + (+tl.lighter || 0));
+    ['weather', 'gravel', 'fuzzy', 'fade', 'spots'].forEach(k => { c[k] = Math.min(100, (+c[k] || 0) + (+tl[k] || 0)); });
+    return c;
+  });
 }
 async function loadTickets() {
   const d = await getJSON('/api/tickets');
@@ -866,7 +903,8 @@ async function printTicket(id, btn, advance) {   // v389: advance = sold today, 
     let rows = d.design && d.design.rows ? d.design.rows : rowsFromTemplate(d.template, d.logoSize);
     if (d.advance && !rows.some(r => r.type === 'text' && (r.hasDate || /\{valid\}/.test(r.text || '')))) rows =   /* v400: a row marked as the date already shows tomorrow's date */ rows.concat([{ type: 'text', text: 'VALID FOR {valid}', font: 'Courier New', size: 70, boldness: 75, align: 'center', top: 2, bottom: 0 }]);
     // rows = await applyWeather(fillRows(rows, d.vals), d.logo);   // v399: weathered logo
-    rows = await applyTextLook(await applyWeather(fillRows(rows, d.vals), d.logo), d.design && d.design.textLook, w);   // v399: weathered logo; v405: + the text look
+    // rows = await applyTextLook(await applyWeather(fillRows(rows, d.vals), d.logo), d.design && d.design.textLook, w);   // v405–v408
+    rows = await applyTextLook(await applyWeather(fillRows(foldTextLook(d.design, rows), d.vals), d.logo), w);   // v399: weathered logo; v409: each text row's own looks (an old whole-ticket look is folded in)
     doc.write('<!doctype html><html><head><meta charset="utf-8"><title>Ticket</title><style>' + ticketCSS(w, rows) + '</style></head><body>' + ticketHTML(rows, d.logo, d.number, w) + '</body></html>');
     doc.close();
     // setTimeout(() => { … f.print(); }, 150);
@@ -898,13 +936,14 @@ function yardRow(y) {
   rows.forEach(r => { if (r.type === 'text' && r.boldness === undefined) { r.boldness = r.bold ? 75 : 0; delete r.bold; } });   // v399: old Bold on/off → boldness number
   rows.forEach(r => { if (r.type === 'line') { r.style = r.style || 'dashes'; if (r.thickness === undefined) r.thickness = 10; if (r.dash === undefined) r.dash = 6; if (r.gap === undefined) r.gap = 6; if (r.width === undefined) r.width = 100; } });   // v400: old dividers get the new controls
   let sel = -1, logo = y.logo || null, logoChanged = false;
-  const look = Object.assign({ bold: 0, lighter: 0, weather: 0, gravel: 0, fuzzy: 0, fade: 0, spots: 0 }, (y.design && y.design.textLook) || {});   // v405: the text look for this yard's whole ticket
+  // const look = …whole-ticket text look (v405–v408, removed in v409)
+  rows = foldTextLook(y.design, rows);   // v409: an old ticket's whole-ticket look moves into its rows
   const AL = [['left', 'Left'], ['center', 'Center'], ['right', 'Right']];
   const NAMES = { text: 'Text', line: 'Divider', logo: 'Logo', barcode: 'Barcode' };
   row.innerHTML = '<div><div class="yt-row" style="margin-bottom:8px;"><div style="flex:1"><label>Yard name</label><input class="n" style="width:100%"></div>'
     + '<div><label>Ticket price</label><input class="p" type="number" min="0" step="0.01" style="width:100px"></div></div>'
     + '<div class="yt-row" style="margin-bottom:8px;"><div><label>Print time (blank = the real time sold)</label><input class="pt" type="time" style="width:140px"></div><label class="yt-chk"><input type="checkbox" class="rnd"> Randomize (up to 30 minutes later, never earlier)</label></div>'
-    + '<details class="yt-look"><summary>Text look — for every text row with its Look box checked (not the logo)</summary><div class="yt-grid lk"></div><div style="margin-top:6px"><button type="button" class="btn btn-secondary btn-sm lkr">Reset text look</button></div></details>'
+    // + '<details class="yt-look">…whole-ticket text look…</details>'   (v405–v408, removed in v409)
     + '<label>Ticket rows</label><div class="yt-rows"></div>'
     + '<div class="yt-add"><button type="button" class="btn btn-secondary btn-sm" data-add="text">+ Text</button><button type="button" class="btn btn-secondary btn-sm" data-add="line">+ Divider</button><button type="button" class="btn btn-secondary btn-sm" data-add="logo">+ Logo</button><button type="button" class="btn btn-secondary btn-sm" data-add="barcode">+ Barcode</button></div>'
     + '<div class="yt-row" style="margin:12px 0 0;"><button type="button" class="btn btn-secondary btn-sm s">Save</button><button type="button" class="btn btn-secondary btn-sm dup" title="Make a new ticket from this one, then change what you like">Duplicate</button><button type="button" class="btn btn-secondary btn-sm d">Remove</button></div></div>'
@@ -918,7 +957,7 @@ function yardRow(y) {
   const preview = async () => {
     const tok = ++pvTok, w = paper();
     // const shown = await applyWeather(fillRows(rows, sampleVals({ name: n.value, price: parseFloat(p.value) || 0, printTime: pt.value })), logo);   // v399
-    const shown = await applyTextLook(await applyWeather(fillRows(rows, sampleVals({ name: n.value, price: parseFloat(p.value) || 0, printTime: pt.value })), logo), look, w);   // v399; v405: + the text look
+    const shown = await applyTextLook(await applyWeather(fillRows(rows, sampleVals({ name: n.value, price: parseFloat(p.value) || 0, printTime: pt.value })), logo), w);   // v399; v409: each text row's own looks
     const doc = fr.contentDocument; if (!doc || tok !== pvTok) return;
     fr.style.width = Math.round(w * 3.7795) + 'px';   // real paper width on screen
     doc.open();
@@ -931,38 +970,39 @@ function yardRow(y) {
   row.redraw = preview;
   // const sl = (k, label, min, r) => { const v = r[k] === undefined ? min : r[k]; return '<div class="yt-sl"><label>' + label + '</label><div class="yt-sn"><input type="range" data-k="' + k + '" min="' + min + '" max="100" value="' + v + '"><input type="number" data-k="' + k + '" min="' + min + '" max="100" step="1" value="' + v + '"></div></div>'; };   // v399: slider + number box
   const sl = (k, label, min, r, lo) => { const v = r[k] === undefined ? min : r[k], mn = lo === undefined ? min : lo; return '<div class="yt-sl"><label>' + label + '</label><div class="yt-sn"><input type="range" data-k="' + k + '" min="' + mn + '" max="100" value="' + v + '"><input type="number" data-k="' + k + '" min="' + mn + '" max="100" step="1" value="' + v + '"></div></div>'; };   // v404: optional lower limit (Space above can be negative)
+  // v409: the same eight looks on every text row and on the logo
+  const lookSl = (r) => sl('thin', 'Thinner (lighter strokes)', 0, r) + sl('lighter', 'Lighter (less ink)', 0, r) + sl('weather', 'Weathered look', 0, r) + sl('gravel', 'Gravel (chunky grit)', 0, r) + sl('fuzzy', 'Fuzzy', 0, r) + sl('fade', 'Faded gray', 0, r) + sl('spots', 'Spots', 0, r);
   const pick = (k, label, opts, r) => '<div><label>' + label + '</label><select data-k="' + k + '">' + opts.map(o => '<option value="' + o[0] + '"' + (r[k] === o[0] ? ' selected' : '') + '>' + o[1] + '</option>').join('') + '</select></div>';
   const summary = (r) => r.type === 'line' ? '- - - - - - - -' : r.type === 'logo' ? (logo ? 'Your logo' : 'No logo uploaded yet') : 'Barcode: ' + (r.value ? r.value : 'each ticket\u2019s number');
-  // v405: the text look sliders (same ones the logo has, plus Lighter) — they change every text row of this ticket
-  const LK = [['bold', 'Boldness (all the text)'], ['lighter', 'Lighter text (thinner letters)'], ['weather', 'Weathered look'], ['gravel', 'Gravel (chunky grit)'], ['fuzzy', 'Fuzzy'], ['fade', 'Faded gray'], ['spots', 'Spots']];
-  const lkBox = row.querySelector('.lk'); let lkTimer = null;
-  const drawLook = () => {
-    lkBox.innerHTML = LK.map(([k, label]) => '<div class="yt-sl"><label>' + label + '</label><div class="yt-sn"><input type="range" data-lk="' + k + '" min="0" max="100" value="' + look[k] + '"><input type="number" data-lk="' + k + '" min="0" max="100" step="1" value="' + look[k] + '"></div></div>').join('');
-    lkBox.querySelectorAll('[data-lk]').forEach(c => {
-      const k = c.dataset.lk, up = () => {
-        let v = parseInt(c.value, 10); if (!Number.isFinite(v)) return; v = Math.max(0, Math.min(100, v)); look[k] = v;
-        lkBox.querySelectorAll('[data-lk="' + k + '"]').forEach(o => { if (o !== c) o.value = v; });   // slider and number box stay together
-        clearTimeout(lkTimer); lkTimer = setTimeout(preview, 120);   // drawing the text as a picture takes a moment — wait until the slider rests
-      };
-      c.addEventListener('input', up); c.addEventListener('change', () => { if (c.type === 'number') c.value = look[k]; up(); });
-    });
-  };
-  drawLook(); if (LK.some(([k]) => look[k] > 0)) row.querySelector('details.yt-look').open = true;
-  row.querySelector('.lkr').onclick = () => { LK.forEach(([k]) => { look[k] = 0; }); drawLook(); preview(); };
+  // v405–v408 whole-ticket text look sliders, removed in v409:
+  //   // v405: the text look sliders (same ones the logo has, plus Lighter) — they change every text row of this ticket
+  //   const LK = [['bold', 'Boldness (all the text)'], ['lighter', 'Lighter text (thinner letters)'], ['weather', 'Weathered look'], ['gravel', 'Gravel (chunky grit)'], ['fuzzy', 'Fuzzy'], ['fade', 'Faded gray'], ['spots', 'Spots']];
+  //   const lkBox = row.querySelector('.lk'); let lkTimer = null;
+  //   const drawLook = () => {
+  //     lkBox.innerHTML = LK.map(([k, label]) => '<div class="yt-sl"><label>' + label + '</label><div class="yt-sn"><input type="range" data-lk="' + k + '" min="0" max="100" value="' + look[k] + '"><input type="number" data-lk="' + k + '" min="0" max="100" step="1" value="' + look[k] + '"></div></div>').join('');
+  //     lkBox.querySelectorAll('[data-lk]').forEach(c => {
+  //       const k = c.dataset.lk, up = () => {
+  //         let v = parseInt(c.value, 10); if (!Number.isFinite(v)) return; v = Math.max(0, Math.min(100, v)); look[k] = v;
+  //         lkBox.querySelectorAll('[data-lk="' + k + '"]').forEach(o => { if (o !== c) o.value = v; });   // slider and number box stay together
+  //         clearTimeout(lkTimer); lkTimer = setTimeout(preview, 120);   // drawing the text as a picture takes a moment — wait until the slider rests
+  //       };
+  //       c.addEventListener('input', up); c.addEventListener('change', () => { if (c.type === 'number') c.value = look[k]; up(); });
+  //     });
+  //   };
+  //   drawLook(); if (LK.some(([k]) => look[k] > 0)) row.querySelector('details.yt-look').open = true;
+  //   row.querySelector('.lkr').onclick = () => { LK.forEach(([k]) => { look[k] = 0; }); drawLook(); preview(); };
   const drawList = () => {
     list.textContent = '';
     rows.forEach((r, i) => {
       const el = document.createElement('div'); el.className = 'yt-r' + (i === sel ? ' sel' : '');
       const head = document.createElement('div'); head.className = 'yt-rh';
       head.innerHTML = '<span class="ty">' + (r.type === 'text' && r.hasDate ? 'Date' : NAMES[r.type]) + '</span>' + (r.type === 'text' ? '<input class="rt" placeholder="Type the line here">' : '<span class="sm"></span>')
-        + '<button type="button" class="btn btn-secondary btn-sm" data-a="up" title="Move up">\u25B2</button><button type="button" class="btn btn-secondary btn-sm" data-a="dn" title="Move down">\u25BC</button><button type="button" class="btn btn-secondary btn-sm" data-a="x" title="Delete this row">\u2715</button>'
-        + (r.type === 'text' ? '<label class="yt-lk" title="Checked: the Text look sliders above change this row. Unchecked: this row keeps only its own settings."><input type="checkbox" class="ul"> Look</label>' : '');   // v408: per-row Look checkbox
+        + '<button type="button" class="btn btn-secondary btn-sm" data-a="up" title="Move up">\u25B2</button><button type="button" class="btn btn-secondary btn-sm" data-a="dn" title="Move down">\u25BC</button><button type="button" class="btn btn-secondary btn-sm" data-a="x" title="Delete this row">\u2715</button>';   // v409: the Look checkbox is gone
       if (r.type === 'text') {
         const ti = head.querySelector('.rt'); ti.value = r.text || '';
         ti.oninput = () => { r.text = ti.value; preview(); };
         ti.onfocus = () => { if (sel !== i) { sel = i; const keep = ti.selectionStart; drawList(); const t2 = list.children[i].querySelector('.rt'); t2.focus(); t2.setSelectionRange(keep, keep); } };
       } else head.querySelector('.sm').textContent = summary(r);
-      const ul = head.querySelector('.ul'); if (ul) { ul.checked = r.useLook !== false; ul.onchange = () => { r.useLook = ul.checked; preview(); }; }   // v408
       head.onclick = (e) => { if (e.target.closest('button') || e.target.closest('input') || e.target.closest('label')) return; sel = sel === i ? -1 : i; drawList(); };
       head.querySelectorAll('button').forEach(bt => bt.onclick = (e) => {
         e.stopPropagation(); const a = bt.dataset.a;
@@ -973,8 +1013,9 @@ function yardRow(y) {
       if (i === sel) {
         const body = document.createElement('div'); body.className = 'yt-rb';
         let html = '<div class="yt-grid">';
-        if (r.type === 'text') html += '<div><label>Font</label><select class="fsel">' + Object.keys(FONT_STACKS).map(f => '<option value="' + f + '"' + (r.font === f ? ' selected' : '') + '>' + f + '</option>').join('') + '<option value="__custom"' + (FONT_STACKS[r.font] ? '' : ' selected') + '>Other (type a font name)\u2026</option></select><input class="fcus" maxlength="40" placeholder="Font name on the printing computer" style="margin-top:4px;' + (FONT_STACKS[r.font] ? 'display:none' : '') + '" value="' + (FONT_STACKS[r.font] ? '' : esc(r.font || '')) + '"></div>' + pick('align', 'Position', AL, r) + sl('size', 'Text size', 1, r) + sl('boldness', 'Boldness (0 = normal)', 0, r) + '<label class="yt-chk" style="grid-column:1/-1"><input type="checkbox" data-k="hasDate"' + (r.hasDate ? ' checked' : '') + '> This row has the date</label><div class="yt-note" style="grid-column:1/-1;margin-top:-4px">The date fills in when you sell a ticket. Type {date} where you want it in this row (like "Date: {date}"); if you leave it out, the date goes at the end of the row. "Sell for tomorrow" tickets show tomorrow\u2019s date here. Only one row can have it.</div>';   // v400
-        if (r.type === 'logo') html += pick('align', 'Position', AL, r) + sl('width', 'Logo size', 1, r) + sl('weather', 'Weathered look', 0, r) + sl('gravel', 'Gravel (chunky grit)', 0, r) + sl('fuzzy', 'Fuzzy', 0, r) + sl('fade', 'Faded gray', 0, r) + sl('spots', 'Spots', 0, r) + sl('lighter', 'Lighter (less ink)', 0, r);   // v406
+        if (r.type === 'text') html += '<div><label>Font</label><select class="fsel">' + Object.keys(FONT_STACKS).map(f => '<option value="' + f + '"' + (r.font === f ? ' selected' : '') + '>' + f + '</option>').join('') + '<option value="__custom"' + (FONT_STACKS[r.font] ? '' : ' selected') + '>Other (type a font name)\u2026</option></select><input class="fcus" maxlength="40" placeholder="Font name on the printing computer" style="margin-top:4px;' + (FONT_STACKS[r.font] ? 'display:none' : '') + '" value="' + (FONT_STACKS[r.font] ? '' : esc(r.font || '')) + '"></div>' + pick('align', 'Position', AL, r) + sl('size', 'Text size', 1, r) + sl('boldness', 'Boldness (0 = normal)', 0, r) + lookSl(r) + '<label class="yt-chk" style="grid-column:1/-1"><input type="checkbox" data-k="hasDate"' + (r.hasDate ? ' checked' : '') + '> This row has the date</label><div class="yt-note" style="grid-column:1/-1;margin-top:-4px">The date fills in when you sell a ticket. Type {date} where you want it in this row (like "Date: {date}"); if you leave it out, the date goes at the end of the row. "Sell for tomorrow" tickets show tomorrow\u2019s date here. Only one row can have it.</div>';   // v400
+        // if (r.type === 'logo') html += pick('align', 'Position', AL, r) + sl('width', 'Logo size', 1, r) + sl('weather', 'Weathered look', 0, r) + sl('gravel', 'Gravel (chunky grit)', 0, r) + sl('fuzzy', 'Fuzzy', 0, r) + sl('fade', 'Faded gray', 0, r) + sl('spots', 'Spots', 0, r) + sl('lighter', 'Lighter (less ink)', 0, r);   // v406
+        if (r.type === 'logo') html += pick('align', 'Position', AL, r) + sl('width', 'Logo size', 1, r) + sl('boldness', 'Boldness (0 = normal)', 0, r) + lookSl(r);   // v409: the same looks as the text rows
         if (r.type === 'barcode') html += '<div><label>Barcode numbers (blank = each ticket\u2019s own number)</label><input data-k="value" maxlength="40" placeholder="e.g. 12345678" value="' + esc(r.value || '') + '"></div>' + pick('align', 'Position', AL, r) + sl('width', 'Barcode width', 1, r) + sl('height', 'Barcode height', 1, r);
         // if (r.type !== 'line') html += sl('top', 'Space above', 0, r) + sl('bottom', 'Space below', 0, r);   (v399)
         // else html += sl('top', 'Space above', 0, r) + sl('bottom', 'Space below', 0, r);   (v399)
@@ -1020,20 +1061,20 @@ function yardRow(y) {
       list.append(el);
     });
   };
-  const NEW = { text: { type: 'text', text: '', font: 'Courier New', size: 45, boldness: 0, align: 'center', top: 0, bottom: 0, useLook: true }, line: { type: 'line', style: 'dashes', thickness: 10, dash: 6, gap: 6, width: 100, align: 'center', top: 10, bottom: 10 }, logo: { type: 'logo', align: 'center', width: 70, top: 0, bottom: 10 }, barcode: { type: 'barcode', align: 'center', value: '', width: 75, height: 22, top: 5, bottom: 5 } };
+  const NEW = { text: { type: 'text', text: '', font: 'Courier New', size: 45, boldness: 0, align: 'center', top: 0, bottom: 0 }, line: { type: 'line', style: 'dashes', thickness: 10, dash: 6, gap: 6, width: 100, align: 'center', top: 10, bottom: 10 }, logo: { type: 'logo', align: 'center', width: 70, top: 0, bottom: 10 }, barcode: { type: 'barcode', align: 'center', value: '', width: 75, height: 22, top: 5, bottom: 5 } };
   row.querySelectorAll('[data-add]').forEach(bt => bt.onclick = () => { rows.push(JSON.parse(JSON.stringify(NEW[bt.dataset.add]))); sel = rows.length - 1; drawList(); preview(); });
   [n, p, pt].forEach(x => x.addEventListener('input', preview));
   drawList(); setTimeout(preview, 60);   // after the row is on the page (the preview frame needs to exist first)
   row.querySelector('.s').onclick = async () => {
     const lg = rows.find(r => r.type === 'logo');
-    const r = await fetch('/api/tickets/yards', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ id: y.id || null, name: n.value, price: p.value, template: y.template || tickets.defaultTemplate, logoSize: lg ? lg.width : 70, design: { rows, printTime: pt.value, randomize: rnd.checked, textLook: look } }, logoChanged ? { logo: logo || '' } : {})) });   // v399: + rows
+    const r = await fetch('/api/tickets/yards', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ id: y.id || null, name: n.value, price: p.value, template: y.template || tickets.defaultTemplate, logoSize: lg ? lg.width : 70, design: { rows, printTime: pt.value, randomize: rnd.checked } }, logoChanged ? { logo: logo || '' } : {})) });   // v399: + rows
     const res = await r.json().catch(() => ({}));
     if (!r.ok) { alert(res.error || 'Couldn\u2019t save'); return; }
     pageCache.live(); await loadTickets(); drawYardEditor();
   };
   row.querySelector('.dup').onclick = async () => {   // v399: copy this yard's whole ticket (what you see now, saved or not) as a new yard
     const lg = rows.find(r => r.type === 'logo');
-    const r = await fetch('/api/tickets/yards', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: null, name: ((n.value || '').trim() || 'Yard').slice(0, 74) + ' copy', price: p.value, template: y.template || tickets.defaultTemplate, logoSize: lg ? lg.width : 70, design: { rows, printTime: pt.value, randomize: rnd.checked, textLook: look }, logo: logo || '' }) });
+    const r = await fetch('/api/tickets/yards', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: null, name: ((n.value || '').trim() || 'Yard').slice(0, 74) + ' copy', price: p.value, template: y.template || tickets.defaultTemplate, logoSize: lg ? lg.width : 70, design: { rows, printTime: pt.value, randomize: rnd.checked }, logo: logo || '' }) });
     const res = await r.json().catch(() => ({}));
     if (!r.ok) { alert(res.error || 'Couldn\u2019t duplicate'); return; }
     pageCache.live(); await loadTickets(); drawYardEditor();
