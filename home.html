@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Home v405</title>
+<title>PartsLister Pro Home v407</title>
 <!-- v400: yard tickets — divider styles (tiny dashes, dots, solid, double) with thickness, dash length, gap, width and position; mark one text row "This row has the date" ({date} there is the ticket's own day — tomorrow's for "Sell for tomorrow"); a print time per yard with a Randomize switch (adds 0–30 minutes, never earlier). -->
 <!-- v399: TICKET DESIGNER — each yard's ticket is a list of rows (text, divider, logo, barcode). Every text row has its own font (list or any font name), size 1–100, boldness 0–100 and position; the logo has size, position, a drop box and weathered / gravel / fuzzy / faded gray / spots looks (or one tap "Match sticker look"); the barcode is typed in (Code 128) with its own size and position. Every slider also has a number box. "Duplicate" copies a yard's whole ticket so you can change a few things instead of starting over. -->
 <!-- v389: yard tickets are sold tickets — real sale date and time, a ticket number and barcode, "Sell for tomorrow" advance tickets marked VALID FOR, {logo} and {big} tags anywhere, and Money made. The saved time and Randomize are gone. -->
@@ -201,7 +201,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v405</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v407</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -586,7 +586,8 @@ const fontStack = (name) => FONT_STACKS[name] || (/^[A-Za-z0-9 \-]{1,40}$/.test(
 //   return 'font-weight:' + (b >= 75 ? 700 : 400) + ';' + (b > 0 ? '-webkit-text-stroke:' + (b * 0.0008).toFixed(4) + 'em #000;' : '');
 // }
 function boldCSS(r) {   // v405: boldness 0–100 thickens (black outline); "lighter" (0–100, set for the whole ticket) takes it away again — a white outline eats the letters' edges, so it goes thinner than normal even at boldness 0
-  const b = Math.max(0, Math.min(100, r.boldness !== undefined ? (+r.boldness || 0) : (r.bold ? 75 : 0))), l = Math.max(0, Math.min(100, +r.lighter || 0)), net = b - l;
+  // const b = Math.max(0, Math.min(100, r.boldness !== undefined ? (+r.boldness || 0) : (r.bold ? 75 : 0))), l = Math.max(0, Math.min(100, +r.lighter || 0)), net = b - l;
+  const b = Math.max(0, Math.min(100, r.boldness !== undefined ? (+r.boldness || 0) : (r.bold ? 75 : 0))), lb = Math.max(0, Math.min(100, +r.lookBold || 0)), l = Math.max(0, Math.min(100, +r.lighter || 0)), net = Math.min(100, b + lb) - l;   // v406: + the whole ticket's boldness
   return 'font-weight:' + (net >= 75 ? 700 : 400) + ';' + (net > 0 ? '-webkit-text-stroke:' + (net * 0.0008).toFixed(4) + 'em #000;' : net < 0 ? '-webkit-text-stroke:' + (-net * 0.0008).toFixed(4) + 'em #fff;' : '');
 }
 function webFontImport(rows) {
@@ -674,19 +675,22 @@ function weatherPixels(px, w, h, amount, ref) {   // v405: ref = the size the ef
     if (nz < a * 0.5 + (edge ? a * 0.18 : 0)) { px[i * 4] = px[i * 4 + 1] = px[i * 4 + 2] = 255; }
   }
 }
-function gravelPixels(px, w, h, amount, ref) {   // v399: GRAVEL — pixels get knocked sideways in chunks, so edges break into coarse grains (sand is fine; this is gravel)
+function gravelPixels(px, w, h, amount, ref, soft) {   // v407: soft = the gentler curve used for text (the logo's stays as it was)   // v399: GRAVEL — pixels get knocked sideways in chunks, so edges break into coarse grains (sand is fine; this is gravel)
   const a = Math.max(0, Math.min(100, amount)) / 100;
   // const chunk = Math.max(2, Math.round(w * (0.004 + 0.007 * a)));   // grain size grows with the slider
   // const mag = a * w * 0.03 + 1;                                      // how far a grain can be thrown
-  const R = ref || w, chunk = Math.max(2, Math.round(R * (0.004 + 0.007 * a))), mag = a * R * 0.03 + 1;   // v405: grain size grows with the slider; mag = how far a grain can be thrown
+  // const R = ref || w, chunk = Math.max(2, Math.round(R * (0.004 + 0.007 * a))), mag = a * R * 0.03 + 1;   // v405: grain size grows with the slider; mag = how far a grain can be thrown
+  // v407: for text the slider is cubed (3–25% hardly touch the letters, 50% is an eighth of the full effect) and there is no built-in 1-pixel shove or single-pixel scatter — letters are only 2–3 dots thick, so those wrecked them at any setting
+  const e = soft ? a * a * a : a, R = ref || w, chunk = Math.max(2, Math.round(R * (0.004 + (soft ? 0.004 : 0.007) * e))), mag = e * R * 0.03 + (soft ? 0 : 1), jit = soft ? e * chunk : chunk;
   const src = new Uint8Array(w * h); for (let i = 0; i < w * h; i++) src[i] = px[i * 4] < 128 ? 1 : 0;
   const at = (x, y) => (x < 0 || y < 0 || x >= w || y >= h) ? 0 : src[y * w + x];
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
     const bx = Math.floor(x / chunk), by = Math.floor(y / chunk);
     let sx = x + (wHash(bx, by, 21) - 0.5) * 2 * mag, sy = y + (wHash(bx, by, 22) - 0.5) * 2 * mag;   // each chunk has its own throw
-    sx += (wHash(x, y, 23) - 0.5) * chunk;  sy += (wHash(x, y, 24) - 0.5) * chunk;                       // plus a little single-pixel grit
+    // sx += (wHash(x, y, 23) - 0.5) * chunk;  sy += (wHash(x, y, 24) - 0.5) * chunk;                       // plus a little single-pixel grit
+    sx += (wHash(x, y, 23) - 0.5) * jit;  sy += (wHash(x, y, 24) - 0.5) * jit;                             // plus a little single-pixel grit (v407: scaled for text)
     let v = at(Math.round(sx), Math.round(sy));
-    if (v && a > 0.5 && wHash(bx, by, 25) < (a - 0.5) * 0.5) v = 0;   // at high settings some whole grains drop out, even in the middle
+    if (v && e > 0.5 && wHash(bx, by, 25) < (e - 0.5) * 0.5) v = 0;   // v407: e = a for the logo, a³ for text   // at high settings some whole grains drop out, even in the middle
     const o = (y * w + x) * 4; px[o] = px[o + 1] = px[o + 2] = v ? 0 : 255; px[o + 3] = 255;
   }
 }
@@ -703,13 +707,14 @@ function boxBlur(src, dst, w, h, r, horiz) {   // one running-sum pass
     }
   }
 }
-function grayPixels(px, w, h, fuzzy, fade, spots, ref) {   // blur → lighter ink → light pits → fine dots (Floyd–Steinberg), back to pure black & white
+function grayPixels(px, w, h, fuzzy, fade, spots, ref, lighter) {   // v406: lighter = less ink on top of faded gray (up to 85% less)   // blur → lighter ink → light pits → fine dots (Floyd–Steinberg), back to pure black & white
   const n = w * h; let dk = new Float32Array(n);   // darkness 0 (white) … 1 (black)
   for (let i = 0; i < n; i++) dk[i] = 1 - px[i * 4] / 255;
   // const r = Math.round(fuzzy / 100 * w * 0.012);
   const R = ref || w, r = Math.round(fuzzy / 100 * R * 0.012);   // v405
   if (r > 0) { let tmp = new Float32Array(n); for (let pass = 0; pass < 3; pass++) { boxBlur(dk, tmp, w, h, r, true); boxBlur(tmp, dk, w, h, r, false); } }
-  const f = 1 - 0.75 * fade / 100, sp = spots / 100;
+  // const f = 1 - 0.75 * fade / 100, sp = spots / 100;
+  const f = (1 - 0.75 * fade / 100) * (1 - 0.85 * (lighter || 0) / 100), sp = spots / 100;   // v406
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
     const i = y * w + x; if (dk[i] < 0.02) continue;
     let v = dk[i] * f;
@@ -727,12 +732,12 @@ function grayPixels(px, w, h, fuzzy, fade, spots, ref) {   // blur → lighter i
   }
   for (let i = 0; i < n; i++) { const v = dk[i] ? 0 : 255; px[i * 4] = px[i * 4 + 1] = px[i * 4 + 2] = v; px[i * 4 + 3] = 255; }
 }
-const hasLook = (r) => r.weather > 0 || r.gravel > 0 || r.fuzzy > 0 || r.fade > 0 || r.spots > 0;
+const hasLook = (r) => r.weather > 0 || r.gravel > 0 || r.fuzzy > 0 || r.fade > 0 || r.spots > 0 || r.lighter > 0;   // v406: + lighter
 function weatherLogo(src, r) {
   return new Promise((resolve) => {
-    const wv = parseInt(r.weather, 10) || 0, gr = parseInt(r.gravel, 10) || 0, fz = parseInt(r.fuzzy, 10) || 0, fd = parseInt(r.fade, 10) || 0, sp = parseInt(r.spots, 10) || 0;
-    if (!src || !(wv > 0 || gr > 0 || fz > 0 || fd > 0 || sp > 0)) return resolve(src);
-    const key = [wv, gr, fz, fd, sp, src.length, src.slice(-60)].join('|');
+    const wv = parseInt(r.weather, 10) || 0, gr = parseInt(r.gravel, 10) || 0, fz = parseInt(r.fuzzy, 10) || 0, fd = parseInt(r.fade, 10) || 0, sp = parseInt(r.spots, 10) || 0, lt = parseInt(r.lighter, 10) || 0;   // v406: + lighter
+    if (!src || !(wv > 0 || gr > 0 || fz > 0 || fd > 0 || sp > 0 || lt > 0)) return resolve(src);
+    const key = [wv, gr, fz, fd, sp, lt, src.length, src.slice(-60)].join('|');
     if (weatherCache.has(key)) return resolve(weatherCache.get(key));
     const img = new Image();
     img.onload = () => {
@@ -741,7 +746,8 @@ function weatherLogo(src, r) {
       const d = x.getImageData(0, 0, w, h);
       if (wv > 0) weatherPixels(d.data, w, h, wv);
       if (gr > 0) gravelPixels(d.data, w, h, gr);   // v399
-      if (fz > 0 || fd > 0 || sp > 0) grayPixels(d.data, w, h, fz, fd, sp);
+      // if (fz > 0 || fd > 0 || sp > 0) grayPixels(d.data, w, h, fz, fd, sp);
+      if (fz > 0 || fd > 0 || sp > 0 || lt > 0) grayPixels(d.data, w, h, fz, fd, sp, undefined, lt);   // v406
       x.putImageData(d, 0, 0);
       const out = c.toDataURL('image/png'); weatherCache.set(key, out); resolve(out);
     };
@@ -772,7 +778,8 @@ async function textImage(r, look, w) {
   const text = String(r.text || '').trim(); if (!text) return null;
   const pad = w === 58 ? 2 : 4, W = Math.round((w - 2 * pad) * TEXT_DPMM);
   const px = ptOf(r.size, w) * 203 / 72, lh = px * 1.3;   // 1 pt = 1/72 in; the ticket's line height is 1.3
-  const b = Math.max(0, Math.min(100, r.boldness !== undefined ? (+r.boldness || 0) : (r.bold ? 75 : 0))), l = Math.max(0, Math.min(100, +r.lighter || 0)), net = b - l;
+  // const b = Math.max(0, Math.min(100, r.boldness !== undefined ? (+r.boldness || 0) : (r.bold ? 75 : 0))), l = Math.max(0, Math.min(100, +r.lighter || 0)), net = b - l;
+  const b = Math.max(0, Math.min(100, r.boldness !== undefined ? (+r.boldness || 0) : (r.bold ? 75 : 0))), lb = Math.max(0, Math.min(100, +r.lookBold || 0)), l = Math.max(0, Math.min(100, +r.lighter || 0)), net = Math.min(100, b + lb) - l;   // v406
   const wv = +look.weather || 0, gr = +look.gravel || 0, fz = +look.fuzzy || 0, fd = +look.fade || 0, sp = +look.spots || 0;
   const key = [text, r.font, r.size, net, r.align, w, wv, gr, fz, fd, sp].join('|');
   if (textCache.has(key)) return textCache.get(key);
@@ -799,18 +806,20 @@ async function textImage(r, look, w) {
   });
   const d = x.getImageData(0, 0, W, H), ref = px * 12;
   if (wv > 0) weatherPixels(d.data, W, H, wv, ref);
-  if (gr > 0) gravelPixels(d.data, W, H, gr, ref);
+  // if (gr > 0) gravelPixels(d.data, W, H, gr, ref);
+  if (gr > 0) gravelPixels(d.data, W, H, gr, ref, true);   // v407: the gentler text curve
   if (fz > 0 || fd > 0 || sp > 0) grayPixels(d.data, W, H, fz, fd, sp, ref);
   x.putImageData(d, 0, 0);
   const out = c.toDataURL('image/png'); textCache.set(key, out); return out;
 }
 async function applyTextLook(rows, look, w) {
   look = look || {};
-  const lighter = Math.max(0, Math.min(100, parseInt(look.lighter, 10) || 0)), fx = ['weather', 'gravel', 'fuzzy', 'fade', 'spots'].some(k => (parseInt(look[k], 10) || 0) > 0);
-  if (!lighter && !fx) return rows;
+  const lighter = Math.max(0, Math.min(100, parseInt(look.lighter, 10) || 0)), lookBold = Math.max(0, Math.min(100, parseInt(look.bold, 10) || 0)), fx = ['weather', 'gravel', 'fuzzy', 'fade', 'spots'].some(k => (parseInt(look[k], 10) || 0) > 0);   // v406: + bold
+  if (!lighter && !lookBold && !fx) return rows;
   return Promise.all((rows || []).map(async r => {
     if (r.type !== 'text') return r;
-    const r2 = Object.assign({}, r, { lighter });
+    // const r2 = Object.assign({}, r, { lighter });
+    const r2 = Object.assign({}, r, { lighter, lookBold });   // v406
     if (fx) { try { const u = await textImage(r2, look, w); if (u) r2.timg = u; } catch (e) { /* keep the live text */ } }
     return r2;
   }));
@@ -887,7 +896,7 @@ function yardRow(y) {
   rows.forEach(r => { if (r.type === 'text' && r.boldness === undefined) { r.boldness = r.bold ? 75 : 0; delete r.bold; } });   // v399: old Bold on/off → boldness number
   rows.forEach(r => { if (r.type === 'line') { r.style = r.style || 'dashes'; if (r.thickness === undefined) r.thickness = 10; if (r.dash === undefined) r.dash = 6; if (r.gap === undefined) r.gap = 6; if (r.width === undefined) r.width = 100; } });   // v400: old dividers get the new controls
   let sel = -1, logo = y.logo || null, logoChanged = false;
-  const look = Object.assign({ lighter: 0, weather: 0, gravel: 0, fuzzy: 0, fade: 0, spots: 0 }, (y.design && y.design.textLook) || {});   // v405: the text look for this yard's whole ticket
+  const look = Object.assign({ bold: 0, lighter: 0, weather: 0, gravel: 0, fuzzy: 0, fade: 0, spots: 0 }, (y.design && y.design.textLook) || {});   // v405: the text look for this yard's whole ticket
   const AL = [['left', 'Left'], ['center', 'Center'], ['right', 'Right']];
   const NAMES = { text: 'Text', line: 'Divider', logo: 'Logo', barcode: 'Barcode' };
   row.innerHTML = '<div><div class="yt-row" style="margin-bottom:8px;"><div style="flex:1"><label>Yard name</label><input class="n" style="width:100%"></div>'
@@ -923,7 +932,7 @@ function yardRow(y) {
   const pick = (k, label, opts, r) => '<div><label>' + label + '</label><select data-k="' + k + '">' + opts.map(o => '<option value="' + o[0] + '"' + (r[k] === o[0] ? ' selected' : '') + '>' + o[1] + '</option>').join('') + '</select></div>';
   const summary = (r) => r.type === 'line' ? '- - - - - - - -' : r.type === 'logo' ? (logo ? 'Your logo' : 'No logo uploaded yet') : 'Barcode: ' + (r.value ? r.value : 'each ticket\u2019s number');
   // v405: the text look sliders (same ones the logo has, plus Lighter) — they change every text row of this ticket
-  const LK = [['lighter', 'Lighter text (thinner letters)'], ['weather', 'Weathered look'], ['gravel', 'Gravel (chunky grit)'], ['fuzzy', 'Fuzzy'], ['fade', 'Faded gray'], ['spots', 'Spots']];
+  const LK = [['bold', 'Boldness (all the text)'], ['lighter', 'Lighter text (thinner letters)'], ['weather', 'Weathered look'], ['gravel', 'Gravel (chunky grit)'], ['fuzzy', 'Fuzzy'], ['fade', 'Faded gray'], ['spots', 'Spots']];
   const lkBox = row.querySelector('.lk'); let lkTimer = null;
   const drawLook = () => {
     lkBox.innerHTML = LK.map(([k, label]) => '<div class="yt-sl"><label>' + label + '</label><div class="yt-sn"><input type="range" data-lk="' + k + '" min="0" max="100" value="' + look[k] + '"><input type="number" data-lk="' + k + '" min="0" max="100" step="1" value="' + look[k] + '"></div></div>').join('');
@@ -961,7 +970,7 @@ function yardRow(y) {
         const body = document.createElement('div'); body.className = 'yt-rb';
         let html = '<div class="yt-grid">';
         if (r.type === 'text') html += '<div><label>Font</label><select class="fsel">' + Object.keys(FONT_STACKS).map(f => '<option value="' + f + '"' + (r.font === f ? ' selected' : '') + '>' + f + '</option>').join('') + '<option value="__custom"' + (FONT_STACKS[r.font] ? '' : ' selected') + '>Other (type a font name)\u2026</option></select><input class="fcus" maxlength="40" placeholder="Font name on the printing computer" style="margin-top:4px;' + (FONT_STACKS[r.font] ? 'display:none' : '') + '" value="' + (FONT_STACKS[r.font] ? '' : esc(r.font || '')) + '"></div>' + pick('align', 'Position', AL, r) + sl('size', 'Text size', 1, r) + sl('boldness', 'Boldness (0 = normal)', 0, r) + '<label class="yt-chk" style="grid-column:1/-1"><input type="checkbox" data-k="hasDate"' + (r.hasDate ? ' checked' : '') + '> This row has the date</label><div class="yt-note" style="grid-column:1/-1;margin-top:-4px">The date fills in when you sell a ticket. Type {date} where you want it in this row (like "Date: {date}"); if you leave it out, the date goes at the end of the row. "Sell for tomorrow" tickets show tomorrow\u2019s date here. Only one row can have it.</div>';   // v400
-        if (r.type === 'logo') html += pick('align', 'Position', AL, r) + sl('width', 'Logo size', 1, r) + sl('weather', 'Weathered look', 0, r) + sl('gravel', 'Gravel (chunky grit)', 0, r) + sl('fuzzy', 'Fuzzy', 0, r) + sl('fade', 'Faded gray', 0, r) + sl('spots', 'Spots', 0, r);
+        if (r.type === 'logo') html += pick('align', 'Position', AL, r) + sl('width', 'Logo size', 1, r) + sl('weather', 'Weathered look', 0, r) + sl('gravel', 'Gravel (chunky grit)', 0, r) + sl('fuzzy', 'Fuzzy', 0, r) + sl('fade', 'Faded gray', 0, r) + sl('spots', 'Spots', 0, r) + sl('lighter', 'Lighter (less ink)', 0, r);   // v406
         if (r.type === 'barcode') html += '<div><label>Barcode numbers (blank = each ticket\u2019s own number)</label><input data-k="value" maxlength="40" placeholder="e.g. 12345678" value="' + esc(r.value || '') + '"></div>' + pick('align', 'Position', AL, r) + sl('width', 'Barcode width', 1, r) + sl('height', 'Barcode height', 1, r);
         // if (r.type !== 'line') html += sl('top', 'Space above', 0, r) + sl('bottom', 'Space below', 0, r);   (v399)
         // else html += sl('top', 'Space above', 0, r) + sl('bottom', 'Space below', 0, r);   (v399)
