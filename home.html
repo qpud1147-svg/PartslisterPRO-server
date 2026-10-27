@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Home v399</title>
+<title>PartsLister Pro Home v400</title>
+<!-- v400: yard tickets — divider styles (tiny dashes, dots, solid, double) with thickness, dash length, gap, width and position; mark one text row "This row has the date" ({date} there is the ticket's own day — tomorrow's for "Sell for tomorrow"); a print time per yard with a Randomize switch (adds 0–30 minutes, never earlier). -->
 <!-- v399: TICKET DESIGNER — each yard's ticket is a list of rows (text, divider, logo, barcode). Every text row has its own font (list or any font name), size 1–100, boldness 0–100 and position; the logo has size, position, a drop box and weathered / gravel / fuzzy / faded gray / spots looks (or one tap "Match sticker look"); the barcode is typed in (Code 128) with its own size and position. Every slider also has a number box. "Duplicate" copies a yard's whole ticket so you can change a few things instead of starting over. -->
 <!-- v389: yard tickets are sold tickets — real sale date and time, a ticket number and barcode, "Sell for tomorrow" advance tickets marked VALID FOR, {logo} and {big} tags anywhere, and Money made. The saved time and Randomize are gone. -->
 <!-- v388: yard tickets — "Randomize" (up to an hour later than your time, never earlier) and "Print tomorrow's" on each yard. -->
@@ -188,7 +189,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v399</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v400</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -286,7 +287,7 @@
     </div>
     <div id="yt-list"></div>
     <button type="button" class="btn btn-secondary btn-sm" onclick="addYardRow()">+ Add a yard</button>
-    <div class="yt-note">Each yard’s ticket is a list of rows. Click a row to change its font, size (1–100), boldness (0–100) and position (every slider also has a number box), use the arrows to move it up or down, and add text, divider, logo or barcode rows. Use Duplicate to copy a whole ticket and change just a few things. In a text row these fill in when you sell a ticket: {yard} {price} {number}, {date} and {time} (when it was sold) and {valid} (the day it’s good for). Fonts come from the computer that prints, so pick one that computer has.</div>
+    <div class="yt-note">Each yard’s ticket is a list of rows. Click a row to change its font, size (1–100), boldness (0–100) and position (every slider also has a number box), use the arrows to move it up or down, and add text, divider, logo or barcode rows. Use Duplicate to copy a whole ticket and change just a few things. Set a print time on a yard to put that time on its tickets (Randomize adds up to 30 minutes, never earlier); mark one text row "This row has the date" to say where the date goes. In a text row these fill in when you sell a ticket: {yard} {price} {number}, {date} and {time} (when it was sold) and {valid} (the day it’s good for). Fonts come from the computer that prints, so pick one that computer has.</div>
   </div>
 </div>
 <iframe id="yt-frame" title="Ticket" style="position:fixed;width:0;height:0;border:0;left:-9999px;"></iframe>
@@ -565,11 +566,24 @@ function rowsFromTemplate(tpl, logoSize) {
     const t = l.trim();
     if (t === '{logo}') return out.push({ type: 'logo', align: 'center', width: logoSize || 70, top: 0, bottom: 10 });
     if (t === '{barcode}') return out.push({ type: 'barcode', align: 'center', value: '', width: 75, height: 22, top: 5, bottom: 5 });
-    if (/^[-=_*]{4,}$/.test(t)) return out.push({ type: 'line', align: 'center', top: 10, bottom: 10 });
+    if (/^[-=_*]{4,}$/.test(t)) return out.push({ type: 'line', style: 'dashes', thickness: 10, dash: 6, gap: 6, width: 100, align: 'center', top: 10, bottom: 10 });
     const big = l.includes('{big}') || (!hasBig && !hasLogo && i === 0 && lines.length > 1);
     out.push({ type: 'text', text: l.replace(/\{big\}/g, ''), font: 'Courier New', size: big ? 70 : 45, boldness: big ? 75 : 0, align: 'center', top: 0, bottom: 0 });
   });
   return out;
+}
+// v400: DIVIDER — tiny dashes, dots, solid or double, drawn as SVG (so it always prints). Thickness / dash / gap are 1–100 and mapped to millimetres.
+function dividerHTML(r, mg, mm) {
+  const PX = 3.7795, st = r.style || 'dashes', num = (v, d) => (v === undefined || v === null || v === '' ? d : +v);
+  const th = 0.1 + num(r.thickness, 10) * 0.03, dash = 0.2 + num(r.dash, 6) * 0.05, gap = 0.2 + num(r.gap, 6) * 0.05;   // mm
+  const t = th * PX, hgt = st === 'double' ? th * 3 : th;
+  const line = (y, extra) => '<line x1="' + (st === 'dots' ? (t / 2).toFixed(2) : 0) + '" y1="' + y.toFixed(2) + '" x2="100%" y2="' + y.toFixed(2) + '" stroke="#000" stroke-width="' + t.toFixed(2) + '"' + extra + '/>';
+  let body;
+  if (st === 'dots') body = line(t / 2, ' stroke-linecap="round" stroke-dasharray="0 ' + ((th + gap) * PX).toFixed(2) + '"');
+  else if (st === 'dashes') body = line(t / 2, ' stroke-dasharray="' + (dash * PX).toFixed(2) + ' ' + (gap * PX).toFixed(2) + '"');
+  else if (st === 'double') body = line(t / 2, '') + line(t * 2.5, '');
+  else body = line(t / 2, '');
+  return '<svg class="dv" xmlns="http://www.w3.org/2000/svg" shape-rendering="' + (st === 'dots' ? 'geometricPrecision' : 'crispEdges') + '" style="display:block;width:' + (num(r.width, 100)) + '%;height:' + hgt.toFixed(2) + 'mm;' + mg(r.align) + 'margin-top:' + mm(r.top) + ';margin-bottom:' + mm(r.bottom) + '">' + body + '</svg>';
 }
 function ticketHTML(rows, logo, number, w) {
   const mg = (a) => a === 'left' ? 'margin-left:0;margin-right:auto;' : a === 'right' ? 'margin-left:auto;margin-right:0;' : 'margin-left:auto;margin-right:auto;';
@@ -577,13 +591,24 @@ function ticketHTML(rows, logo, number, w) {
   return (rows || []).map(r => {
     if (r.type === 'logo') return (r.img || logo) ? '<img class="logo" alt="" src="' + esc(r.img || logo) + '" style="width:' + (r.width || 70) + '%;' + mg(r.align) + 'margin-top:' + mm(r.top) + ';margin-bottom:' + mm(r.bottom) + '">' : '';
     if (r.type === 'barcode') return barcodeSVG(r.value || number, 'width:' + (r.width || 75) + '%;height:' + (4 + ((r.height || 22) / 100) * 36).toFixed(1) + 'mm;' + mg(r.align) + 'margin-top:' + mm(r.top) + ';margin-bottom:' + mm(r.bottom));
-    if (r.type === 'line') return '<hr style="margin:' + mm(r.top) + ' 0 ' + mm(r.bottom) + '">';
+    // if (r.type === 'line') return '<hr style="margin:' + mm(r.top) + ' 0 ' + mm(r.bottom) + '">';   (v399)
+    if (r.type === 'line') return dividerHTML(r, mg, mm);   // v400: divider styles
     return '<div class="l" style="font-family:' + fontStack(r.font) + ';font-size:' + ptOf(r.size, w).toFixed(2) + 'pt;' + boldCSS(r) + 'text-align:' + (r.align || 'center') + ';margin-top:' + mm(r.top) + ';margin-bottom:' + mm(r.bottom) + '">' + (esc(r.text || '') || '&nbsp;') + '</div>';
   }).join('');
 }
 // v399: fill {yard} {price} … into every text row
+// function fillRows(rows, vals) {
+//   return (rows || []).map(r => r.type === 'text' ? Object.assign({}, r, { text: String(r.text || '').replace(/\{(yard|date|time|price|number|valid)\}/g, (m, k) => vals[k]) }) : r);
+// }   (v399)
+// v400: the row marked "has the date" shows the ticket's own day for {date} (tomorrow's date for a "Sell for tomorrow" ticket); with no {date} in it, the date goes on the end
 function fillRows(rows, vals) {
-  return (rows || []).map(r => r.type === 'text' ? Object.assign({}, r, { text: String(r.text || '').replace(/\{(yard|date|time|price|number|valid)\}/g, (m, k) => vals[k]) }) : r);
+  return (rows || []).map(r => {
+    if (r.type !== 'text') return r;
+    let t = String(r.text || '');
+    const V = r.hasDate ? Object.assign({}, vals, { date: vals.ticketDate || vals.date, valid: vals.ticketDate || vals.valid }) : vals;
+    if (r.hasDate && !/\{(date|valid)\}/.test(t)) t = (t ? t + ' ' : '') + '{date}';
+    return Object.assign({}, r, { text: t.replace(/\{(yard|date|time|price|number|valid)\}/g, (m, k) => V[k]) });
+  });
 }
 // v399: WEATHERED / STICKER-LOOK LOGO. Sliders: Weathered (worn patches + rough edges), Fuzzy (soft blur), Faded gray (lighter ink), Spots (light pits).
 // A receipt printer only prints black dots, so gray is made with fine dots (dithering). Seeded, so the preview and every printed ticket match.
@@ -718,7 +743,7 @@ async function printTicket(id, btn, advance) {   // v389: advance = sold today, 
     doc.open();
     // v399: rows from the yard's saved design (an old yard: built from its ticket text), filled in with this sale
     let rows = d.design && d.design.rows ? d.design.rows : rowsFromTemplate(d.template, d.logoSize);
-    if (d.advance && !rows.some(r => r.type === 'text' && /\{valid\}/.test(r.text || ''))) rows = rows.concat([{ type: 'text', text: 'VALID FOR {valid}', font: 'Courier New', size: 70, boldness: 75, align: 'center', top: 2, bottom: 0 }]);
+    if (d.advance && !rows.some(r => r.type === 'text' && (r.hasDate || /\{valid\}/.test(r.text || '')))) rows =   /* v400: a row marked as the date already shows tomorrow's date */ rows.concat([{ type: 'text', text: 'VALID FOR {valid}', font: 'Courier New', size: 70, boldness: 75, align: 'center', top: 2, bottom: 0 }]);
     rows = await applyWeather(fillRows(rows, d.vals), d.logo);   // v399: weathered logo
     doc.write('<!doctype html><html><head><meta charset="utf-8"><title>Ticket</title><style>' + ticketCSS(w, rows) + '</style></head><body>' + ticketHTML(rows, d.logo, d.number, w) + '</body></html>');
     doc.close();
@@ -735,32 +760,38 @@ async function printTicket(id, btn, advance) {   // v389: advance = sold today, 
 // Manage
 function openYards() { if (!tickets) return; drawYardEditor(); document.getElementById('yt-modal').classList.add('open'); }
 function closeYards() { document.getElementById('yt-modal').classList.remove('open'); }
-function sampleVals(y) {   // v389: the preview uses right now as the sale time
+const fmtTime12 = (s) => { const [hh, mm] = String(s).split(':').map(Number); return ((hh % 12) || 12) + ':' + String(mm).padStart(2, '0') + ' ' + (hh < 12 ? 'AM' : 'PM'); };   // v400: '08:00' → '8:00 AM'
+// function sampleVals(y) {   // v389: the preview uses right now as the sale time
+function sampleVals(y) {   // v389: the preview uses right now as the sale time; v400: or the yard's print time
   const now = new Date(), tz = (tickets && tickets.tz) || undefined;
   const date = now.toLocaleDateString('en-US', { timeZone: tz, month: '2-digit', day: '2-digit', year: 'numeric' });
   const time = now.toLocaleTimeString('en-US', { timeZone: tz, hour: 'numeric', minute: '2-digit', hour12: true });
-  return { yard: y.name || 'Yard', date, time, valid: date, price: money2.format(y.price || 0), number: '000123' };
+  return { yard: y.name || 'Yard', date, time: y.printTime ? fmtTime12(y.printTime) : time, valid: date, ticketDate: date, price: money2.format(y.price || 0), number: '000123' };
 }
 function yardRow(y) {
   const row = document.createElement('div'); row.className = 'yt-edit';
   let rows = (y.design && y.design.rows) ? JSON.parse(JSON.stringify(y.design.rows)) : rowsFromTemplate(y.template || tickets.defaultTemplate, y.logoSize || 70);
   rows.forEach(r => { if (r.type === 'text' && r.boldness === undefined) { r.boldness = r.bold ? 75 : 0; delete r.bold; } });   // v399: old Bold on/off → boldness number
+  rows.forEach(r => { if (r.type === 'line') { r.style = r.style || 'dashes'; if (r.thickness === undefined) r.thickness = 10; if (r.dash === undefined) r.dash = 6; if (r.gap === undefined) r.gap = 6; if (r.width === undefined) r.width = 100; } });   // v400: old dividers get the new controls
   let sel = -1, logo = y.logo || null, logoChanged = false;
   const AL = [['left', 'Left'], ['center', 'Center'], ['right', 'Right']];
   const NAMES = { text: 'Text', line: 'Divider', logo: 'Logo', barcode: 'Barcode' };
   row.innerHTML = '<div><div class="yt-row" style="margin-bottom:8px;"><div style="flex:1"><label>Yard name</label><input class="n" style="width:100%"></div>'
     + '<div><label>Ticket price</label><input class="p" type="number" min="0" step="0.01" style="width:100px"></div></div>'
+    + '<div class="yt-row" style="margin-bottom:8px;"><div><label>Print time (blank = the real time sold)</label><input class="pt" type="time" style="width:140px"></div><label class="yt-chk"><input type="checkbox" class="rnd"> Randomize (up to 30 minutes later, never earlier)</label></div>'
     + '<label>Ticket rows</label><div class="yt-rows"></div>'
     + '<div class="yt-add"><button type="button" class="btn btn-secondary btn-sm" data-add="text">+ Text</button><button type="button" class="btn btn-secondary btn-sm" data-add="line">+ Divider</button><button type="button" class="btn btn-secondary btn-sm" data-add="logo">+ Logo</button><button type="button" class="btn btn-secondary btn-sm" data-add="barcode">+ Barcode</button></div>'
     + '<div class="yt-row" style="margin:12px 0 0;"><button type="button" class="btn btn-secondary btn-sm s">Save</button><button type="button" class="btn btn-secondary btn-sm dup" title="Make a new ticket from this one, then change what you like">Duplicate</button><button type="button" class="btn btn-secondary btn-sm d">Remove</button></div></div>'
     + '<div><label>Preview (real size)</label><iframe class="yt-pv" title="Ticket preview"></iframe></div>';
   const n = row.querySelector('.n'), p = row.querySelector('.p'), fr = row.querySelector('.yt-pv'), list = row.querySelector('.yt-rows');
   n.value = y.name || ''; p.value = y.price !== undefined ? Number(y.price).toFixed(2) : '';
+  const pt = row.querySelector('.pt'), rnd = row.querySelector('.rnd');   // v400: print time + randomizer
+  pt.value = (y.design && y.design.printTime) || ''; rnd.checked = !!(y.design && y.design.randomize);
   const paper = () => parseInt(document.getElementById('yt-width').value, 10) === 58 ? 58 : 80;
   let pvTok = 0;
   const preview = async () => {
     const tok = ++pvTok, w = paper();
-    const shown = await applyWeather(fillRows(rows, sampleVals({ name: n.value, price: parseFloat(p.value) || 0 })), logo);   // v399
+    const shown = await applyWeather(fillRows(rows, sampleVals({ name: n.value, price: parseFloat(p.value) || 0, printTime: pt.value })), logo);   // v399
     const doc = fr.contentDocument; if (!doc || tok !== pvTok) return;
     fr.style.width = Math.round(w * 3.7795) + 'px';   // real paper width on screen
     doc.open();
@@ -779,7 +810,7 @@ function yardRow(y) {
     rows.forEach((r, i) => {
       const el = document.createElement('div'); el.className = 'yt-r' + (i === sel ? ' sel' : '');
       const head = document.createElement('div'); head.className = 'yt-rh';
-      head.innerHTML = '<span class="ty">' + NAMES[r.type] + '</span>' + (r.type === 'text' ? '<input class="rt" placeholder="Type the line here">' : '<span class="sm"></span>')
+      head.innerHTML = '<span class="ty">' + (r.type === 'text' && r.hasDate ? 'Date' : NAMES[r.type]) + '</span>' + (r.type === 'text' ? '<input class="rt" placeholder="Type the line here">' : '<span class="sm"></span>')
         + '<button type="button" class="btn btn-secondary btn-sm" data-a="up" title="Move up">\u25B2</button><button type="button" class="btn btn-secondary btn-sm" data-a="dn" title="Move down">\u25BC</button><button type="button" class="btn btn-secondary btn-sm" data-a="x" title="Delete this row">\u2715</button>';
       if (r.type === 'text') {
         const ti = head.querySelector('.rt'); ti.value = r.text || '';
@@ -796,26 +827,30 @@ function yardRow(y) {
       if (i === sel) {
         const body = document.createElement('div'); body.className = 'yt-rb';
         let html = '<div class="yt-grid">';
-        if (r.type === 'text') html += '<div><label>Font</label><select class="fsel">' + Object.keys(FONT_STACKS).map(f => '<option value="' + f + '"' + (r.font === f ? ' selected' : '') + '>' + f + '</option>').join('') + '<option value="__custom"' + (FONT_STACKS[r.font] ? '' : ' selected') + '>Other (type a font name)\u2026</option></select><input class="fcus" maxlength="40" placeholder="Font name on the printing computer" style="margin-top:4px;' + (FONT_STACKS[r.font] ? 'display:none' : '') + '" value="' + (FONT_STACKS[r.font] ? '' : esc(r.font || '')) + '"></div>' + pick('align', 'Position', AL, r) + sl('size', 'Text size', 1, r) + sl('boldness', 'Boldness (0 = normal)', 0, r);
+        if (r.type === 'text') html += '<div><label>Font</label><select class="fsel">' + Object.keys(FONT_STACKS).map(f => '<option value="' + f + '"' + (r.font === f ? ' selected' : '') + '>' + f + '</option>').join('') + '<option value="__custom"' + (FONT_STACKS[r.font] ? '' : ' selected') + '>Other (type a font name)\u2026</option></select><input class="fcus" maxlength="40" placeholder="Font name on the printing computer" style="margin-top:4px;' + (FONT_STACKS[r.font] ? 'display:none' : '') + '" value="' + (FONT_STACKS[r.font] ? '' : esc(r.font || '')) + '"></div>' + pick('align', 'Position', AL, r) + sl('size', 'Text size', 1, r) + sl('boldness', 'Boldness (0 = normal)', 0, r) + '<label class="yt-chk" style="grid-column:1/-1"><input type="checkbox" data-k="hasDate"' + (r.hasDate ? ' checked' : '') + '> This row has the date</label><div class="yt-note" style="grid-column:1/-1;margin-top:-4px">The date fills in when you sell a ticket. Type {date} where you want it in this row (like "Date: {date}"); if you leave it out, the date goes at the end of the row. "Sell for tomorrow" tickets show tomorrow\u2019s date here. Only one row can have it.</div>';   // v400
         if (r.type === 'logo') html += pick('align', 'Position', AL, r) + sl('width', 'Logo size', 1, r) + sl('weather', 'Weathered look', 0, r) + sl('gravel', 'Gravel (chunky grit)', 0, r) + sl('fuzzy', 'Fuzzy', 0, r) + sl('fade', 'Faded gray', 0, r) + sl('spots', 'Spots', 0, r);
         if (r.type === 'barcode') html += '<div><label>Barcode numbers (blank = each ticket\u2019s own number)</label><input data-k="value" maxlength="40" placeholder="e.g. 12345678" value="' + esc(r.value || '') + '"></div>' + pick('align', 'Position', AL, r) + sl('width', 'Barcode width', 1, r) + sl('height', 'Barcode height', 1, r);
-        if (r.type !== 'line') html += sl('top', 'Space above', 0, r) + sl('bottom', 'Space below', 0, r);
-        else html += sl('top', 'Space above', 0, r) + sl('bottom', 'Space below', 0, r);
+        // if (r.type !== 'line') html += sl('top', 'Space above', 0, r) + sl('bottom', 'Space below', 0, r);   (v399)
+        // else html += sl('top', 'Space above', 0, r) + sl('bottom', 'Space below', 0, r);   (v399)
+        if (r.type === 'line') { const st = r.style || 'dashes'; html += pick('style', 'Style', [['dashes', 'Tiny dashes'], ['dots', 'Dots'], ['solid', 'Solid line'], ['double', 'Double line']], r) + pick('align', 'Position', AL, r) + sl('thickness', 'Thickness', 1, r) + (st === 'dashes' ? sl('dash', 'Dash length', 1, r) : '') + (st === 'dashes' || st === 'dots' ? sl('gap', 'Gap between marks', 1, r) : '') + sl('width', 'Line width', 1, r); }   // v400
+        html += sl('top', 'Space above', 0, r) + sl('bottom', 'Space below', 0, r);
         html += '</div>';
         if (r.type === 'logo') html = '<div class="yt-drop"><div>' + (logo ? '<img alt="" src="' + esc(logo) + '">' : '') + 'Drop your logo picture here</div></div>'
           + '<div class="yt-logo-row" style="margin:0 0 10px"><button type="button" class="btn btn-secondary btn-sm lu">Upload logo file</button><button type="button" class="btn btn-secondary btn-sm stk">Match sticker look</button>' + (logo ? '<button type="button" class="btn btn-secondary btn-sm lr">Remove logo</button>' : '') + '<input type="file" class="lf" accept="image/*" style="display:none"></div>' + html;
         body.innerHTML = html;
         body.querySelectorAll('[data-k]').forEach(c => {
-          const k = c.dataset.k, up = () => {
+          const k = c.dataset.k, up = (ev) => {
             if (c.type === 'range' || c.type === 'number') {
               let v = parseInt(c.value, 10); if (!Number.isFinite(v)) return;   // empty while typing
               v = Math.max(parseInt(c.min, 10), Math.min(parseInt(c.max, 10), v)); r[k] = v;
               body.querySelectorAll('[data-k="' + k + '"]').forEach(o => { if (o !== c && (o.type === 'range' || o.type === 'number')) o.value = v; });   // slider and number box stay together
             } else r[k] = c.type === 'checkbox' ? c.checked : c.value;
+            if (k === 'hasDate') { if (r.hasDate) rows.forEach(o => { if (o !== r) o.hasDate = false; }); drawList(); }   // v400: only one row has the date
+            if (k === 'style' && ev && ev.type === 'change') drawList();   // v400: divider controls follow the style
             preview();
           };
           c.addEventListener('input', up);
-          c.addEventListener('change', () => { if (c.type === 'number' && r[k] !== undefined) c.value = r[k]; up(); });
+          c.addEventListener('change', (ev) => { if (c.type === 'number' && r[k] !== undefined) c.value = r[k]; up(ev); });
         });
         const fs = body.querySelector('.fsel'), fc = body.querySelector('.fcus');   // v399: font list + any font name
         if (fs) {
@@ -838,20 +873,20 @@ function yardRow(y) {
       list.append(el);
     });
   };
-  const NEW = { text: { type: 'text', text: '', font: 'Courier New', size: 45, boldness: 0, align: 'center', top: 0, bottom: 0 }, line: { type: 'line', align: 'center', top: 10, bottom: 10 }, logo: { type: 'logo', align: 'center', width: 70, top: 0, bottom: 10 }, barcode: { type: 'barcode', align: 'center', value: '', width: 75, height: 22, top: 5, bottom: 5 } };
+  const NEW = { text: { type: 'text', text: '', font: 'Courier New', size: 45, boldness: 0, align: 'center', top: 0, bottom: 0 }, line: { type: 'line', style: 'dashes', thickness: 10, dash: 6, gap: 6, width: 100, align: 'center', top: 10, bottom: 10 }, logo: { type: 'logo', align: 'center', width: 70, top: 0, bottom: 10 }, barcode: { type: 'barcode', align: 'center', value: '', width: 75, height: 22, top: 5, bottom: 5 } };
   row.querySelectorAll('[data-add]').forEach(bt => bt.onclick = () => { rows.push(JSON.parse(JSON.stringify(NEW[bt.dataset.add]))); sel = rows.length - 1; drawList(); preview(); });
-  [n, p].forEach(x => x.addEventListener('input', preview));
+  [n, p, pt].forEach(x => x.addEventListener('input', preview));
   drawList(); setTimeout(preview, 60);   // after the row is on the page (the preview frame needs to exist first)
   row.querySelector('.s').onclick = async () => {
     const lg = rows.find(r => r.type === 'logo');
-    const r = await fetch('/api/tickets/yards', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ id: y.id || null, name: n.value, price: p.value, template: y.template || tickets.defaultTemplate, logoSize: lg ? lg.width : 70, design: { rows } }, logoChanged ? { logo: logo || '' } : {})) });   // v399: + rows
+    const r = await fetch('/api/tickets/yards', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ id: y.id || null, name: n.value, price: p.value, template: y.template || tickets.defaultTemplate, logoSize: lg ? lg.width : 70, design: { rows, printTime: pt.value, randomize: rnd.checked } }, logoChanged ? { logo: logo || '' } : {})) });   // v399: + rows
     const res = await r.json().catch(() => ({}));
     if (!r.ok) { alert(res.error || 'Couldn\u2019t save'); return; }
     pageCache.live(); await loadTickets(); drawYardEditor();
   };
   row.querySelector('.dup').onclick = async () => {   // v399: copy this yard's whole ticket (what you see now, saved or not) as a new yard
     const lg = rows.find(r => r.type === 'logo');
-    const r = await fetch('/api/tickets/yards', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: null, name: ((n.value || '').trim() || 'Yard').slice(0, 74) + ' copy', price: p.value, template: y.template || tickets.defaultTemplate, logoSize: lg ? lg.width : 70, design: { rows }, logo: logo || '' }) });
+    const r = await fetch('/api/tickets/yards', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: null, name: ((n.value || '').trim() || 'Yard').slice(0, 74) + ' copy', price: p.value, template: y.template || tickets.defaultTemplate, logoSize: lg ? lg.width : 70, design: { rows, printTime: pt.value, randomize: rnd.checked }, logo: logo || '' }) });
     const res = await r.json().catch(() => ({}));
     if (!r.ok) { alert(res.error || 'Couldn\u2019t duplicate'); return; }
     pageCache.live(); await loadTickets(); drawYardEditor();

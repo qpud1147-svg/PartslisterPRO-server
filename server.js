@@ -1,4 +1,7 @@
-// PartsLister Pro server — v399
+// PartsLister Pro server — v400
+// v400: yard tickets — (1) dividers have a style (tiny dashes, dots, solid, double) with thickness, dash length, gap, width and position; (2) one text row per
+//       ticket can be marked "has the date" — {date} there is the ticket's own day (tomorrow for "Sell for tomorrow"); (3) each yard can have a print time
+//       (blank = the real time sold) and a Randomize switch that adds 0–30 minutes, never earlier. All saved in the yard's design JSON — no new columns.
 // v399: TICKET DESIGNER — a yard's ticket is a list of rows (text, divider, logo, barcode) saved with the yard (yards.design). Each text row keeps its
 //       own font (any plain font name), size 1–100 and boldness 0–100; the logo keeps size, position and its weathered / gravel / fuzzy / faded / spots
 //       settings; the barcode keeps its numbers (Code 128), size and position. Everything is clamped in cleanRow() so a saved design can't break printing.
@@ -3938,8 +3941,9 @@ function cleanRow(r) {
   const al = (v, def) => ['left', 'center', 'right'].includes(v) ? v : def;
   const type = ['text', 'line', 'logo', 'barcode'].includes(r.type) ? r.type : 'text';
   const out = { type, align: al(r.align, 'center'), top: n(r.top, 0, 0), bottom: n(r.bottom, type === 'text' ? 0 : 5, 0) };
-  if (type === 'text') Object.assign(out, { text: String(r.text || '').replace(/[\r\n]+/g, ' ').slice(0, 200), font: /^[A-Za-z0-9 \-]{1,40}$/.test(String(r.font || '')) ? String(r.font) : 'Courier New', size: n(r.size, 45), boldness: n(r.boldness, r.bold ? 75 : 0, 0) });
+  if (type === 'text') Object.assign(out, { text: String(r.text || '').replace(/[\r\n]+/g, ' ').slice(0, 200), font: /^[A-Za-z0-9 \-]{1,40}$/.test(String(r.font || '')) ? String(r.font) : 'Courier New', size: n(r.size, 45), boldness: n(r.boldness, r.bold ? 75 : 0, 0), hasDate: !!r.hasDate });   // v400: + hasDate
   if (type === 'logo') Object.assign(out, { width: n(r.width, 70), weather: n(r.weather, 0, 0), gravel: n(r.gravel, 0, 0), fuzzy: n(r.fuzzy, 0, 0), fade: n(r.fade, 0, 0), spots: n(r.spots, 0, 0) });
+  if (type === 'line') Object.assign(out, { style: ['dashes', 'dots', 'solid', 'double'].includes(r.style) ? r.style : 'dashes', thickness: n(r.thickness, 10), dash: n(r.dash, 6), gap: n(r.gap, 6), width: n(r.width, 100) });   // v400: divider styles
   if (type === 'barcode') Object.assign(out, { value: String(r.value || '').replace(/[^\x20-\x7E]/g, '').trim().slice(0, 40), width: n(r.width, 75), height: n(r.height, 22) });   // value '' = each ticket's own number
   return out;
 }
@@ -3947,7 +3951,19 @@ function cleanRow(r) {
 function cleanDesign(d) {
   d = (d && typeof d === 'object') ? d : {};
   const rows = Array.isArray(d.rows) ? d.rows.slice(0, 60).map(cleanRow) : null;
-  return { rows: rows && rows.length ? rows : null };   // null = not redesigned yet (the page builds rows from the old ticket text)
+  // return { rows: rows && rows.length ? rows : null };   // null = not redesigned yet (the page builds rows from the old ticket text)   (v399)
+  let seen = false; (rows || []).forEach(r => { if (r.type === 'text' && r.hasDate) { if (seen) r.hasDate = false; seen = true; } });   // v400: only one row has the date
+  const printTime = /^([01]\d|2[0-3]):[0-5]\d$/.test(String(d.printTime || '')) ? String(d.printTime) : '';   // v400: 'HH:MM' or '' (= the real time sold)
+  return { rows: rows && rows.length ? rows : null, printTime, randomize: !!d.randomize };   // rows null = not redesigned yet (the page builds rows from the old ticket text)
+}
+// v400: the time printed on a ticket. No set time → null (the real time sold). Randomize adds 0–30 minutes, never earlier, never past 11:59 PM.
+function pickTicketTime(printTime, randomize, rand = Math.random) {
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(String(printTime || ''))) return null;
+  const [hh, mm] = printTime.split(':').map(Number);
+  let mins = hh * 60 + mm; if (randomize) mins += Math.floor(rand() * 31);
+  mins = Math.min(1439, mins);
+  const h = Math.floor(mins / 60), m = mins % 60;
+  return ((h % 12) || 12) + ':' + String(m).padStart(2, '0') + ' ' + (h < 12 ? 'AM' : 'PM');
 }
 async function ticketSettings(userId) {
   // const r = await pool.query('SELECT time, width, randomize FROM ticket_settings …');   (v388)
@@ -4038,14 +4054,17 @@ app.post('/api/tickets/yards/:id/print', requireUser, express.json(), async (req
       [req.user.id, y.id, y.name, y.price, now, validKey])).rows[0];
     let number = String(row.id).padStart(6, '0'); if (number.length % 2) number = '0' + number;   // unique per ticket, even length so the barcode (Code 128-C) encodes it exactly
     const date = new Intl.DateTimeFormat('en-US', { timeZone: tz, month: '2-digit', day: '2-digit', year: 'numeric' }).format(now);
-    const time = new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: 'numeric', minute: '2-digit', hour12: true }).format(now);
+    // const time = new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: 'numeric', minute: '2-digit', hour12: true }).format(now);   (v399)
+    let time = new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: 'numeric', minute: '2-digit', hour12: true }).format(now);
+    { const dz = cleanDesign(y.design); const picked = pickTicketTime(dz.printTime, dz.randomize); if (picked) time = picked; }   // v400: the yard's print time (+ randomizer)
     const valid = String(validDay.getUTCMonth() + 1).padStart(2, '0') + '/' + String(validDay.getUTCDate()).padStart(2, '0') + '/' + validDay.getUTCFullYear() + (advance ? ' (advance)' : '');
+    const ticketDate = String(validDay.getUTCMonth() + 1).padStart(2, '0') + '/' + String(validDay.getUTCDate()).padStart(2, '0') + '/' + validDay.getUTCFullYear();   // v400: the ticket's own day (tomorrow for advance tickets)
     const price = '$' + Number(y.price).toFixed(2);
     let tpl = String(y.template || TICKET_TEMPLATE);
     // an advance ticket always says which day it's good for, even if the ticket text has no {valid}
     if (advance && !tpl.includes('{valid}')) tpl += '\n{big}VALID FOR {valid}';
     const text = tpl.replace(/\{(yard|date|time|price|number|valid)\}/g, (m, k) => ({ yard: y.name, date, time, price, number, valid })[k]);
-    res.json({ ok: true, text, number, template: tpl, vals: { yard: y.name, date, time, price, number, valid }, width: st.width, yard: y.name, logo: y.logo || null, logoSize: y.logo_size || 70, design: cleanDesign(y.design), advance });
+    res.json({ ok: true, text, number, template: tpl, vals: { yard: y.name, date, time, price, number, valid, ticketDate }, width: st.width, yard: y.name, logo: y.logo || null, logoSize: y.logo_size || 70, design: cleanDesign(y.design), advance });
   } catch (e) { console.error('[tickets print]', e.message); res.status(500).json({ error: 'Could not print the ticket' }); }
 });
 
@@ -4944,5 +4963,7 @@ app.get('*', (req, res) => {
 });
 
 setupDatabase()
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v389 listening on ' + PORT)))
+  // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v389 listening on ' + PORT)))   // v399: version in the startup log updated
+  // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v399 listening on ' + PORT)))   // v400: version in the startup log
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v400 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });
