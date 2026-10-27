@@ -1057,7 +1057,7 @@ function renderTypes() {
   const line = (b, t) => { const p = el('div'); p.append(el('b', '', b + ' '), document.createTextNode(t)); defs.append(p); };
   line('Sold', 'items in orders from the last 90 days. Canceled and failed orders are left out; a sale that was refunded later still counts.');
   line('Returned', 'returns opened in the last 90 days (not “not received” claims, cases or cancellations), matched to the item sold. Return rate = returned ÷ sold.');
-  line('Sell-through', 'sold ÷ (sold + still listed). Days to sell run from when the listing started (a relist counts from the relist); * means fewer than 3 sales had a start date.');
+  line('Sell-through', 'sold ÷ (sold + still listed). Days to sell run from when the listing started (a relist counts from the relist), using sales from the last 60 days (all eBay gives for this); * means fewer than 3 sales had a start date.');
   line('Store-wide', 'the cards at the top leave out “Not a part”. Every type is shown, however few sold.');
   const um = document.getElementById('t-unmatched'); um.textContent = '';
   if (d.unmatchedSample && d.unmatchedSample.length) {

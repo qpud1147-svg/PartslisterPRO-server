@@ -4453,31 +4453,29 @@ async function returnsSince(userId, since) {
   }
   return { list: [...out.values()], truncated };
 }
-// eBay: every active listing (title + start) and every listing that ended in the last 91 days (for start times), by GetSellerList
-async function listingSnapshot(userId) {
-  const active = [], starts = new Map();
-  const pull = async (fromIso, toIso, isActive) => {
-    for (let page = 1; page <= 60; page++) {
-      const xml = await tradingCall(userId, 'GetSellerList',
-        `<EndTimeFrom>${fromIso}</EndTimeFrom><EndTimeTo>${toIso}</EndTimeTo><DetailLevel>ReturnAll</DetailLevel>`
-        + `<Pagination><EntriesPerPage>200</EntriesPerPage><PageNumber>${page}</PageNumber></Pagination>`
-        + `<OutputSelector>ItemArray.Item.ItemID</OutputSelector><OutputSelector>ItemArray.Item.Title</OutputSelector>`
-        + `<OutputSelector>ItemArray.Item.ListingDetails.StartTime</OutputSelector><OutputSelector>ItemArray.Item.SellingStatus.ListingStatus</OutputSelector>`
-        + `<OutputSelector>PaginationResult</OutputSelector>`);
-      const items = xmlAll(xmlTag(xml, 'ItemArray') || '', 'Item');
-      items.forEach(it => {
-        const id = xmlTag(it, 'ItemID'), st = xmlTag(xmlTag(it, 'ListingDetails') || '', 'StartTime');
-        if (id && st) starts.set(String(id), st);
-        if (isActive && /^Active$/i.test(xmlTag(xmlTag(it, 'SellingStatus') || '', 'ListingStatus') || 'Active')) active.push({ title: xmlDecode(xmlTag(it, 'Title')) });
-      });
-      const pages = parseInt(xmlTag(xmlTag(xml, 'PaginationResult') || '', 'TotalNumberOfPages') || '1', 10) || 1;
-      if (!items.length || page >= pages) break;
-    }
-  };
-  const now = Date.now();
-  await pull(new Date(now).toISOString(), new Date(now + 119 * 86400000).toISOString(), true);        // listed right now (eBay allows up to 120 days at a time)
-  await pull(new Date(now - 91 * 86400000).toISOString(), new Date(now).toISOString(), false);        // ended recently — their start times
-  return { active, starts };
+// v401: first try (GetSellerList, ReturnAll) timed out on a big store, so the snapshot now uses GetMyeBaySelling (the call that already counts your active listings).
+// eBay: pages of one GetMyeBaySelling list → [{ id, title, start }]. SoldList reaches back 60 days at most.
+async function myEbayList(userId, listName, listInner) {
+  const token = await getAccessToken(userId), out = [];
+  const off = ['ActiveList', 'ScheduledList', 'SoldList', 'UnsoldList', 'BidList', 'DeletedFromSoldList', 'DeletedFromUnsoldList'].filter(n => n !== listName)
+    .map(n => `<${n}><Include>false</Include></${n}>`).join('');
+  for (let page = 1; page <= 100; page++) {
+    const body = `<?xml version="1.0" encoding="utf-8"?>\n<GetMyeBaySellingRequest xmlns="urn:ebay:apis:eBLBaseComponents">`
+      + `<${listName}><Include>true</Include>${listInner}<Pagination><EntriesPerPage>200</EntriesPerPage><PageNumber>${page}</PageNumber></Pagination></${listName}>${off}</GetMyeBaySellingRequest>`;
+    const r = await fetch('https://api.ebay.com/ws/api.dll', {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/xml', 'X-EBAY-API-CALL-NAME': 'GetMyeBaySelling', 'X-EBAY-API-SITEID': '0', 'X-EBAY-API-COMPATIBILITY-LEVEL': '1193', 'X-EBAY-API-IAF-TOKEN': token },
+      body, signal: AbortSignal.timeout(60000)
+    });
+    const xml = await r.text();
+    if (!r.ok || xmlTag(xml, 'Ack') === 'Failure') throw new Error(xmlDecode(xmlTag(xml, 'LongMessage') || xmlTag(xml, 'ShortMessage') || ('HTTP ' + r.status)).replace(/<[^>]+>/g, '').slice(0, 200));
+    const list = xmlTag(xml, listName) || '';
+    const items = xmlAll(list, 'Item');
+    items.forEach(it => out.push({ id: xmlTag(it, 'ItemID'), title: xmlDecode(xmlTag(it, 'Title') || ''), start: xmlTag(xmlTag(it, 'ListingDetails') || '', 'StartTime') }));
+    const pages = parseInt(xmlTag(xmlTag(list, 'PaginationResult') || '', 'TotalNumberOfPages') || '1', 10) || 1;
+    if (!items.length || page >= pages) break;
+  }
+  return out;
 }
 async function computeTypeStats(userId) {
   const errors = [], since = new Date(Date.now() - 90 * 86400000);
@@ -4497,9 +4495,19 @@ async function computeTypeStats(userId) {
     returns = r.list.map(x => ({ id: x.id, reason: x.reason, title: byBoth.get(x.orderId + '|' + x.itemId) || byItem.get(x.itemId) || byOrder.get(x.orderId) || null }));
     if (r.truncated) errors.push('Returns: eBay gave 200 in one list, so there may be more than shown.');
   } catch (e) { errors.push('Returns: ' + e.message); }
+  // let active = null, starts = null;   // v401: one pull for both
+  // try { const s = await listingSnapshot(userId); active = s.active; starts = s.starts; }
+  // catch (e) { errors.push('Listings: ' + e.message); }
   let active = null, starts = null;
-  try { const s = await listingSnapshot(userId); active = s.active; starts = s.starts; }
-  catch (e) { errors.push('Listings: ' + e.message); }
+  try {
+    const act = await myEbayList(userId, 'ActiveList', '');
+    active = act.map(x => ({ title: x.title })); starts = new Map(); act.forEach(x => { if (x.id && x.start) starts.set(String(x.id), x.start); });
+  } catch (e) { errors.push('Listings: ' + e.message); }
+  try {   // days to sell: the sold items' listing start (eBay keeps 60 days of sold items here)
+    const sd = await myEbayList(userId, 'SoldList', '<DurationInDays>60</DurationInDays>');
+    if (!starts) starts = new Map();
+    sd.forEach(x => { if (x.id && x.start) starts.set(String(x.id), x.start); });
+  } catch (e) { errors.push('Days to sell: ' + e.message); }
   return Object.assign({ days: 90, generatedAt: new Date().toISOString(), errors, activeCount: active ? active.length : null }, buildTypeStats({ sold, returns, active, starts }));
 }
 const typeStatsCache = new Map();   // userId → { at, data } | { at, promise } | { at, error }
