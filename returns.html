@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Returns v401</title>
+<title>PartsLister Pro Returns v402</title>
 <!-- v382: switching views is instant; browser reload / Refresh really reloads. v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
 <!-- PartsLister Pro — Returns page (v324: new). Returns, "item not received" claims and cases from
      eBay's Post-Order API, read live (nothing saved on the server). Approve / decline / refund from here.
@@ -257,6 +257,40 @@
   #toast.error { border-left-color: var(--danger); }
   .order { grid-template-columns: 64px 1fr auto; }
   @media (max-width: 700px) { .order { grid-template-columns: 56px 1fr auto; } }
+  /* v402: the boxed refresh control — same as Sales and Active */
+  .title-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
+  .title-row .page-title { margin-bottom: 0; }
+  .sample-badge { font-family: 'Barlow Condensed', sans-serif; font-size: 11px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--text); border: 1px solid var(--border); background: var(--surface2); border-radius: 3px; padding: 3px 8px; cursor: pointer; }
+  .sample-badge:hover { border-color: var(--accent); }
+  .sample-badge:disabled { cursor: default; }
+  .sample-badge .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--success); margin-right: 6px; vertical-align: 1px; }
+  .sample-badge.warn .dot { background: var(--danger); }
+  .sample-badge.busy .dot { background: var(--accent); animation: pulse 1s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: 0.3; } }
+  /* v402: Part types — clickable names and cards, item lists */
+  .t-card.click { cursor: pointer; text-align: left; font: inherit; color: inherit; }
+  .t-card.click:hover { border-color: var(--accent); }
+  button.t-name { background: none; border: none; color: inherit; font: inherit; font-weight: 600; cursor: pointer; padding: 0; text-align: left; }
+  button.t-name:hover { color: var(--accent); }
+  table.t tr.sel td { background: rgba(245,166,35,0.10); }
+  table.t tr.sel td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+  table.t tr.t-detail td { text-align: left; white-space: normal; background: var(--surface); padding: 10px 14px 14px; }
+  .t-inner .seg { margin-bottom: 8px; }
+  .ti-list { display: flex; flex-direction: column; }
+  .ti-row { display: flex; justify-content: space-between; gap: 14px; padding: 9px 4px; border-bottom: 1px solid var(--border); }
+  .ti-main { min-width: 0; }
+  .ti-title { font-weight: 600; font-size: 14px; color: var(--text); }
+  .ti-meta { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+  .ti-type { color: var(--accent); }
+  .ti-right { text-align: right; white-space: nowrap; flex-shrink: 0; }
+  .ti-amt { font-family: 'Barlow Condensed', sans-serif; font-size: 18px; font-weight: 700; }
+  .ti-order { font-size: 12px; color: var(--accent); text-decoration: none; }
+  .ti-order:hover { text-decoration: underline; }
+  .ti-top { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 12px; }
+  .ti-h { font-family: 'Barlow Condensed', sans-serif; font-size: 22px; font-weight: 700; }
+  button.t-back, button.t-link { background: none; border: none; color: var(--accent); cursor: pointer; font: inherit; padding: 0; }
+  button.t-back:hover, button.t-link:hover { text-decoration: underline; }
+  .t-sel { background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px; font: inherit; max-width: 100%; }
   /* v401: Part types */
   #types-panel { display: none; }
   body.types-mode #types-panel { display: block; }
@@ -284,7 +318,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v401</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v402</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -309,8 +343,9 @@
 </header>
 
 <main>
-  <div class="page-title">Returns</div>
-  <div class="page-note" id="r-note">&nbsp;</div>
+  <div class="title-row"><div class="page-title">Returns</div>
+    <button type="button" class="sample-badge" id="r-badge">eBay</button></div>   <!-- v402: boxed refresh, same as Sales -->
+  <div class="page-note" id="r-note" style="display:none">&nbsp;</div>   <!-- v402: only shown for "not connected" -->
   <div class="error-box" id="r-error"></div>
 
   <!-- <div id="late"></div> -->   <!-- v371: Late returns (v372: now a button in the row below) -->
@@ -338,10 +373,12 @@
   <div id="types-panel">
     <div class="page-note" id="t-note">&nbsp;</div>
     <div class="error-box" id="t-error"></div>
-    <div class="t-cards" id="t-cards"></div>
-    <div class="t-wrap"><table class="t" id="t-table"></table></div>
-    <div class="t-note" id="t-defs"></div>
-    <div id="t-unmatched"></div>
+    <div id="t-main">
+      <div class="t-cards" id="t-cards"></div>
+      <div class="t-wrap"><table class="t" id="t-table"></table></div>
+      <div class="t-note" id="t-defs"></div>
+    </div>
+    <div id="t-items" style="display:none"></div>   <!-- v402: the items behind a number -->
   </div>
 </main>
 
@@ -614,19 +651,22 @@ async function load() {
   const me = await loadMe();
   if (!me) return;
   isAdmin = !!me.isAdmin;
-  setText('r-note', 'Loading from eBay…');
+  // setText('r-note', 'Loading from eBay…');
+  retBusy = true; updateBadge();   // v402: boxed refresh
   loadLate();   // v371
   const d = await getJSON('/api/returns?view=' + view);
+  retBusy = false; retErr = !d; retNC = !!(d && !d.connected); updateBadge();   // v402
   document.getElementById('loading').classList.add('hidden');
   const err = document.getElementById('r-error'); err.style.display = 'none';
   if (!d) { err.textContent = 'Could not reach the server.'; err.style.display = 'block'; return; }
-  if (!d.connected) { setText('r-note', 'eBay isn’t connected yet' + (isAdmin ? ' — connect it in Settings → Admin.' : '.')); items = []; render(); return; }
+  if (!d.connected) { document.getElementById('r-note').style.display = ''; setText('r-note', 'eBay isn’t connected yet' + (isAdmin ? ' — connect it in Settings → Admin.' : '.')); items = []; render(); return; }
   if (d.errors && d.errors.length) { err.textContent = 'eBay had a problem with part of this: ' + d.errors.join(' | '); err.style.display = 'block'; }
   items = d.items || [];
   disputesNeedScope = !!d.disputesNeedScope;   // v373
-  setText('r-note', 'From eBay · checked ' + new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) + ' · ');
-  const r = el('button', '', 'Refresh'); r.type = 'button'; r.onclick = () => { pageCache.live(); load(); };   // v382: Refresh really asks eBay
-  document.getElementById('r-note').append(r);
+  // setText('r-note', 'From eBay · checked ' + new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) + ' · ');
+  // const r = el('button', '', 'Refresh'); r.type = 'button'; r.onclick = () => { pageCache.live(); load(); };   // v382: Refresh really asks eBay
+  // document.getElementById('r-note').append(r);
+  retAt = new Date().toISOString(); updateBadge();   // v402: the box says how long ago
   render();
   const hm = /^#r=(.+)$/.exec(location.hash);
   if (hm) showDetail(decodeURIComponent(hm[1]));
@@ -1006,6 +1046,208 @@ document.querySelectorAll('#seg-kind button').forEach(b => b.addEventListener('c
 let st; document.getElementById('r-search').addEventListener('input', () => { clearTimeout(st); st = setTimeout(render, 120); });
 pageCache.rerun = () => { if (!document.getElementById('detail').classList.contains('open')) load(); };   // v380: fresh data from eBay → draw the page again
 
+let retBusy = false, retAt = null, retErr = false, retNC = false;   // v402: state of the boxed refresh
+// ─── v402: PART TYPES (saved copy opens instantly; click a type or a card to see the items behind it) ───────────
+let typesMode = false, typesData = null, typesSort = { key: 'sold', dir: -1 }, typesTimer = null, typesBusy = false;
+let typesSel = null, typesView = null, typesItems = {}, typesQ = '';
+const pct = (v) => v === null || v === undefined ? '—' : (v * 100).toFixed(v > 0 && v < 0.1 ? 1 : 0) + '%';
+const num = (v) => v === null || v === undefined ? '—' : String(v);
+const TCOLS = [
+  ['type', 'Part type', (r) => r.type, 'text'], ['sold', 'Sold', (r) => r.sold], ['returned', 'Returned', (r) => r.returned],
+  ['returnRate', 'Return rate', (r) => r.returnRate], ['reasons', 'Top reasons', null],
+  ['listed', 'Still listed', (r) => r.listed], ['sellThrough', 'Sell-through', (r) => r.sellThrough],
+  ['avgDays', 'Days to sell', (r) => r.avgDays], ['avgPrice', 'Avg price', (r) => r.avgPrice]
+];
+const KIND_LABEL = { sold: 'Sold', returned: 'Returned', listed: 'Listed now' };
+const shortDate = (iso) => iso ? new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
+
+// the boxed refresh control (same look as Sales and Active)
+function updateBadge() {
+  const b = document.getElementById('r-badge'); if (!b) return;
+  b.className = 'sample-badge'; b.textContent = '';
+  let t, title = '', busy = false;
+  if (typesMode) {
+    if (typesBusy || !typesData) { busy = true; t = typesData ? 'eBay · updating…' : 'eBay · checking…'; title = 'Asking eBay for your sold items, returns and listings'; }
+    else { t = 'eBay · worked out ' + timeAgo(typesData.generatedAt) + ' · ↻'; title = 'Click to work it out again from eBay now. It also refreshes on its own every 3 hours.'; }
+  } else if (retNC) { b.classList.add('warn'); t = 'eBay · not connected'; }
+  else if (retBusy) { busy = true; t = retAt ? 'eBay · updating…' : 'eBay · checking…'; title = 'Checking eBay'; }
+  else if (retErr) { b.classList.add('warn'); t = 'eBay · problem · ↻'; title = 'Click to try again'; }
+  else { t = 'eBay · updated ' + timeAgo(retAt) + ' · ↻'; title = 'Click to refresh from eBay now. It also refreshes on its own every 5 minutes.'; }
+  if (busy) b.classList.add('busy');
+  b.title = title; b.disabled = busy || retNC;
+  b.append(el('span', 'dot'), document.createTextNode(t));
+}
+function badgeClick() { if (typesMode) loadTypes(true); else { pageCache.live(); load(); } }
+
+async function getItems(kind) {
+  const c = typesItems[kind];
+  if (c && c.at === typesData.generatedAt) return c.items;
+  const d = await getJSON('/api/returns/types/items?kind=' + kind);
+  const items = (d && d.items) || [];
+  typesItems[kind] = { at: typesData.generatedAt, items };
+  return items;
+}
+function itemRow(kind, x) {
+  const row = el('div', 'ti-row'), main = el('div', 'ti-main'), right = el('div', 'ti-right');
+  main.append(el('div', 'ti-title', x.title || '(title not found)'));
+  const meta = el('div', 'ti-meta'); meta.append(el('span', 'ti-type', x.type));
+  const bits = [];
+  if (kind === 'sold') { if (x.qty > 1) bits.push(x.qty + ' sold'); bits.push(shortDate(x.date)); if (x.days !== null && x.days !== undefined) bits.push(x.days + ' days to sell'); }
+  if (kind === 'returned') { bits.push(nice(x.reason || 'unknown reason')); bits.push('opened ' + shortDate(x.date)); if (x.status) bits.push(nice(x.status)); }
+  bits.filter(Boolean).forEach(t => meta.append(document.createTextNode(' · ' + t)));
+  main.append(meta);
+  if (kind === 'sold') right.append(el('div', 'ti-amt', money2.format(x.price)));
+  if (kind === 'returned') right.append(el('div', 'ti-amt', x.amount === null || x.amount === undefined ? '—' : money2.format(x.amount)));
+  if (kind !== 'listed' && x.orderId) { const a = el('a', 'ti-order', 'Order ' + x.orderId); a.href = '/orders#order=' + encodeURIComponent(x.orderId); right.append(a); }
+  row.append(main, right);
+  return row;
+}
+// fills box with one part type's items of one kind ('all' = every part, not counting "Not a part"); limit → "Show all" link
+async function fillItems(box, kind, type, q, limit, onAll) {
+  box.textContent = ''; box.append(el('div', 't-note', 'Loading…'));
+  const mine = typesData.generatedAt;
+  let items = await getItems(kind);
+  if (!typesData || typesData.generatedAt !== mine) return;
+  items = items.filter(x => type === 'all' ? x.type !== 'Not a part' : x.type === type);
+  if (q) { const w = q.toLowerCase(); items = items.filter(x => [x.title, x.type, x.reason, x.orderId, x.itemId].some(v => String(v || '').toLowerCase().includes(w))); }
+  items.sort(kind === 'listed' ? (a, b) => String(a.title).localeCompare(String(b.title)) : (a, b) => new Date(b.date) - new Date(a.date));
+  box.textContent = '';
+  if (!items.length) {
+    const missing = (kind === 'returned' && typesData.store.returned === null) || (kind === 'listed' && typesData.store.listed === null);
+    box.append(el('div', 't-note', missing ? 'eBay didn’t give this part last time — press the box at the top to try again.' : 'Nothing here in the last 90 days.')); return;
+  }
+  items.slice(0, limit || 300).forEach(x => box.append(itemRow(kind, x)));
+  if (items.length > (limit || 300)) {
+    const more = el('div', 't-note');
+    if (onAll) { const a = el('button', 't-link', 'Show all ' + items.length + ' →'); a.type = 'button'; a.onclick = onAll; more.append(a); }
+    else more.textContent = 'Showing the newest ' + (limit || 300) + ' of ' + items.length + ' — search to narrow it down.';
+    box.append(more);
+  }
+}
+function kindTabs(type, kind, onPick) {
+  const seg = el('div', 'seg');
+  ['sold', 'returned', 'listed'].forEach(k => {
+    const src = type === 'all' ? typesData.store : (typesData.types.find(t => t.type === type) || {});
+    const n = k === 'sold' ? src.sold : k === 'returned' ? src.returned : src.listed;
+    const b = el('button', '', KIND_LABEL[k] + ' ' + num(n)); b.type = 'button'; b.setAttribute('aria-pressed', k === kind ? 'true' : 'false'); b.onclick = () => onPick(k);
+    seg.append(b);
+  });
+  return seg;
+}
+function openItems(type, kind) { typesView = { type, kind }; typesQ = ''; renderTypes(); window.scrollTo(0, 0); }
+function renderItemsView() {
+  const v = typesView, box = document.getElementById('t-items'); box.textContent = '';
+  const top = el('div', 'ti-top');
+  const back = el('button', 't-back', '← Part types'); back.type = 'button'; back.onclick = () => { typesView = null; renderTypes(); }; top.append(back);
+  top.append(el('div', 'ti-h', (v.type === 'all' ? 'All parts' : v.type) + ' · ' + KIND_LABEL[v.kind]));
+  box.append(top);
+  const ctl = el('div', 'controls');
+  ctl.append(kindTabs(v.type, v.kind, (k) => { v.kind = k; renderItemsView(); }));
+  const sel = el('select', 't-sel');
+  [['all', 'All parts']].concat(typesData.types.map(t => [t.type, t.type])).forEach(([val, label]) => { const o = el('option', '', label); o.value = val; if (val === v.type) o.selected = true; sel.append(o); });
+  sel.onchange = () => { v.type = sel.value; renderItemsView(); };
+  const q = el('input', 'search'); q.type = 'search'; q.placeholder = 'Search title, reason or order number'; q.value = typesQ;
+  let tm; q.oninput = () => { typesQ = q.value; clearTimeout(tm); tm = setTimeout(() => fillItems(list, v.kind, v.type, typesQ), 150); };
+  ctl.append(sel, q); box.append(ctl);
+  const list = el('div', 'ti-list'); box.append(list);
+  fillItems(list, v.kind, v.type, typesQ);
+}
+function renderTypes() {
+  const d = typesData; if (!d) return;
+  const showItems = !!typesView;
+  document.getElementById('t-main').style.display = showItems ? 'none' : '';
+  document.getElementById('t-items').style.display = showItems ? '' : 'none';
+  updateBadge();
+  if (showItems) { renderItemsView(); return; }
+  const st = d.store || {};
+  const cards = document.getElementById('t-cards'); cards.textContent = '';
+  [[num(st.sold), 'sold, last 90 days', 'sold'], [pct(st.sellThrough), 'sell-through'], [pct(st.returnRate), 'return rate'],
+   [num(st.returned), 'returned', 'returned'], [num(st.listed), 'listed now', 'listed'], [st.avgDays === null || st.avgDays === undefined ? '—' : st.avgDays + ' d', 'average to sell']]
+    .forEach(([v, l, kind]) => {
+      const c = el(kind ? 'button' : 'div', 't-card' + (kind ? ' click' : '')); if (kind) { c.type = 'button'; c.title = 'See the items'; c.onclick = () => openItems('all', kind); }
+      c.append(el('div', 'v', v), el('div', 'l', l)); cards.append(c);
+    });
+  const tb = document.getElementById('t-table'); tb.textContent = '';
+  const hr = el('tr');
+  TCOLS.forEach(([key, label, get]) => {
+    const th = el('th', key === 'reasons' ? 'left' : '', label + (typesSort.key === key ? (typesSort.dir < 0 ? ' ▼' : ' ▲') : ''));
+    if (typesSort.key === key) th.setAttribute('aria-sort', typesSort.dir < 0 ? 'descending' : 'ascending');
+    if (get) th.onclick = () => { typesSort = { key, dir: typesSort.key === key ? -typesSort.dir : (key === 'type' ? 1 : -1) }; renderTypes(); };
+    hr.append(th);
+  });
+  const thead = el('thead'); thead.append(hr); tb.append(thead);
+  const col = TCOLS.find(c => c[0] === typesSort.key), get = col && col[2];
+  const rows = (d.types || []).slice().sort((a, b) => {
+    const pin = (x) => x.type === 'Unmatched' ? 2 : x.notPart ? 1 : 0;   // "Not a part" and "Unmatched" always last
+    if (pin(a) !== pin(b)) return pin(a) - pin(b);
+    if (!get) return 0;
+    const va = get(a), vb = get(b);
+    if (va === null || va === undefined) return (vb === null || vb === undefined) ? 0 : 1;   // dashes at the bottom
+    if (vb === null || vb === undefined) return -1;
+    return (typeof va === 'string' ? va.localeCompare(vb) : va - vb) * typesSort.dir || a.type.localeCompare(b.type);
+  });
+  const body = el('tbody');
+  rows.forEach(r => {
+    const sel = typesSel && typesSel.type === r.type;
+    const tr = el('tr', (r.notPart || r.type === 'Unmatched' ? 'dim' : '') + (sel ? ' sel' : ''));
+    const nameTd = el('td'); const nb = el('button', 't-name', r.type); nb.type = 'button'; nb.title = 'See the items';
+    nb.onclick = () => { typesSel = sel ? null : { type: r.type, kind: (typesSel && typesSel.kind) || 'sold' }; renderTypes(); };
+    nameTd.append(nb);
+    tr.append(nameTd, el('td', '', String(r.sold)), el('td', '', num(r.returned)), el('td', '', pct(r.returnRate)));
+    tr.append(el('td', 'left', r.reasons && r.reasons.length ? r.reasons.map(x => nice(x.reason) + ' ' + x.n).join(' · ') : (r.returned === null ? '—' : '')));
+    tr.append(el('td', '', num(r.listed)), el('td', '', pct(r.sellThrough)),
+      el('td', '', r.avgDays === null ? '—' : r.avgDays + (r.daysN && r.daysN < 3 ? ' *' : '')), el('td', '', r.avgPrice === null ? '—' : money2.format(r.avgPrice)));
+    body.append(tr);
+    if (sel) {
+      const dt = el('tr', 't-detail'), td = el('td'); td.colSpan = TCOLS.length;
+      const inner = el('div', 't-inner'); const list = el('div', 'ti-list');
+      const draw = () => { inner.textContent = ''; inner.append(kindTabs(r.type, typesSel.kind, (k) => { typesSel.kind = k; draw(); })); inner.append(list); fillItems(list, typesSel.kind, r.type, '', 25, () => openItems(r.type, typesSel.kind)); };
+      draw(); td.append(inner); dt.append(td); body.append(dt);
+    }
+  });
+  tb.append(body);
+  const defs = document.getElementById('t-defs'); defs.textContent = '';
+  const line = (b, t) => { const p = el('div'); p.append(el('b', '', b + ' '), document.createTextNode(t)); defs.append(p); };
+  line('Click', 'a part type, or the Sold / Returned / Listed numbers at the top, to see the items behind them.');
+  line('Sold', 'items in orders from the last 90 days. Canceled and failed orders are left out; a sale that was refunded later still counts.');
+  line('Returned', 'returns opened in the last 90 days (not “not received” claims, cases or cancellations), matched to the item sold. Return rate = returned ÷ sold.');
+  line('Sell-through', 'sold ÷ (sold + still listed). Days to sell run from when the listing started (a relist counts from the relist), using sales from the last 60 days (all eBay gives for this); * means fewer than 3 sales had a start date.');
+  line('Store-wide', 'the cards at the top leave out “Not a part”. Every type is shown, however few sold.');
+  line('Unmatched', 'titles none of the rules matched — click that row to see them.');
+  const err = document.getElementById('t-error'), msgs = (d.errors || []).slice();
+  if (d.refreshError) msgs.push('Last automatic refresh: ' + d.refreshError);
+  if (msgs.length) { err.textContent = 'Some numbers are missing (shown as —): ' + msgs.join(' | '); err.style.display = 'block'; } else err.style.display = 'none';
+  setText('t-note', 'Last 90 days · saved copy from ' + timeAgo(d.generatedAt) + (d.refreshing ? ' · updating from eBay now…' : ' · refreshes itself every 3 hours'));
+}
+async function loadTypes(refresh) {
+  clearTimeout(typesTimer);
+  const note = document.getElementById('t-note');
+  typesBusy = true; updateBadge();
+  if (!typesData) note.textContent = 'First time: asking eBay for sold items, returns and listings — this can take a minute or two. After this it opens instantly.';
+  const d = await getJSON('/api/returns/types' + (refresh ? '?refresh=1' : ''));
+  if (!typesMode) { typesBusy = false; return; }
+  if (!d) { typesBusy = false; note.textContent = 'Could not reach the server.'; updateBadge(); return; }
+  if (d._signedOut) { location.href = '/sales'; return; }
+  if (!d.connected) { typesBusy = false; note.textContent = 'eBay isn’t connected yet.'; updateBadge(); return; }
+  if (d.loading) { typesTimer = setTimeout(() => loadTypes(false), 3000); return; }
+  if (d.error) { typesBusy = false; note.textContent = d.error; updateBadge(); return; }
+  const changed = !typesData || typesData.generatedAt !== d.generatedAt;
+  typesData = d; typesBusy = !!d.refreshing;
+  if (changed || !typesView) renderTypes(); else updateBadge();
+  setText('t-note', 'Last 90 days · saved copy from ' + timeAgo(d.generatedAt) + (d.refreshing ? ' · updating from eBay now…' : ' · refreshes itself every 3 hours'));
+  if (d.refreshing) typesTimer = setTimeout(() => loadTypes(false), 4000);   // a fresh pull is running — swap it in when done
+}
+function setTypesMode(on) {
+  typesMode = on; document.body.classList.toggle('types-mode', on);
+  document.getElementById('types-btn').setAttribute('aria-pressed', on ? 'true' : 'false');
+  if (on) { typesView = null; if (typesData) renderTypes(); loadTypes(false); } else { clearTimeout(typesTimer); updateBadge(); }
+}
+document.getElementById('types-btn').addEventListener('click', () => setTypesMode(!typesMode));
+document.querySelectorAll('#seg-view button, #seg-kind button').forEach(b => b.addEventListener('click', () => { if (typesMode) setTypesMode(false); }));
+document.getElementById('r-badge').addEventListener('click', badgeClick);
+setInterval(updateBadge, 30000);
+
+/* v401 part-types code, replaced by the v402 block above:
 // ─── v401: PART TYPES ────────────────────────────────────────────────────────
 let typesMode = false, typesData = null, typesSort = { key: 'sold', dir: -1 }, typesTimer = null;
 const pct = (v) => v === null || v === undefined ? '—' : (v * 100).toFixed(v > 0 && v < 0.1 ? 1 : 0) + '%';
@@ -1091,6 +1333,7 @@ function setTypesMode(on) {
 }
 document.getElementById('types-btn').addEventListener('click', () => setTypesMode(!typesMode));
 document.querySelectorAll('#seg-view button, #seg-kind button').forEach(b => b.addEventListener('click', () => { if (typesMode) setTypesMode(false); }));
+*/
 load();
 setInterval(() => { if (!document.hidden && !document.getElementById('detail').classList.contains('open')) { pageCache.live(); load(); } }, 5 * 60000);   // v382: live
 </script>

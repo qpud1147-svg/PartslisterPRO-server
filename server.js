@@ -1,4 +1,5 @@
-// PartsLister Pro server — v401
+// PartsLister Pro server — v402
+// v402: Part types — result saved in the database (opens instantly, shows its age, refreshes in the background every 3 hours); per-type lists of the sold / returned / listed items (GET /api/returns/types/items).
 // v401: Returns → Part types — every part type's sold / returned / return rate / top reasons / still listed / sell-through / days to sell / average price over the last 90 days (GET /api/returns/types).
 // v400: yard tickets — (1) dividers have a style (tiny dashes, dots, solid, double) with thickness, dash length, gap, width and position; (2) one text row per
 //       ticket can be marked "has the date" — {date} there is the ticket's own day (tomorrow for "Sell for tomorrow"); (3) each yard can have a print time
@@ -365,6 +366,11 @@ async function setupDatabase() {
       done_at         TIMESTAMPTZ
     );
     CREATE INDEX IF NOT EXISTS msg_followups_open ON msg_followups (user_id, done_at);
+    CREATE TABLE IF NOT EXISTS part_type_stats (                                          -- v402: Returns → Part types, saved so it opens instantly
+      user_id      INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      data         JSONB NOT NULL,
+      generated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
     CREATE TABLE IF NOT EXISTS late_returns (                                             -- v371: Late returns
       id              SERIAL PRIMARY KEY,
       user_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -4406,19 +4412,25 @@ function buildTypeStats({ sold, returns, active, starts }) {
   const rows = new Map(); PART_TYPES.concat(['Unmatched']).forEach(t => rows.set(t, mk(t)));
   const unmatched = new Map();
   let returnsNoTitle = 0;
+  const lists = { sold: [], returned: [], listed: [] };   // v402: the items behind every number
   for (const s of sold || []) {
     const t = partTypeOf(s.title) || 'Unmatched', r = rows.get(t), qty = Math.max(1, parseInt(s.qty, 10) || 1);
     r.sold += qty; r.revenue += Number(s.price) || 0;
     if (t === 'Unmatched') { const k = String(s.title || '(no title)').slice(0, 120); unmatched.set(k, (unmatched.get(k) || 0) + qty); }
     const st = starts && starts.get(String(s.item_id));
-    if (st) { const days = (new Date(s.created_at) - new Date(st)) / 86400000; if (Number.isFinite(days) && days >= 0) { r.dayTotal += days; r.dayN++; } }
+    let soldDays = null;
+    if (st) { const days = (new Date(s.created_at) - new Date(st)) / 86400000; if (Number.isFinite(days) && days >= 0) { r.dayTotal += days; r.dayN++; soldDays = Math.round(days * 10) / 10; } }
+    lists.sold.push({ type: t, title: s.title || '', qty, price: Number(s.price) || 0, date: s.created_at, orderId: s.order_id || null, itemId: s.item_id || null, days: soldDays });   // v402
   }
   for (const x of returns || []) {
     if (!x.title) returnsNoTitle++;
-    const r = rows.get((x.title ? partTypeOf(x.title) : null) || 'Unmatched'); r.returned++;
+    // const r = rows.get((x.title ? partTypeOf(x.title) : null) || 'Unmatched'); r.returned++;
+    const rt = (x.title ? partTypeOf(x.title) : null) || 'Unmatched', r = rows.get(rt); r.returned++;
+    lists.returned.push({ type: rt, title: x.title || '', reason: x.reason || '', date: x.created || null, orderId: x.orderId || null, itemId: x.itemId || null, id: x.id, amount: x.amount === undefined ? null : x.amount, status: x.status || '' });   // v402
     const why = String(x.reason || 'UNKNOWN'); r.reasons.set(why, (r.reasons.get(why) || 0) + 1);
   }
-  for (const a of active || []) rows.get(partTypeOf(a.title) || 'Unmatched').listed++;
+  // for (const a of active || []) rows.get(partTypeOf(a.title) || 'Unmatched').listed++;
+  for (const a of active || []) { const at = partTypeOf(a.title) || 'Unmatched'; rows.get(at).listed++; lists.listed.push({ type: at, title: a.title || '' }); }   // v402
   const r4 = (v) => v === null ? null : Math.round(v * 10000) / 10000;
   const fin = (r) => ({
     type: r.type, notPart: r.type === 'Not a part', sold: r.sold, avgPrice: r.sold ? Math.round(r.revenue / r.sold * 100) / 100 : null,
@@ -4437,7 +4449,7 @@ function buildTypeStats({ sold, returns, active, starts }) {
     avgDays: starts && dN ? Math.round(sum(r => r.dayTotal) / dN * 10) / 10 : null
   };
   list.sort((a, b) => (a.type === 'Unmatched') - (b.type === 'Unmatched') || (a.notPart - b.notPart) || b.sold - a.sold || a.type.localeCompare(b.type));
-  return { types: list, store, returnsNoTitle,
+  return { types: list, store, returnsNoTitle, lists,
     unmatchedSample: [...unmatched.entries()].sort((a, b) => b[1] - a[1]).slice(0, 30).map(([title, n]) => ({ title, n })) };
 }
 // eBay: returns opened in the last N days (Post-Order API; one page of up to 200 per state — says so if there may be more)
@@ -4480,7 +4492,7 @@ async function myEbayList(userId, listName, listInner) {
 async function computeTypeStats(userId) {
   const errors = [], since = new Date(Date.now() - 90 * 86400000);
   const sold = (await pool.query(
-    `SELECT i.item_id, i.title, i.qty, i.price::float AS price, o.created_at
+    `SELECT i.order_id, i.item_id, i.title, i.qty, i.price::float AS price, o.created_at
        FROM ebay_order_items i JOIN ebay_orders o ON o.user_id = i.user_id AND o.order_id = i.order_id
       WHERE i.user_id = $1 AND o.created_at >= $2
         AND (o.status IS NULL OR (o.status NOT ILIKE '%CANCELED%' AND o.status NOT ILIKE '%FAILED%'))`, [userId, since])).rows;
@@ -4492,7 +4504,7 @@ async function computeTypeStats(userId) {
       'SELECT order_id, item_id, title FROM ebay_order_items WHERE user_id = $1 AND (order_id = ANY($2) OR item_id = ANY($3))', [userId, orderIds, itemIds])).rows : [];
     const byBoth = new Map(), byItem = new Map(), byOrder = new Map();
     tr.forEach(t => { if (!t.title) return; byBoth.set(t.order_id + '|' + t.item_id, t.title); if (!byItem.has(t.item_id)) byItem.set(t.item_id, t.title); if (!byOrder.has(t.order_id)) byOrder.set(t.order_id, t.title); });
-    returns = r.list.map(x => ({ id: x.id, reason: x.reason, title: byBoth.get(x.orderId + '|' + x.itemId) || byItem.get(x.itemId) || byOrder.get(x.orderId) || null }));
+    returns = r.list.map(x => ({ id: x.id, reason: x.reason, created: x.created, amount: x.amount, status: x.status, orderId: x.orderId, itemId: x.itemId, title: byBoth.get(x.orderId + '|' + x.itemId) || byItem.get(x.itemId) || byOrder.get(x.orderId) || null }));   // v402: + the details the lists show
     if (r.truncated) errors.push('Returns: eBay gave 200 in one list, so there may be more than shown.');
   } catch (e) { errors.push('Returns: ' + e.message); }
   // let active = null, starts = null;   // v401: one pull for both
@@ -4510,26 +4522,85 @@ async function computeTypeStats(userId) {
   } catch (e) { errors.push('Days to sell: ' + e.message); }
   return Object.assign({ days: 90, generatedAt: new Date().toISOString(), errors, activeCount: active ? active.length : null }, buildTypeStats({ sold, returns, active, starts }));
 }
-const typeStatsCache = new Map();   // userId → { at, data } | { at, promise } | { at, error }
+// const typeStatsCache = new Map();   // userId → { at, data } | { at, promise } | { at, error }
+// app.get('/api/returns/types', requireUser, async (req, res) => {
+//   try {
+//     const conn = await getConnection(req.user.id);
+//     if (!conn || !conn.refresh_enc) return res.json({ connected: false });
+//     let c = typeStatsCache.get(req.user.id);
+//     if (!c || (req.query.refresh === '1' && !c.promise) || (c.data && Date.now() - c.at > 30 * 60000) || (c.error && Date.now() - c.at > 60000)) {
+//       const promise = computeTypeStats(req.user.id);
+//       c = { at: Date.now(), promise };
+//       typeStatsCache.set(req.user.id, c);
+//       promise.then(data => typeStatsCache.set(req.user.id, { at: Date.now(), data }), e => typeStatsCache.set(req.user.id, { at: Date.now(), error: e.message }));
+//     }
+//     if (c.promise) return res.json({ connected: true, loading: true });   // still asking eBay — the page checks back
+//     if (c.error) { typeStatsCache.delete(req.user.id); throw new Error(c.error); }
+//     res.json(Object.assign({ connected: true }, c.data));
+//   } catch (e) {
+//     console.error('[returns types]', e.message);
+//     res.json({ connected: true, error: 'Couldn’t work out the part types: ' + e.message });
+//   }
+// });
+
+
+// v402: the result is saved in part_type_stats. The page gets the saved copy at once (with its age); a fresh pull runs quietly in the background
+// when the copy is older than 3 hours, when Refresh is pressed, and on a 3-hour timer. Only the first-ever open waits.
+const TYPE_STATS_MAX_AGE_MIN = 180;
+const typeStatsRunning = new Map();   // userId → promise (a pull is in progress)
+const typeStatsErrors = new Map();    // userId → { at, message } from the last failed pull
+function startTypeStats(userId) {
+  if (typeStatsRunning.has(userId)) return typeStatsRunning.get(userId);
+  const p = computeTypeStats(userId).then(async (data) => {
+    await pool.query(`INSERT INTO part_type_stats (user_id, data, generated_at) VALUES ($1, $2, now())
+      ON CONFLICT (user_id) DO UPDATE SET data = EXCLUDED.data, generated_at = now()`, [userId, JSON.stringify(data)]);
+    typeStatsErrors.delete(userId);
+  }).catch(e => { console.error('[part types]', e.message); typeStatsErrors.set(userId, { at: Date.now(), message: e.message }); })
+    .finally(() => typeStatsRunning.delete(userId));
+  typeStatsRunning.set(userId, p);
+  return p;
+}
+async function savedTypeStats(userId) {
+  const r = await pool.query('SELECT data, generated_at FROM part_type_stats WHERE user_id = $1', [userId]);
+  return r.rows[0] || null;
+}
 app.get('/api/returns/types', requireUser, async (req, res) => {
   try {
     const conn = await getConnection(req.user.id);
     if (!conn || !conn.refresh_enc) return res.json({ connected: false });
-    let c = typeStatsCache.get(req.user.id);
-    if (!c || (req.query.refresh === '1' && !c.promise) || (c.data && Date.now() - c.at > 30 * 60000) || (c.error && Date.now() - c.at > 60000)) {
-      const promise = computeTypeStats(req.user.id);
-      c = { at: Date.now(), promise };
-      typeStatsCache.set(req.user.id, c);
-      promise.then(data => typeStatsCache.set(req.user.id, { at: Date.now(), data }), e => typeStatsCache.set(req.user.id, { at: Date.now(), error: e.message }));
+    const saved = await savedTypeStats(req.user.id);
+    const age = saved ? Date.now() - new Date(saved.generated_at).getTime() : Infinity;
+    const failed = typeStatsErrors.get(req.user.id);
+    if (!typeStatsRunning.has(req.user.id) && (req.query.refresh === '1' || age > TYPE_STATS_MAX_AGE_MIN * 60000) && (!failed || req.query.refresh === '1' || Date.now() - failed.at > 60000)) startTypeStats(req.user.id);
+    const refreshing = typeStatsRunning.has(req.user.id);
+    if (!saved) {
+      const f = typeStatsErrors.get(req.user.id);
+      if (f && !refreshing) return res.json({ connected: true, error: 'Couldn’t work out the part types: ' + f.message });
+      return res.json({ connected: true, loading: true });   // first time ever — the page checks back
     }
-    if (c.promise) return res.json({ connected: true, loading: true });   // still asking eBay — the page checks back
-    if (c.error) { typeStatsCache.delete(req.user.id); throw new Error(c.error); }
-    res.json(Object.assign({ connected: true }, c.data));
+    const data = Object.assign({}, saved.data); delete data.lists;
+    res.json(Object.assign({ connected: true, refreshing, generatedAt: saved.generated_at, refreshError: failed ? failed.message : null }, data, { generatedAt: saved.generated_at }));
   } catch (e) {
     console.error('[returns types]', e.message);
     res.json({ connected: true, error: 'Couldn’t work out the part types: ' + e.message });
   }
 });
+// v402: the items behind the numbers — ?kind=sold|returned|listed  (every part type; the page filters)
+app.get('/api/returns/types/items', requireUser, async (req, res) => {
+  try {
+    const kind = ['sold', 'returned', 'listed'].includes(req.query.kind) ? req.query.kind : 'sold';
+    const saved = await savedTypeStats(req.user.id);
+    if (!saved) return res.json({ items: [], ready: false });
+    const items = (saved.data.lists && saved.data.lists[kind]) || [];
+    res.json({ ready: true, kind, items, generatedAt: saved.generated_at, missing: kind === 'listed' && saved.data.activeCount === null || kind === 'returned' && saved.data.store && saved.data.store.returned === null });
+  } catch (e) { res.json({ items: [], ready: false, error: e.message }); }
+});
+// every 3 hours, keep the saved copy warm for everyone with eBay connected (first run 3 minutes after start)
+setTimeout(function warmTypeStats() {
+  pool.query('SELECT user_id FROM ebay_connections WHERE refresh_enc IS NOT NULL').then(async (r) => {
+    for (const row of r.rows) await startTypeStats(row.user_id);
+  }).catch(e => console.error('[part types warm]', e.message)).finally(() => setTimeout(warmTypeStats, TYPE_STATS_MAX_AGE_MIN * 60000));
+}, 3 * 60000);
 
 // v369: eBay's refund estimate for a return — one line per refund type (item price, original shipping…)
 function returnEstimate(d) {
@@ -5155,5 +5226,6 @@ setupDatabase()
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v389 listening on ' + PORT)))   // v399: version in the startup log updated
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v399 listening on ' + PORT)))   // v400: version in the startup log
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v400 listening on ' + PORT)))   // v401: version in the startup log
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v401 listening on ' + PORT)))
+  // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v401 listening on ' + PORT)))   // v402: version in the startup log
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v402 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });

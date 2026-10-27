@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Messages v382</title>
+<title>PartsLister Pro Messages v402</title>
 <!-- v382: switching views is instant; browser reload / Refresh really reloads. v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
 <!-- PartsLister Pro — Messages page (v321: new; v322: conversation threads — the whole back-and-forth
      with each buyer, chat style, from eBay's Message API. Offers from a conversation. The v321
@@ -292,6 +292,16 @@
     .seg button { padding: 6px 9px; font-size: 13px; }
     .search { min-width: 0; width: 100%; flex-basis: 100%; }
   }
+  /* v402: the boxed refresh control — same as Sales and Active */
+  .title-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
+  .title-row .page-title { margin-bottom: 0; }
+  .sample-badge { font-family: 'Barlow Condensed', sans-serif; font-size: 11px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--text); border: 1px solid var(--border); background: var(--surface2); border-radius: 3px; padding: 3px 8px; cursor: pointer; }
+  .sample-badge:hover { border-color: var(--accent); }
+  .sample-badge:disabled { cursor: default; }
+  .sample-badge .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--success); margin-right: 6px; vertical-align: 1px; }
+  .sample-badge.warn .dot { background: var(--danger); }
+  .sample-badge.busy .dot { background: var(--accent); animation: pulse 1s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: 0.3; } }
 </style>
 </head>
 <body>
@@ -299,7 +309,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v382</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v402</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -324,8 +334,9 @@
 </header>
 
 <main>
-  <div class="page-title">Messages <a href="/messages/classic" style="font-size:14px;color:var(--accent);margin-left:8px;font-family:'Barlow',sans-serif;font-weight:400;letter-spacing:0;">Classic view</a> <a href="/sales?settings=messages" style="font-size:14px;color:var(--accent);margin-left:8px;font-family:'Barlow',sans-serif;font-weight:400;letter-spacing:0;">Settings</a></div>   <!-- v330: + Settings -->
-  <div class="page-note" id="t-note">&nbsp;</div>
+  <div class="title-row"><div class="page-title">Messages <a href="/messages/classic" style="font-size:14px;color:var(--accent);margin-left:8px;font-family:'Barlow',sans-serif;font-weight:400;letter-spacing:0;">Classic view</a> <a href="/sales?settings=messages" style="font-size:14px;color:var(--accent);margin-left:8px;font-family:'Barlow',sans-serif;font-weight:400;letter-spacing:0;">Settings</a></div>
+    <button type="button" class="sample-badge" id="t-badge" onclick="msgBadgeClick()">eBay</button></div>   <!-- v330: + Settings; v402: boxed refresh, same as Sales -->
+  <div class="page-note" id="t-note" style="display:none">&nbsp;</div>
   <div class="error-box" id="t-error"></div>
   <div class="scope-box" id="t-scope"></div>
 
@@ -581,26 +592,46 @@ function renderList() {
   addHiddenLink();   // v367
 }
 
+
+// v402: the boxed refresh control (same look as Sales and Active). st: { busy, warn, text, title, disabled }
+function setBadge(id, st) {
+  const b = document.getElementById(id); if (!b) return;
+  b.className = 'sample-badge' + (st.busy ? ' busy' : '') + (st.warn ? ' warn' : '');
+  b.textContent = ''; const dot = document.createElement('span'); dot.className = 'dot';
+  b.append(dot, document.createTextNode(st.text)); b.title = st.title || ''; b.disabled = !!st.disabled;
+}
+let msgSt = { busy: true, at: null, err: false, nc: false };
+function msgBadge() {
+  if (msgSt.nc) setBadge('t-badge', { warn: true, text: 'eBay · not connected', disabled: true });
+  else if (msgSt.busy) setBadge('t-badge', { busy: true, text: msgSt.at ? 'eBay · updating…' : 'eBay · checking…', title: 'Checking eBay', disabled: true });
+  else if (msgSt.err) setBadge('t-badge', { warn: true, text: 'eBay · problem · ↻', title: 'Click to try again' });
+  else setBadge('t-badge', { text: 'eBay · updated ' + timeAgo(msgSt.at) + ' · ↻', title: 'Click to check eBay now. It also checks on its own.' });
+}
+function msgBadgeClick() { if (msgSt.busy) return; pageCache.live(); loadList(); }
+setInterval(msgBadge, 30000);
 async function loadList() {
+  msgSt.busy = true; msgBadge();   // v402
   const who = await loadMe();
   if (!who) return;
   isAdmin = !!who.isAdmin;
-  setText('t-note', 'Loading from eBay…');
+  // setText('t-note', 'Loading from eBay…');   // v402: the box at the top says it
   // const d = await getJSON('/api/threads?type=' + type);
   // const d = await getJSON('/api/threads?type=' + type + (show === 'trash' ? '&trash=1' : ''));   // v323: Trash comes from eBay's deleted folder
   const [d] = await Promise.all([getJSON('/api/threads?type=' + type + (show === 'trash' ? '&trash=1' : '')), loadFollowups()]);   // v336: + Waiting on me
   document.getElementById('loading').classList.add('hidden');
+  msgSt.busy = false; msgSt.err = !d || !!d.error; msgSt.nc = !!(d && !d.connected); msgBadge();   // v402
   const err = document.getElementById('t-error'); err.style.display = 'none';
   showScopeBox(false);
   if (!d) { err.textContent = 'Could not reach the server.'; err.style.display = 'block'; return; }
-  if (!d.connected) { setText('t-note', 'eBay isn’t connected yet' + (isAdmin ? ' — connect it in Settings → Admin.' : '.')); threads = []; renderList(); return; }
+  if (!d.connected) { document.getElementById('t-note').style.display = ''; setText('t-note', 'eBay isn’t connected yet' + (isAdmin ? ' — connect it in Settings → Admin.' : '.')); threads = []; renderList(); return; }
   if (d.needScope) { setText('t-note', ' '); showScopeBox(true); threads = []; renderList(); return; }
   if (d.error) { err.textContent = d.error; err.style.display = 'block'; }
   me = d.me || me;
   threads = d.threads || [];
-  setText('t-note', 'From eBay · checked ' + new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) + ' · ');
-  const r = el('button', '', 'Refresh'); r.type = 'button'; r.onclick = () => { pageCache.live(); loadList(); };   // v382: Refresh really asks eBay
-  document.getElementById('t-note').append(r);
+  // setText('t-note', 'From eBay · checked ' + new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) + ' · ');
+  // const r = el('button', '', 'Refresh'); r.type = 'button'; r.onclick = () => { pageCache.live(); loadList(); };   // v382: Refresh really asks eBay
+  // document.getElementById('t-note').append(r);
+  msgSt.at = new Date().toISOString(); msgBadge();   // v402: the box says how long ago
   renderList();
   const hm = /^#c=(.+)$/.exec(location.hash);
   if (hm && current !== decodeURIComponent(hm[1])) showThread(decodeURIComponent(hm[1]));

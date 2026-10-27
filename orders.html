@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Orders v382</title>
+<title>PartsLister Pro Orders v402</title>
 <!-- v382: switching views is instant; browser reload / Refresh really reloads. v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
 <!-- PartsLister Pro — Orders page (v319: new). Your sold items from eBay, newest first.
      v320: item photos, and click an order to see the listing (photos, description, item specifics).
@@ -197,6 +197,16 @@
     .seg button { padding: 6px 9px; font-size: 13px; }
     .search { min-width: 0; width: 100%; flex-basis: 100%; }
   }
+  /* v402: the boxed refresh control — same as Sales and Active */
+  .title-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
+  .title-row .page-title { margin-bottom: 0; }
+  .sample-badge { font-family: 'Barlow Condensed', sans-serif; font-size: 11px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--text); border: 1px solid var(--border); background: var(--surface2); border-radius: 3px; padding: 3px 8px; cursor: pointer; }
+  .sample-badge:hover { border-color: var(--accent); }
+  .sample-badge:disabled { cursor: default; }
+  .sample-badge .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--success); margin-right: 6px; vertical-align: 1px; }
+  .sample-badge.warn .dot { background: var(--danger); }
+  .sample-badge.busy .dot { background: var(--accent); animation: pulse 1s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: 0.3; } }
 </style>
 </head>
 <body>
@@ -204,7 +214,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v382</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v402</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -229,8 +239,9 @@
 </header>
 
 <main>
-  <div class="page-title">Orders</div>
-  <div class="page-note" id="o-note">&nbsp;</div>
+  <div class="title-row"><div class="page-title">Orders</div>
+    <button type="button" class="sample-badge" id="o-badge" onclick="ordBadgeClick()">eBay</button></div>   <!-- v402: boxed refresh, same as Sales -->
+  <div class="page-note" id="o-note" style="display:none">&nbsp;</div>
   <div class="error-box" id="o-error"></div>
 
   <div class="controls">
@@ -572,18 +583,45 @@ async function showDetail(id) {
 function smallPicUrl(u) { return String(u).replace(/\/s-l\d+\.(jpg|jpeg|png|webp)/i, '/s-l140.$1'); }
 function showMore() { shown += 200; render(); }
 
+
+// v402: the boxed refresh control (same look as Sales and Active). st: { busy, warn, text, title, disabled }
+function setBadge(id, st) {
+  const b = document.getElementById(id); if (!b) return;
+  b.className = 'sample-badge' + (st.busy ? ' busy' : '') + (st.warn ? ' warn' : '');
+  b.textContent = ''; const dot = document.createElement('span'); dot.className = 'dot';
+  b.append(dot, document.createTextNode(st.text)); b.title = st.title || ''; b.disabled = !!st.disabled;
+}
+let ordInfo = null, ordAdmin = false;
+function ordBadge() {
+  const d = ordInfo; if (!d) { setBadge('o-badge', { busy: true, text: 'eBay · checking…', disabled: true }); return; }
+  if (!d.connected) setBadge('o-badge', { warn: true, text: 'eBay · not connected', disabled: true });
+  else if (!d.ready) setBadge('o-badge', { busy: true, text: 'eBay · importing…', title: 'Importing your order details from eBay — this takes a minute, once', disabled: true });
+  else if (d.syncing) setBadge('o-badge', { busy: true, text: 'eBay · updating…', title: 'Updating your orders from eBay', disabled: true });
+  else if (d.lastError) setBadge('o-badge', { warn: true, text: 'eBay · sync problem' + (ordAdmin ? ' · ↻' : ''), title: d.lastError + (ordAdmin ? ' — click to try again' : ''), disabled: !ordAdmin });
+  else setBadge('o-badge', { text: 'eBay · updated ' + timeAgo(d.lastSync) + (ordAdmin ? ' · ↻' : ''), title: ordAdmin ? 'Click to refresh from eBay now. It also refreshes on its own.' : 'Updates on its own', disabled: !ordAdmin });
+}
+async function ordBadgeClick() {
+  if (!ordAdmin || !ordInfo || ordInfo.syncing || !ordInfo.ready) return;
+  ordInfo.syncing = true; ordBadge();
+  try { await fetch('/api/ebay/sync', { method: 'POST' }); } catch (e) { /* the next check shows the state */ }
+  clearTimeout(pollTimer); pollTimer = setTimeout(() => { pageCache.live(); loadOrders(); }, 1500);
+}
+setInterval(ordBadge, 30000);
 async function loadOrders() {
   const me = await loadMe();
   if (!me) return;
+  ordAdmin = !!me.isAdmin;
   const d = await getJSON('/api/orders/list?days=' + days + '&tz=' + encodeURIComponent(EBAY_TZ));
   document.getElementById('loading').classList.add('hidden');
   const err = document.getElementById('o-error'); err.style.display = 'none';
   clearTimeout(pollTimer);
+  if (!d) { ordInfo = { connected: true, ready: true, lastError: 'Could not reach the server', lastSync: null }; ordBadge(); }   // v402
   if (!d) { err.textContent = 'Could not load your orders.'; err.style.display = 'block'; return; }
-  if (!d.connected) { setText('o-note', 'eBay isn\u2019t connected yet' + (me.isAdmin ? ' — connect it in Settings → Admin.' : '.')); orders = []; render(); return; }
+  if (!d.connected) { ordInfo = d; ordBadge(); document.getElementById('o-note').style.display = ''; setText('o-note', 'eBay isn\u2019t connected yet' + (me.isAdmin ? ' — connect it in Settings → Admin.' : '.')); orders = []; render(); return; }
   orders = d.orders || [];
-  setText('o-note', !d.ready ? 'Importing order details from eBay — this takes a minute, once…'
-    : 'From eBay · updated ' + timeAgo(d.lastSync) + (d.syncing ? ' · updating now…' : ''));
+  // setText('o-note', !d.ready ? 'Importing order details from eBay — this takes a minute, once…'
+  //   : 'From eBay · updated ' + timeAgo(d.lastSync) + (d.syncing ? ' · updating now…' : ''));
+  ordInfo = d; ordBadge();   // v402: the box says it
   if (d.lastError) { err.textContent = 'eBay sync problem: ' + d.lastError; err.style.display = 'block'; }
   render();
   const hm = /^#order=(.+)$/.exec(location.hash);                                  // v320: link straight to an order

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Home v400</title>
+<title>PartsLister Pro Home v402</title>
 <!-- v400: yard tickets — divider styles (tiny dashes, dots, solid, double) with thickness, dash length, gap, width and position; mark one text row "This row has the date" ({date} there is the ticket's own day — tomorrow's for "Sell for tomorrow"); a print time per yard with a Randomize switch (adds 0–30 minutes, never earlier). -->
 <!-- v399: TICKET DESIGNER — each yard's ticket is a list of rows (text, divider, logo, barcode). Every text row has its own font (list or any font name), size 1–100, boldness 0–100 and position; the logo has size, position, a drop box and weathered / gravel / fuzzy / faded gray / spots looks (or one tap "Match sticker look"); the barcode is typed in (Code 128) with its own size and position. Every slider also has a number box. "Duplicate" copies a yard's whole ticket so you can change a few things instead of starting over. -->
 <!-- v389: yard tickets are sold tickets — real sale date and time, a ticket number and barcode, "Sell for tomorrow" advance tickets marked VALID FOR, {logo} and {big} tags anywhere, and Money made. The saved time and Randomize are gone. -->
@@ -182,6 +182,16 @@
     .grid { grid-template-columns: 1fr; }
     .tile-value { font-size: 34px; }
   }
+  /* v402: the boxed refresh control — same as Sales and Active */
+  .title-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
+  .title-row .page-title { margin-bottom: 0; }
+  .sample-badge { font-family: 'Barlow Condensed', sans-serif; font-size: 11px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--text); border: 1px solid var(--border); background: var(--surface2); border-radius: 3px; padding: 3px 8px; cursor: pointer; }
+  .sample-badge:hover { border-color: var(--accent); }
+  .sample-badge:disabled { cursor: default; }
+  .sample-badge .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--success); margin-right: 6px; vertical-align: 1px; }
+  .sample-badge.warn .dot { background: var(--danger); }
+  .sample-badge.busy .dot { background: var(--accent); animation: pulse 1s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: 0.3; } }
 </style>
 </head>
 <body>
@@ -189,7 +199,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v400</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v402</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -215,8 +225,9 @@
 
 
 <main>
-  <div class="page-title">Home</div>
-  <div class="page-note" id="home-note">&nbsp;</div>
+  <div class="title-row"><div class="page-title">Home</div>
+    <button type="button" class="sample-badge" id="home-badge" onclick="homeBadgeClick()">eBay</button></div>   <!-- v402: boxed refresh, same as Sales -->
+  <div class="page-note" id="home-note" style="display:none">&nbsp;</div>
   <div class="error-box" id="home-error"></div>
 
   <div class="grid">
@@ -396,10 +407,34 @@ async function loadMe() {
 }
 
 // ─── HOME ────────────────────────────────────────────────────────────────────
+
+// v402: the boxed refresh control (same look as Sales and Active). st: { busy, warn, text, title, disabled }
+function setBadge(id, st) {
+  const b = document.getElementById(id); if (!b) return;
+  b.className = 'sample-badge' + (st.busy ? ' busy' : '') + (st.warn ? ' warn' : '');
+  b.textContent = ''; const dot = document.createElement('span'); dot.className = 'dot';
+  b.append(dot, document.createTextNode(st.text)); b.title = st.title || ''; b.disabled = !!st.disabled;
+}
+let homeSales = null, homeAdmin = false;
+function homeBadge() {
+  const s = homeSales; if (!s) { setBadge('home-badge', { busy: true, text: 'eBay · checking…', disabled: true }); return; }
+  if (!s.connected) setBadge('home-badge', { warn: true, text: 'eBay · not connected', disabled: true });
+  else if (s.lastError) setBadge('home-badge', { warn: true, text: 'eBay · sync problem', title: s.lastError, disabled: true });
+  else if (s.syncing) setBadge('home-badge', { busy: true, text: s.lastSync ? 'eBay · updating…' : 'eBay · importing…', title: 'Updating your sales from eBay', disabled: true });
+  else setBadge('home-badge', { text: 'eBay · updated ' + timeAgo(s.lastSync) + (homeAdmin ? ' · ↻' : ''), title: homeAdmin ? 'Click to refresh from eBay now. It also refreshes on its own.' : 'Updates on its own', disabled: !homeAdmin });
+}
+async function homeBadgeClick() {
+  if (!homeAdmin || !homeSales || homeSales.syncing || !homeSales.connected) return;
+  homeSales.syncing = true; homeBadge();
+  try { await fetch('/api/ebay/sync', { method: 'POST' }); } catch (e) { /* the next check shows the state */ }
+  clearTimeout(window._homeTimer); window._homeTimer = setTimeout(() => { pageCache.live(); loadHome(); }, 1500);
+}
+setInterval(homeBadge, 30000);
 // v316: one glance at everything; each tile opens its page.
 async function loadHome() {
   const me = await loadMe();
   if (!me) return;
+  homeAdmin = !!me.isAdmin;   // v402
   const tz = encodeURIComponent(EBAY_TZ);
   const [sales, fees, listings] = await Promise.all([
     getJSON('/api/sales?tz=' + tz), getJSON('/api/fees?tz=' + tz), getJSON('/api/listings/summary')
@@ -407,6 +442,7 @@ async function loadHome() {
   const msgs = await getJSON('/api/messages/summary');   // v321: unread eBay messages
   const rets = await getJSON('/api/returns/summary');    // v324: open returns, claims, cases
   document.getElementById('loading').classList.add('hidden');
+  homeSales = sales || { connected: true, lastError: 'Could not reach the server' }; homeBadge();   // v402: the box
 
   const today = ebayTodayKey(), yesterday = keyPlus(today, -1);
   const month = today.slice(0, 7);
@@ -420,7 +456,7 @@ async function loadHome() {
     ['h-today', 'h-month', 'h-fees', 'h-31'].forEach(id => setText(id, '—'));   // v317: + h-31
     setText('h-31-sub', 'Connect eBay to see real sales');   // v317
     setText('h-today-sub', 'Connect eBay to see real sales');
-    setText('home-note', 'eBay isn’t connected yet.');
+    document.getElementById('home-note').style.display = ''; setText('home-note', 'eBay isn’t connected yet.');
     if (me.isAdmin) attention.push(['Connect your eBay account', '/sales?settings=admin']);
   } else {
     const taxOn = !!me.dashTax && !!sales.taxReady;
@@ -442,7 +478,7 @@ async function loadHome() {
     setText('h-month-label', 'Sales this month' + (taxOn ? ' incl. tax' : ''));
     setText('h-month', money0.format(monthSales));
     setText('h-month-sub', monthOrders + ' orders · Last month ' + money0.format(lastMonthSales));
-    setText('home-note', 'From eBay · updated ' + timeAgo(sales.lastSync) + (sales.syncing ? ' · updating now…' : ''));
+    // setText('home-note', 'From eBay · updated ' + timeAgo(sales.lastSync) + (sales.syncing ? ' · updating now…' : ''));   // v402: the box at the top says it
     if (sales.lastError) attention.push(['eBay sales sync problem', me.isAdmin ? '/sales?settings=admin' : '/sales']);
 
     // FEES + PENALTY
