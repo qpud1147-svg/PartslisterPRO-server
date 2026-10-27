@@ -1,4 +1,6 @@
-// PartsLister Pro server — v405
+// PartsLister Pro server — v408
+// v408: yard tickets — each text row has a Look checkbox (row.useLook, default on): the whole-ticket text look only changes the rows that are checked.
+// v406: yard tickets — a whole-ticket Boldness for the text (design.textLook.bold) and a Lighter slider for the logo (less ink).
 // v405: yard tickets — a text look for the whole ticket (design.textLook: lighter, weathered, gravel, fuzzy, faded gray, spots — text only, not the logo), saved per yard.
 // v404: yard tickets — "Space above" can go down to -15 (−3 mm, the ticket's own top padding) to pull a row up.
 // v402: Part types — result saved in the database (opens instantly, shows its age, refreshes in the background every 3 hours); per-type lists of the sold / returned / listed items (GET /api/returns/types/items).
@@ -3950,8 +3952,8 @@ function cleanRow(r) {
   const al = (v, def) => ['left', 'center', 'right'].includes(v) ? v : def;
   const type = ['text', 'line', 'logo', 'barcode'].includes(r.type) ? r.type : 'text';
   const out = { type, align: al(r.align, 'center'), top: n(r.top, 0, -15), bottom: n(r.bottom, type === 'text' ? 0 : 5, 0) };   // v404: top can be -15…100
-  if (type === 'text') Object.assign(out, { text: String(r.text || '').replace(/[\r\n]+/g, ' ').slice(0, 200), font: /^[A-Za-z0-9 \-]{1,40}$/.test(String(r.font || '')) ? String(r.font) : 'Courier New', size: n(r.size, 45), boldness: n(r.boldness, r.bold ? 75 : 0, 0), hasDate: !!r.hasDate });   // v400: + hasDate
-  if (type === 'logo') Object.assign(out, { width: n(r.width, 70), weather: n(r.weather, 0, 0), gravel: n(r.gravel, 0, 0), fuzzy: n(r.fuzzy, 0, 0), fade: n(r.fade, 0, 0), spots: n(r.spots, 0, 0) });
+  if (type === 'text') Object.assign(out, { text: String(r.text || '').replace(/[\r\n]+/g, ' ').slice(0, 200), font: /^[A-Za-z0-9 \-]{1,40}$/.test(String(r.font || '')) ? String(r.font) : 'Courier New', size: n(r.size, 45), boldness: n(r.boldness, r.bold ? 75 : 0, 0), hasDate: !!r.hasDate, useLook: r.useLook !== false });   // v408: + useLook   // v400: + hasDate
+  if (type === 'logo') Object.assign(out, { width: n(r.width, 70), weather: n(r.weather, 0, 0), gravel: n(r.gravel, 0, 0), fuzzy: n(r.fuzzy, 0, 0), fade: n(r.fade, 0, 0), spots: n(r.spots, 0, 0), lighter: n(r.lighter, 0, 0) });   // v406: + lighter
   if (type === 'line') Object.assign(out, { style: ['dashes', 'dots', 'solid', 'double'].includes(r.style) ? r.style : 'dashes', thickness: n(r.thickness, 10), dash: n(r.dash, 6), gap: n(r.gap, 6), width: n(r.width, 100) });   // v400: divider styles
   if (type === 'barcode') Object.assign(out, { value: String(r.value || '').replace(/[^\x20-\x7E]/g, '').trim().slice(0, 40), width: n(r.width, 75), height: n(r.height, 22) });   // value '' = each ticket's own number
   return out;
@@ -3965,7 +3967,7 @@ function cleanDesign(d) {
   const printTime = /^([01]\d|2[0-3]):[0-5]\d$/.test(String(d.printTime || '')) ? String(d.printTime) : '';   // v400: 'HH:MM' or '' (= the real time sold)
   // return { rows: rows && rows.length ? rows : null, printTime, randomize: !!d.randomize };   // rows null = not redesigned yet (the page builds rows from the old ticket text)   (v400)
   const tl = (d.textLook && typeof d.textLook === 'object') ? d.textLook : {}, tn = (v) => { v = parseInt(v, 10); return Number.isFinite(v) ? Math.max(0, Math.min(100, v)) : 0; };
-  const textLook = { lighter: tn(tl.lighter), weather: tn(tl.weather), gravel: tn(tl.gravel), fuzzy: tn(tl.fuzzy), fade: tn(tl.fade), spots: tn(tl.spots) };   // v405: 0–100 each
+  const textLook = { bold: tn(tl.bold), lighter: tn(tl.lighter), weather: tn(tl.weather), gravel: tn(tl.gravel), fuzzy: tn(tl.fuzzy), fade: tn(tl.fade), spots: tn(tl.spots) };   // v405: 0–100 each
   return { rows: rows && rows.length ? rows : null, printTime, randomize: !!d.randomize, textLook };   // rows null = not redesigned yet (the page builds rows from the old ticket text)
 }
 // v400: the time printed on a ticket. No set time → null (the real time sold). Randomize adds 0–30 minutes, never earlier, never past 11:59 PM.
@@ -5235,5 +5237,7 @@ setupDatabase()
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v401 listening on ' + PORT)))   // v402: version in the startup log
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v402 listening on ' + PORT)))   // v404: version in the startup log
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v404 listening on ' + PORT)))   // v405: version in the startup log
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v405 listening on ' + PORT)))
+  // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v405 listening on ' + PORT)))   // v406: version in the startup log
+  // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v406 listening on ' + PORT)))   // v408: version in the startup log
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v408 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Home v407</title>
+<title>PartsLister Pro Home v408</title>
 <!-- v400: yard tickets — divider styles (tiny dashes, dots, solid, double) with thickness, dash length, gap, width and position; mark one text row "This row has the date" ({date} there is the ticket's own day — tomorrow's for "Sell for tomorrow"); a print time per yard with a Randomize switch (adds 0–30 minutes, never earlier). -->
 <!-- v399: TICKET DESIGNER — each yard's ticket is a list of rows (text, divider, logo, barcode). Every text row has its own font (list or any font name), size 1–100, boldness 0–100 and position; the logo has size, position, a drop box and weathered / gravel / fuzzy / faded gray / spots looks (or one tap "Match sticker look"); the barcode is typed in (Code 128) with its own size and position. Every slider also has a number box. "Duplicate" copies a yard's whole ticket so you can change a few things instead of starting over. -->
 <!-- v389: yard tickets are sold tickets — real sale date and time, a ticket number and barcode, "Sell for tomorrow" advance tickets marked VALID FOR, {logo} and {big} tags anywhere, and Money made. The saved time and Randomize are gone. -->
@@ -155,6 +155,8 @@
   .yt-rh input.rt { flex: 1; min-width: 0; }
   .yt-rh .sm { flex: 1; font-size: 12px; color: var(--text2); }
   .yt-rh button { padding: 2px 7px; }
+  .yt-rh .yt-lk { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--muted); margin-left: 4px; cursor: pointer; white-space: nowrap; }   /* v408 */
+  .yt-rh .yt-lk input { margin: 0; }
   .yt-rb { padding: 4px 10px 10px; border-top: 1px solid var(--border); }
   .yt-drop { border: 2px dashed var(--border); border-radius: 6px; padding: 14px 10px; text-align: center; font-size: 12px; color: var(--muted); cursor: pointer; margin-bottom: 8px; }
   .yt-drop.over, .yt-drop:hover { border-color: var(--accent); color: var(--accent); }
@@ -201,7 +203,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v407</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v408</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -817,7 +819,7 @@ async function applyTextLook(rows, look, w) {
   const lighter = Math.max(0, Math.min(100, parseInt(look.lighter, 10) || 0)), lookBold = Math.max(0, Math.min(100, parseInt(look.bold, 10) || 0)), fx = ['weather', 'gravel', 'fuzzy', 'fade', 'spots'].some(k => (parseInt(look[k], 10) || 0) > 0);   // v406: + bold
   if (!lighter && !lookBold && !fx) return rows;
   return Promise.all((rows || []).map(async r => {
-    if (r.type !== 'text') return r;
+    if (r.type !== 'text' || r.useLook === false) return r;   // v408: a row with its Look box unchecked keeps its own settings
     // const r2 = Object.assign({}, r, { lighter });
     const r2 = Object.assign({}, r, { lighter, lookBold });   // v406
     if (fx) { try { const u = await textImage(r2, look, w); if (u) r2.timg = u; } catch (e) { /* keep the live text */ } }
@@ -902,7 +904,7 @@ function yardRow(y) {
   row.innerHTML = '<div><div class="yt-row" style="margin-bottom:8px;"><div style="flex:1"><label>Yard name</label><input class="n" style="width:100%"></div>'
     + '<div><label>Ticket price</label><input class="p" type="number" min="0" step="0.01" style="width:100px"></div></div>'
     + '<div class="yt-row" style="margin-bottom:8px;"><div><label>Print time (blank = the real time sold)</label><input class="pt" type="time" style="width:140px"></div><label class="yt-chk"><input type="checkbox" class="rnd"> Randomize (up to 30 minutes later, never earlier)</label></div>'
-    + '<details class="yt-look"><summary>Text look — the whole ticket\u2019s text (not the logo)</summary><div class="yt-grid lk"></div><div style="margin-top:6px"><button type="button" class="btn btn-secondary btn-sm lkr">Reset text look</button></div></details>'
+    + '<details class="yt-look"><summary>Text look — for every text row with its Look box checked (not the logo)</summary><div class="yt-grid lk"></div><div style="margin-top:6px"><button type="button" class="btn btn-secondary btn-sm lkr">Reset text look</button></div></details>'
     + '<label>Ticket rows</label><div class="yt-rows"></div>'
     + '<div class="yt-add"><button type="button" class="btn btn-secondary btn-sm" data-add="text">+ Text</button><button type="button" class="btn btn-secondary btn-sm" data-add="line">+ Divider</button><button type="button" class="btn btn-secondary btn-sm" data-add="logo">+ Logo</button><button type="button" class="btn btn-secondary btn-sm" data-add="barcode">+ Barcode</button></div>'
     + '<div class="yt-row" style="margin:12px 0 0;"><button type="button" class="btn btn-secondary btn-sm s">Save</button><button type="button" class="btn btn-secondary btn-sm dup" title="Make a new ticket from this one, then change what you like">Duplicate</button><button type="button" class="btn btn-secondary btn-sm d">Remove</button></div></div>'
@@ -953,13 +955,15 @@ function yardRow(y) {
       const el = document.createElement('div'); el.className = 'yt-r' + (i === sel ? ' sel' : '');
       const head = document.createElement('div'); head.className = 'yt-rh';
       head.innerHTML = '<span class="ty">' + (r.type === 'text' && r.hasDate ? 'Date' : NAMES[r.type]) + '</span>' + (r.type === 'text' ? '<input class="rt" placeholder="Type the line here">' : '<span class="sm"></span>')
-        + '<button type="button" class="btn btn-secondary btn-sm" data-a="up" title="Move up">\u25B2</button><button type="button" class="btn btn-secondary btn-sm" data-a="dn" title="Move down">\u25BC</button><button type="button" class="btn btn-secondary btn-sm" data-a="x" title="Delete this row">\u2715</button>';
+        + '<button type="button" class="btn btn-secondary btn-sm" data-a="up" title="Move up">\u25B2</button><button type="button" class="btn btn-secondary btn-sm" data-a="dn" title="Move down">\u25BC</button><button type="button" class="btn btn-secondary btn-sm" data-a="x" title="Delete this row">\u2715</button>'
+        + (r.type === 'text' ? '<label class="yt-lk" title="Checked: the Text look sliders above change this row. Unchecked: this row keeps only its own settings."><input type="checkbox" class="ul"> Look</label>' : '');   // v408: per-row Look checkbox
       if (r.type === 'text') {
         const ti = head.querySelector('.rt'); ti.value = r.text || '';
         ti.oninput = () => { r.text = ti.value; preview(); };
         ti.onfocus = () => { if (sel !== i) { sel = i; const keep = ti.selectionStart; drawList(); const t2 = list.children[i].querySelector('.rt'); t2.focus(); t2.setSelectionRange(keep, keep); } };
       } else head.querySelector('.sm').textContent = summary(r);
-      head.onclick = (e) => { if (e.target.closest('button') || e.target.closest('input')) return; sel = sel === i ? -1 : i; drawList(); };
+      const ul = head.querySelector('.ul'); if (ul) { ul.checked = r.useLook !== false; ul.onchange = () => { r.useLook = ul.checked; preview(); }; }   // v408
+      head.onclick = (e) => { if (e.target.closest('button') || e.target.closest('input') || e.target.closest('label')) return; sel = sel === i ? -1 : i; drawList(); };
       head.querySelectorAll('button').forEach(bt => bt.onclick = (e) => {
         e.stopPropagation(); const a = bt.dataset.a;
         if (a === 'x') { rows.splice(i, 1); sel = -1; } else { const j = a === 'up' ? i - 1 : i + 1; if (j < 0 || j >= rows.length) return; [rows[i], rows[j]] = [rows[j], rows[i]]; sel = j; }
@@ -1016,7 +1020,7 @@ function yardRow(y) {
       list.append(el);
     });
   };
-  const NEW = { text: { type: 'text', text: '', font: 'Courier New', size: 45, boldness: 0, align: 'center', top: 0, bottom: 0 }, line: { type: 'line', style: 'dashes', thickness: 10, dash: 6, gap: 6, width: 100, align: 'center', top: 10, bottom: 10 }, logo: { type: 'logo', align: 'center', width: 70, top: 0, bottom: 10 }, barcode: { type: 'barcode', align: 'center', value: '', width: 75, height: 22, top: 5, bottom: 5 } };
+  const NEW = { text: { type: 'text', text: '', font: 'Courier New', size: 45, boldness: 0, align: 'center', top: 0, bottom: 0, useLook: true }, line: { type: 'line', style: 'dashes', thickness: 10, dash: 6, gap: 6, width: 100, align: 'center', top: 10, bottom: 10 }, logo: { type: 'logo', align: 'center', width: 70, top: 0, bottom: 10 }, barcode: { type: 'barcode', align: 'center', value: '', width: 75, height: 22, top: 5, bottom: 5 } };
   row.querySelectorAll('[data-add]').forEach(bt => bt.onclick = () => { rows.push(JSON.parse(JSON.stringify(NEW[bt.dataset.add]))); sel = rows.length - 1; drawList(); preview(); });
   [n, p, pt].forEach(x => x.addEventListener('input', preview));
   drawList(); setTimeout(preview, 60);   // after the row is on the page (the preview frame needs to exist first)
