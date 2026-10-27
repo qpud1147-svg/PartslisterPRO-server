@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Home v402</title>
+<title>PartsLister Pro Home v403</title>
 <!-- v400: yard tickets — divider styles (tiny dashes, dots, solid, double) with thickness, dash length, gap, width and position; mark one text row "This row has the date" ({date} there is the ticket's own day — tomorrow's for "Sell for tomorrow"); a print time per yard with a Randomize switch (adds 0–30 minutes, never earlier). -->
 <!-- v399: TICKET DESIGNER — each yard's ticket is a list of rows (text, divider, logo, barcode). Every text row has its own font (list or any font name), size 1–100, boldness 0–100 and position; the logo has size, position, a drop box and weathered / gravel / fuzzy / faded gray / spots looks (or one tap "Match sticker look"); the barcode is typed in (Code 128) with its own size and position. Every slider also has a number box. "Duplicate" copies a yard's whole ticket so you can change a few things instead of starting over. -->
 <!-- v389: yard tickets are sold tickets — real sale date and time, a ticket number and barcode, "Sell for tomorrow" advance tickets marked VALID FOR, {logo} and {big} tags anywhere, and Money made. The saved time and Randomize are gone. -->
@@ -199,7 +199,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v402</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v403</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -958,7 +958,17 @@ function logoToPrintable(file) {
 }
 function drawYardEditor() {
   document.getElementById('yt-width').value = String(tickets.settings.width);
-  document.getElementById('yt-width').onchange = () => document.querySelectorAll('#yt-list .yt-edit').forEach(r => r.redraw && r.redraw());   // v399
+  // document.getElementById('yt-width').onchange = () => document.querySelectorAll('#yt-list .yt-edit').forEach(r => r.redraw && r.redraw());   // v399
+  // v403: the paper width saves the moment you change it. Before, only its own Save button (at the top) saved it, so changing it and pressing a yard's Save put it back to the old width.
+  document.getElementById('yt-width').onchange = async () => {
+    document.querySelectorAll('#yt-list .yt-edit').forEach(r => r.redraw && r.redraw());
+    const sel = document.getElementById('yt-width'), w = parseInt(sel.value, 10);
+    try {
+      const r = await fetch('/api/tickets/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ width: w }) });
+      if (!r.ok) throw new Error('save failed');
+      tickets.settings.width = w; pageCache.live();
+    } catch (e) { alert('Couldn’t save the paper width — press Save next to it to try again.'); }
+  };
   const list = document.getElementById('yt-list'); list.textContent = '';
   tickets.yards.forEach(y => list.append(yardRow(y)));
 }
