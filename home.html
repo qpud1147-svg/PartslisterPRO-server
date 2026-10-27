@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Home v404</title>
+<title>PartsLister Pro Home v405</title>
 <!-- v400: yard tickets — divider styles (tiny dashes, dots, solid, double) with thickness, dash length, gap, width and position; mark one text row "This row has the date" ({date} there is the ticket's own day — tomorrow's for "Sell for tomorrow"); a print time per yard with a Randomize switch (adds 0–30 minutes, never earlier). -->
 <!-- v399: TICKET DESIGNER — each yard's ticket is a list of rows (text, divider, logo, barcode). Every text row has its own font (list or any font name), size 1–100, boldness 0–100 and position; the logo has size, position, a drop box and weathered / gravel / fuzzy / faded gray / spots looks (or one tap "Match sticker look"); the barcode is typed in (Code 128) with its own size and position. Every slider also has a number box. "Duplicate" copies a yard's whole ticket so you can change a few things instead of starting over. -->
 <!-- v389: yard tickets are sold tickets — real sale date and time, a ticket number and barcode, "Sell for tomorrow" advance tickets marked VALID FOR, {logo} and {big} tags anywhere, and Money made. The saved time and Randomize are gone. -->
@@ -137,6 +137,8 @@
   .yt-prev img { display: block; margin: 0 auto 4px; max-width: 100%; }
   .yt-prev .big { font-weight: 700; font-size: 14px; }
   .yt-prev svg { display: block; margin: 2px auto; max-width: 100%; height: 36px; }
+  .yt-look { margin: 8px 0 12px; border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; }   /* v405 */
+  .yt-look summary { cursor: pointer; font-weight: 600; }
   .yt-des { border-top: 1px solid var(--border); margin-top: 10px; padding-top: 8px; }
   .yt-des summary { cursor: pointer; font-weight: 600; font-size: 13px; padding: 2px 0 8px; }
   .yt-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px; align-items: end; }
@@ -199,7 +201,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v404</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v405</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -579,9 +581,13 @@ const FONT_STACKS = { 'Century Schoolbook': "'Century Schoolbook', 'New Century 
 // v399: fonts loaded from Google Fonts into the ticket (the page already uses Google Fonts), so they print the same on any computer
 const WEB_FONTS = { 'Libre Baskerville': 'Libre+Baskerville:wght@400;700', 'Lora': 'Lora:wght@400;700', 'Merriweather': 'Merriweather:wght@400;700', 'PT Serif': 'PT+Serif:wght@400;700', 'Source Serif 4': 'Source+Serif+4:wght@400;700', 'Crimson Pro': 'Crimson+Pro:wght@400;700', 'Noto Serif': 'Noto+Serif:wght@400;700' };
 const fontStack = (name) => FONT_STACKS[name] || (/^[A-Za-z0-9 \-]{1,40}$/.test(name || '') ? "'" + name + "', serif" : FONT_STACKS['Courier New']);   // any font name typed in works if that computer has it
-function boldCSS(r) {   // v399: boldness 0–100 — a thickening outline works on every font (smooth steps); from 75 up the font's real bold is used as well
-  const b = Math.max(0, Math.min(100, r.boldness !== undefined ? (+r.boldness || 0) : (r.bold ? 75 : 0)));
-  return 'font-weight:' + (b >= 75 ? 700 : 400) + ';' + (b > 0 ? '-webkit-text-stroke:' + (b * 0.0008).toFixed(4) + 'em #000;' : '');
+// function boldCSS(r) {   // v399: boldness 0–100 — a thickening outline works on every font (smooth steps); from 75 up the font's real bold is used as well
+//   const b = Math.max(0, Math.min(100, r.boldness !== undefined ? (+r.boldness || 0) : (r.bold ? 75 : 0)));
+//   return 'font-weight:' + (b >= 75 ? 700 : 400) + ';' + (b > 0 ? '-webkit-text-stroke:' + (b * 0.0008).toFixed(4) + 'em #000;' : '');
+// }
+function boldCSS(r) {   // v405: boldness 0–100 thickens (black outline); "lighter" (0–100, set for the whole ticket) takes it away again — a white outline eats the letters' edges, so it goes thinner than normal even at boldness 0
+  const b = Math.max(0, Math.min(100, r.boldness !== undefined ? (+r.boldness || 0) : (r.bold ? 75 : 0))), l = Math.max(0, Math.min(100, +r.lighter || 0)), net = b - l;
+  return 'font-weight:' + (net >= 75 ? 700 : 400) + ';' + (net > 0 ? '-webkit-text-stroke:' + (net * 0.0008).toFixed(4) + 'em #000;' : net < 0 ? '-webkit-text-stroke:' + (-net * 0.0008).toFixed(4) + 'em #fff;' : '');
 }
 function webFontImport(rows) {
   const fam = [...new Set((rows || []).filter(r => r.type === 'text' && WEB_FONTS[r.font]).map(r => WEB_FONTS[r.font]))];
@@ -591,7 +597,7 @@ function ptOf(size, w) { return (3 + (Math.max(1, Math.min(100, +size || 45)) - 
 function ticketCSS(w, rows) {
   return webFontImport(rows) + '@page{size:' + w + 'mm auto;margin:0}html,body{margin:0;padding:0;background:#fff;color:#000}'
     + 'body{width:' + w + 'mm;box-sizing:border-box;padding:3mm ' + (w === 58 ? 2 : 4) + 'mm 6mm;line-height:1.3}'
-    + '.l{white-space:pre-wrap;word-break:break-word}hr{border:none;border-top:1px dashed #000}img.logo,svg.bc{display:block}';
+    + '.l{white-space:pre-wrap;word-break:break-word}hr{border:none;border-top:1px dashed #000}img.logo,svg.bc,img.tl{display:block}';   // v405: img.tl = a text row drawn as a picture (text look)
 }
 // v399: turn an old-style ticket (text with {logo} {big} {barcode} tags) into rows, so existing yards keep their look
 function rowsFromTemplate(tpl, logoSize) {
@@ -629,6 +635,7 @@ function ticketHTML(rows, logo, number, w) {
     if (r.type === 'barcode') return barcodeSVG(r.value || number, 'width:' + (r.width || 75) + '%;height:' + (4 + ((r.height || 22) / 100) * 36).toFixed(1) + 'mm;' + mg(r.align) + 'margin-top:' + mm(r.top) + ';margin-bottom:' + mm(r.bottom));
     // if (r.type === 'line') return '<hr style="margin:' + mm(r.top) + ' 0 ' + mm(r.bottom) + '">';   (v399)
     if (r.type === 'line') return dividerHTML(r, mg, mm);   // v400: divider styles
+    if (r.timg) return '<img class="tl" alt="" src="' + esc(r.timg) + '" style="width:100%;margin-top:' + mm(r.top) + ';margin-bottom:' + mm(r.bottom) + '">';   // v405: text look — this row was drawn as a picture
     return '<div class="l" style="font-family:' + fontStack(r.font) + ';font-size:' + ptOf(r.size, w).toFixed(2) + 'pt;' + boldCSS(r) + 'text-align:' + (r.align || 'center') + ';margin-top:' + mm(r.top) + ';margin-bottom:' + mm(r.bottom) + '">' + (esc(r.text || '') || '&nbsp;') + '</div>';
   }).join('');
 }
@@ -655,10 +662,11 @@ const wVn = (X, Y, cell, s) => {   // smooth blotchy noise
   const u = fx * fx * (3 - 2 * fx), v = fy * fy * (3 - 2 * fy);
   return wHash(i, j, s) * (1 - u) * (1 - v) + wHash(i + 1, j, s) * u * (1 - v) + wHash(i, j + 1, s) * (1 - u) * v + wHash(i + 1, j + 1, s) * u * v;
 };
-function weatherPixels(px, w, h, amount) {   // px = RGBA of a black & white picture, changed in place
+function weatherPixels(px, w, h, amount, ref) {   // v405: ref = the size the effect is scaled to (the picture's width for a logo; about 12 × the letter height for text)   // px = RGBA of a black & white picture, changed in place
   const a = Math.max(0, Math.min(100, amount)) / 100;
   const src = new Uint8Array(w * h); for (let i = 0; i < w * h; i++) src[i] = px[i * 4] < 128 ? 1 : 0;
-  const coarse = Math.max(8, w / 14), mid = Math.max(4, w / 55);
+  // const coarse = Math.max(8, w / 14), mid = Math.max(4, w / 55);
+  const R = ref || w, coarse = Math.max(8, R / 14), mid = Math.max(4, R / 55);   // v405
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
     const i = y * w + x; if (!src[i]) continue;
     const edge = x === 0 || !src[i - 1] || x === w - 1 || !src[i + 1] || y === 0 || !src[i - w] || y === h - 1 || !src[i + w];
@@ -666,10 +674,11 @@ function weatherPixels(px, w, h, amount) {   // px = RGBA of a black & white pic
     if (nz < a * 0.5 + (edge ? a * 0.18 : 0)) { px[i * 4] = px[i * 4 + 1] = px[i * 4 + 2] = 255; }
   }
 }
-function gravelPixels(px, w, h, amount) {   // v399: GRAVEL — pixels get knocked sideways in chunks, so edges break into coarse grains (sand is fine; this is gravel)
+function gravelPixels(px, w, h, amount, ref) {   // v399: GRAVEL — pixels get knocked sideways in chunks, so edges break into coarse grains (sand is fine; this is gravel)
   const a = Math.max(0, Math.min(100, amount)) / 100;
-  const chunk = Math.max(2, Math.round(w * (0.004 + 0.007 * a)));   // grain size grows with the slider
-  const mag = a * w * 0.03 + 1;                                      // how far a grain can be thrown
+  // const chunk = Math.max(2, Math.round(w * (0.004 + 0.007 * a)));   // grain size grows with the slider
+  // const mag = a * w * 0.03 + 1;                                      // how far a grain can be thrown
+  const R = ref || w, chunk = Math.max(2, Math.round(R * (0.004 + 0.007 * a))), mag = a * R * 0.03 + 1;   // v405: grain size grows with the slider; mag = how far a grain can be thrown
   const src = new Uint8Array(w * h); for (let i = 0; i < w * h; i++) src[i] = px[i * 4] < 128 ? 1 : 0;
   const at = (x, y) => (x < 0 || y < 0 || x >= w || y >= h) ? 0 : src[y * w + x];
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
@@ -694,10 +703,11 @@ function boxBlur(src, dst, w, h, r, horiz) {   // one running-sum pass
     }
   }
 }
-function grayPixels(px, w, h, fuzzy, fade, spots) {   // blur → lighter ink → light pits → fine dots (Floyd–Steinberg), back to pure black & white
+function grayPixels(px, w, h, fuzzy, fade, spots, ref) {   // blur → lighter ink → light pits → fine dots (Floyd–Steinberg), back to pure black & white
   const n = w * h; let dk = new Float32Array(n);   // darkness 0 (white) … 1 (black)
   for (let i = 0; i < n; i++) dk[i] = 1 - px[i * 4] / 255;
-  const r = Math.round(fuzzy / 100 * w * 0.012);
+  // const r = Math.round(fuzzy / 100 * w * 0.012);
+  const R = ref || w, r = Math.round(fuzzy / 100 * R * 0.012);   // v405
   if (r > 0) { let tmp = new Float32Array(n); for (let pass = 0; pass < 3; pass++) { boxBlur(dk, tmp, w, h, r, true); boxBlur(tmp, dk, w, h, r, false); } }
   const f = 1 - 0.75 * fade / 100, sp = spots / 100;
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
@@ -705,7 +715,8 @@ function grayPixels(px, w, h, fuzzy, fade, spots) {   // blur → lighter ink �
     let v = dk[i] * f;
     if (sp > 0) {
       if (0.6 * wVn(x, y, 2.5, 7) + 0.4 * wHash(x, y, 8) > 1 - sp * 0.45) v *= 0.25;   // small pits
-      if (wVn(x, y, Math.max(6, w / 25), 9) > 1 - sp * 0.3) v *= 0.5;                  // lighter blotches
+      // if (wVn(x, y, Math.max(6, w / 25), 9) > 1 - sp * 0.3) v *= 0.5;
+      if (wVn(x, y, Math.max(6, R / 25), 9) > 1 - sp * 0.3) v *= 0.5;   // v405                  // lighter blotches
     }
     dk[i] = v;
   }
@@ -740,6 +751,69 @@ function weatherLogo(src, r) {
 }
 async function applyWeather(rows, logo) {   // each logo row gets its own worn picture
   return Promise.all((rows || []).map(async r => r.type === 'logo' && hasLook(r) ? Object.assign({}, r, { img: await weatherLogo(logo, r) }) : r));
+}
+// v405: TEXT LOOK — the same effects the logo has (weathered, gravel, fuzzy, faded gray, spots), applied to every text row of a ticket, plus "Lighter" (thinner letters).
+// Lighter alone just thins the live text. With any effect on, each text row is drawn as a black & white picture at the printer's 203 dpi, run through the same effects as the logo, and printed as a picture.
+const TEXT_DPMM = 8;   // dots per millimetre on a 203 dpi receipt printer
+const fontReady = new Map();
+function ensureFont(name) {   // Google Fonts a ticket uses must also be loaded into this page so the text can be drawn on a canvas
+  const spec = WEB_FONTS[name]; if (!spec) return Promise.resolve();
+  if (!fontReady.has(name)) {
+    fontReady.set(name, new Promise((resolve) => {
+      const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = 'https://fonts.googleapis.com/css2?family=' + spec + '&display=swap';
+      const done = () => Promise.race([Promise.all([document.fonts.load("400 20px '" + name + "'"), document.fonts.load("700 20px '" + name + "'")]), new Promise(r => setTimeout(r, 2500))]).then(resolve, resolve);
+      l.onload = done; l.onerror = () => resolve(); setTimeout(resolve, 4000); document.head.append(l);
+    }));
+  }
+  return fontReady.get(name);
+}
+const textCache = new Map();
+async function textImage(r, look, w) {
+  const text = String(r.text || '').trim(); if (!text) return null;
+  const pad = w === 58 ? 2 : 4, W = Math.round((w - 2 * pad) * TEXT_DPMM);
+  const px = ptOf(r.size, w) * 203 / 72, lh = px * 1.3;   // 1 pt = 1/72 in; the ticket's line height is 1.3
+  const b = Math.max(0, Math.min(100, r.boldness !== undefined ? (+r.boldness || 0) : (r.bold ? 75 : 0))), l = Math.max(0, Math.min(100, +r.lighter || 0)), net = b - l;
+  const wv = +look.weather || 0, gr = +look.gravel || 0, fz = +look.fuzzy || 0, fd = +look.fade || 0, sp = +look.spots || 0;
+  const key = [text, r.font, r.size, net, r.align, w, wv, gr, fz, fd, sp].join('|');
+  if (textCache.has(key)) return textCache.get(key);
+  await ensureFont(r.font);
+  const font = (net >= 75 ? '700 ' : '400 ') + px.toFixed(2) + 'px ' + fontStack(r.font);
+  const mx = document.createElement('canvas').getContext('2d'); mx.font = font;
+  const wid = (t) => mx.measureText(t).width;
+  const lines = []; let cur = '';
+  text.split(' ').forEach(word => {   // wrap like the ticket does: at spaces, and inside a word too long for the line
+    const t = cur ? cur + ' ' + word : word;
+    if (wid(t) <= W) { cur = t; return; }
+    if (cur) lines.push(cur);
+    if (wid(word) <= W) { cur = word; return; }
+    let seg = ''; for (const ch of word) { if (seg && wid(seg + ch) > W) { lines.push(seg); seg = ch; } else seg += ch; } cur = seg;
+  });
+  if (cur) lines.push(cur);
+  const H = Math.max(1, Math.ceil(lines.length * lh)), c = document.createElement('canvas'); c.width = W; c.height = H;
+  const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, W, H);
+  x.font = font; x.textBaseline = 'middle'; x.textAlign = r.align === 'left' ? 'left' : r.align === 'right' ? 'right' : 'center'; x.lineJoin = 'round';
+  const tx = r.align === 'left' ? 0 : r.align === 'right' ? W : W / 2;
+  lines.forEach((ln, i) => {
+    const y = (i + 0.5) * lh; x.fillStyle = '#000'; x.fillText(ln, tx, y);
+    if (net !== 0) { x.strokeStyle = net > 0 ? '#000' : '#fff'; x.lineWidth = Math.abs(net) * 0.0008 * px; x.strokeText(ln, tx, y); }
+  });
+  const d = x.getImageData(0, 0, W, H), ref = px * 12;
+  if (wv > 0) weatherPixels(d.data, W, H, wv, ref);
+  if (gr > 0) gravelPixels(d.data, W, H, gr, ref);
+  if (fz > 0 || fd > 0 || sp > 0) grayPixels(d.data, W, H, fz, fd, sp, ref);
+  x.putImageData(d, 0, 0);
+  const out = c.toDataURL('image/png'); textCache.set(key, out); return out;
+}
+async function applyTextLook(rows, look, w) {
+  look = look || {};
+  const lighter = Math.max(0, Math.min(100, parseInt(look.lighter, 10) || 0)), fx = ['weather', 'gravel', 'fuzzy', 'fade', 'spots'].some(k => (parseInt(look[k], 10) || 0) > 0);
+  if (!lighter && !fx) return rows;
+  return Promise.all((rows || []).map(async r => {
+    if (r.type !== 'text') return r;
+    const r2 = Object.assign({}, r, { lighter });
+    if (fx) { try { const u = await textImage(r2, look, w); if (u) r2.timg = u; } catch (e) { /* keep the live text */ } }
+    return r2;
+  }));
 }
 async function loadTickets() {
   const d = await getJSON('/api/tickets');
@@ -780,15 +854,18 @@ async function printTicket(id, btn, advance) {   // v389: advance = sold today, 
     // v399: rows from the yard's saved design (an old yard: built from its ticket text), filled in with this sale
     let rows = d.design && d.design.rows ? d.design.rows : rowsFromTemplate(d.template, d.logoSize);
     if (d.advance && !rows.some(r => r.type === 'text' && (r.hasDate || /\{valid\}/.test(r.text || '')))) rows =   /* v400: a row marked as the date already shows tomorrow's date */ rows.concat([{ type: 'text', text: 'VALID FOR {valid}', font: 'Courier New', size: 70, boldness: 75, align: 'center', top: 2, bottom: 0 }]);
-    rows = await applyWeather(fillRows(rows, d.vals), d.logo);   // v399: weathered logo
+    // rows = await applyWeather(fillRows(rows, d.vals), d.logo);   // v399: weathered logo
+    rows = await applyTextLook(await applyWeather(fillRows(rows, d.vals), d.logo), d.design && d.design.textLook, w);   // v399: weathered logo; v405: + the text look
     doc.write('<!doctype html><html><head><meta charset="utf-8"><title>Ticket</title><style>' + ticketCSS(w, rows) + '</style></head><body>' + ticketHTML(rows, d.logo, d.number, w) + '</body></html>');
     doc.close();
     // setTimeout(() => { … f.print(); }, 150);
     const fw = document.getElementById('yt-frame').contentWindow;   // v387: wait for the logo to load before printing
     const go = () => { fw.focus(); fw.print(); };
-    const im = doc.querySelector('img');
+    // const im = doc.querySelector('img');
+    const pend = [...doc.querySelectorAll('img')].filter(i => !i.complete);   // v405: wait for every picture (logo and text rows)
     const fontsOk = Promise.race([doc.fonts && doc.fonts.ready ? doc.fonts.ready : Promise.resolve(), new Promise(r => setTimeout(r, 3000))]);   // v399: wait for the ticket's fonts (max 3 s)
-    if (im && !im.complete) { im.onload = im.onerror = () => fontsOk.then(() => setTimeout(go, 50)); } else fontsOk.then(() => setTimeout(go, 150));
+    // if (im && !im.complete) { im.onload = im.onerror = () => fontsOk.then(() => setTimeout(go, 50)); } else fontsOk.then(() => setTimeout(go, 150));
+    if (pend.length) { let left = pend.length; const one = () => { if (--left === 0) fontsOk.then(() => setTimeout(go, 50)); }; pend.forEach(i => { i.onload = i.onerror = one; }); } else fontsOk.then(() => setTimeout(go, 150));
     pageCache.live(); loadTickets();
   } catch (e) { alert(e.message); }
   finally { if (btn) btn.disabled = false; }
@@ -810,11 +887,13 @@ function yardRow(y) {
   rows.forEach(r => { if (r.type === 'text' && r.boldness === undefined) { r.boldness = r.bold ? 75 : 0; delete r.bold; } });   // v399: old Bold on/off → boldness number
   rows.forEach(r => { if (r.type === 'line') { r.style = r.style || 'dashes'; if (r.thickness === undefined) r.thickness = 10; if (r.dash === undefined) r.dash = 6; if (r.gap === undefined) r.gap = 6; if (r.width === undefined) r.width = 100; } });   // v400: old dividers get the new controls
   let sel = -1, logo = y.logo || null, logoChanged = false;
+  const look = Object.assign({ lighter: 0, weather: 0, gravel: 0, fuzzy: 0, fade: 0, spots: 0 }, (y.design && y.design.textLook) || {});   // v405: the text look for this yard's whole ticket
   const AL = [['left', 'Left'], ['center', 'Center'], ['right', 'Right']];
   const NAMES = { text: 'Text', line: 'Divider', logo: 'Logo', barcode: 'Barcode' };
   row.innerHTML = '<div><div class="yt-row" style="margin-bottom:8px;"><div style="flex:1"><label>Yard name</label><input class="n" style="width:100%"></div>'
     + '<div><label>Ticket price</label><input class="p" type="number" min="0" step="0.01" style="width:100px"></div></div>'
     + '<div class="yt-row" style="margin-bottom:8px;"><div><label>Print time (blank = the real time sold)</label><input class="pt" type="time" style="width:140px"></div><label class="yt-chk"><input type="checkbox" class="rnd"> Randomize (up to 30 minutes later, never earlier)</label></div>'
+    + '<details class="yt-look"><summary>Text look — the whole ticket\u2019s text (not the logo)</summary><div class="yt-grid lk"></div><div style="margin-top:6px"><button type="button" class="btn btn-secondary btn-sm lkr">Reset text look</button></div></details>'
     + '<label>Ticket rows</label><div class="yt-rows"></div>'
     + '<div class="yt-add"><button type="button" class="btn btn-secondary btn-sm" data-add="text">+ Text</button><button type="button" class="btn btn-secondary btn-sm" data-add="line">+ Divider</button><button type="button" class="btn btn-secondary btn-sm" data-add="logo">+ Logo</button><button type="button" class="btn btn-secondary btn-sm" data-add="barcode">+ Barcode</button></div>'
     + '<div class="yt-row" style="margin:12px 0 0;"><button type="button" class="btn btn-secondary btn-sm s">Save</button><button type="button" class="btn btn-secondary btn-sm dup" title="Make a new ticket from this one, then change what you like">Duplicate</button><button type="button" class="btn btn-secondary btn-sm d">Remove</button></div></div>'
@@ -827,7 +906,8 @@ function yardRow(y) {
   let pvTok = 0;
   const preview = async () => {
     const tok = ++pvTok, w = paper();
-    const shown = await applyWeather(fillRows(rows, sampleVals({ name: n.value, price: parseFloat(p.value) || 0, printTime: pt.value })), logo);   // v399
+    // const shown = await applyWeather(fillRows(rows, sampleVals({ name: n.value, price: parseFloat(p.value) || 0, printTime: pt.value })), logo);   // v399
+    const shown = await applyTextLook(await applyWeather(fillRows(rows, sampleVals({ name: n.value, price: parseFloat(p.value) || 0, printTime: pt.value })), logo), look, w);   // v399; v405: + the text look
     const doc = fr.contentDocument; if (!doc || tok !== pvTok) return;
     fr.style.width = Math.round(w * 3.7795) + 'px';   // real paper width on screen
     doc.open();
@@ -842,6 +922,22 @@ function yardRow(y) {
   const sl = (k, label, min, r, lo) => { const v = r[k] === undefined ? min : r[k], mn = lo === undefined ? min : lo; return '<div class="yt-sl"><label>' + label + '</label><div class="yt-sn"><input type="range" data-k="' + k + '" min="' + mn + '" max="100" value="' + v + '"><input type="number" data-k="' + k + '" min="' + mn + '" max="100" step="1" value="' + v + '"></div></div>'; };   // v404: optional lower limit (Space above can be negative)
   const pick = (k, label, opts, r) => '<div><label>' + label + '</label><select data-k="' + k + '">' + opts.map(o => '<option value="' + o[0] + '"' + (r[k] === o[0] ? ' selected' : '') + '>' + o[1] + '</option>').join('') + '</select></div>';
   const summary = (r) => r.type === 'line' ? '- - - - - - - -' : r.type === 'logo' ? (logo ? 'Your logo' : 'No logo uploaded yet') : 'Barcode: ' + (r.value ? r.value : 'each ticket\u2019s number');
+  // v405: the text look sliders (same ones the logo has, plus Lighter) — they change every text row of this ticket
+  const LK = [['lighter', 'Lighter text (thinner letters)'], ['weather', 'Weathered look'], ['gravel', 'Gravel (chunky grit)'], ['fuzzy', 'Fuzzy'], ['fade', 'Faded gray'], ['spots', 'Spots']];
+  const lkBox = row.querySelector('.lk'); let lkTimer = null;
+  const drawLook = () => {
+    lkBox.innerHTML = LK.map(([k, label]) => '<div class="yt-sl"><label>' + label + '</label><div class="yt-sn"><input type="range" data-lk="' + k + '" min="0" max="100" value="' + look[k] + '"><input type="number" data-lk="' + k + '" min="0" max="100" step="1" value="' + look[k] + '"></div></div>').join('');
+    lkBox.querySelectorAll('[data-lk]').forEach(c => {
+      const k = c.dataset.lk, up = () => {
+        let v = parseInt(c.value, 10); if (!Number.isFinite(v)) return; v = Math.max(0, Math.min(100, v)); look[k] = v;
+        lkBox.querySelectorAll('[data-lk="' + k + '"]').forEach(o => { if (o !== c) o.value = v; });   // slider and number box stay together
+        clearTimeout(lkTimer); lkTimer = setTimeout(preview, 120);   // drawing the text as a picture takes a moment — wait until the slider rests
+      };
+      c.addEventListener('input', up); c.addEventListener('change', () => { if (c.type === 'number') c.value = look[k]; up(); });
+    });
+  };
+  drawLook(); if (LK.some(([k]) => look[k] > 0)) row.querySelector('details.yt-look').open = true;
+  row.querySelector('.lkr').onclick = () => { LK.forEach(([k]) => { look[k] = 0; }); drawLook(); preview(); };
   const drawList = () => {
     list.textContent = '';
     rows.forEach((r, i) => {
@@ -917,14 +1013,14 @@ function yardRow(y) {
   drawList(); setTimeout(preview, 60);   // after the row is on the page (the preview frame needs to exist first)
   row.querySelector('.s').onclick = async () => {
     const lg = rows.find(r => r.type === 'logo');
-    const r = await fetch('/api/tickets/yards', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ id: y.id || null, name: n.value, price: p.value, template: y.template || tickets.defaultTemplate, logoSize: lg ? lg.width : 70, design: { rows, printTime: pt.value, randomize: rnd.checked } }, logoChanged ? { logo: logo || '' } : {})) });   // v399: + rows
+    const r = await fetch('/api/tickets/yards', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ id: y.id || null, name: n.value, price: p.value, template: y.template || tickets.defaultTemplate, logoSize: lg ? lg.width : 70, design: { rows, printTime: pt.value, randomize: rnd.checked, textLook: look } }, logoChanged ? { logo: logo || '' } : {})) });   // v399: + rows
     const res = await r.json().catch(() => ({}));
     if (!r.ok) { alert(res.error || 'Couldn\u2019t save'); return; }
     pageCache.live(); await loadTickets(); drawYardEditor();
   };
   row.querySelector('.dup').onclick = async () => {   // v399: copy this yard's whole ticket (what you see now, saved or not) as a new yard
     const lg = rows.find(r => r.type === 'logo');
-    const r = await fetch('/api/tickets/yards', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: null, name: ((n.value || '').trim() || 'Yard').slice(0, 74) + ' copy', price: p.value, template: y.template || tickets.defaultTemplate, logoSize: lg ? lg.width : 70, design: { rows, printTime: pt.value, randomize: rnd.checked }, logo: logo || '' }) });
+    const r = await fetch('/api/tickets/yards', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: null, name: ((n.value || '').trim() || 'Yard').slice(0, 74) + ' copy', price: p.value, template: y.template || tickets.defaultTemplate, logoSize: lg ? lg.width : 70, design: { rows, printTime: pt.value, randomize: rnd.checked, textLook: look }, logo: logo || '' }) });
     const res = await r.json().catch(() => ({}));
     if (!r.ok) { alert(res.error || 'Couldn\u2019t duplicate'); return; }
     pageCache.live(); await loadTickets(); drawYardEditor();

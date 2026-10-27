@@ -1,4 +1,5 @@
-// PartsLister Pro server — v404
+// PartsLister Pro server — v405
+// v405: yard tickets — a text look for the whole ticket (design.textLook: lighter, weathered, gravel, fuzzy, faded gray, spots — text only, not the logo), saved per yard.
 // v404: yard tickets — "Space above" can go down to -15 (−3 mm, the ticket's own top padding) to pull a row up.
 // v402: Part types — result saved in the database (opens instantly, shows its age, refreshes in the background every 3 hours); per-type lists of the sold / returned / listed items (GET /api/returns/types/items).
 // v401: Returns → Part types — every part type's sold / returned / return rate / top reasons / still listed / sell-through / days to sell / average price over the last 90 days (GET /api/returns/types).
@@ -3962,7 +3963,10 @@ function cleanDesign(d) {
   // return { rows: rows && rows.length ? rows : null };   // null = not redesigned yet (the page builds rows from the old ticket text)   (v399)
   let seen = false; (rows || []).forEach(r => { if (r.type === 'text' && r.hasDate) { if (seen) r.hasDate = false; seen = true; } });   // v400: only one row has the date
   const printTime = /^([01]\d|2[0-3]):[0-5]\d$/.test(String(d.printTime || '')) ? String(d.printTime) : '';   // v400: 'HH:MM' or '' (= the real time sold)
-  return { rows: rows && rows.length ? rows : null, printTime, randomize: !!d.randomize };   // rows null = not redesigned yet (the page builds rows from the old ticket text)
+  // return { rows: rows && rows.length ? rows : null, printTime, randomize: !!d.randomize };   // rows null = not redesigned yet (the page builds rows from the old ticket text)   (v400)
+  const tl = (d.textLook && typeof d.textLook === 'object') ? d.textLook : {}, tn = (v) => { v = parseInt(v, 10); return Number.isFinite(v) ? Math.max(0, Math.min(100, v)) : 0; };
+  const textLook = { lighter: tn(tl.lighter), weather: tn(tl.weather), gravel: tn(tl.gravel), fuzzy: tn(tl.fuzzy), fade: tn(tl.fade), spots: tn(tl.spots) };   // v405: 0–100 each
+  return { rows: rows && rows.length ? rows : null, printTime, randomize: !!d.randomize, textLook };   // rows null = not redesigned yet (the page builds rows from the old ticket text)
 }
 // v400: the time printed on a ticket. No set time → null (the real time sold). Randomize adds 0–30 minutes, never earlier, never past 11:59 PM.
 function pickTicketTime(printTime, randomize, rand = Math.random) {
@@ -5230,5 +5234,6 @@ setupDatabase()
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v400 listening on ' + PORT)))   // v401: version in the startup log
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v401 listening on ' + PORT)))   // v402: version in the startup log
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v402 listening on ' + PORT)))   // v404: version in the startup log
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v404 listening on ' + PORT)))
+  // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v404 listening on ' + PORT)))   // v405: version in the startup log
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v405 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });
