@@ -1,4 +1,5 @@
-// PartsLister Pro server — v402
+// PartsLister Pro server — v404
+// v404: yard tickets — "Space above" can go down to -15 (−3 mm, the ticket's own top padding) to pull a row up.
 // v402: Part types — result saved in the database (opens instantly, shows its age, refreshes in the background every 3 hours); per-type lists of the sold / returned / listed items (GET /api/returns/types/items).
 // v401: Returns → Part types — every part type's sold / returned / return rate / top reasons / still listed / sell-through / days to sell / average price over the last 90 days (GET /api/returns/types).
 // v400: yard tickets — (1) dividers have a style (tiny dashes, dots, solid, double) with thickness, dash length, gap, width and position; (2) one text row per
@@ -3947,7 +3948,7 @@ function cleanRow(r) {
   const n = (v, def, lo = 1, hi = 100) => { v = parseInt(v, 10); return Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : def; };
   const al = (v, def) => ['left', 'center', 'right'].includes(v) ? v : def;
   const type = ['text', 'line', 'logo', 'barcode'].includes(r.type) ? r.type : 'text';
-  const out = { type, align: al(r.align, 'center'), top: n(r.top, 0, 0), bottom: n(r.bottom, type === 'text' ? 0 : 5, 0) };
+  const out = { type, align: al(r.align, 'center'), top: n(r.top, 0, -15), bottom: n(r.bottom, type === 'text' ? 0 : 5, 0) };   // v404: top can be -15…100
   if (type === 'text') Object.assign(out, { text: String(r.text || '').replace(/[\r\n]+/g, ' ').slice(0, 200), font: /^[A-Za-z0-9 \-]{1,40}$/.test(String(r.font || '')) ? String(r.font) : 'Courier New', size: n(r.size, 45), boldness: n(r.boldness, r.bold ? 75 : 0, 0), hasDate: !!r.hasDate });   // v400: + hasDate
   if (type === 'logo') Object.assign(out, { width: n(r.width, 70), weather: n(r.weather, 0, 0), gravel: n(r.gravel, 0, 0), fuzzy: n(r.fuzzy, 0, 0), fade: n(r.fade, 0, 0), spots: n(r.spots, 0, 0) });
   if (type === 'line') Object.assign(out, { style: ['dashes', 'dots', 'solid', 'double'].includes(r.style) ? r.style : 'dashes', thickness: n(r.thickness, 10), dash: n(r.dash, 6), gap: n(r.gap, 6), width: n(r.width, 100) });   // v400: divider styles
@@ -5228,5 +5229,6 @@ setupDatabase()
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v399 listening on ' + PORT)))   // v400: version in the startup log
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v400 listening on ' + PORT)))   // v401: version in the startup log
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v401 listening on ' + PORT)))   // v402: version in the startup log
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v402 listening on ' + PORT)))
+  // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v402 listening on ' + PORT)))   // v404: version in the startup log
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v404 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });

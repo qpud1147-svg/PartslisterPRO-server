@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Home v403</title>
+<title>PartsLister Pro Home v404</title>
 <!-- v400: yard tickets — divider styles (tiny dashes, dots, solid, double) with thickness, dash length, gap, width and position; mark one text row "This row has the date" ({date} there is the ticket's own day — tomorrow's for "Sell for tomorrow"); a print time per yard with a Randomize switch (adds 0–30 minutes, never earlier). -->
 <!-- v399: TICKET DESIGNER — each yard's ticket is a list of rows (text, divider, logo, barcode). Every text row has its own font (list or any font name), size 1–100, boldness 0–100 and position; the logo has size, position, a drop box and weathered / gravel / fuzzy / faded gray / spots looks (or one tap "Match sticker look"); the barcode is typed in (Code 128) with its own size and position. Every slider also has a number box. "Duplicate" copies a yard's whole ticket so you can change a few things instead of starting over. -->
 <!-- v389: yard tickets are sold tickets — real sale date and time, a ticket number and barcode, "Sell for tomorrow" advance tickets marked VALID FOR, {logo} and {big} tags anywhere, and Money made. The saved time and Randomize are gone. -->
@@ -199,7 +199,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v403</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v404</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -838,7 +838,8 @@ function yardRow(y) {
     if (doc.fonts && doc.fonts.ready) doc.fonts.ready.then(fit);   // v399: web fonts change the line heights
   };
   row.redraw = preview;
-  const sl = (k, label, min, r) => { const v = r[k] === undefined ? min : r[k]; return '<div class="yt-sl"><label>' + label + '</label><div class="yt-sn"><input type="range" data-k="' + k + '" min="' + min + '" max="100" value="' + v + '"><input type="number" data-k="' + k + '" min="' + min + '" max="100" step="1" value="' + v + '"></div></div>'; };   // v399: slider + number box
+  // const sl = (k, label, min, r) => { const v = r[k] === undefined ? min : r[k]; return '<div class="yt-sl"><label>' + label + '</label><div class="yt-sn"><input type="range" data-k="' + k + '" min="' + min + '" max="100" value="' + v + '"><input type="number" data-k="' + k + '" min="' + min + '" max="100" step="1" value="' + v + '"></div></div>'; };   // v399: slider + number box
+  const sl = (k, label, min, r, lo) => { const v = r[k] === undefined ? min : r[k], mn = lo === undefined ? min : lo; return '<div class="yt-sl"><label>' + label + '</label><div class="yt-sn"><input type="range" data-k="' + k + '" min="' + mn + '" max="100" value="' + v + '"><input type="number" data-k="' + k + '" min="' + mn + '" max="100" step="1" value="' + v + '"></div></div>'; };   // v404: optional lower limit (Space above can be negative)
   const pick = (k, label, opts, r) => '<div><label>' + label + '</label><select data-k="' + k + '">' + opts.map(o => '<option value="' + o[0] + '"' + (r[k] === o[0] ? ' selected' : '') + '>' + o[1] + '</option>').join('') + '</select></div>';
   const summary = (r) => r.type === 'line' ? '- - - - - - - -' : r.type === 'logo' ? (logo ? 'Your logo' : 'No logo uploaded yet') : 'Barcode: ' + (r.value ? r.value : 'each ticket\u2019s number');
   const drawList = () => {
@@ -869,7 +870,8 @@ function yardRow(y) {
         // if (r.type !== 'line') html += sl('top', 'Space above', 0, r) + sl('bottom', 'Space below', 0, r);   (v399)
         // else html += sl('top', 'Space above', 0, r) + sl('bottom', 'Space below', 0, r);   (v399)
         if (r.type === 'line') { const st = r.style || 'dashes'; html += pick('style', 'Style', [['dashes', 'Tiny dashes'], ['dots', 'Dots'], ['solid', 'Solid line'], ['double', 'Double line']], r) + pick('align', 'Position', AL, r) + sl('thickness', 'Thickness', 1, r) + (st === 'dashes' ? sl('dash', 'Dash length', 1, r) : '') + (st === 'dashes' || st === 'dots' ? sl('gap', 'Gap between marks', 1, r) : '') + sl('width', 'Line width', 1, r); }   // v400
-        html += sl('top', 'Space above', 0, r) + sl('bottom', 'Space below', 0, r);
+        // html += sl('top', 'Space above', 0, r) + sl('bottom', 'Space below', 0, r);   (v404)
+        html += sl('top', 'Space above', 0, r, -15) + sl('bottom', 'Space below', 0, r);   // v404: Space above can go negative (−15 = pulls the row up 3 mm, the ticket's top padding)
         html += '</div>';
         if (r.type === 'logo') html = '<div class="yt-drop"><div>' + (logo ? '<img alt="" src="' + esc(logo) + '">' : '') + 'Drop your logo picture here</div></div>'
           + '<div class="yt-logo-row" style="margin:0 0 10px"><button type="button" class="btn btn-secondary btn-sm lu">Upload logo file</button><button type="button" class="btn btn-secondary btn-sm stk">Match sticker look</button>' + (logo ? '<button type="button" class="btn btn-secondary btn-sm lr">Remove logo</button>' : '') + '<input type="file" class="lf" accept="image/*" style="display:none"></div>' + html;
