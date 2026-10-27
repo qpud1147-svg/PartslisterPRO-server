@@ -1,4 +1,5 @@
-// PartsLister Pro server — v400
+// PartsLister Pro server — v401
+// v401: Returns → Part types — every part type's sold / returned / return rate / top reasons / still listed / sell-through / days to sell / average price over the last 90 days (GET /api/returns/types).
 // v400: yard tickets — (1) dividers have a style (tiny dashes, dots, solid, double) with thickness, dash length, gap, width and position; (2) one text row per
 //       ticket can be marked "has the date" — {date} there is the ticket's own day (tomorrow for "Sell for tomorrow"); (3) each yard can have a print time
 //       (blank = the real time sold) and a Randomize switch that adds 0–30 minutes, never earlier. All saved in the yard's design JSON — no new columns.
@@ -4342,6 +4343,186 @@ app.get('/api/returns/summary', requireUser, async (req, res) => {
   } catch (e) { res.json({ connected: true, open: null, error: e.message }); }
 });
 
+// ─── v401: PART-TYPE STATS (Returns → Part types) ────────────────────────────
+// Every sold title, return and active listing is sorted into one of 33 part types (plus "Not a part" for things that
+// aren't parts) by the ordered rules below — first match wins, specific before general. Rolling 90 days.
+//   sold         = items in orders from the last 90 days (canceled and failed orders left out; a sale that was later refunded still counts)
+//   returned     = returns (not "not received" claims, cases or cancellations) opened in the last 90 days
+//   return rate  = returned ÷ sold
+//   still listed = active listings right now;  sell-through = sold ÷ (sold + still listed)
+//   days to sell = from the listing's start to the sale (a relisted item counts from the relist)
+// Titles that match no rule show under "Unmatched" (with a sample, so a rule can be added).
+const PART_TYPE_RULES = [
+  ["Not a part", "^\\s*extra shipping|\\b(iphone|drone|dji|heated vest|radar detector|milwaukee)\\b"],
+  ["Pigtails & connectors", "\\b(pig ?tails?|connectors?|plugs? for|wiring harness|wire harness|harness)\\b"],
+  ["Trim, vents & bezels", "\\b(fuse box (lid|cover)|(obd|fuse)[^,]{0,25}cover|cover trim|trim bezel|bezel trim|dash trim|trim panel)\\b"],
+  ["Mirrors & mirror glass", "\\bmirror\\b(?! switch)"],
+  ["Radio display screens", "\\b(display screen|info(rmation)? display|multimedia screen|nav(igation)? (display|screen)|touch ?screen|display monitor|screen display|lcd|screen|message center|vehicle information center|hmi|human machine interface)\\b"],
+  ["Climate controls", "\\b(climate|a/?c (heater )?control|heater control|hvac control|temperature control|temp control|ac control|air condition(ing|er) control)\\b"],
+  ["Amplifiers & audio", "\\b(amplifier|amp|subwoofer|speakers?|woofers?|tweeters?|equalizer)\\b"],
+  ["Radios & head units", "\\b(radio|stereo|head ?unit|receiver|cd player|cd changer|cassette|infotainment|uconnect|dvd player|entertainment)\\b"],
+  ["Transmission modules (TCM)", "\\b(tcm|tcu|transmission (control|computer|module))\\b"],
+  ["Engine computers (ECM/PCM)", "\\b(ecm|ecu|pcm|engine (control|computer)|computer brain|brain box)\\b|12a650"],
+  ["Body / BCM / fuse boxes", "\\b(bcm|body control|gem|sjb|smart junction|tipm|ipdm|integrated power|fuse ?(box|block|panel)|fusebox|junction (box|control)|relay box|power distribution|fuse distribution)\\b"],
+  ["ABS / brake modules", "\\b(abs|anti[- ]?lock|brake (control )?module|ebcm)\\b"],
+  ["Airbag & crash sensors", "\\b(airbag|srs|restraint control|occupant (classification|sensor)|crash sensors?|impact sensor)\\b"],
+  ["Instrument clusters", "\\b(instrument cluster|speedometer|gauge cluster|cluster)\\b"],
+  ["Blind spot / radar / cameras", "\\b(blind ?spot|radar|lane (assist|keep|departure)|adas|side object|distance sensor|parking (aid|assist)? ?(sensor|camera)|park(ing)? sensor|back ?up camera|rear ?view camera|reverse camera|camera)\\b"],
+  ["Keys, locks & immobilizers", "\\b(key ?fob|keyless|smart key|immobili[sz]er|ignition (switch|lock|cylinder)|lock cylinder|pats|skim)\\b"],
+  ["Fuel injection & diesel modules", "\\b(ficm|idm|injector driver|fuel injection control)\\b"],
+  ["Other control modules", "\\b(module|control unit|controller|computer|inverter|converter)\\b"],
+  ["Shifters & shift knobs", "\\b(shifter|shift knob|gear shift|shift (lever|boot|bezel|indicator)|prndl)\\b"],
+  ["Switches & knobs", "\\b(switch(es)?|cwitch|knob|buttons?|paddle shifters?|selector)\\b"],
+  ["Lights", "\\b(head ?lights?|head ?lamps?|tail ?lights?|tail ?lamps?|fog ?lights?|fog ?lamps?|brake light|third brake|lamps?|lights?|ballast|xenon|hid|reflectors?)\\b"],
+  ["Console lids & armrests", "\\b(console lid|armrest|arm rest|lid console|center console|console)\\b"],
+  ["Headrests & seats", "\\b(head ?rests?|seat|cushion)\\b"],
+  ["Sunroof parts", "\\b(sun ?roof|moon ?roof)\\b"],
+  ["Door locks & latches", "\\b(latch(es)?|lock actuator|door lock|actuator)\\b"],
+  ["Hinges", "\\bhinges?\\b"],
+  ["Handles", "\\bhandles?\\b"],
+  ["Struts, lift supports & hydraulics", "\\b(strut|lift support|shock|gas spring|hydraulic|cylinder)\\b"],
+  ["Motors & pumps", "\\b(motor|pump|blower|fan|compressor|regulator|steering rack|rack)\\b"],
+  ["Sensors & valves", "\\b(sensor|valve|solenoid)\\b"],
+  ["Wheels, spare tires & jack kits", "\\b(center cap|wheel cap|hub ?cap|wheel|rim|spare tire|spare|jack|tool kit|lug wrench|donut)\\b"],
+  ["Engine, fuel & exhaust parts", "\\b(air cleaner|air box|airbox|intake|throttle|manifold|coil|injectors?|alternator|starter|filter housing|evap|canister|fuel|distribut[eo]r|exhaust|muffler|tail ?pipe|radiator|reservoir|coolant|washer (bottle|tank))\\b"],
+  ["Antennas & ports", "\\b(antenna|usb|aux|charging port|12v|wireless charger|media (center|hub))\\b"],
+  ["Trim, vents & bezels", "\\b(vents?|louvers?|bezel|trim|scoop|garnish|molding|moulding|cover|panel|emblem|badge|grille|spoiler|shroud|clock)\\b"],
+  ["Storage, visors & interior", "\\b(sun ?shades?|sun ?visors?|visors?|shade|roof rack|rail|cargo|cup holder|glove ?box|storage|cubby|compartment|bin|ashtray|floor mats?|slush mat|tow hooks?|d-ring)\\b"]
+].map(([name, pat]) => [name, new RegExp(pat, 'i')]);
+// words that look like a part but aren't ("light gray" is a color) — taken out before matching
+const PART_TYPE_PRE = [new RegExp("\\blight (gray|grey|tan|beige|blue|brown|green|silver|oak|charcoal)\\b", 'gi')];
+const PART_TYPES = [...new Set(PART_TYPE_RULES.map(r => r[0]))];
+function partTypeOf(title) {
+  let t = String(title || '');
+  PART_TYPE_PRE.forEach(re => { t = t.replace(re, ' '); });
+  for (const [name, re] of PART_TYPE_RULES) if (re.test(t)) return name;
+  return null;
+}
+// Pure: rows in, numbers out. returns / active / starts can be null when eBay couldn't give them (those columns then show a dash).
+//   sold:    [{ item_id, title, qty, price (line total), created_at }]
+//   returns: [{ id, title, reason }]            active: [{ title }]            starts: Map(itemId → start time)
+function buildTypeStats({ sold, returns, active, starts }) {
+  const mk = (type) => ({ type, sold: 0, revenue: 0, returned: 0, reasons: new Map(), listed: 0, dayTotal: 0, dayN: 0 });
+  const rows = new Map(); PART_TYPES.concat(['Unmatched']).forEach(t => rows.set(t, mk(t)));
+  const unmatched = new Map();
+  let returnsNoTitle = 0;
+  for (const s of sold || []) {
+    const t = partTypeOf(s.title) || 'Unmatched', r = rows.get(t), qty = Math.max(1, parseInt(s.qty, 10) || 1);
+    r.sold += qty; r.revenue += Number(s.price) || 0;
+    if (t === 'Unmatched') { const k = String(s.title || '(no title)').slice(0, 120); unmatched.set(k, (unmatched.get(k) || 0) + qty); }
+    const st = starts && starts.get(String(s.item_id));
+    if (st) { const days = (new Date(s.created_at) - new Date(st)) / 86400000; if (Number.isFinite(days) && days >= 0) { r.dayTotal += days; r.dayN++; } }
+  }
+  for (const x of returns || []) {
+    if (!x.title) returnsNoTitle++;
+    const r = rows.get((x.title ? partTypeOf(x.title) : null) || 'Unmatched'); r.returned++;
+    const why = String(x.reason || 'UNKNOWN'); r.reasons.set(why, (r.reasons.get(why) || 0) + 1);
+  }
+  for (const a of active || []) rows.get(partTypeOf(a.title) || 'Unmatched').listed++;
+  const r4 = (v) => v === null ? null : Math.round(v * 10000) / 10000;
+  const fin = (r) => ({
+    type: r.type, notPart: r.type === 'Not a part', sold: r.sold, avgPrice: r.sold ? Math.round(r.revenue / r.sold * 100) / 100 : null,
+    returned: returns ? r.returned : null, returnRate: returns && r.sold ? r4(r.returned / r.sold) : null,
+    reasons: returns ? [...r.reasons.entries()].sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0]))).slice(0, 3).map(([reason, n]) => ({ reason, n })) : [],
+    listed: active ? r.listed : null, sellThrough: active && (r.sold + r.listed) ? r4(r.sold / (r.sold + r.listed)) : null,
+    avgDays: starts && r.dayN ? Math.round(r.dayTotal / r.dayN * 10) / 10 : null, daysN: starts ? r.dayN : 0
+  });
+  const list = [...rows.values()].map(fin);
+  const parts = [...rows.values()].filter(r => r.type !== 'Not a part');   // store-wide numbers leave out "Not a part"
+  const sum = (f) => parts.reduce((s, r) => s + f(r), 0);
+  const tSold = sum(r => r.sold), tRet = sum(r => r.returned), tListed = sum(r => r.listed), dN = sum(r => r.dayN);
+  const store = {
+    sold: tSold, returned: returns ? tRet : null, returnRate: returns && tSold ? r4(tRet / tSold) : null,
+    listed: active ? tListed : null, sellThrough: active && (tSold + tListed) ? r4(tSold / (tSold + tListed)) : null,
+    avgDays: starts && dN ? Math.round(sum(r => r.dayTotal) / dN * 10) / 10 : null
+  };
+  list.sort((a, b) => (a.type === 'Unmatched') - (b.type === 'Unmatched') || (a.notPart - b.notPart) || b.sold - a.sold || a.type.localeCompare(b.type));
+  return { types: list, store, returnsNoTitle,
+    unmatchedSample: [...unmatched.entries()].sort((a, b) => b[1] - a[1]).slice(0, 30).map(([title, n]) => ({ title, n })) };
+}
+// eBay: returns opened in the last N days (Post-Order API; one page of up to 200 per state — says so if there may be more)
+async function returnsSince(userId, since) {
+  const out = new Map(); let truncated = false;
+  for (const state of ['ALL_OPEN', 'CLOSED']) {
+    const q = new URLSearchParams({ role: 'SELLER', limit: '200', sort: '-FILING_DATE', return_state: state });
+    if (state === 'CLOSED') q.set('creation_date_range_from', since.toISOString());
+    const d = await poCall(userId, 'GET', '/return/search?' + q);
+    const members = (d && d.members) || [];
+    if (members.length >= 200) truncated = true;
+    members.map(mapReturn).forEach(r => { if (r.created && new Date(r.created) >= since) out.set(r.id, r); });
+  }
+  return { list: [...out.values()], truncated };
+}
+// eBay: every active listing (title + start) and every listing that ended in the last 91 days (for start times), by GetSellerList
+async function listingSnapshot(userId) {
+  const active = [], starts = new Map();
+  const pull = async (fromIso, toIso, isActive) => {
+    for (let page = 1; page <= 60; page++) {
+      const xml = await tradingCall(userId, 'GetSellerList',
+        `<EndTimeFrom>${fromIso}</EndTimeFrom><EndTimeTo>${toIso}</EndTimeTo><DetailLevel>ReturnAll</DetailLevel>`
+        + `<Pagination><EntriesPerPage>200</EntriesPerPage><PageNumber>${page}</PageNumber></Pagination>`
+        + `<OutputSelector>ItemArray.Item.ItemID</OutputSelector><OutputSelector>ItemArray.Item.Title</OutputSelector>`
+        + `<OutputSelector>ItemArray.Item.ListingDetails.StartTime</OutputSelector><OutputSelector>ItemArray.Item.SellingStatus.ListingStatus</OutputSelector>`
+        + `<OutputSelector>PaginationResult</OutputSelector>`);
+      const items = xmlAll(xmlTag(xml, 'ItemArray') || '', 'Item');
+      items.forEach(it => {
+        const id = xmlTag(it, 'ItemID'), st = xmlTag(xmlTag(it, 'ListingDetails') || '', 'StartTime');
+        if (id && st) starts.set(String(id), st);
+        if (isActive && /^Active$/i.test(xmlTag(xmlTag(it, 'SellingStatus') || '', 'ListingStatus') || 'Active')) active.push({ title: xmlDecode(xmlTag(it, 'Title')) });
+      });
+      const pages = parseInt(xmlTag(xmlTag(xml, 'PaginationResult') || '', 'TotalNumberOfPages') || '1', 10) || 1;
+      if (!items.length || page >= pages) break;
+    }
+  };
+  const now = Date.now();
+  await pull(new Date(now).toISOString(), new Date(now + 119 * 86400000).toISOString(), true);        // listed right now (eBay allows up to 120 days at a time)
+  await pull(new Date(now - 91 * 86400000).toISOString(), new Date(now).toISOString(), false);        // ended recently — their start times
+  return { active, starts };
+}
+async function computeTypeStats(userId) {
+  const errors = [], since = new Date(Date.now() - 90 * 86400000);
+  const sold = (await pool.query(
+    `SELECT i.item_id, i.title, i.qty, i.price::float AS price, o.created_at
+       FROM ebay_order_items i JOIN ebay_orders o ON o.user_id = i.user_id AND o.order_id = i.order_id
+      WHERE i.user_id = $1 AND o.created_at >= $2
+        AND (o.status IS NULL OR (o.status NOT ILIKE '%CANCELED%' AND o.status NOT ILIKE '%FAILED%'))`, [userId, since])).rows;
+  let returns = null;
+  try {
+    const r = await returnsSince(userId, since);
+    const orderIds = [...new Set(r.list.map(x => x.orderId).filter(Boolean))], itemIds = [...new Set(r.list.map(x => x.itemId).filter(Boolean))];
+    const tr = orderIds.length || itemIds.length ? (await pool.query(
+      'SELECT order_id, item_id, title FROM ebay_order_items WHERE user_id = $1 AND (order_id = ANY($2) OR item_id = ANY($3))', [userId, orderIds, itemIds])).rows : [];
+    const byBoth = new Map(), byItem = new Map(), byOrder = new Map();
+    tr.forEach(t => { if (!t.title) return; byBoth.set(t.order_id + '|' + t.item_id, t.title); if (!byItem.has(t.item_id)) byItem.set(t.item_id, t.title); if (!byOrder.has(t.order_id)) byOrder.set(t.order_id, t.title); });
+    returns = r.list.map(x => ({ id: x.id, reason: x.reason, title: byBoth.get(x.orderId + '|' + x.itemId) || byItem.get(x.itemId) || byOrder.get(x.orderId) || null }));
+    if (r.truncated) errors.push('Returns: eBay gave 200 in one list, so there may be more than shown.');
+  } catch (e) { errors.push('Returns: ' + e.message); }
+  let active = null, starts = null;
+  try { const s = await listingSnapshot(userId); active = s.active; starts = s.starts; }
+  catch (e) { errors.push('Listings: ' + e.message); }
+  return Object.assign({ days: 90, generatedAt: new Date().toISOString(), errors, activeCount: active ? active.length : null }, buildTypeStats({ sold, returns, active, starts }));
+}
+const typeStatsCache = new Map();   // userId → { at, data } | { at, promise } | { at, error }
+app.get('/api/returns/types', requireUser, async (req, res) => {
+  try {
+    const conn = await getConnection(req.user.id);
+    if (!conn || !conn.refresh_enc) return res.json({ connected: false });
+    let c = typeStatsCache.get(req.user.id);
+    if (!c || (req.query.refresh === '1' && !c.promise) || (c.data && Date.now() - c.at > 30 * 60000) || (c.error && Date.now() - c.at > 60000)) {
+      const promise = computeTypeStats(req.user.id);
+      c = { at: Date.now(), promise };
+      typeStatsCache.set(req.user.id, c);
+      promise.then(data => typeStatsCache.set(req.user.id, { at: Date.now(), data }), e => typeStatsCache.set(req.user.id, { at: Date.now(), error: e.message }));
+    }
+    if (c.promise) return res.json({ connected: true, loading: true });   // still asking eBay — the page checks back
+    if (c.error) { typeStatsCache.delete(req.user.id); throw new Error(c.error); }
+    res.json(Object.assign({ connected: true }, c.data));
+  } catch (e) {
+    console.error('[returns types]', e.message);
+    res.json({ connected: true, error: 'Couldn’t work out the part types: ' + e.message });
+  }
+});
+
 // v369: eBay's refund estimate for a return — one line per refund type (item price, original shipping…)
 function returnEstimate(d) {
   const det = (d && d.detail) || {};
@@ -4965,5 +5146,6 @@ app.get('*', (req, res) => {
 setupDatabase()
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v389 listening on ' + PORT)))   // v399: version in the startup log updated
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v399 listening on ' + PORT)))   // v400: version in the startup log
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v400 listening on ' + PORT)))
+  // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v400 listening on ' + PORT)))   // v401: version in the startup log
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v401 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });
