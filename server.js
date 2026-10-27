@@ -4430,7 +4430,7 @@ function buildTypeStats({ sold, returns, active, starts }) {
     const why = String(x.reason || 'UNKNOWN'); r.reasons.set(why, (r.reasons.get(why) || 0) + 1);
   }
   // for (const a of active || []) rows.get(partTypeOf(a.title) || 'Unmatched').listed++;
-  for (const a of active || []) { const at = partTypeOf(a.title) || 'Unmatched'; rows.get(at).listed++; lists.listed.push({ type: at, title: a.title || '' }); }   // v402
+  for (const a of active || []) { const at = partTypeOf(a.title) || 'Unmatched'; rows.get(at).listed++; lists.listed.push({ type: at, title: a.title || '', itemId: a.itemId || null }); }   // v402
   const r4 = (v) => v === null ? null : Math.round(v * 10000) / 10000;
   const fin = (r) => ({
     type: r.type, notPart: r.type === 'Not a part', sold: r.sold, avgPrice: r.sold ? Math.round(r.revenue / r.sold * 100) / 100 : null,
@@ -4513,7 +4513,8 @@ async function computeTypeStats(userId) {
   let active = null, starts = null;
   try {
     const act = await myEbayList(userId, 'ActiveList', '');
-    active = act.map(x => ({ title: x.title })); starts = new Map(); act.forEach(x => { if (x.id && x.start) starts.set(String(x.id), x.start); });
+    // active = act.map(x => ({ title: x.title })); starts
+    active = act.map(x => ({ title: x.title, itemId: x.id })); starts = new Map(); act.forEach(x => { if (x.id && x.start) starts.set(String(x.id), x.start); });
   } catch (e) { errors.push('Listings: ' + e.message); }
   try {   // days to sell: the sold items' listing start (eBay keeps 60 days of sold items here)
     const sd = await myEbayList(userId, 'SoldList', '<DurationInDays>60</DurationInDays>');

@@ -278,7 +278,8 @@
   .t-inner .seg { margin-bottom: 8px; }
   .ti-list { display: flex; flex-direction: column; }
   .ti-row { display: flex; justify-content: space-between; gap: 14px; padding: 9px 4px; border-bottom: 1px solid var(--border); }
-  .ti-main { min-width: 0; }
+  .ti-main { min-width: 0; flex: 1; }
+  .ti-thumb { width: 56px; height: 56px; border-radius: 4px; background: var(--surface2); border: 1px solid var(--border); object-fit: cover; flex-shrink: 0; display: block; }
   .ti-title { font-weight: 600; font-size: 14px; color: var(--text); }
   .ti-meta { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
   .ti-type { color: var(--accent); }
@@ -1087,8 +1088,21 @@ async function getItems(kind) {
   typesItems[kind] = { at: typesData.generatedAt, items };
   return items;
 }
+// v402: photos for the item rows (same /api/items/thumbs the Orders page uses; the server remembers them per item)
+const typesPics = {};
+async function loadThumbs() {
+  const ids = [...new Set([...document.querySelectorAll('img.ti-thumb[data-item]')].filter(im => !im.getAttribute('src')).map(im => im.dataset.item).filter(id => !(id in typesPics)))];
+  for (let k = 0; k < ids.length; k += 40) {
+    const chunk = ids.slice(k, k + 40), d = await getJSON('/api/items/thumbs?ids=' + chunk.join(','));
+    if (!d || !d.thumbs) continue;   // try again next time the list is drawn
+    chunk.forEach(id => { typesPics[id] = d.thumbs[id] || null; });
+    document.querySelectorAll('img.ti-thumb[data-item]').forEach(im => { const u = typesPics[im.dataset.item]; if (u && !im.getAttribute('src')) im.src = u; });
+  }
+}
 function itemRow(kind, x) {
   const row = el('div', 'ti-row'), main = el('div', 'ti-main'), right = el('div', 'ti-right');
+  const img = el('img', 'ti-thumb'); img.alt = '';
+  if (x.itemId) { img.dataset.item = x.itemId; if (typesPics[x.itemId]) img.src = typesPics[x.itemId]; } else img.style.visibility = 'hidden';
   main.append(el('div', 'ti-title', x.title || '(title not found)'));
   const meta = el('div', 'ti-meta'); meta.append(el('span', 'ti-type', x.type));
   const bits = [];
@@ -1099,11 +1113,11 @@ function itemRow(kind, x) {
   if (kind === 'sold') right.append(el('div', 'ti-amt', money2.format(x.price)));
   if (kind === 'returned') right.append(el('div', 'ti-amt', x.amount === null || x.amount === undefined ? '—' : money2.format(x.amount)));
   if (kind !== 'listed' && x.orderId) { const a = el('a', 'ti-order', 'Order ' + x.orderId); a.href = '/orders#order=' + encodeURIComponent(x.orderId); right.append(a); }
-  row.append(main, right);
+  row.append(img, main, right);
   return row;
 }
 // fills box with one part type's items of one kind ('all' = every part, not counting "Not a part"); limit → "Show all" link
-async function fillItems(box, kind, type, q, limit, onAll) {
+async function fillTypeItems(box, kind, type, q, limit, onAll) {
   box.textContent = ''; box.append(el('div', 't-note', 'Loading…'));
   const mine = typesData.generatedAt;
   let items = await getItems(kind);
@@ -1117,6 +1131,7 @@ async function fillItems(box, kind, type, q, limit, onAll) {
     box.append(el('div', 't-note', missing ? 'eBay didn’t give this part last time — press the box at the top to try again.' : 'Nothing here in the last 90 days.')); return;
   }
   items.slice(0, limit || 300).forEach(x => box.append(itemRow(kind, x)));
+  loadThumbs();
   if (items.length > (limit || 300)) {
     const more = el('div', 't-note');
     if (onAll) { const a = el('button', 't-link', 'Show all ' + items.length + ' →'); a.type = 'button'; a.onclick = onAll; more.append(a); }
@@ -1147,10 +1162,10 @@ function renderItemsView() {
   [['all', 'All parts']].concat(typesData.types.map(t => [t.type, t.type])).forEach(([val, label]) => { const o = el('option', '', label); o.value = val; if (val === v.type) o.selected = true; sel.append(o); });
   sel.onchange = () => { v.type = sel.value; renderItemsView(); };
   const q = el('input', 'search'); q.type = 'search'; q.placeholder = 'Search title, reason or order number'; q.value = typesQ;
-  let tm; q.oninput = () => { typesQ = q.value; clearTimeout(tm); tm = setTimeout(() => fillItems(list, v.kind, v.type, typesQ), 150); };
+  let tm; q.oninput = () => { typesQ = q.value; clearTimeout(tm); tm = setTimeout(() => fillTypeItems(list, v.kind, v.type, typesQ), 150); };
   ctl.append(sel, q); box.append(ctl);
   const list = el('div', 'ti-list'); box.append(list);
-  fillItems(list, v.kind, v.type, typesQ);
+  fillTypeItems(list, v.kind, v.type, typesQ);
 }
 function renderTypes() {
   const d = typesData; if (!d) return;
@@ -1201,7 +1216,7 @@ function renderTypes() {
     if (sel) {
       const dt = el('tr', 't-detail'), td = el('td'); td.colSpan = TCOLS.length;
       const inner = el('div', 't-inner'); const list = el('div', 'ti-list');
-      const draw = () => { inner.textContent = ''; inner.append(kindTabs(r.type, typesSel.kind, (k) => { typesSel.kind = k; draw(); })); inner.append(list); fillItems(list, typesSel.kind, r.type, '', 25, () => openItems(r.type, typesSel.kind)); };
+      const draw = () => { inner.textContent = ''; inner.append(kindTabs(r.type, typesSel.kind, (k) => { typesSel.kind = k; draw(); })); inner.append(list); fillTypeItems(list, typesSel.kind, r.type, '', 25, () => openItems(r.type, typesSel.kind)); };
       draw(); td.append(inner); dt.append(td); body.append(dt);
     }
   });
