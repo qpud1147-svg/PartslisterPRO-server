@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Home v409</title>
+<title>PartsLister Pro Home v410</title>
 <!-- v400: yard tickets — divider styles (tiny dashes, dots, solid, double) with thickness, dash length, gap, width and position; mark one text row "This row has the date" ({date} there is the ticket's own day — tomorrow's for "Sell for tomorrow"); a print time per yard with a Randomize switch (adds 0–30 minutes, never earlier). -->
 <!-- v399: TICKET DESIGNER — each yard's ticket is a list of rows (text, divider, logo, barcode). Every text row has its own font (list or any font name), size 1–100, boldness 0–100 and position; the logo has size, position, a drop box and weathered / gravel / fuzzy / faded gray / spots looks (or one tap "Match sticker look"); the barcode is typed in (Code 128) with its own size and position. Every slider also has a number box. "Duplicate" copies a yard's whole ticket so you can change a few things instead of starting over. -->
 <!-- v389: yard tickets are sold tickets — real sale date and time, a ticket number and barcode, "Sell for tomorrow" advance tickets marked VALID FOR, {logo} and {big} tags anywhere, and Money made. The saved time and Randomize are gone. -->
@@ -203,7 +203,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v409</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v410</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -750,16 +750,20 @@ function grayPixels(px, w, h, fuzzy, fade, spots, ref, lighter) {   // v406: lig
   for (let i = 0; i < n; i++) { const v = dk[i] ? 0 : 255; px[i * 4] = px[i * 4 + 1] = px[i * 4 + 2] = v; px[i * 4 + 3] = 255; }
 }
 const hasLook = (r) => r.weather > 0 || r.gravel > 0 || r.fuzzy > 0 || r.fade > 0 || r.spots > 0 || r.lighter > 0 || r.boldness > 0 || r.thin > 0;   // v406: + lighter; v409: + boldness, thinner
-function weatherLogo(src, r) {
+// v410: the logo is shrunk to the printer's own dots (8 per mm) BEFORE the looks are applied. Before, a big logo was dithered at its full size and the printer then averaged the tiny dots back into gray and rounded them to black or white — so "Lighter" did nothing at 40 and wiped the logo out at 60.
+function weatherLogo(src, r, pw) {   // pw = the paper width in mm
   return new Promise((resolve) => {
     const wv = parseInt(r.weather, 10) || 0, gr = parseInt(r.gravel, 10) || 0, fz = parseInt(r.fuzzy, 10) || 0, fd = parseInt(r.fade, 10) || 0, sp = parseInt(r.spots, 10) || 0, lt = parseInt(r.lighter, 10) || 0, bd = parseInt(r.boldness, 10) || 0, th = parseInt(r.thin, 10) || 0;   // v406: + lighter; v409: + boldness, thinner
     if (!src || !(wv > 0 || gr > 0 || fz > 0 || fd > 0 || sp > 0 || lt > 0 || bd > 0 || th > 0)) return resolve(src);
-    const key = [wv, gr, fz, fd, sp, lt, bd, th, src.length, src.slice(-60)].join('|');
+    const padmm = pw === 58 ? 2 : 4, tw = Math.max(40, Math.round(((pw || 80) - 2 * padmm) * TEXT_DPMM * Math.max(1, Math.min(100, +r.width || 70)) / 100));   // v410: the logo's width in printer dots
+    const key = [wv, gr, fz, fd, sp, lt, bd, th, tw, src.length, src.slice(-60)].join('|');
     if (weatherCache.has(key)) return resolve(weatherCache.get(key));
     const img = new Image();
     img.onload = () => {
-      const w = img.naturalWidth, h = img.naturalHeight, c = document.createElement('canvas'); c.width = w; c.height = h;
-      const x = c.getContext('2d'); x.drawImage(img, 0, 0);
+      // const w = img.naturalWidth, h = img.naturalHeight, c = document.createElement('canvas'); c.width = w; c.height = h;
+      // const x = c.getContext('2d'); x.drawImage(img, 0, 0);
+      const w = tw, h = Math.max(1, Math.round(img.naturalHeight * tw / img.naturalWidth)), c = document.createElement('canvas'); c.width = w; c.height = h;   // v410: printer-dot size
+      const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, w, h); x.imageSmoothingEnabled = true; x.imageSmoothingQuality = 'high'; x.drawImage(img, 0, 0, w, h);
       const d = x.getImageData(0, 0, w, h);
       if (bd > 0 || th > 0) morphPixels(d.data, w, h, bd, th);   // v409
       if (wv > 0) weatherPixels(d.data, w, h, wv);
@@ -773,8 +777,8 @@ function weatherLogo(src, r) {
     img.src = src;
   });
 }
-async function applyWeather(rows, logo) {   // each logo row gets its own worn picture
-  return Promise.all((rows || []).map(async r => r.type === 'logo' && hasLook(r) ? Object.assign({}, r, { img: await weatherLogo(logo, r) }) : r));
+async function applyWeather(rows, logo, pw) {   // each logo row gets its own worn picture
+  return Promise.all((rows || []).map(async r => r.type === 'logo' && hasLook(r) ? Object.assign({}, r, { img: await weatherLogo(logo, r, pw) }) : r));
 }
 // v405: TEXT LOOK — the same effects the logo has (weathered, gravel, fuzzy, faded gray, spots), applied to every text row of a ticket, plus "Lighter" (thinner letters).
 // Lighter alone just thins the live text. With any effect on, each text row is drawn as a black & white picture at the printer's 203 dpi, run through the same effects as the logo, and printed as a picture.
@@ -904,7 +908,7 @@ async function printTicket(id, btn, advance) {   // v389: advance = sold today, 
     if (d.advance && !rows.some(r => r.type === 'text' && (r.hasDate || /\{valid\}/.test(r.text || '')))) rows =   /* v400: a row marked as the date already shows tomorrow's date */ rows.concat([{ type: 'text', text: 'VALID FOR {valid}', font: 'Courier New', size: 70, boldness: 75, align: 'center', top: 2, bottom: 0 }]);
     // rows = await applyWeather(fillRows(rows, d.vals), d.logo);   // v399: weathered logo
     // rows = await applyTextLook(await applyWeather(fillRows(rows, d.vals), d.logo), d.design && d.design.textLook, w);   // v405–v408
-    rows = await applyTextLook(await applyWeather(fillRows(foldTextLook(d.design, rows), d.vals), d.logo), w);   // v399: weathered logo; v409: each text row's own looks (an old whole-ticket look is folded in)
+    rows = await applyTextLook(await applyWeather(fillRows(foldTextLook(d.design, rows), d.vals), d.logo, w), w);   // v399: weathered logo; v409: each text row's own looks (an old whole-ticket look is folded in)
     doc.write('<!doctype html><html><head><meta charset="utf-8"><title>Ticket</title><style>' + ticketCSS(w, rows) + '</style></head><body>' + ticketHTML(rows, d.logo, d.number, w) + '</body></html>');
     doc.close();
     // setTimeout(() => { … f.print(); }, 150);
@@ -957,7 +961,7 @@ function yardRow(y) {
   const preview = async () => {
     const tok = ++pvTok, w = paper();
     // const shown = await applyWeather(fillRows(rows, sampleVals({ name: n.value, price: parseFloat(p.value) || 0, printTime: pt.value })), logo);   // v399
-    const shown = await applyTextLook(await applyWeather(fillRows(rows, sampleVals({ name: n.value, price: parseFloat(p.value) || 0, printTime: pt.value })), logo), w);   // v399; v409: each text row's own looks
+    const shown = await applyTextLook(await applyWeather(fillRows(rows, sampleVals({ name: n.value, price: parseFloat(p.value) || 0, printTime: pt.value })), logo, w), w);   // v399; v409: each text row's own looks
     const doc = fr.contentDocument; if (!doc || tok !== pvTok) return;
     fr.style.width = Math.round(w * 3.7795) + 'px';   // real paper width on screen
     doc.open();
