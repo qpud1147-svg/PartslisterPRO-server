@@ -9,7 +9,8 @@
   // refresh, overriding anything init does.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 </script>
-<title>PartsLister Pro v385</title>
+<title>PartsLister Pro v386</title>
+<!-- v386: DRAFTS — a small Drafts menu in the top bar saves the listing on screen (photos and every field) and opens it again exactly as left, or reloads just its photos for a fresh scan. The top bar's other buttons got shorter names to make room. -->
 <!-- v385: photo drop box back to its old height; the right side moved up to fill the gap above Refinement Notes. -->
 <!-- v384: cleaner Listing Tool — decorative emojis removed (kept: ⚙ settings, 📋 copy, 🎨 color picker), the "e.g." / "auto-filled" hint text removed, and the days-ahead box sits inside the Scheduled Listing button so both buttons stay centered. -->
 <!-- v383: Scheduled Listing — a dropdown next to the button picks how many days ahead (1–21); your choice is saved with your settings. -->
@@ -909,7 +910,7 @@
     <!-- v302: logo goes to the dashboard -->
     <a href="/" title="Dashboard" style="text-decoration:none;color:inherit;">
       <div class="logo"><span>PARTS</span>LISTER</div>
-      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v385</span></div>
+      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v386</span></div>
     </a>
     <!-- v303: removed — the logo is the dashboard button
     <a href="/" class="btn btn-secondary btn-sm" title="Back to your dashboard" style="font-size:11px;padding:4px 10px;text-decoration:none;margin-left:6px;">⌂ Dashboard</a>
@@ -919,10 +920,10 @@
 
   <!-- All header buttons — right-aligned, order: View Sold, View Active, List Pigtail, List Other Side, count, My Store, ⚙ -->
   <div style="display:flex;align-items:center;gap:6px;margin-left:auto;flex-shrink:0;">
-    <button class="btn btn-secondary btn-sm" id="ebay-open-sold-btn" onclick="openEbaySold()" disabled style="font-size:11px;padding:4px 10px;">View Sold</button>
-    <button class="btn btn-secondary btn-sm" id="ebay-open-active-btn" onclick="openEbayActive()" disabled style="font-size:11px;padding:4px 10px;">View Active</button>
+    <button class="btn btn-secondary btn-sm" id="ebay-open-sold-btn" onclick="openEbaySold()" disabled title="View Sold" style="font-size:11px;padding:4px 10px;">Sold</button>   <!-- v386: was View Sold -->
+    <button class="btn btn-secondary btn-sm" id="ebay-open-active-btn" onclick="openEbayActive()" disabled title="View Active" style="font-size:11px;padding:4px 10px;">Active</button>   <!-- v386: was View Active -->
     <div style="position:relative;">
-      <button id="pigtail-header-btn" onclick="togglePigtailMenu()" style="font-size:11px;padding:4px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;font-family:Barlow Condensed,sans-serif;font-weight:700;letter-spacing:0.06em;color:var(--text);cursor:pointer;display:flex;align-items:center;gap:5px;white-space:nowrap;">List Pigtail <span style="opacity:0.5;font-size:10px;">▾</span></button>
+      <button id="pigtail-header-btn" onclick="togglePigtailMenu()" title="List Pigtail" style="font-size:11px;padding:4px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;font-family:Barlow Condensed,sans-serif;font-weight:700;letter-spacing:0.06em;color:var(--text);cursor:pointer;display:flex;align-items:center;gap:5px;white-space:nowrap;">Pigtail <span style="opacity:0.5;font-size:10px;">▾</span></button>
       <div id="pigtail-menu" style="display:none;position:absolute;top:calc(100% + 4px);right:0;min-width:220px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;z-index:1000;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,0.4);">
         <div style="padding:6px 10px;font-size:10px;color:var(--muted);font-family:Barlow Condensed,sans-serif;letter-spacing:0.1em;text-transform:uppercase;border-bottom:1px solid var(--border);">Recent Listings</div>
         <div id="pigtail-history-list"><div style="padding:10px;font-size:12px;color:var(--muted);text-align:center;">No recent listings yet</div></div>
@@ -932,12 +933,24 @@
       </div>
     </div>
     <div style="position:relative;">
-      <button id="otherside-header-btn" onclick="toggleOtherSideMenu()" style="font-size:11px;padding:4px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;font-family:Barlow Condensed,sans-serif;font-weight:700;letter-spacing:0.06em;color:var(--text);cursor:pointer;display:flex;align-items:center;gap:5px;white-space:nowrap;">↔ List Other Side <span style="opacity:0.5;font-size:10px;">▾</span></button>
+      <button id="otherside-header-btn" onclick="toggleOtherSideMenu()" title="List Other Side" style="font-size:11px;padding:4px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;font-family:Barlow Condensed,sans-serif;font-weight:700;letter-spacing:0.06em;color:var(--text);cursor:pointer;display:flex;align-items:center;gap:5px;white-space:nowrap;">↔ Other Side <span style="opacity:0.5;font-size:10px;">▾</span></button>
       <div id="otherside-menu" style="display:none;position:absolute;top:calc(100% + 4px);right:0;min-width:220px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;z-index:1000;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,0.4);">
         <div style="padding:6px 10px;font-size:10px;color:var(--muted);font-family:Barlow Condensed,sans-serif;letter-spacing:0.1em;text-transform:uppercase;border-bottom:1px solid var(--border);">Recent Listings</div>
         <div id="otherside-history-list"><div style="padding:10px;font-size:12px;color:var(--muted);text-align:center;">No recent listings yet</div></div>
         <div style="border-top:1px solid var(--border);padding:6px 8px;">
           <button onclick="applyOtherSide(null)" style="width:100%;background:var(--accent);color:#000;border:none;border-radius:4px;padding:6px;font-family:Barlow Condensed,sans-serif;font-weight:700;font-size:12px;letter-spacing:0.05em;cursor:pointer;">Use Current Listing</button>
+        </div>
+      </div>
+    </div>
+    <!-- v386: DRAFTS menu -->
+    <div style="position:relative;">
+      <button id="drafts-header-btn" onclick="toggleDraftsMenu()" title="Drafts — save this listing for later and come back to it" style="font-size:11px;padding:4px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;font-family:Barlow Condensed,sans-serif;font-weight:700;letter-spacing:0.06em;color:var(--text);cursor:pointer;display:flex;align-items:center;gap:5px;white-space:nowrap;">Drafts <span id="drafts-count" style="display:none;background:var(--accent);color:#000;border-radius:8px;padding:0 6px;font-size:10px;line-height:15px;">0</span> <span style="opacity:0.5;font-size:10px;">▾</span></button>
+      <div id="drafts-menu" style="display:none;position:absolute;top:calc(100% + 4px);right:0;width:310px;max-width:92vw;background:var(--surface2);border:1px solid var(--border);border-radius:6px;z-index:1000;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,0.4);">
+        <div style="padding:6px 10px;font-size:10px;color:var(--muted);font-family:Barlow Condensed,sans-serif;letter-spacing:0.1em;text-transform:uppercase;border-bottom:1px solid var(--border);">Drafts — saved on this computer</div>
+        <div id="drafts-list" style="max-height:340px;overflow-y:auto;"><div style="padding:10px;font-size:12px;color:var(--muted);text-align:center;">No drafts yet</div></div>
+        <div style="border-top:1px solid var(--border);padding:6px 8px;display:flex;gap:6px;">
+          <button onclick="saveDraft(false)" style="flex:1;background:var(--accent);color:#000;border:none;border-radius:4px;padding:6px;font-family:Barlow Condensed,sans-serif;font-weight:700;font-size:12px;letter-spacing:0.05em;cursor:pointer;" title="Save the listing on screen as a draft and keep working on it">Save draft</button>
+          <button onclick="saveDraft(true)" style="flex:1;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:6px;font-family:Barlow Condensed,sans-serif;font-weight:700;font-size:12px;letter-spacing:0.05em;cursor:pointer;" title="Save the listing on screen as a draft, then clear the page for the next part">Save &amp; start new</button>
         </div>
       </div>
     </div>
@@ -8585,9 +8598,170 @@ async function _bootstrap() {
   const emailEl = document.getElementById('account-email');
   if (emailEl) emailEl.textContent = d.account.email + (d.account.isAdmin ? '  (admin)' : '');
   _renderCount(d.account.listingCount);
+  draftsRefreshCount();   // v386
   document.getElementById('auth-overlay').classList.add('hidden');
   try { sessionStorage.setItem('plp-signed-in', '1'); } catch (e) { /* fine */ }   // v381
 }
+
+// ─── v386: DRAFTS ────────────────────────────────────────────────────────
+// A draft is the listing on screen frozen as it is: the photos (in their order, rotations included) and every field. It is kept in this
+// browser's own storage (IndexedDB — roomy enough for photos), tagged with your account, so it stays on this computer.
+// Opening a draft puts everything back exactly; the ↻ button instead loads just its photos and scans them again, from scratch.
+const DRAFT_FIELDS = ['part-number','np-vehicle','np-year','np-make','np-model','np-desc','refinement-notes','listing-title','your-price','pn-display','sku-bin','sku-field','bin-field','ebay-category','ebay-category-id','year-range','make','model','part-type','color','location','description-preset-select','description-box','shipping-policy-select','condition','warranty','pkg-length','pkg-width','pkg-height','pkg-weight'];
+const DRAFT_BOXES = ['ai-result-box','np-scan-result-box','pn-variants-display','color-picker-wrap','material-picker-wrap','vehicle-guess-wrap','pn-alt-suggestion','rescan-btn','rescan-btn-np'];
+window._draftId = null;
+let _draftDB = null;
+function _draftOwner() { return (window._account && window._account.email) || ''; }
+function _draftsDB() {
+  return new Promise((resolve, reject) => {
+    if (_draftDB) return resolve(_draftDB);
+    if (!window.indexedDB) return reject(new Error('This browser cannot keep drafts.'));
+    const q = indexedDB.open('plp-drafts', 1);
+    q.onupgradeneeded = () => { q.result.createObjectStore('drafts', { keyPath: 'id' }); };
+    q.onsuccess = () => { _draftDB = q.result; resolve(_draftDB); };
+    q.onerror = () => reject(q.error || new Error('Could not open the drafts storage.'));
+  });
+}
+async function _draftsTx(mode, fn) {
+  const db = await _draftsDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('drafts', mode), st = tx.objectStore('drafts'); let out;
+    out = fn(st);
+    tx.oncomplete = () => resolve(out && 'result' in out ? out.result : out);
+    tx.onerror = () => reject(tx.error); tx.onabort = () => reject(tx.error || new Error('Drafts storage is full or blocked.'));
+  });
+}
+async function draftsAll() {
+  const all = await _draftsTx('readonly', st => st.getAll());
+  return (all || []).filter(d => d.owner === _draftOwner()).sort((a, b) => b.savedAt - a.savedAt);
+}
+function draftsPut(rec) { return _draftsTx('readwrite', st => { st.put(rec); }); }
+function draftsDelete(id) { return _draftsTx('readwrite', st => { st.delete(id); }); }
+function draftsGet(id) { return _draftsTx('readonly', st => st.get(id)); }
+async function draftsRefreshCount() {
+  try {
+    const n = (await draftsAll()).length, el = document.getElementById('drafts-count');
+    if (el) { el.textContent = n; el.style.display = n ? 'inline-block' : 'none'; }
+  } catch (e) { /* drafts are optional */ }
+}
+function _draftHasContent() {
+  const v = id => { const e = document.getElementById(id); return e ? e.value.trim() : ''; };
+  return uploadedFiles.length > 0 || !!(v('listing-title') || v('part-number') || v('np-vehicle') || v('np-desc'));
+}
+function _draftSnapshot() {
+  const val = {}; DRAFT_FIELDS.forEach(id => { const el = document.getElementById(id); if (el) val[id] = el.value; });
+  const variants = {}; ['coupe','convertible','pair'].forEach(v => { const b = document.getElementById('variant-' + v + '-btn'); variants[v] = !!(b && b.dataset.active === '1'); });
+  const boxes = {}; DRAFT_BOXES.forEach(id => { const e = document.getElementById(id); if (e) boxes[id] = { html: e.innerHTML, cls: e.className, disp: e.style.display }; });
+  let lc = null; try { lc = JSON.parse(JSON.stringify(window._lc || null)); } catch (e) { lc = null; }
+  return {
+    v: 1, mode: currentMode, val, variants, boxes,
+    nploc: Array.from(document.querySelectorAll('input[name="nploc"]')).map(c => c.checked),
+    inter: Array.from(document.querySelectorAll('.interchange-input')).map(i => i.value),
+    vars: { pnPhotoIdx: window._pnPhotoIdx, priceFromStore: !!window._priceFromStore, activeDescEmoji: window._activeDescEmoji, ocrDescGuess: window._ocrDescGuess || '', lensPartType: window._lensPartType || '', selectedPhotos: window._selectedPhotos || [], ebayListingTotal: window._ebayListingTotal || 0, lc }
+  };
+}
+function _draftLabel(snap) {
+  const v = snap.val || {};
+  return (v['listing-title'] || '').trim() || (v['part-number'] || '').trim() || [v['np-vehicle'], v['np-desc']].filter(Boolean).join(' ').trim() || 'Untitled draft';
+}
+async function saveDraft(startNew) {
+  document.getElementById('drafts-menu').style.display = 'none';
+  if (!_draftHasContent()) { showNotif('⚠ Nothing to save yet — add photos or fill in the listing first', true); return; }
+  try {
+    const snap = _draftSnapshot();
+    const photos = uploadedFiles.map(f => ({ name: f.name, type: f.type, lastModified: f.lastModified, blob: f }));
+    const id = window._draftId || ('d' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7));
+    await draftsPut({ id, owner: _draftOwner(), savedAt: Date.now(), label: _draftLabel(snap), snap, photos });
+    window._draftId = id;
+    showNotif('✓ Draft saved' + (photos.length ? ' (' + photos.length + ' photo' + (photos.length === 1 ? '' : 's') + ')' : ''));
+    draftsRefreshCount();
+    if (startNew) { window._draftId = null; resetForm(); }
+  } catch (e) {
+    showNotif('⚠ Could not save the draft — ' + (e && e.message ? e.message : 'storage problem'), true);
+  }
+}
+function _draftFiles(d) { return (d.photos || []).map(p => new File([p.blob], p.name || 'photo.jpg', { type: p.type || (p.blob && p.blob.type) || 'image/jpeg', lastModified: p.lastModified || Date.now() })); }
+async function openDraft(id, rescan) {
+  document.getElementById('drafts-menu').style.display = 'none';
+  let d; try { d = await draftsGet(id); } catch (e) { d = null; }
+  if (!d) { showNotif('⚠ That draft is gone', true); draftsRefreshCount(); return; }
+  if (_draftHasContent() && !confirm((rescan ? 'Start over with this draft’s photos?' : 'Open this draft?') + ' What is on screen now will be replaced — press Cancel and use Save draft first if you want to keep it.')) return;
+  resetForm();
+  uploadedFiles = _draftFiles(d);
+  window._draftId = rescan ? null : d.id;
+  if (rescan) {
+    renderPhotoStrip();
+    if (uploadedFiles.length) { if (typeof runOCR === 'function') runOCR(); }
+    showNotif('✓ Photos loaded — scanning again');
+    return;
+  }
+  const s = d.snap || {};
+  window._selectedPhotos = (s.vars && s.vars.selectedPhotos || []).filter(i => uploadedFiles[i]);
+  Object.keys(s.val || {}).forEach(k => { const el = document.getElementById(k); if (el) el.value = s.val[k]; });
+  Object.keys(s.boxes || {}).forEach(k => { const el = document.getElementById(k), b = s.boxes[k]; if (el && b) { el.innerHTML = b.html; el.className = b.cls; el.style.display = b.disp; } });
+  Array.from(document.querySelectorAll('input[name="nploc"]')).forEach((c, i) => { c.checked = !!(s.nploc && s.nploc[i]); });
+  Array.from(document.querySelectorAll('.interchange-input')).forEach((inp, i) => { inp.value = (s.inter && s.inter[i]) || ''; updateInterchangeCount(inp); });
+  ['coupe','convertible','pair'].forEach(v => { const b = document.getElementById('variant-' + v + '-btn'); if (!b) return; const on = !!(s.variants && s.variants[v]); b.dataset.active = on ? '1' : '0'; b.style.background = on ? 'var(--accent)' : 'var(--surface)'; b.style.color = on ? '#000' : 'var(--muted)'; b.style.borderColor = on ? 'var(--accent)' : 'var(--border)'; });
+  const vr = s.vars || {};
+  window._priceFromStore = !!vr.priceFromStore; window._activeDescEmoji = vr.activeDescEmoji; window._ocrDescGuess = vr.ocrDescGuess || ''; window._lensPartType = vr.lensPartType || '';
+  window._ebayListingTotal = vr.ebayListingTotal || 0;
+  if (vr.lc) window._lc = Object.assign({}, window._lc || {}, vr.lc);
+  window._pnPhotoIdx = (typeof vr.pnPhotoIdx === 'number' && uploadedFiles[vr.pnPhotoIdx]) ? vr.pnPhotoIdx : -1;
+  if (window._pnPhotoIdx >= 0) { window._pnPhotoFile = uploadedFiles[window._pnPhotoIdx]; try { const rd = new FileReader(); rd.onload = e => { window._pnPhotoDataUrl = e.target.result; }; rd.readAsDataURL(window._pnPhotoFile); } catch (e) { /* only the re-open link needs it */ } }
+  if (typeof setCategoryField === 'function' && s.val) { const cid = s.val['ebay-category-id'] || '', cname = s.val['ebay-category'] || ''; document.getElementById('ebay-category-id').value = cid; document.getElementById('ebay-category').value = cname; }
+  if (s.val && s.val['shipping-policy-select'] && typeof applyShippingPolicy === 'function') applyShippingPolicy(s.val['shipping-policy-select']);
+  setMode(s.mode || 'partnumber');
+  if (typeof updateNoPartSearch === 'function') updateNoPartSearch();
+  renderPhotoStrip();
+  updateTitleCount();
+  const rb = document.getElementById('rescan-btn'); if (rb && uploadedFiles.length) rb.style.display = 'inline-flex';
+  updateEbayAuthStatus();
+  showNotif('✓ Draft opened — everything is as you left it');
+  setTimeout(() => window.scrollTo({ top: 0, behavior: 'instant' }), 50);
+}
+async function deleteDraft(id, ev) {
+  if (ev) ev.stopPropagation();
+  if (!confirm('Delete this draft? Its saved photos go with it.')) return;
+  try { await draftsDelete(id); if (window._draftId === id) window._draftId = null; showNotif('Draft deleted'); } catch (e) { showNotif('⚠ Could not delete it', true); }
+  await renderDraftsList(); draftsRefreshCount();
+}
+function _draftAge(t) {
+  const m = Math.round((Date.now() - t) / 60000);
+  if (m < 1) return 'just now'; if (m < 60) return m + ' min ago'; const h = Math.round(m / 60); if (h < 24) return h + ' hr ago';
+  return new Date(t).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+let _draftThumbUrls = [];
+async function renderDraftsList() {
+  const list = document.getElementById('drafts-list');
+  _draftThumbUrls.forEach(u => URL.revokeObjectURL(u)); _draftThumbUrls = [];
+  let all = []; try { all = await draftsAll(); } catch (e) { list.innerHTML = '<div style="padding:10px;font-size:12px;color:var(--danger);text-align:center;">' + escHtml(e && e.message || 'Drafts are not available here') + '</div>'; return; }
+  if (!all.length) { list.innerHTML = '<div style="padding:10px;font-size:12px;color:var(--muted);text-align:center;">No drafts yet — press Save draft to keep the listing on screen for later</div>'; return; }
+  list.innerHTML = '';
+  all.forEach(d => {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:7px 8px;border-bottom:1px solid var(--border);cursor:pointer;' + (d.id === window._draftId ? 'background:rgba(245,166,35,0.12);' : '');
+    row.onmouseover = () => { if (d.id !== window._draftId) row.style.background = 'var(--surface)'; }; row.onmouseout = () => { row.style.background = d.id === window._draftId ? 'rgba(245,166,35,0.12)' : ''; };
+    const th = document.createElement('div'); th.style.cssText = 'width:38px;height:38px;border-radius:4px;background:var(--surface);flex-shrink:0;overflow:hidden;';
+    if (d.photos && d.photos[0] && d.photos[0].blob) { const u = URL.createObjectURL(d.photos[0].blob); _draftThumbUrls.push(u); const im = document.createElement('img'); im.src = u; im.style.cssText = 'width:100%;height:100%;object-fit:cover;'; th.append(im); }
+    const tx = document.createElement('div'); tx.style.cssText = 'flex:1;min-width:0;';
+    const t1 = document.createElement('div'); t1.style.cssText = 'font-size:12px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'; t1.textContent = d.label || 'Untitled draft';
+    const t2 = document.createElement('div'); t2.style.cssText = 'font-size:10px;color:var(--muted);'; const np = (d.photos || []).length; t2.textContent = _draftAge(d.savedAt) + ' · ' + np + ' photo' + (np === 1 ? '' : 's') + (d.id === window._draftId ? ' · open now' : '');
+    tx.append(t1, t2);
+    const mk = (txt, title, fn) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = txt; b.title = title; b.style.cssText = 'background:none;border:1px solid var(--border);border-radius:4px;color:var(--muted);cursor:pointer;font-size:12px;padding:3px 7px;flex-shrink:0;'; b.onclick = (e) => { e.stopPropagation(); fn(e); }; return b; };
+    row.title = 'Open this draft exactly as you left it';
+    row.onclick = () => openDraft(d.id, false);
+    row.append(th, tx, mk('↻', 'Start over: load only this draft’s photos and scan them again', () => openDraft(d.id, true)), mk('✕', 'Delete this draft', (e) => deleteDraft(d.id, e)));
+    list.append(row);
+  });
+}
+function toggleDraftsMenu() {
+  const menu = document.getElementById('drafts-menu');
+  if (menu.style.display !== 'none') { menu.style.display = 'none'; return; }
+  menu.style.display = 'block'; renderDraftsList();
+}
+document.addEventListener('click', e => {
+  if (!e.target.closest('#drafts-header-btn') && !e.target.closest('#drafts-menu')) { const m = document.getElementById('drafts-menu'); if (m) m.style.display = 'none'; }
+});
 
 _bootstrap();
 
