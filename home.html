@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Home v414</title>
+<title>PartsLister Pro Home v415</title>
 <!-- v400: yard tickets — divider styles (tiny dashes, dots, solid, double) with thickness, dash length, gap, width and position; mark one text row "This row has the date" ({date} there is the ticket's own day — tomorrow's for "Sell for tomorrow"); a print time per yard with a Randomize switch (adds 0–30 minutes, never earlier). -->
 <!-- v399: TICKET DESIGNER — each yard's ticket is a list of rows (text, divider, logo, barcode). Every text row has its own font (list or any font name), size 1–100, boldness 0–100 and position; the logo has size, position, a drop box and weathered / gravel / fuzzy / faded gray / spots looks (or one tap "Match sticker look"); the barcode is typed in (Code 128) with its own size and position. Every slider also has a number box. "Duplicate" copies a yard's whole ticket so you can change a few things instead of starting over. -->
 <!-- v389: yard tickets are sold tickets — real sale date and time, a ticket number and barcode, "Sell for tomorrow" advance tickets marked VALID FOR, {logo} and {big} tags anywhere, and Money made. The saved time and Randomize are gone. -->
@@ -203,7 +203,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v414</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v415</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -631,6 +631,9 @@ function dividerHTML(r, mg, mm) {
   else body = line(t / 2, '');
   return '<svg class="dv" xmlns="http://www.w3.org/2000/svg" shape-rendering="' + (st === 'dots' ? 'geometricPrecision' : 'crispEdges') + '" style="display:block;width:' + (num(r.width, 100)) + '%;height:' + hgt.toFixed(2) + 'mm;' + mg(r.align) + 'margin-top:' + mm(r.top) + ';margin-bottom:' + mm(r.bottom) + '">' + body + '</svg>';
 }
+// v415: Letter spacing slider (−30…100 → −0.15…0.5 em) and Reach the edges slider (0…100 → up to the whole side margin: 4 mm, or 2 mm on 58 mm paper)
+const lsEm = (r) => { const v = Math.max(-30, Math.min(100, +r.spacing || 0)); return v ? +(v * 0.005).toFixed(3) : 0; };
+const edgeMm = (r, w) => { const v = Math.max(0, Math.min(100, +r.edge || 0)); return v ? +(v / 100 * (w === 58 ? 2 : 4)).toFixed(2) : 0; };
 function ticketHTML(rows, logo, number, w) {
   const mg = (a) => a === 'left' ? 'margin-left:0;margin-right:auto;' : a === 'right' ? 'margin-left:auto;margin-right:0;' : 'margin-left:auto;margin-right:auto;';
   const mm = (v) => ((+v || 0) * 0.2).toFixed(1) + 'mm';   // 0–100 → 0–20 mm
@@ -639,8 +642,12 @@ function ticketHTML(rows, logo, number, w) {
     if (r.type === 'barcode') return barcodeSVG(r.value || number, 'width:' + (r.width || 75) + '%;height:' + (4 + ((r.height || 22) / 100) * 36).toFixed(1) + 'mm;' + mg(r.align) + 'margin-top:' + mm(r.top) + ';margin-bottom:' + mm(r.bottom));
     // if (r.type === 'line') return '<hr style="margin:' + mm(r.top) + ' 0 ' + mm(r.bottom) + '">';   (v399)
     if (r.type === 'line') return dividerHTML(r, mg, mm);   // v400: divider styles
-    if (r.timg) return '<img class="tl" alt="" src="' + esc(r.timg) + '" style="width:100%;margin-top:' + mm(r.top) + ';margin-bottom:' + mm(r.bottom) + '">';   // v405: text look — this row was drawn as a picture
-    return '<div class="l" style="font-family:' + fontStack(r.font) + ';font-size:' + ptOf(r.size, w).toFixed(2) + 'pt;' + boldCSS(r) + 'text-align:' + (r.align || 'center') + ';margin-top:' + mm(r.top) + ';margin-bottom:' + mm(r.bottom) + '">' + (esc(r.text || '') || '&nbsp;') + '</div>';
+    // if (r.timg) return '<img class="tl" alt="" src="' + esc(r.timg) + '" style="width:100%;margin-top:' + mm(r.top) + ';margin-bottom:' + mm(r.bottom) + '">';   // (v405)
+    if (r.timg) { const em = edgeMm(r, w); return '<img class="tl" alt="" src="' + esc(r.timg) + '" style="width:' + (em ? 'calc(100% + ' + (2 * em).toFixed(2) + 'mm);margin-left:-' + em + 'mm;' : '100%;') + 'margin-top:' + mm(r.top) + ';margin-bottom:' + mm(r.bottom) + '">'; }   // v415: wider when the row reaches into the margin   // v405: text look — this row was drawn as a picture
+    // return '<div class="l" style="font-family:' + fontStack(r.font) + ';font-size:' + ptOf(r.size, w).toFixed(2) + 'pt;' + boldCSS(r) + 'text-align:' + (r.align || 'center') + ';margin-top:' + mm(r.top) + ';margin-bottom:' + mm(r.bottom) + '">' + (esc(r.text || '') || '&nbsp;') + '</div>';   // (v414)
+    // v415: letter spacing (each row) and reaching into the side margin (each row)
+    const ls = lsEm(r), em = edgeMm(r, w);
+    return '<div class="l" style="font-family:' + fontStack(r.font) + ';font-size:' + ptOf(r.size, w).toFixed(2) + 'pt;' + boldCSS(r) + 'text-align:' + (r.align || 'center') + ';margin-top:' + mm(r.top) + ';margin-bottom:' + mm(r.bottom) + (ls ? ';letter-spacing:' + ls + 'em' + ((r.align || 'center') === 'center' ? ';padding-left:' + ls + 'em' : '') : '') + (em ? ';margin-left:-' + em + 'mm;margin-right:-' + em + 'mm' : '') + '">' + (esc(r.text || '') || '&nbsp;') + '</div>';
   }).join('');
 }
 // v399: fill {yard} {price} … into every text row
@@ -830,16 +837,17 @@ function ensureFont(name) {   // Google Fonts a ticket uses must also be loaded 
 const textCache = new Map();
 async function textImage(r, w) {   // v409: each row's own looks (the whole-ticket look is gone)
   const text = String(r.text || '').trim(); if (!text) return null;
-  const pad = w === 58 ? 2 : 4, W = Math.round((w - 2 * pad) * TEXT_DPMM);
-  const px = ptOf(r.size, w) * 203 / 72, lh = px * 1.3;   // 1 pt = 1/72 in; the ticket's line height is 1.3
+  // const pad = w === 58 ? 2 : 4, W = Math.round((w - 2 * pad) * TEXT_DPMM);
+  const pad = w === 58 ? 2 : 4, em = edgeMm(r, w), W = Math.round((w - 2 * pad + 2 * em) * TEXT_DPMM);   // v415: + reaching into the margin
+  const px = ptOf(r.size, w) * 203 / 72, lh = px * 1.3, ls = lsEm(r) * px;   // v415: ls = letter spacing in dots   // 1 pt = 1/72 in; the ticket's line height is 1.3
   // const b = Math.max(0, Math.min(100, r.boldness !== undefined ? (+r.boldness || 0) : (r.bold ? 75 : 0))), l = Math.max(0, Math.min(100, +r.lighter || 0)), net = b - l;
   const b = Math.max(0, Math.min(100, r.boldness !== undefined ? (+r.boldness || 0) : (r.bold ? 75 : 0))), l = Math.max(0, Math.min(100, +r.thin || 0)), net = b - l;   // v409
   const wv = +r.weather || 0, gr = +r.gravel || 0, fz = +r.fuzzy || 0, fd = +r.fade || 0, sp = +r.spots || 0, lt = +r.lighter || 0;
-  const key = [text, r.font, r.size, net, r.align, w, wv, gr, fz, fd, sp, lt].join('|');
+  const key = [text, r.font, r.size, net, r.align, w, wv, gr, fz, fd, sp, lt, ls, em].join('|');
   if (textCache.has(key)) return textCache.get(key);
   await ensureFont(r.font);
   const font = (net >= 75 ? '700 ' : '400 ') + px.toFixed(2) + 'px ' + fontStack(r.font);
-  const mx = document.createElement('canvas').getContext('2d'); mx.font = font;
+  const mx = document.createElement('canvas').getContext('2d'); mx.font = font; if (ls) mx.letterSpacing = ls.toFixed(2) + 'px';   // v415
   const wid = (t) => mx.measureText(t).width;
   const lines = []; let cur = '';
   text.split(' ').forEach(word => {   // wrap like the ticket does: at spaces, and inside a word too long for the line
@@ -852,8 +860,9 @@ async function textImage(r, w) {   // v409: each row's own looks (the whole-tick
   if (cur) lines.push(cur);
   const H = Math.max(1, Math.ceil(lines.length * lh)), c = document.createElement('canvas'); c.width = W; c.height = H;
   const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, W, H);
-  x.font = font; x.textBaseline = 'middle'; x.textAlign = r.align === 'left' ? 'left' : r.align === 'right' ? 'right' : 'center'; x.lineJoin = 'round';
-  const tx = r.align === 'left' ? 0 : r.align === 'right' ? W : W / 2;
+  x.font = font; if (ls) x.letterSpacing = ls.toFixed(2) + 'px'; x.textBaseline = 'middle';   // v415 x.textAlign = r.align === 'left' ? 'left' : r.align === 'right' ? 'right' : 'center'; x.lineJoin = 'round';
+  // const tx = r.align === 'left' ? 0 : r.align === 'right' ? W : W / 2;
+  const tx = r.align === 'left' ? 0 : r.align === 'right' ? W : W / 2 + ls / 2;   // v415: the space after the last letter is not counted when centering
   lines.forEach((ln, i) => {
     const y = (i + 0.5) * lh; x.fillStyle = '#000'; x.fillText(ln, tx, y);
     if (net !== 0) { x.strokeStyle = net > 0 ? '#000' : '#fff'; x.lineWidth = Math.abs(net) * 0.0008 * px; x.strokeText(ln, tx, y); }
@@ -1050,7 +1059,7 @@ function yardRow(y) {
       if (i === sel) {
         const body = document.createElement('div'); body.className = 'yt-rb';
         let html = '<div class="yt-grid">';
-        if (r.type === 'text') html += '<div><label>Font</label><select class="fsel">' + Object.keys(FONT_STACKS).map(f => '<option value="' + f + '"' + (r.font === f ? ' selected' : '') + '>' + f + '</option>').join('') + '<option value="__custom"' + (FONT_STACKS[r.font] ? '' : ' selected') + '>Other (type a font name)\u2026</option></select><input class="fcus" maxlength="40" placeholder="Font name on the printing computer" style="margin-top:4px;' + (FONT_STACKS[r.font] ? 'display:none' : '') + '" value="' + (FONT_STACKS[r.font] ? '' : esc(r.font || '')) + '"></div>' + pick('align', 'Position', AL, r) + sl('size', 'Text size', 1, r) + sl('boldness', 'Boldness (0 = normal)', 0, r) + lookSl(r) + '<label class="yt-chk" style="grid-column:1/-1"><input type="checkbox" data-k="hasDate"' + (r.hasDate ? ' checked' : '') + '> This row has the date</label><div class="yt-note" style="grid-column:1/-1;margin-top:-4px">The date fills in when you sell a ticket. Type {date} where you want it in this row (like "Date: {date}"); if you leave it out, the date goes at the end of the row. "Sell for tomorrow" tickets show tomorrow\u2019s date here. Only one row can have it.</div>';   // v400
+        if (r.type === 'text') html += '<div><label>Font</label><select class="fsel">' + Object.keys(FONT_STACKS).map(f => '<option value="' + f + '"' + (r.font === f ? ' selected' : '') + '>' + f + '</option>').join('') + '<option value="__custom"' + (FONT_STACKS[r.font] ? '' : ' selected') + '>Other (type a font name)\u2026</option></select><input class="fcus" maxlength="40" placeholder="Font name on the printing computer" style="margin-top:4px;' + (FONT_STACKS[r.font] ? 'display:none' : '') + '" value="' + (FONT_STACKS[r.font] ? '' : esc(r.font || '')) + '"></div>' + pick('align', 'Position', AL, r) + sl('size', 'Text size', 1, r) + sl('boldness', 'Boldness (0 = normal)', 0, r) + sl('spacing', 'Letter spacing (0 = normal, below 0 squeezes)', 0, r, -30) + sl('edge', 'Reach the edges (0 = normal margin)', 0, r) + lookSl(r) + '<label class="yt-chk" style="grid-column:1/-1"><input type="checkbox" data-k="hasDate"' + (r.hasDate ? ' checked' : '') + '> This row has the date</label><div class="yt-note" style="grid-column:1/-1;margin-top:-4px">The date fills in when you sell a ticket. Type {date} where you want it in this row (like "Date: {date}"); if you leave it out, the date goes at the end of the row. "Sell for tomorrow" tickets show tomorrow\u2019s date here. Only one row can have it.</div>';   // v400
         // if (r.type === 'logo') html += pick('align', 'Position', AL, r) + sl('width', 'Logo size', 1, r) + sl('weather', 'Weathered look', 0, r) + sl('gravel', 'Gravel (chunky grit)', 0, r) + sl('fuzzy', 'Fuzzy', 0, r) + sl('fade', 'Faded gray', 0, r) + sl('spots', 'Spots', 0, r) + sl('lighter', 'Lighter (less ink)', 0, r);   // v406
         if (r.type === 'logo') html += pick('align', 'Position', AL, r) + sl('width', 'Logo size', 1, r) + sl('boldness', 'Boldness (0 = normal)', 0, r) + lookSl(r);   // v409: the same looks as the text rows
         if (r.type === 'barcode') html += '<div><label>Barcode numbers (blank = each ticket\u2019s own number)</label><input data-k="value" maxlength="40" placeholder="e.g. 12345678" value="' + esc(r.value || '') + '"></div>' + pick('align', 'Position', AL, r) + sl('width', 'Barcode width', 1, r) + sl('height', 'Barcode height', 1, r);

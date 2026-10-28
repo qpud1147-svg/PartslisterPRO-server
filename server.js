@@ -1,4 +1,4 @@
-// PartsLister Pro server — v414
+// PartsLister Pro server — v415
 // v409: yard tickets — the whole-ticket text look and the Look checkboxes are gone; every text row and the logo each have the full set of sliders (boldness, thinner, lighter, weathered, gravel, fuzzy, faded gray, spots).
 // v408: yard tickets — each text row has a Look checkbox (row.useLook, default on): the whole-ticket text look only changes the rows that are checked.
 // v406: yard tickets — a whole-ticket Boldness for the text (design.textLook.bold) and a Lighter slider for the logo (less ink).
@@ -3953,7 +3953,7 @@ function cleanRow(r) {
   const al = (v, def) => ['left', 'center', 'right'].includes(v) ? v : def;
   const type = ['text', 'line', 'logo', 'barcode'].includes(r.type) ? r.type : 'text';
   const out = { type, align: al(r.align, 'center'), top: n(r.top, 0, -15), bottom: n(r.bottom, type === 'text' ? 0 : 5, 0) };   // v404: top can be -15…100
-  if (type === 'text') Object.assign(out, { text: String(r.text || '').replace(/[\r\n]+/g, ' ').slice(0, 200), font: /^[A-Za-z0-9 \-]{1,40}$/.test(String(r.font || '')) ? String(r.font) : 'Courier New', size: n(r.size, 45), boldness: n(r.boldness, r.bold ? 75 : 0, 0), hasDate: !!r.hasDate, thin: n(r.thin, 0, 0), lighter: n(r.lighter, 0, 0), weather: n(r.weather, 0, 0), gravel: n(r.gravel, 0, 0), fuzzy: n(r.fuzzy, 0, 0), fade: n(r.fade, 0, 0), spots: n(r.spots, 0, 0) });   // v409: the full set of looks on every text row (v408's useLook is gone)
+  if (type === 'text') Object.assign(out, { text: String(r.text || '').replace(/[\r\n]+/g, ' ').slice(0, 200), font: /^[A-Za-z0-9 \-]{1,40}$/.test(String(r.font || '')) ? String(r.font) : 'Courier New', size: n(r.size, 45), boldness: n(r.boldness, r.bold ? 75 : 0, 0), hasDate: !!r.hasDate, thin: n(r.thin, 0, 0), lighter: n(r.lighter, 0, 0), weather: n(r.weather, 0, 0), gravel: n(r.gravel, 0, 0), fuzzy: n(r.fuzzy, 0, 0), fade: n(r.fade, 0, 0), spots: n(r.spots, 0, 0), spacing: n(r.spacing, 0, -30), edge: n(r.edge, 0, 0) });   // v415: + letter spacing (down to −30) and reach-the-edges; v409: the full set of looks on every text row (v408's useLook is gone)
   if (type === 'text' && r.useLook === false) out.useLook = false;   // only so an old ticket's Look checkboxes can still be folded into its rows by the page   // v400: + hasDate
   if (type === 'logo') Object.assign(out, { width: n(r.width, 70), weather: n(r.weather, 0, 0), gravel: n(r.gravel, 0, 0), fuzzy: n(r.fuzzy, 0, 0), fade: n(r.fade, 0, 0), spots: n(r.spots, 0, 0), lighter: n(r.lighter, 0, 0), boldness: n(r.boldness, 0, 0), thin: n(r.thin, 0, 0) });   // v406: + lighter; v409: + boldness, thinner
   if (type === 'line') Object.assign(out, { style: ['dashes', 'dots', 'solid', 'double'].includes(r.style) ? r.style : 'dashes', thickness: n(r.thickness, 10), dash: n(r.dash, 6), gap: n(r.gap, 6), width: n(r.width, 100) });   // v400: divider styles
@@ -5250,5 +5250,6 @@ setupDatabase()
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v411 listening on ' + PORT)))   // v412
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v412 listening on ' + PORT)))   // v413
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v413 listening on ' + PORT)))   // v414
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v414 listening on ' + PORT)))
+  // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v414 listening on ' + PORT)))   // v415
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v415 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });
