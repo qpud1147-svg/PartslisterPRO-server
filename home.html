@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Home v420</title>
+<title>PartsLister Pro Home v421</title>
 <!-- v400: yard tickets — divider styles (tiny dashes, dots, solid, double) with thickness, dash length, gap, width and position; mark one text row "This row has the date" ({date} there is the ticket's own day — tomorrow's for "Sell for tomorrow"); a print time per yard with a Randomize switch (adds 0–30 minutes, never earlier). -->
 <!-- v399: TICKET DESIGNER — each yard's ticket is a list of rows (text, divider, logo, barcode). Every text row has its own font (list or any font name), size 1–100, boldness 0–100 and position; the logo has size, position, a drop box and weathered / gravel / fuzzy / faded gray / spots looks (or one tap "Match sticker look"); the barcode is typed in (Code 128) with its own size and position. Every slider also has a number box. "Duplicate" copies a yard's whole ticket so you can change a few things instead of starting over. -->
 <!-- v389: yard tickets are sold tickets — real sale date and time, a ticket number and barcode, "Sell for tomorrow" advance tickets marked VALID FOR, {logo} and {big} tags anywhere, and Money made. The saved time and Randomize are gone. -->
@@ -124,6 +124,16 @@
   .yt-yard .go { font-family: 'Barlow Condensed', sans-serif; font-size: 12px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--accent); margin-top: 8px; }
   #yt-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 50; display: none; align-items: flex-start; justify-content: center; overflow-y: auto; padding: 30px 12px; }
   #yt-modal.open { display: flex; }
+  /* v421: Fix counts */
+  #yt-hist { position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 55; display: none; align-items: flex-start; justify-content: center; overflow-y: auto; padding: 30px 12px; }
+  #yt-hist.open { display: flex; }
+  #yt-hist .yt-box { max-width: 640px; }
+  .yh-day { display: flex; align-items: center; gap: 8px; padding: 8px 4px; margin-top: 10px; border-bottom: 1px solid var(--border); font-weight: 600; font-size: 14px; }
+  .yh-day .t { margin-left: auto; color: var(--text2); font-weight: 400; font-size: 13px; }
+  .yh-t { display: flex; align-items: center; gap: 8px; padding: 5px 4px; font-size: 13px; border-bottom: 1px solid rgba(128,128,128,0.15); }
+  .yh-t .m { color: var(--text2); }
+  .yh-t .p { margin-left: auto; }
+  .yh-bar { position: sticky; bottom: -20px; background: var(--surface); padding: 10px 0 2px; margin-top: 12px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; border-top: 1px solid var(--border); }
   .yt-box { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; width: 100%; max-width: 980px; padding: 20px; }
   .yt-box h3 { font-family: 'Barlow Condensed', sans-serif; font-size: 22px; font-weight: 700; margin-bottom: 12px; display: flex; align-items: center; }
   .yt-box h3 .btn { margin-left: auto; }
@@ -203,7 +213,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v420</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v421</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -279,7 +289,7 @@
 
   <!-- v386: YARD TICKETS -->
   <div class="yt" id="yt">
-    <div class="yt-top"><h2>Yard tickets</h2><button type="button" class="btn btn-secondary btn-sm" onclick="openYards()">Manage</button></div>
+    <div class="yt-top"><h2>Yard tickets</h2><button type="button" class="btn btn-secondary btn-sm" onclick="openYards()">Manage</button><button type="button" class="btn btn-secondary btn-sm" style="margin-left:0" onclick="openHist()" title="Remove test tickets so tickets sold and money made are right">Fix counts</button></div>
     <div class="yt-saved">
       <div><div class="v" id="yt-week">—</div><div class="k">Money made · this week</div></div>
       <div><div class="v" id="yt-month">—</div><div class="k">This month</div></div>
@@ -303,6 +313,16 @@
     <div id="yt-list"></div>
     <button type="button" class="btn btn-secondary btn-sm" onclick="addYardRow()">+ Add a yard</button>
     <div class="yt-note">Each yard’s ticket is a list of rows. Click a row to change its font, size (1–100), boldness (0–100) and position (every slider also has a number box), use the arrows to move it up or down, and add text, divider, logo or barcode rows. Use Duplicate to copy a whole ticket and change just a few things. Set a print time on a yard to put that time on its tickets (Randomize adds up to 30 minutes, never earlier); mark one text row "This row has the date" to say where the date goes. In a text row these fill in when you sell a ticket: {yard} {price} {number}, {date} and {time} (when it was sold) and {valid} (the day it’s good for). Fonts come from the computer that prints, so pick one that computer has.</div>
+  </div>
+</div>
+<!-- v421: fix the ticket counts — remove test tickets -->
+<div id="yt-hist" onclick="if (event.target === this) closeHist()">
+  <div class="yt-box">
+    <h3>Fix ticket counts <button type="button" class="btn btn-secondary btn-sm" onclick="closeHist()">Close</button></h3>
+    <div class="yt-note" style="margin:0 0 8px">Every ticket you sell is listed here, newest first. Tick the ones that were tests and remove them — they stop counting in tickets sold and money made. Removing can’t be undone.</div>
+    <div class="yt-row" style="margin-bottom:6px"><div><label>Show</label><select id="yh-yard"></select></div><button type="button" class="btn btn-secondary btn-sm" id="yh-all">Tick all shown</button><button type="button" class="btn btn-secondary btn-sm" id="yh-none">Untick all</button></div>
+    <div id="yh-list">Loading…</div>
+    <div class="yh-bar"><button type="button" class="btn btn-sm" id="yh-del" disabled>Remove ticked tickets</button><span id="yh-sum" style="color:var(--text2);font-size:13px"></span></div>
   </div>
 </div>
 <iframe id="yt-frame" title="Ticket" style="position:fixed;width:0;height:0;border:0;left:-9999px;"></iframe>
@@ -988,6 +1008,60 @@ async function printTicket(id, btn, advance) {   // v389: advance = sold today, 
 }
 // Manage
 function openYards() { if (!tickets) return; drawYardEditor(); document.getElementById('yt-modal').classList.add('open'); }
+// v421: FIX COUNTS — list every ticket sold, tick the test ones, remove them
+let hist = null;
+async function openHist() {
+  document.getElementById('yt-hist').classList.add('open');
+  const list = document.getElementById('yh-list'); list.textContent = 'Loading…';
+  const d = await getJSON('/api/tickets/prints');
+  if (!d || d.error || d._signedOut) { list.textContent = (d && d.error) || 'Couldn’t load the tickets.'; return; }
+  hist = d; drawHist();
+}
+function closeHist() { document.getElementById('yt-hist').classList.remove('open'); }
+function drawHist() {
+  const list = document.getElementById('yh-list'), sel = document.getElementById('yh-yard'), keep = sel.value;
+  // the "Show" menu: every yard that has tickets (a removed yard too)
+  const names = []; hist.prints.forEach(p => { const k = p.yard_id === null ? 'x' : String(p.yard_id); if (!names.some(n => n[0] === k)) names.push([k, p.yard_name || 'Removed yard']); });
+  sel.textContent = ''; const all = document.createElement('option'); all.value = ''; all.textContent = 'All yards'; sel.append(all);
+  names.forEach(n => { const o = document.createElement('option'); o.value = n[0]; o.textContent = n[1]; sel.append(o); });
+  sel.value = names.some(n => n[0] === keep) ? keep : '';
+  sel.onchange = () => drawHist();
+  const shown = hist.prints.filter(p => !sel.value || (p.yard_id === null ? 'x' : String(p.yard_id)) === sel.value);
+  list.textContent = '';
+  if (!shown.length) { list.textContent = 'No tickets to show.'; updateHistSum(); return; }
+  const days = new Map(); shown.forEach(p => { if (!days.has(p.day)) days.set(p.day, []); days.get(p.day).push(p); });
+  days.forEach((ps, day) => {
+    const h = document.createElement('label'); h.className = 'yh-day';
+    const dd = new Date(day + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+    h.innerHTML = '<input type="checkbox" class="dayall"><span></span><span class="t"></span>';
+    h.querySelector('span').textContent = dd; h.querySelector('.t').textContent = ps.length + ' ticket' + (ps.length === 1 ? '' : 's') + ' · ' + money2.format(ps.reduce((a, p) => a + p.price, 0));
+    list.append(h);
+    const boxes = [];
+    ps.forEach(p => {
+      const r = document.createElement('label'); r.className = 'yh-t';
+      r.innerHTML = '<input type="checkbox" class="tk"><span class="m"></span><span class="y"></span><span class="p"></span>';
+      const cb = r.querySelector('input'); cb.dataset.id = p.id; cb.dataset.price = p.price; boxes.push(cb);
+      r.querySelector('.m').textContent = p.time; r.querySelector('.y').textContent = (p.yard_name || 'Removed yard') + (p.advance ? ' · for tomorrow' : ''); r.querySelector('.p').textContent = money2.format(p.price);
+      cb.onchange = updateHistSum; list.append(r);
+    });
+    h.querySelector('input').onchange = (e) => { boxes.forEach(b => { b.checked = e.target.checked; }); updateHistSum(); };
+  });
+  updateHistSum();
+}
+function updateHistSum() {
+  const on = [...document.querySelectorAll('#yh-list .tk:checked')], btn = document.getElementById('yh-del');
+  btn.disabled = !on.length; btn.textContent = on.length ? 'Remove ' + on.length + ' ticket' + (on.length === 1 ? '' : 's') : 'Remove ticked tickets';
+  document.getElementById('yh-sum').textContent = on.length ? money2.format(on.reduce((a, b) => a + (+b.dataset.price || 0), 0)) + ' will come off the money made' : (hist ? hist.total + ' ticket' + (hist.total === 1 ? '' : 's') + ' in all' + (hist.total > hist.prints.length ? ' (showing the newest ' + hist.prints.length + ')' : '') : '');
+}
+document.getElementById('yh-all').onclick = () => { document.querySelectorAll('#yh-list .tk, #yh-list .dayall').forEach(b => { b.checked = true; }); updateHistSum(); };
+document.getElementById('yh-none').onclick = () => { document.querySelectorAll('#yh-list .tk, #yh-list .dayall').forEach(b => { b.checked = false; }); updateHistSum(); };
+document.getElementById('yh-del').onclick = async () => {
+  const on = [...document.querySelectorAll('#yh-list .tk:checked')]; if (!on.length) return;
+  if (!confirm('Remove ' + on.length + ' ticket' + (on.length === 1 ? '' : 's') + ' (' + money2.format(on.reduce((a, b) => a + (+b.dataset.price || 0), 0)) + ')? This can’t be undone.')) return;
+  const r = await fetch('/api/tickets/prints/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: on.map(b => +b.dataset.id) }) });
+  if (!r.ok) { alert('Couldn’t remove them — try again.'); return; }
+  pageCache.live(); await loadTickets(); await openHist();
+};
 function closeYards() { document.getElementById('yt-modal').classList.remove('open'); }
 const fmtTime12 = (s) => { const [hh, mm] = String(s).split(':').map(Number); return ((hh % 12) || 12) + ':' + String(mm).padStart(2, '0') + ' ' + (hh < 12 ? 'AM' : 'PM'); };   // v400: '08:00' → '8:00 AM'
 // function sampleVals(y) {   // v389: the preview uses right now as the sale time

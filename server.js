@@ -1,4 +1,4 @@
-// PartsLister Pro server — v420
+// PartsLister Pro server — v421
 // v409: yard tickets — the whole-ticket text look and the Look checkboxes are gone; every text row and the logo each have the full set of sliders (boldness, thinner, lighter, weathered, gravel, fuzzy, faded gray, spots).
 // v408: yard tickets — each text row has a Look checkbox (row.useLook, default on): the whole-ticket text look only changes the rows that are checked.
 // v406: yard tickets — a whole-ticket Boldness for the text (design.textLook.bold) and a Lighter slider for the logo (less ink).
@@ -4057,6 +4057,26 @@ app.post('/api/tickets/settings', requireUser, express.json(), async (req, res) 
 // Sell: logs the sale (adds the price to Money made) and sends back the filled-in ticket.
 // v389: the date and time are the real moment of the sale. { advance: true } = a ticket sold today that is
 //       good for tomorrow; it says VALID FOR tomorrow's date and still shows the real sale date and time.
+// v421: FIX COUNTS — every ticket sold is one row in ticket_prints. These two routes list them (newest first, days in your time zone) and remove the ones you pick, e.g. test tickets, so tickets sold and money made are right again.
+app.get('/api/tickets/prints', requireUser, async (req, res) => {
+  try {
+    const tz = msgSettingsOf(await getUserSettings(req.user.id)).timezone || 'America/Chicago';
+    const rows = (await pool.query(`SELECT id, yard_id, yard_name, price::float AS price,
+        to_char(printed_at AT TIME ZONE $2, 'YYYY-MM-DD') AS day, to_char(printed_at AT TIME ZONE $2, 'FMHH12:MI AM') AS time,
+        (valid_for IS NOT NULL AND to_char(valid_for, 'YYYY-MM-DD') <> to_char(printed_at AT TIME ZONE $2, 'YYYY-MM-DD')) AS advance
+      FROM ticket_prints WHERE user_id = $1 ORDER BY printed_at DESC, id DESC LIMIT 2000`, [req.user.id, tz])).rows;
+    const total = (await pool.query('SELECT COUNT(*)::int AS n FROM ticket_prints WHERE user_id = $1', [req.user.id])).rows[0].n;
+    res.json({ prints: rows, total });
+  } catch (e) { console.error('[ticket prints]', e.message); res.status(500).json({ error: 'Could not load the ticket list' }); }
+});
+app.post('/api/tickets/prints/delete', requireUser, express.json({ limit: '1mb' }), async (req, res) => {
+  try {
+    const ids = [...new Set(((req.body || {}).ids || []).map(v => parseInt(v, 10)).filter(Number.isInteger))].slice(0, 5000);
+    if (!ids.length) return res.status(400).json({ error: 'No tickets picked.' });
+    const r = await pool.query('DELETE FROM ticket_prints WHERE user_id = $1 AND id = ANY($2::int[])', [req.user.id, ids]);   // only this user's own tickets
+    res.json({ ok: true, removed: r.rowCount });
+  } catch (e) { console.error('[ticket prints delete]', e.message); res.status(500).json({ error: 'Could not remove those tickets' }); }
+});
 app.post('/api/tickets/yards/:id/print', requireUser, express.json(), async (req, res) => {
   const id = parseInt(req.params.id, 10);
   try {
@@ -5257,5 +5277,6 @@ setupDatabase()
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v417 listening on ' + PORT)))   // v418
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v418 listening on ' + PORT)))   // v419
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v419 listening on ' + PORT)))   // v420
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v420 listening on ' + PORT)))
+  // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v420 listening on ' + PORT)))   // v421
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v421 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });
