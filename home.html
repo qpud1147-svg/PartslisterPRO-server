@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Home v416</title>
+<title>PartsLister Pro Home v417</title>
 <!-- v400: yard tickets — divider styles (tiny dashes, dots, solid, double) with thickness, dash length, gap, width and position; mark one text row "This row has the date" ({date} there is the ticket's own day — tomorrow's for "Sell for tomorrow"); a print time per yard with a Randomize switch (adds 0–30 minutes, never earlier). -->
 <!-- v399: TICKET DESIGNER — each yard's ticket is a list of rows (text, divider, logo, barcode). Every text row has its own font (list or any font name), size 1–100, boldness 0–100 and position; the logo has size, position, a drop box and weathered / gravel / fuzzy / faded gray / spots looks (or one tap "Match sticker look"); the barcode is typed in (Code 128) with its own size and position. Every slider also has a number box. "Duplicate" copies a yard's whole ticket so you can change a few things instead of starting over. -->
 <!-- v389: yard tickets are sold tickets — real sale date and time, a ticket number and barcode, "Sell for tomorrow" advance tickets marked VALID FOR, {logo} and {big} tags anywhere, and Money made. The saved time and Randomize are gone. -->
@@ -203,7 +203,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v416</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v417</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -631,6 +631,21 @@ function dividerHTML(r, mg, mm) {
   else body = line(t / 2, '');
   return '<svg class="dv" xmlns="http://www.w3.org/2000/svg" shape-rendering="' + (st === 'dots' ? 'geometricPrecision' : 'crispEdges') + '" style="display:block;width:' + (num(r.width, 100)) + '%;height:' + hgt.toFixed(2) + 'mm;' + mg(r.align) + 'margin-top:' + mm(r.top) + ';margin-bottom:' + mm(r.bottom) + '">' + body + '</svg>';
 }
+// v417: COPY ROW / PASTE ROW — the copied row (every setting, text included) is kept in this browser, so it can be pasted into any ticket, even after a reload
+let copiedRow = null;
+function copyRow(r) {
+  copiedRow = JSON.parse(JSON.stringify(r)); delete copiedRow.timg; delete copiedRow.img;
+  try { localStorage.setItem('plp-copied-row', JSON.stringify(copiedRow)); } catch (e) { /* kept in memory only */ }
+  refreshPasteButtons();
+}
+function getCopiedRow() {
+  let c = copiedRow; if (!c) { try { c = JSON.parse(localStorage.getItem('plp-copied-row') || 'null'); } catch (e) { c = null; } }
+  return c && c.type ? JSON.parse(JSON.stringify(c)) : null;
+}
+function refreshPasteButtons(scope) {
+  const c = getCopiedRow(), label = c ? 'Paste row (' + (c.type === 'text' ? '\u201C' + String(c.text || '').slice(0, 14) + (String(c.text || '').length > 14 ? '\u2026' : '') + '\u201D' : c.type) + ')' : 'Paste row';
+  (scope || document).querySelectorAll('.yt-paste').forEach(b => { b.disabled = !c; b.textContent = label; });
+}
 // v415: Letter spacing slider (−30…100 → −0.15…0.5 em) and Reach the edges slider (0…100 → up to the whole side margin: 4 mm, or 2 mm on 58 mm paper)
 const lsEm = (r) => { const v = Math.max(-30, Math.min(100, +r.spacing || 0)); return v ? +(v * 0.005).toFixed(3) : 0; };
 // const edgeMm = (r, w) => { const v = Math.max(0, Math.min(100, +r.edge || 0)); return v ? +(v / 100 * (w === 58 ? 2 : 4)).toFixed(2) : 0; };   // v415: 100 = the whole side margin (printed on the paper's very edge — shifted the whole receipt)
@@ -992,7 +1007,7 @@ function yardRow(y) {
     + '<div class="yt-row" style="margin-bottom:8px;"><div><label>Print time (blank = the real time sold)</label><input class="pt" type="time" style="width:140px"></div><label class="yt-chk"><input type="checkbox" class="rnd"> Randomize (up to 30 minutes later, never earlier)</label></div>'
     // + '<details class="yt-look">…whole-ticket text look…</details>'   (v405–v408, removed in v409)
     + '<label>Ticket rows</label><div class="yt-rows"></div>'
-    + '<div class="yt-add"><button type="button" class="btn btn-secondary btn-sm" data-add="text">+ Text</button><button type="button" class="btn btn-secondary btn-sm" data-add="line">+ Divider</button><button type="button" class="btn btn-secondary btn-sm" data-add="logo">+ Logo</button><button type="button" class="btn btn-secondary btn-sm" data-add="barcode">+ Barcode</button></div>'
+    + '<div class="yt-add"><button type="button" class="btn btn-secondary btn-sm" data-add="text">+ Text</button><button type="button" class="btn btn-secondary btn-sm" data-add="line">+ Divider</button><button type="button" class="btn btn-secondary btn-sm" data-add="logo">+ Logo</button><button type="button" class="btn btn-secondary btn-sm" data-add="barcode">+ Barcode</button><button type="button" class="btn btn-secondary btn-sm yt-paste" title="Add the row you copied, with all its settings">Paste row</button></div>'
     + '<div class="yt-row" style="margin:12px 0 0;"><button type="button" class="btn btn-secondary btn-sm s">Save</button><button type="button" class="btn btn-secondary btn-sm dup" title="Make a new ticket from this one, then change what you like">Duplicate</button><button type="button" class="btn btn-secondary btn-sm d">Remove</button></div></div>'
     + '<div><label>Preview (real size)</label><iframe class="yt-pv" title="Ticket preview"></iframe></div>';
   const n = row.querySelector('.n'), p = row.querySelector('.p'), fr = row.querySelector('.yt-pv'), list = row.querySelector('.yt-rows');
@@ -1044,7 +1059,7 @@ function yardRow(y) {
       const el = document.createElement('div'); el.className = 'yt-r' + (i === sel ? ' sel' : '');
       const head = document.createElement('div'); head.className = 'yt-rh';
       head.innerHTML = '<span class="ty">' + (r.type === 'text' && r.hasDate ? 'Date' : NAMES[r.type]) + '</span>' + (r.type === 'text' ? '<input class="rt" placeholder="Type the line here">' : '<span class="sm"></span>')
-        + '<button type="button" class="btn btn-secondary btn-sm" data-a="up" title="Move up">\u25B2</button><button type="button" class="btn btn-secondary btn-sm" data-a="dn" title="Move down">\u25BC</button><button type="button" class="btn btn-secondary btn-sm" data-a="x" title="Delete this row">\u2715</button>';   // v409: the Look checkbox is gone
+        + '<button type="button" class="btn btn-secondary btn-sm" data-a="cp" title="Copy this row with all its settings — then Paste row on any ticket">Copy</button><button type="button" class="btn btn-secondary btn-sm" data-a="up" title="Move up">\u25B2</button><button type="button" class="btn btn-secondary btn-sm" data-a="dn" title="Move down">\u25BC</button><button type="button" class="btn btn-secondary btn-sm" data-a="x" title="Delete this row">\u2715</button>';   // v409: the Look checkbox is gone
       if (r.type === 'text') {
         const ti = head.querySelector('.rt'); ti.value = r.text || '';
         ti.oninput = () => { r.text = ti.value; preview(); };
@@ -1053,6 +1068,7 @@ function yardRow(y) {
       head.onclick = (e) => { if (e.target.closest('button') || e.target.closest('input') || e.target.closest('label')) return; sel = sel === i ? -1 : i; drawList(); };
       head.querySelectorAll('button').forEach(bt => bt.onclick = (e) => {
         e.stopPropagation(); const a = bt.dataset.a;
+        if (a === 'cp') { copyRow(r); bt.textContent = 'Copied \u2713'; setTimeout(() => { bt.textContent = 'Copy'; }, 1500); return; }   // v417
         if (a === 'x') { rows.splice(i, 1); sel = -1; } else { const j = a === 'up' ? i - 1 : i + 1; if (j < 0 || j >= rows.length) return; [rows[i], rows[j]] = [rows[j], rows[i]]; sel = j; }
         drawList(); preview();
       });
@@ -1110,6 +1126,10 @@ function yardRow(y) {
     });
   };
   const NEW = { text: { type: 'text', text: '', font: 'Courier New', size: 45, boldness: 0, align: 'center', top: 0, bottom: 0 }, line: { type: 'line', style: 'dashes', thickness: 10, dash: 6, gap: 6, width: 100, align: 'center', top: 10, bottom: 10 }, logo: { type: 'logo', align: 'center', width: 70, top: 0, bottom: 10 }, barcode: { type: 'barcode', align: 'center', value: '', width: 75, height: 22, top: 5, bottom: 5 } };
+  // v417: Paste row — adds a copy of the copied row (any ticket, any yard) right after the open row, or at the end
+  const pasteBtn = row.querySelector('.yt-paste');
+  pasteBtn.onclick = () => { const c = getCopiedRow(); if (!c) return; const at = sel >= 0 && sel < rows.length ? sel + 1 : rows.length; rows.splice(at, 0, c); sel = at; drawList(); preview(); };
+  refreshPasteButtons(row);   // v417: this editor isn't on the page yet, so it is updated directly
   row.querySelectorAll('[data-add]').forEach(bt => bt.onclick = () => { rows.push(JSON.parse(JSON.stringify(NEW[bt.dataset.add]))); sel = rows.length - 1; drawList(); preview(); });
   [n, p, pt].forEach(x => x.addEventListener('input', preview));
   drawList(); setTimeout(preview, 60);   // after the row is on the page (the preview frame needs to exist first)
