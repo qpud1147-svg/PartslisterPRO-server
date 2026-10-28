@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Home v411</title>
+<title>PartsLister Pro Home v412</title>
 <!-- v400: yard tickets — divider styles (tiny dashes, dots, solid, double) with thickness, dash length, gap, width and position; mark one text row "This row has the date" ({date} there is the ticket's own day — tomorrow's for "Sell for tomorrow"); a print time per yard with a Randomize switch (adds 0–30 minutes, never earlier). -->
 <!-- v399: TICKET DESIGNER — each yard's ticket is a list of rows (text, divider, logo, barcode). Every text row has its own font (list or any font name), size 1–100, boldness 0–100 and position; the logo has size, position, a drop box and weathered / gravel / fuzzy / faded gray / spots looks (or one tap "Match sticker look"); the barcode is typed in (Code 128) with its own size and position. Every slider also has a number box. "Duplicate" copies a yard's whole ticket so you can change a few things instead of starting over. -->
 <!-- v389: yard tickets are sold tickets — real sale date and time, a ticket number and barcode, "Sell for tomorrow" advance tickets marked VALID FOR, {logo} and {big} tags anywhere, and Money made. The saved time and Randomize are gone. -->
@@ -203,7 +203,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v411</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v412</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -698,7 +698,9 @@ function gravelPixels(px, w, h, amount, ref, soft) {   // v407: soft = the gentl
   // const mag = a * w * 0.03 + 1;                                      // how far a grain can be thrown
   // const R = ref || w, chunk = Math.max(2, Math.round(R * (0.004 + 0.007 * a))), mag = a * R * 0.03 + 1;   // v405: grain size grows with the slider; mag = how far a grain can be thrown
   // v407: for text the slider is cubed (3–25% hardly touch the letters, 50% is an eighth of the full effect) and there is no built-in 1-pixel shove or single-pixel scatter — letters are only 2–3 dots thick, so those wrecked them at any setting
-  const e = soft ? a * a * a : a, R = ref || w, chunk = Math.max(2, Math.round(R * (0.004 + (soft ? 0.004 : 0.007) * e))), mag = e * R * 0.03 + (soft ? 0 : 1), jit = soft ? e * chunk : chunk;
+  // const e = soft ? a * a * a : a, R = ref || w, chunk = Math.max(2, Math.round(R * (0.004 + (soft ? 0.004 : 0.007) * e))), mag = e * R * 0.03 + (soft ? 0 : 1), jit = soft ? e * chunk : chunk;
+  // v412: the logo's gravel is about half as strong at 50% and almost nothing at 1–2% (before, even 1% shoved the edges by a pixel everywhere): the slider is raised to the 3.5th power for the big grains, and the small grit grows in step with the slider — a pixel moves with a chance equal to its shift, so it starts from zero
+  const e = soft ? a * a * a : Math.pow(a, 3.5), R = ref || w, chunk = Math.max(2, Math.round(R * (0.004 + (soft ? 0.004 : 0.007) * e))), mag = e * R * 0.03, jit = soft ? e * chunk : chunk * 2 * a;
   const src = new Uint8Array(w * h); for (let i = 0; i < w * h; i++) src[i] = px[i * 4] < 128 ? 1 : 0;
   const at = (x, y) => (x < 0 || y < 0 || x >= w || y >= h) ? 0 : src[y * w + x];
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
@@ -706,7 +708,8 @@ function gravelPixels(px, w, h, amount, ref, soft) {   // v407: soft = the gentl
     let sx = x + (wHash(bx, by, 21) - 0.5) * 2 * mag, sy = y + (wHash(bx, by, 22) - 0.5) * 2 * mag;   // each chunk has its own throw
     // sx += (wHash(x, y, 23) - 0.5) * chunk;  sy += (wHash(x, y, 24) - 0.5) * chunk;                       // plus a little single-pixel grit
     sx += (wHash(x, y, 23) - 0.5) * jit;  sy += (wHash(x, y, 24) - 0.5) * jit;                             // plus a little single-pixel grit (v407: scaled for text)
-    let v = at(Math.round(sx), Math.round(sy));
+    // let v = at(Math.round(sx), Math.round(sy));
+    let v = soft ? at(Math.round(sx), Math.round(sy)) : at(Math.floor(sx + wHash(x, y, 26)), Math.floor(sy + wHash(x, y, 27)));   // v412: the logo rounds at random so tiny shifts still happen, a few at a time
     if (v && e > 0.5 && wHash(bx, by, 25) < (e - 0.5) * 0.5) v = 0;   // v407: e = a for the logo, a³ for text   // at high settings some whole grains drop out, even in the middle
     const o = (y * w + x) * 4; px[o] = px[o + 1] = px[o + 2] = v ? 0 : 255; px[o + 3] = 255;
   }
@@ -723,6 +726,21 @@ function boxBlur(src, dst, w, h, r, horiz) {   // one running-sum pass
       if (rem >= 0) sum -= src[base + rem * stride];
     }
   }
+}
+// v412: an even, non-grid noise pattern ("blue noise", 64 x 64, repeated) for Lighter and Faded gray. Each number says when that spot switches on as the density rises, so dots are spread evenly instead of clumping the way plain random dots do.
+let blueTile = null;
+function getBlueTile() {
+  if (blueTile) return blueTile;
+  const N = 64, T = N * N, en = new Float32Array(T), rank = new Float32Array(T), used = new Uint8Array(T), RAD = 5;
+  for (let i = 0; i < T; i++) en[i] = wHash(i % N, (i / N) | 0, 41) * 1e-4;   // tiny random start so ties don't pick a direction
+  const ker = []; for (let dy = -RAD; dy <= RAD; dy++) for (let dx = -RAD; dx <= RAD; dx++) ker.push([dx, dy, Math.exp(-(dx * dx + dy * dy) / (2 * 1.5 * 1.5))]);
+  for (let k = 0; k < T; k++) {
+    let best = -1, bv = 1e9; for (let i = 0; i < T; i++) if (!used[i] && en[i] < bv) { bv = en[i]; best = i; }   // the emptiest spot
+    used[best] = 1; rank[best] = k / T;
+    const bx = best % N, by = (best / N) | 0;
+    for (const [dx, dy, g] of ker) en[((by + dy + N) % N) * N + ((bx + dx + N) % N)] += g;
+  }
+  return (blueTile = { N, rank });
 }
 function grayPixels(px, w, h, fuzzy, fade, spots, ref, lighter) {   // v406: lighter = less ink on top of faded gray (up to 85% less)   // blur → lighter ink → light pits → fine dots (Floyd–Steinberg), back to pure black & white
   const n = w * h; let dk = new Float32Array(n);   // darkness 0 (white) … 1 (black)
@@ -748,9 +766,11 @@ function grayPixels(px, w, h, fuzzy, fade, spots, ref, lighter) {   // v406: lig
     if (x + 1 < w) dk[i + 1] += e * 7 / 16;
     if (y + 1 < h) { if (x > 0) dk[i + w - 1] += e * 3 / 16; dk[i + w] += e * 5 / 16; if (x + 1 < w) dk[i + w + 1] += e / 16; }
   }
+  const bt = keep < 1 ? getBlueTile() : null;
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {   // v411: even random noise — every black dot has the same chance of staying, wherever it is
     const i = y * w + x; let v = dk[i] ? 0 : 255;
-    if (v === 0 && keep < 1 && wHash(x, y, 31) >= keep) v = 255;
+    // if (v === 0 && keep < 1 && wHash(x, y, 31) >= keep) v = 255;   // v411: plain random
+    if (v === 0 && keep < 1) { const rk = bt.rank[(y % bt.N) * bt.N + (x % bt.N)]; if (keep <= 0.5 ? rk >= keep : rk < 1 - keep) v = 255; }   // v412: blue noise — keeps (or removes, whichever is the smaller share) an evenly spread set of dots
     px[i * 4] = px[i * 4 + 1] = px[i * 4 + 2] = v; px[i * 4 + 3] = 255;
   }
 }
