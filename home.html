@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Home v410</title>
+<title>PartsLister Pro Home v411</title>
 <!-- v400: yard tickets — divider styles (tiny dashes, dots, solid, double) with thickness, dash length, gap, width and position; mark one text row "This row has the date" ({date} there is the ticket's own day — tomorrow's for "Sell for tomorrow"); a print time per yard with a Randomize switch (adds 0–30 minutes, never earlier). -->
 <!-- v399: TICKET DESIGNER — each yard's ticket is a list of rows (text, divider, logo, barcode). Every text row has its own font (list or any font name), size 1–100, boldness 0–100 and position; the logo has size, position, a drop box and weathered / gravel / fuzzy / faded gray / spots looks (or one tap "Match sticker look"); the barcode is typed in (Code 128) with its own size and position. Every slider also has a number box. "Duplicate" copies a yard's whole ticket so you can change a few things instead of starting over. -->
 <!-- v389: yard tickets are sold tickets — real sale date and time, a ticket number and barcode, "Sell for tomorrow" advance tickets marked VALID FOR, {logo} and {big} tags anywhere, and Money made. The saved time and Randomize are gone. -->
@@ -203,7 +203,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v410</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v411</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -731,7 +731,8 @@ function grayPixels(px, w, h, fuzzy, fade, spots, ref, lighter) {   // v406: lig
   const R = ref || w, r = Math.round(fuzzy / 100 * R * 0.012);   // v405
   if (r > 0) { let tmp = new Float32Array(n); for (let pass = 0; pass < 3; pass++) { boxBlur(dk, tmp, w, h, r, true); boxBlur(tmp, dk, w, h, r, false); } }
   // const f = 1 - 0.75 * fade / 100, sp = spots / 100;
-  const f = (1 - 0.75 * fade / 100) * (1 - 0.85 * (lighter || 0) / 100), sp = spots / 100;   // v406
+  // const f = (1 - 0.75 * fade / 100) * (1 - 0.85 * (lighter || 0) / 100), sp = spots / 100;   // v406
+  const keep = (1 - 0.75 * fade / 100) * (1 - 0.85 * (lighter || 0) / 100), f = 1, sp = spots / 100;   // v411: Faded gray and Lighter no longer dim the picture before the dithering (that made a regular grid, and one side of the logo lighter than the other) — they now remove dots at random afterwards
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
     const i = y * w + x; if (dk[i] < 0.02) continue;
     let v = dk[i] * f;
@@ -747,7 +748,11 @@ function grayPixels(px, w, h, fuzzy, fade, spots, ref, lighter) {   // v406: lig
     if (x + 1 < w) dk[i + 1] += e * 7 / 16;
     if (y + 1 < h) { if (x > 0) dk[i + w - 1] += e * 3 / 16; dk[i + w] += e * 5 / 16; if (x + 1 < w) dk[i + w + 1] += e / 16; }
   }
-  for (let i = 0; i < n; i++) { const v = dk[i] ? 0 : 255; px[i * 4] = px[i * 4 + 1] = px[i * 4 + 2] = v; px[i * 4 + 3] = 255; }
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {   // v411: even random noise — every black dot has the same chance of staying, wherever it is
+    const i = y * w + x; let v = dk[i] ? 0 : 255;
+    if (v === 0 && keep < 1 && wHash(x, y, 31) >= keep) v = 255;
+    px[i * 4] = px[i * 4 + 1] = px[i * 4 + 2] = v; px[i * 4 + 3] = 255;
+  }
 }
 const hasLook = (r) => r.weather > 0 || r.gravel > 0 || r.fuzzy > 0 || r.fade > 0 || r.spots > 0 || r.lighter > 0 || r.boldness > 0 || r.thin > 0;   // v406: + lighter; v409: + boldness, thinner
 // v410: the logo is shrunk to the printer's own dots (8 per mm) BEFORE the looks are applied. Before, a big logo was dithered at its full size and the printer then averaged the tiny dots back into gray and rounded them to black or white — so "Lighter" did nothing at 40 and wiped the logo out at 60.
