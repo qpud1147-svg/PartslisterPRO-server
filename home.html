@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Home v417</title>
+<title>PartsLister Pro Home v418</title>
 <!-- v400: yard tickets — divider styles (tiny dashes, dots, solid, double) with thickness, dash length, gap, width and position; mark one text row "This row has the date" ({date} there is the ticket's own day — tomorrow's for "Sell for tomorrow"); a print time per yard with a Randomize switch (adds 0–30 minutes, never earlier). -->
 <!-- v399: TICKET DESIGNER — each yard's ticket is a list of rows (text, divider, logo, barcode). Every text row has its own font (list or any font name), size 1–100, boldness 0–100 and position; the logo has size, position, a drop box and weathered / gravel / fuzzy / faded gray / spots looks (or one tap "Match sticker look"); the barcode is typed in (Code 128) with its own size and position. Every slider also has a number box. "Duplicate" copies a yard's whole ticket so you can change a few things instead of starting over. -->
 <!-- v389: yard tickets are sold tickets — real sale date and time, a ticket number and barcode, "Sell for tomorrow" advance tickets marked VALID FOR, {logo} and {big} tags anywhere, and Money made. The saved time and Randomize are gone. -->
@@ -203,7 +203,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v417</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v418</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -876,7 +876,7 @@ async function textImage(r, w) {   // v409: each row's own looks (the whole-tick
   if (cur) lines.push(cur);
   const H = Math.max(1, Math.ceil(lines.length * lh)), c = document.createElement('canvas'); c.width = W; c.height = H;
   const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, W, H);
-  x.font = font; if (ls) x.letterSpacing = ls.toFixed(2) + 'px'; x.textBaseline = 'middle';   // v415 x.textAlign = r.align === 'left' ? 'left' : r.align === 'right' ? 'right' : 'center'; x.lineJoin = 'round';
+  x.font = font; if (ls) x.letterSpacing = ls.toFixed(2) + 'px'; x.textBaseline = 'middle'; x.textAlign = r.align === 'left' ? 'left' : r.align === 'right' ? 'right' : 'center'; x.lineJoin = 'round';   // v415: letter spacing; v418: my v415 comment had swallowed the text-align part of this line, which pushed every text row with a look to the right
   // const tx = r.align === 'left' ? 0 : r.align === 'right' ? W : W / 2;
   const tx = r.align === 'left' ? 0 : r.align === 'right' ? W : W / 2 + ls / 2;   // v415: the space after the last letter is not counted when centering
   lines.forEach((ln, i) => {
