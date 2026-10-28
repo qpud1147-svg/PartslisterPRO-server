@@ -1,4 +1,4 @@
-// PartsLister Pro server — v418
+// PartsLister Pro server — v419
 // v409: yard tickets — the whole-ticket text look and the Look checkboxes are gone; every text row and the logo each have the full set of sliders (boldness, thinner, lighter, weathered, gravel, fuzzy, faded gray, spots).
 // v408: yard tickets — each text row has a Look checkbox (row.useLook, default on): the whole-ticket text look only changes the rows that are checked.
 // v406: yard tickets — a whole-ticket Boldness for the text (design.textLook.bold) and a Lighter slider for the logo (less ink).
@@ -3973,7 +3973,8 @@ function cleanDesign(d) {
   // return { rows: rows && rows.length ? rows : null, printTime, randomize: !!d.randomize, textLook };   (v405–v408)
   // v409: no whole-ticket text look any more. An old ticket that has one keeps it until it is saved again — the page folds it into that ticket's rows.
   const legacy = Object.keys(textLook).some(k => textLook[k] > 0);
-  return Object.assign({ rows: rows && rows.length ? rows : null, printTime, randomize: !!d.randomize }, legacy ? { textLook } : {});   // rows null = not redesigned yet (the page builds rows from the old ticket text)
+  const smv = parseFloat(d.sideMargin), sideMargin = Number.isFinite(smv) ? Math.max(0, Math.min(10, Math.round(smv * 2) / 2)) : null;   // v419: side margin in mm (blank = the default)
+  return Object.assign({ rows: rows && rows.length ? rows : null, printTime, randomize: !!d.randomize }, legacy ? { textLook } : {}, sideMargin === null ? {} : { sideMargin });   // rows null = not redesigned yet (the page builds rows from the old ticket text)
 }
 // v400: the time printed on a ticket. No set time → null (the real time sold). Randomize adds 0–30 minutes, never earlier, never past 11:59 PM.
 function pickTicketTime(printTime, randomize, rand = Math.random) {
@@ -5254,5 +5255,6 @@ setupDatabase()
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v415 listening on ' + PORT)))   // v416
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v416 listening on ' + PORT)))   // v417
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v417 listening on ' + PORT)))   // v418
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v418 listening on ' + PORT)))
+  // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v418 listening on ' + PORT)))   // v419
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v419 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });

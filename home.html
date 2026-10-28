@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Home v418</title>
+<title>PartsLister Pro Home v419</title>
 <!-- v400: yard tickets — divider styles (tiny dashes, dots, solid, double) with thickness, dash length, gap, width and position; mark one text row "This row has the date" ({date} there is the ticket's own day — tomorrow's for "Sell for tomorrow"); a print time per yard with a Randomize switch (adds 0–30 minutes, never earlier). -->
 <!-- v399: TICKET DESIGNER — each yard's ticket is a list of rows (text, divider, logo, barcode). Every text row has its own font (list or any font name), size 1–100, boldness 0–100 and position; the logo has size, position, a drop box and weathered / gravel / fuzzy / faded gray / spots looks (or one tap "Match sticker look"); the barcode is typed in (Code 128) with its own size and position. Every slider also has a number box. "Duplicate" copies a yard's whole ticket so you can change a few things instead of starting over. -->
 <!-- v389: yard tickets are sold tickets — real sale date and time, a ticket number and barcode, "Sell for tomorrow" advance tickets marked VALID FOR, {logo} and {big} tags anywhere, and Money made. The saved time and Randomize are gone. -->
@@ -203,7 +203,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v418</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v419</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -598,9 +598,12 @@ function webFontImport(rows) {
   return fam.length ? "@import url('https://fonts.googleapis.com/css2?family=" + fam.join('&family=') + "&display=swap');" : '';
 }
 function ptOf(size, w) { return (3 + (Math.max(1, Math.min(100, +size || 45)) - 1) * 0.19) * (w === 58 ? 0.82 : 1); }   // size 1–100 → points (45 ≈ 11 pt, 70 ≈ 16 pt on 80 mm)
-function ticketCSS(w, rows) {
+// v419: SIDE MARGIN per ticket (mm, 0–10; blank = the old 4 mm, 2 mm on 58 mm paper). A receipt printer can't print the last few millimetres of the paper itself, so this margin comes on top of that and the text sits further in on paper than in the preview — lower it to bring text closer to the edge.
+const padOf = (design, w) => { const m = design && design.sideMargin; return (m === null || m === undefined || m === '' || isNaN(+m)) ? (w === 58 ? 2 : 4) : Math.max(0, Math.min(10, +m)); };
+const withPad = (rows, pad) => (rows || []).map(r => Object.assign({}, r, { _pad: pad }));   // each row carries the margin so its picture is drawn at the right width
+function ticketCSS(w, rows, pad) {
   return webFontImport(rows) + '@page{size:' + w + 'mm auto;margin:0}html,body{margin:0;padding:0;background:#fff;color:#000}'
-    + 'body{width:' + w + 'mm;box-sizing:border-box;padding:3mm ' + (w === 58 ? 2 : 4) + 'mm 6mm;line-height:1.3}'
+    + 'body{width:' + w + 'mm;box-sizing:border-box;padding:3mm ' + (pad === undefined ? (w === 58 ? 2 : 4) : pad) + 'mm 6mm;line-height:1.3}'
     + '.l{white-space:pre-wrap;word-break:break-word}hr{border:none;border-top:1px dashed #000}img.logo,svg.bc,img.tl{display:block}';   // v405: img.tl = a text row drawn as a picture (text look)
 }
 // v399: turn an old-style ticket (text with {logo} {big} {barcode} tags) into rows, so existing yards keep their look
@@ -810,7 +813,7 @@ function weatherLogo(src, r, pw) {   // pw = the paper width in mm
   return new Promise((resolve) => {
     const wv = parseInt(r.weather, 10) || 0, gr = parseInt(r.gravel, 10) || 0, fz = parseInt(r.fuzzy, 10) || 0, fd = parseInt(r.fade, 10) || 0, sp = parseInt(r.spots, 10) || 0, lt = parseInt(r.lighter, 10) || 0, bd = parseInt(r.boldness, 10) || 0, th = parseInt(r.thin, 10) || 0;   // v406: + lighter; v409: + boldness, thinner
     if (!src || !(wv > 0 || gr > 0 || fz > 0 || fd > 0 || sp > 0 || lt > 0 || bd > 0 || th > 0)) return resolve(src);
-    const padmm = pw === 58 ? 2 : 4, tw = Math.max(40, Math.round(((pw || 80) - 2 * padmm) * TEXT_DPMM * Math.max(1, Math.min(100, +r.width || 70)) / 100));   // v410: the logo's width in printer dots
+    const padmm = r._pad !== undefined ? r._pad : (pw === 58 ? 2 : 4), tw = Math.max(40, Math.round(((pw || 80) - 2 * padmm) * TEXT_DPMM * Math.max(1, Math.min(100, +r.width || 70)) / 100));   // v410: the logo's width in printer dots
     const key = [wv, gr, fz, fd, sp, lt, bd, th, tw, src.length, src.slice(-60)].join('|');
     if (weatherCache.has(key)) return resolve(weatherCache.get(key));
     const img = new Image();
@@ -854,12 +857,12 @@ const textCache = new Map();
 async function textImage(r, w) {   // v409: each row's own looks (the whole-ticket look is gone)
   const text = String(r.text || '').trim(); if (!text) return null;
   // const pad = w === 58 ? 2 : 4, W = Math.round((w - 2 * pad) * TEXT_DPMM);
-  const pad = w === 58 ? 2 : 4, em = edgeMm(r, w), W = Math.round((w - 2 * pad + 2 * em) * TEXT_DPMM);   // v415: + reaching into the margin
+  const pad = r._pad !== undefined ? r._pad : (w === 58 ? 2 : 4), em = edgeMm(r, w), W = Math.round((w - 2 * pad + 2 * em) * TEXT_DPMM);   // v415: + reaching into the margin
   const px = ptOf(r.size, w) * 203 / 72, lh = px * 1.3, ls = lsEm(r) * px;   // v415: ls = letter spacing in dots   // 1 pt = 1/72 in; the ticket's line height is 1.3
   // const b = Math.max(0, Math.min(100, r.boldness !== undefined ? (+r.boldness || 0) : (r.bold ? 75 : 0))), l = Math.max(0, Math.min(100, +r.lighter || 0)), net = b - l;
   const b = Math.max(0, Math.min(100, r.boldness !== undefined ? (+r.boldness || 0) : (r.bold ? 75 : 0))), l = Math.max(0, Math.min(100, +r.thin || 0)), net = b - l;   // v409
   const wv = +r.weather || 0, gr = +r.gravel || 0, fz = +r.fuzzy || 0, fd = +r.fade || 0, sp = +r.spots || 0, lt = +r.lighter || 0;
-  const key = [text, r.font, r.size, net, r.align, w, wv, gr, fz, fd, sp, lt, ls, em].join('|');
+  const key = [text, r.font, r.size, net, r.align, w, wv, gr, fz, fd, sp, lt, ls, em, pad].join('|');
   if (textCache.has(key)) return textCache.get(key);
   await ensureFont(r.font);
   const font = (net >= 75 ? '700 ' : '400 ') + px.toFixed(2) + 'px ' + fontStack(r.font);
@@ -965,9 +968,9 @@ async function printTicket(id, btn, advance) {   // v389: advance = sold today, 
     if (d.advance && !rows.some(r => r.type === 'text' && (r.hasDate || /\{valid\}/.test(r.text || '')))) rows =   /* v400: a row marked as the date already shows tomorrow's date */ rows.concat([{ type: 'text', text: 'VALID FOR {valid}', font: 'Courier New', size: 70, boldness: 75, align: 'center', top: 2, bottom: 0 }]);
     // rows = await applyWeather(fillRows(rows, d.vals), d.logo);   // v399: weathered logo
     // rows = await applyTextLook(await applyWeather(fillRows(rows, d.vals), d.logo), d.design && d.design.textLook, w);   // v405–v408
-    rows = await applyTextLook(await applyWeather(fillRows(foldTextLook(d.design, rows), d.vals), d.logo, w), w);   // v399: weathered logo; v409: each text row's own looks (an old whole-ticket look is folded in)
+    rows = await applyTextLook(await applyWeather(withPad(fillRows(foldTextLook(d.design, rows), d.vals), padOf(d.design, w)), d.logo, w), w);   // v399: weathered logo; v409: each text row's own looks (an old whole-ticket look is folded in)
     // v414: when printing, the logo and text pictures are never smoothed if the printer driver resizes them — smoothing turned the fine dots into gray that the printer then rounded to black or white, which is what lightened only one side of the logo
-    doc.write('<!doctype html><html><head><meta charset="utf-8"><title>Ticket</title><style>' + ticketCSS(w, rows) + 'img.logo,img.tl{image-rendering:pixelated;image-rendering:crisp-edges}' + '</style></head><body>' + ticketHTML(rows, d.logo, d.number, w) + '</body></html>');
+    doc.write('<!doctype html><html><head><meta charset="utf-8"><title>Ticket</title><style>' + ticketCSS(w, rows, padOf(d.design, w)) + 'img.logo,img.tl{image-rendering:pixelated;image-rendering:crisp-edges}' + '</style></head><body>' + ticketHTML(rows, d.logo, d.number, w) + '</body></html>');
     doc.close();
     // setTimeout(() => { … f.print(); }, 150);
     const fw = document.getElementById('yt-frame').contentWindow;   // v387: wait for the logo to load before printing
@@ -1004,7 +1007,7 @@ function yardRow(y) {
   const NAMES = { text: 'Text', line: 'Divider', logo: 'Logo', barcode: 'Barcode' };
   row.innerHTML = '<div><div class="yt-row" style="margin-bottom:8px;"><div style="flex:1"><label>Yard name</label><input class="n" style="width:100%"></div>'
     + '<div><label>Ticket price</label><input class="p" type="number" min="0" step="0.01" style="width:100px"></div></div>'
-    + '<div class="yt-row" style="margin-bottom:8px;"><div><label>Print time (blank = the real time sold)</label><input class="pt" type="time" style="width:140px"></div><label class="yt-chk"><input type="checkbox" class="rnd"> Randomize (up to 30 minutes later, never earlier)</label></div>'
+    + '<div class="yt-row" style="margin-bottom:8px;"><div><label>Print time (blank = the real time sold)</label><input class="pt" type="time" style="width:140px"></div><div><label title="Space from the printable edge of the paper to the text. Blank = 4 mm (2 mm on 58 mm paper). The printer also cannot print the last few mm of the paper, so 0 puts text at the very limit of what it can print.">Side margin (mm)</label><input class="sm" type="number" min="0" max="10" step="0.5" placeholder="4" style="width:80px"></div><label class="yt-chk"><input type="checkbox" class="rnd"> Randomize (up to 30 minutes later, never earlier)</label></div>'
     // + '<details class="yt-look">…whole-ticket text look…</details>'   (v405–v408, removed in v409)
     + '<label>Ticket rows</label><div class="yt-rows"></div>'
     + '<div class="yt-add"><button type="button" class="btn btn-secondary btn-sm" data-add="text">+ Text</button><button type="button" class="btn btn-secondary btn-sm" data-add="line">+ Divider</button><button type="button" class="btn btn-secondary btn-sm" data-add="logo">+ Logo</button><button type="button" class="btn btn-secondary btn-sm" data-add="barcode">+ Barcode</button><button type="button" class="btn btn-secondary btn-sm yt-paste" title="Add the row you copied, with all its settings">Paste row</button></div>'
@@ -1014,16 +1017,18 @@ function yardRow(y) {
   n.value = y.name || ''; p.value = y.price !== undefined ? Number(y.price).toFixed(2) : '';
   const pt = row.querySelector('.pt'), rnd = row.querySelector('.rnd');   // v400: print time + randomizer
   pt.value = (y.design && y.design.printTime) || ''; rnd.checked = !!(y.design && y.design.randomize);
+  const sm = row.querySelector('.sm'); sm.value = (y.design && y.design.sideMargin !== undefined && y.design.sideMargin !== null) ? y.design.sideMargin : '';   // v419
+  sm.oninput = () => preview();
   const paper = () => parseInt(document.getElementById('yt-width').value, 10) === 58 ? 58 : 80;
   let pvTok = 0;
   const preview = async () => {
     const tok = ++pvTok, w = paper();
     // const shown = await applyWeather(fillRows(rows, sampleVals({ name: n.value, price: parseFloat(p.value) || 0, printTime: pt.value })), logo);   // v399
-    const shown = await applyTextLook(await applyWeather(fillRows(rows, sampleVals({ name: n.value, price: parseFloat(p.value) || 0, printTime: pt.value })), logo, w), w);   // v399; v409: each text row's own looks
+    const shown = await applyTextLook(await applyWeather(withPad(fillRows(rows, sampleVals({ name: n.value, price: parseFloat(p.value) || 0, printTime: pt.value })), padOf({ sideMargin: sm.value }, w)), logo, w), w);   // v399; v409: each text row's own looks
     const doc = fr.contentDocument; if (!doc || tok !== pvTok) return;
     fr.style.width = Math.round(w * 3.7795) + 'px';   // real paper width on screen
     doc.open();
-    doc.write('<!doctype html><html><head><meta charset="utf-8"><style>' + ticketCSS(w, shown) + '</style></head><body>' + ticketHTML(shown, logo, '000123', w) + '</body></html>');
+    doc.write('<!doctype html><html><head><meta charset="utf-8"><style>' + ticketCSS(w, shown, padOf({ sideMargin: sm.value }, w)) + '</style></head><body>' + ticketHTML(shown, logo, '000123', w) + '</body></html>');
     doc.close();
     const fit = () => { fr.style.height = doc.documentElement.scrollHeight + 'px'; };
     fit(); doc.querySelectorAll('img').forEach(i => { i.onload = fit; });
@@ -1135,14 +1140,14 @@ function yardRow(y) {
   drawList(); setTimeout(preview, 60);   // after the row is on the page (the preview frame needs to exist first)
   row.querySelector('.s').onclick = async () => {
     const lg = rows.find(r => r.type === 'logo');
-    const r = await fetch('/api/tickets/yards', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ id: y.id || null, name: n.value, price: p.value, template: y.template || tickets.defaultTemplate, logoSize: lg ? lg.width : 70, design: { rows, printTime: pt.value, randomize: rnd.checked } }, logoChanged ? { logo: logo || '' } : {})) });   // v399: + rows
+    const r = await fetch('/api/tickets/yards', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ id: y.id || null, name: n.value, price: p.value, template: y.template || tickets.defaultTemplate, logoSize: lg ? lg.width : 70, design: { rows, printTime: pt.value, randomize: rnd.checked, sideMargin: sm.value } }, logoChanged ? { logo: logo || '' } : {})) });   // v399: + rows
     const res = await r.json().catch(() => ({}));
     if (!r.ok) { alert(res.error || 'Couldn\u2019t save'); return; }
     pageCache.live(); await loadTickets(); drawYardEditor();
   };
   row.querySelector('.dup').onclick = async () => {   // v399: copy this yard's whole ticket (what you see now, saved or not) as a new yard
     const lg = rows.find(r => r.type === 'logo');
-    const r = await fetch('/api/tickets/yards', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: null, name: ((n.value || '').trim() || 'Yard').slice(0, 74) + ' copy', price: p.value, template: y.template || tickets.defaultTemplate, logoSize: lg ? lg.width : 70, design: { rows, printTime: pt.value, randomize: rnd.checked }, logo: logo || '' }) });
+    const r = await fetch('/api/tickets/yards', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: null, name: ((n.value || '').trim() || 'Yard').slice(0, 74) + ' copy', price: p.value, template: y.template || tickets.defaultTemplate, logoSize: lg ? lg.width : 70, design: { rows, printTime: pt.value, randomize: rnd.checked, sideMargin: sm.value }, logo: logo || '' }) });
     const res = await r.json().catch(() => ({}));
     if (!r.ok) { alert(res.error || 'Couldn\u2019t duplicate'); return; }
     pageCache.live(); await loadTickets(); drawYardEditor();
