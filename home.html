@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Home v415</title>
+<title>PartsLister Pro Home v416</title>
 <!-- v400: yard tickets — divider styles (tiny dashes, dots, solid, double) with thickness, dash length, gap, width and position; mark one text row "This row has the date" ({date} there is the ticket's own day — tomorrow's for "Sell for tomorrow"); a print time per yard with a Randomize switch (adds 0–30 minutes, never earlier). -->
 <!-- v399: TICKET DESIGNER — each yard's ticket is a list of rows (text, divider, logo, barcode). Every text row has its own font (list or any font name), size 1–100, boldness 0–100 and position; the logo has size, position, a drop box and weathered / gravel / fuzzy / faded gray / spots looks (or one tap "Match sticker look"); the barcode is typed in (Code 128) with its own size and position. Every slider also has a number box. "Duplicate" copies a yard's whole ticket so you can change a few things instead of starting over. -->
 <!-- v389: yard tickets are sold tickets — real sale date and time, a ticket number and barcode, "Sell for tomorrow" advance tickets marked VALID FOR, {logo} and {big} tags anywhere, and Money made. The saved time and Randomize are gone. -->
@@ -203,7 +203,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v415</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v416</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -633,7 +633,8 @@ function dividerHTML(r, mg, mm) {
 }
 // v415: Letter spacing slider (−30…100 → −0.15…0.5 em) and Reach the edges slider (0…100 → up to the whole side margin: 4 mm, or 2 mm on 58 mm paper)
 const lsEm = (r) => { const v = Math.max(-30, Math.min(100, +r.spacing || 0)); return v ? +(v * 0.005).toFixed(3) : 0; };
-const edgeMm = (r, w) => { const v = Math.max(0, Math.min(100, +r.edge || 0)); return v ? +(v / 100 * (w === 58 ? 2 : 4)).toFixed(2) : 0; };
+// const edgeMm = (r, w) => { const v = Math.max(0, Math.min(100, +r.edge || 0)); return v ? +(v / 100 * (w === 58 ? 2 : 4)).toFixed(2) : 0; };   // v415: 100 = the whole side margin (printed on the paper's very edge — shifted the whole receipt)
+const edgeMm = (r, w) => { const v = Math.max(0, Math.min(100, +r.edge || 0)); return v ? +(v / 100 * (w === 58 ? 1 : 2)).toFixed(2) : 0; };   // v416: 100 = half the side margin (2 mm each side, 1 mm on 58 mm paper), so the row stays inside what the printer can print
 function ticketHTML(rows, logo, number, w) {
   const mg = (a) => a === 'left' ? 'margin-left:0;margin-right:auto;' : a === 'right' ? 'margin-left:auto;margin-right:0;' : 'margin-left:auto;margin-right:auto;';
   const mm = (v) => ((+v || 0) * 0.2).toFixed(1) + 'mm';   // 0–100 → 0–20 mm
@@ -1059,7 +1060,7 @@ function yardRow(y) {
       if (i === sel) {
         const body = document.createElement('div'); body.className = 'yt-rb';
         let html = '<div class="yt-grid">';
-        if (r.type === 'text') html += '<div><label>Font</label><select class="fsel">' + Object.keys(FONT_STACKS).map(f => '<option value="' + f + '"' + (r.font === f ? ' selected' : '') + '>' + f + '</option>').join('') + '<option value="__custom"' + (FONT_STACKS[r.font] ? '' : ' selected') + '>Other (type a font name)\u2026</option></select><input class="fcus" maxlength="40" placeholder="Font name on the printing computer" style="margin-top:4px;' + (FONT_STACKS[r.font] ? 'display:none' : '') + '" value="' + (FONT_STACKS[r.font] ? '' : esc(r.font || '')) + '"></div>' + pick('align', 'Position', AL, r) + sl('size', 'Text size', 1, r) + sl('boldness', 'Boldness (0 = normal)', 0, r) + sl('spacing', 'Letter spacing (0 = normal, below 0 squeezes)', 0, r, -30) + sl('edge', 'Reach the edges (0 = normal margin)', 0, r) + lookSl(r) + '<label class="yt-chk" style="grid-column:1/-1"><input type="checkbox" data-k="hasDate"' + (r.hasDate ? ' checked' : '') + '> This row has the date</label><div class="yt-note" style="grid-column:1/-1;margin-top:-4px">The date fills in when you sell a ticket. Type {date} where you want it in this row (like "Date: {date}"); if you leave it out, the date goes at the end of the row. "Sell for tomorrow" tickets show tomorrow\u2019s date here. Only one row can have it.</div>';   // v400
+        if (r.type === 'text') html += '<div><label>Font</label><select class="fsel">' + Object.keys(FONT_STACKS).map(f => '<option value="' + f + '"' + (r.font === f ? ' selected' : '') + '>' + f + '</option>').join('') + '<option value="__custom"' + (FONT_STACKS[r.font] ? '' : ' selected') + '>Other (type a font name)\u2026</option></select><input class="fcus" maxlength="40" placeholder="Font name on the printing computer" style="margin-top:4px;' + (FONT_STACKS[r.font] ? 'display:none' : '') + '" value="' + (FONT_STACKS[r.font] ? '' : esc(r.font || '')) + '"></div>' + pick('align', 'Position', AL, r) + sl('size', 'Text size', 1, r) + sl('boldness', 'Boldness (0 = normal)', 0, r) + lookSl(r) + '<label class="yt-chk" style="grid-column:1/-1"><input type="checkbox" data-k="hasDate"' + (r.hasDate ? ' checked' : '') + '> This row has the date</label><div class="yt-note" style="grid-column:1/-1;margin-top:-4px">The date fills in when you sell a ticket. Type {date} where you want it in this row (like "Date: {date}"); if you leave it out, the date goes at the end of the row. "Sell for tomorrow" tickets show tomorrow\u2019s date here. Only one row can have it.</div>';   // v400
         // if (r.type === 'logo') html += pick('align', 'Position', AL, r) + sl('width', 'Logo size', 1, r) + sl('weather', 'Weathered look', 0, r) + sl('gravel', 'Gravel (chunky grit)', 0, r) + sl('fuzzy', 'Fuzzy', 0, r) + sl('fade', 'Faded gray', 0, r) + sl('spots', 'Spots', 0, r) + sl('lighter', 'Lighter (less ink)', 0, r);   // v406
         if (r.type === 'logo') html += pick('align', 'Position', AL, r) + sl('width', 'Logo size', 1, r) + sl('boldness', 'Boldness (0 = normal)', 0, r) + lookSl(r);   // v409: the same looks as the text rows
         if (r.type === 'barcode') html += '<div><label>Barcode numbers (blank = each ticket\u2019s own number)</label><input data-k="value" maxlength="40" placeholder="e.g. 12345678" value="' + esc(r.value || '') + '"></div>' + pick('align', 'Position', AL, r) + sl('width', 'Barcode width', 1, r) + sl('height', 'Barcode height', 1, r);
@@ -1067,7 +1068,8 @@ function yardRow(y) {
         // else html += sl('top', 'Space above', 0, r) + sl('bottom', 'Space below', 0, r);   (v399)
         if (r.type === 'line') { const st = r.style || 'dashes'; html += pick('style', 'Style', [['dashes', 'Tiny dashes'], ['dots', 'Dots'], ['solid', 'Solid line'], ['double', 'Double line']], r) + pick('align', 'Position', AL, r) + sl('thickness', 'Thickness', 1, r) + (st === 'dashes' ? sl('dash', 'Dash length', 1, r) : '') + (st === 'dashes' || st === 'dots' ? sl('gap', 'Gap between marks', 1, r) : '') + sl('width', 'Line width', 1, r); }   // v400
         // html += sl('top', 'Space above', 0, r) + sl('bottom', 'Space below', 0, r);   (v404)
-        html += sl('top', 'Space above', 0, r, -15) + sl('bottom', 'Space below', 0, r);   // v404: Space above can go negative (−15 = pulls the row up 3 mm, the ticket's top padding)
+        // v416: Letter spacing and Reach the edges sit with Space above / Space below
+        html += sl('top', 'Space above', 0, r, -15) + sl('bottom', 'Space below', 0, r) + (r.type === 'text' ? sl('spacing', 'Letter spacing (0 = normal, below 0 squeezes)', 0, r, -30) + sl('edge', 'Reach the edges (0 = normal margin, 100 = 2 mm wider each side)', 0, r) : '');   // v404: Space above can go negative (−15 = pulls the row up 3 mm, the ticket's top padding)
         html += '</div>';
         if (r.type === 'logo') html = '<div class="yt-drop"><div>' + (logo ? '<img alt="" src="' + esc(logo) + '">' : '') + 'Drop your logo picture here</div></div>'
           + '<div class="yt-logo-row" style="margin:0 0 10px"><button type="button" class="btn btn-secondary btn-sm lu">Upload logo file</button><button type="button" class="btn btn-secondary btn-sm stk">Match sticker look</button>' + (logo ? '<button type="button" class="btn btn-secondary btn-sm lr">Remove logo</button>' : '') + '<input type="file" class="lf" accept="image/*" style="display:none"></div>' + html;
