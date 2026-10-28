@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Home v419</title>
+<title>PartsLister Pro Home v420</title>
 <!-- v400: yard tickets — divider styles (tiny dashes, dots, solid, double) with thickness, dash length, gap, width and position; mark one text row "This row has the date" ({date} there is the ticket's own day — tomorrow's for "Sell for tomorrow"); a print time per yard with a Randomize switch (adds 0–30 minutes, never earlier). -->
 <!-- v399: TICKET DESIGNER — each yard's ticket is a list of rows (text, divider, logo, barcode). Every text row has its own font (list or any font name), size 1–100, boldness 0–100 and position; the logo has size, position, a drop box and weathered / gravel / fuzzy / faded gray / spots looks (or one tap "Match sticker look"); the barcode is typed in (Code 128) with its own size and position. Every slider also has a number box. "Duplicate" copies a yard's whole ticket so you can change a few things instead of starting over. -->
 <!-- v389: yard tickets are sold tickets — real sale date and time, a ticket number and barcode, "Sell for tomorrow" advance tickets marked VALID FOR, {logo} and {big} tags anywhere, and Money made. The saved time and Randomize are gone. -->
@@ -203,7 +203,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v419</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v420</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -674,12 +674,14 @@ function ticketHTML(rows, logo, number, w) {
 //   return (rows || []).map(r => r.type === 'text' ? Object.assign({}, r, { text: String(r.text || '').replace(/\{(yard|date|time|price|number|valid)\}/g, (m, k) => vals[k]) }) : r);
 // }   (v399)
 // v400: the row marked "has the date" shows the ticket's own day for {date} (tomorrow's date for a "Sell for tomorrow" ticket); with no {date} in it, the date goes on the end
-function fillRows(rows, vals) {
+// v420: withTime = the ticket has a Print time filled in — then the row marked as the date also shows that time after the date (unless the row already has {time} in it)
+function fillRows(rows, vals, withTime) {
   return (rows || []).map(r => {
     if (r.type !== 'text') return r;
     let t = String(r.text || '');
     const V = r.hasDate ? Object.assign({}, vals, { date: vals.ticketDate || vals.date, valid: vals.ticketDate || vals.valid }) : vals;
     if (r.hasDate && !/\{(date|valid)\}/.test(t)) t = (t ? t + ' ' : '') + '{date}';
+    if (r.hasDate && withTime && !/\{time\}/.test(t)) t += ' {time}';   // v420
     return Object.assign({}, r, { text: t.replace(/\{(yard|date|time|price|number|valid)\}/g, (m, k) => V[k]) });
   });
 }
@@ -968,7 +970,7 @@ async function printTicket(id, btn, advance) {   // v389: advance = sold today, 
     if (d.advance && !rows.some(r => r.type === 'text' && (r.hasDate || /\{valid\}/.test(r.text || '')))) rows =   /* v400: a row marked as the date already shows tomorrow's date */ rows.concat([{ type: 'text', text: 'VALID FOR {valid}', font: 'Courier New', size: 70, boldness: 75, align: 'center', top: 2, bottom: 0 }]);
     // rows = await applyWeather(fillRows(rows, d.vals), d.logo);   // v399: weathered logo
     // rows = await applyTextLook(await applyWeather(fillRows(rows, d.vals), d.logo), d.design && d.design.textLook, w);   // v405–v408
-    rows = await applyTextLook(await applyWeather(withPad(fillRows(foldTextLook(d.design, rows), d.vals), padOf(d.design, w)), d.logo, w), w);   // v399: weathered logo; v409: each text row's own looks (an old whole-ticket look is folded in)
+    rows = await applyTextLook(await applyWeather(withPad(fillRows(foldTextLook(d.design, rows), d.vals, !!(d.design && d.design.printTime)), padOf(d.design, w)), d.logo, w), w);   // v399: weathered logo; v409: each text row's own looks (an old whole-ticket look is folded in)
     // v414: when printing, the logo and text pictures are never smoothed if the printer driver resizes them — smoothing turned the fine dots into gray that the printer then rounded to black or white, which is what lightened only one side of the logo
     doc.write('<!doctype html><html><head><meta charset="utf-8"><title>Ticket</title><style>' + ticketCSS(w, rows, padOf(d.design, w)) + 'img.logo,img.tl{image-rendering:pixelated;image-rendering:crisp-edges}' + '</style></head><body>' + ticketHTML(rows, d.logo, d.number, w) + '</body></html>');
     doc.close();
@@ -1024,7 +1026,7 @@ function yardRow(y) {
   const preview = async () => {
     const tok = ++pvTok, w = paper();
     // const shown = await applyWeather(fillRows(rows, sampleVals({ name: n.value, price: parseFloat(p.value) || 0, printTime: pt.value })), logo);   // v399
-    const shown = await applyTextLook(await applyWeather(withPad(fillRows(rows, sampleVals({ name: n.value, price: parseFloat(p.value) || 0, printTime: pt.value })), padOf({ sideMargin: sm.value }, w)), logo, w), w);   // v399; v409: each text row's own looks
+    const shown = await applyTextLook(await applyWeather(withPad(fillRows(rows, sampleVals({ name: n.value, price: parseFloat(p.value) || 0, printTime: pt.value }), !!pt.value), padOf({ sideMargin: sm.value }, w)), logo, w), w);   // v399; v409: each text row's own looks
     const doc = fr.contentDocument; if (!doc || tok !== pvTok) return;
     fr.style.width = Math.round(w * 3.7795) + 'px';   // real paper width on screen
     doc.open();
