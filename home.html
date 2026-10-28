@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Home v412</title>
+<title>PartsLister Pro Home v413</title>
 <!-- v400: yard tickets — divider styles (tiny dashes, dots, solid, double) with thickness, dash length, gap, width and position; mark one text row "This row has the date" ({date} there is the ticket's own day — tomorrow's for "Sell for tomorrow"); a print time per yard with a Randomize switch (adds 0–30 minutes, never earlier). -->
 <!-- v399: TICKET DESIGNER — each yard's ticket is a list of rows (text, divider, logo, barcode). Every text row has its own font (list or any font name), size 1–100, boldness 0–100 and position; the logo has size, position, a drop box and weathered / gravel / fuzzy / faded gray / spots looks (or one tap "Match sticker look"); the barcode is typed in (Code 128) with its own size and position. Every slider also has a number box. "Duplicate" copies a yard's whole ticket so you can change a few things instead of starting over. -->
 <!-- v389: yard tickets are sold tickets — real sale date and time, a ticket number and barcode, "Sell for tomorrow" advance tickets marked VALID FOR, {logo} and {big} tags anywhere, and Money made. The saved time and Randomize are gone. -->
@@ -203,7 +203,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v412</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v413</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -729,6 +729,7 @@ function boxBlur(src, dst, w, h, r, horiz) {   // one running-sum pass
 }
 // v412: an even, non-grid noise pattern ("blue noise", 64 x 64, repeated) for Lighter and Faded gray. Each number says when that spot switches on as the density rises, so dots are spread evenly instead of clumping the way plain random dots do.
 let blueTile = null;
+const BLUE_MIX = 0.9;   // how much of Lighter's pattern is the even one
 function getBlueTile() {
   if (blueTile) return blueTile;
   const N = 64, T = N * N, en = new Float32Array(T), rank = new Float32Array(T), used = new Uint8Array(T), RAD = 5;
@@ -770,7 +771,13 @@ function grayPixels(px, w, h, fuzzy, fade, spots, ref, lighter) {   // v406: lig
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {   // v411: even random noise — every black dot has the same chance of staying, wherever it is
     const i = y * w + x; let v = dk[i] ? 0 : 255;
     // if (v === 0 && keep < 1 && wHash(x, y, 31) >= keep) v = 255;   // v411: plain random
-    if (v === 0 && keep < 1) { const rk = bt.rank[(y % bt.N) * bt.N + (x % bt.N)]; if (keep <= 0.5 ? rk >= keep : rk < 1 - keep) v = 255; }   // v412: blue noise — keeps (or removes, whichever is the smaller share) an evenly spread set of dots
+    // if (v === 0 && keep < 1) { const rk = bt.rank[(y % bt.N) * bt.N + (x % bt.N)]; if (keep <= 0.5 ? rk >= keep : rk < 1 - keep) v = 255; }   // v412: pure blue noise (showed a grid)
+    if (v === 0 && keep < 1) {   // v413: mostly even blue noise with a little static, and the 64 x 64 pattern is shifted at random in every block so it never repeats in a visible grid
+      const bx = (x / 64) | 0, by = (y / 64) | 0, ox = (wHash(bx, by, 51) * 64) | 0, oy = (wHash(bx, by, 52) * 64) | 0;
+      const b = bt.rank[((y + oy) % 64) * 64 + ((x + ox) % 64)], s = BLUE_MIX * b + (1 - BLUE_MIX) * wHash(x, y, 53), A = BLUE_MIX, B = 1 - BLUE_MIX;   // mostly even pattern, a little static
+      const t = B <= 0.001 ? s : s < B ? s * s / (2 * A * B) : s <= A ? (2 * s - B) / (2 * A) : 1 - (1 - s) * (1 - s) / (2 * A * B);   // the mix is bunched toward the middle, this puts it back to an even 0…1 so the darkness is exactly right
+      if (t >= keep) v = 255;
+    }
     px[i * 4] = px[i * 4 + 1] = px[i * 4 + 2] = v; px[i * 4 + 3] = 255;
   }
 }

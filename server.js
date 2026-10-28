@@ -1,4 +1,4 @@
-// PartsLister Pro server — v412
+// PartsLister Pro server — v413
 // v409: yard tickets — the whole-ticket text look and the Look checkboxes are gone; every text row and the logo each have the full set of sliders (boldness, thinner, lighter, weathered, gravel, fuzzy, faded gray, spots).
 // v408: yard tickets — each text row has a Look checkbox (row.useLook, default on): the whole-ticket text look only changes the rows that are checked.
 // v406: yard tickets — a whole-ticket Boldness for the text (design.textLook.bold) and a Lighter slider for the logo (less ink).
@@ -5248,5 +5248,6 @@ setupDatabase()
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v409 listening on ' + PORT)))   // v410
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v410 listening on ' + PORT)))   // v411
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v411 listening on ' + PORT)))   // v412
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v412 listening on ' + PORT)))
+  // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v412 listening on ' + PORT)))   // v413
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v413 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });
