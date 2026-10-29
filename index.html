@@ -9,7 +9,8 @@
   // refresh, overriding anything init does.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 </script>
-<title>PartsLister Pro v401</title>
+<title>PartsLister Pro v402</title>
+<!-- v402: unfinished listing now keeps its PHOTOS reliably (each photo stored on its own, saved as soon as it is added); photo count next to Remove all; the Step 1 bar and the Step 2 title are gone. -->
 <!-- v401: List Pigtail / List Other Side drop-downs show a small photo thumbnail next to each title, and both titles are white. -->
 <!-- v400: Pool closes when you click outside it; the listing in progress is kept on this computer until it is launched, scheduled, cleared or discarded. -->
 <!-- v399: Scheduled Listing shows the same progress bar as Launch; a little cabin joins the photo placeholder. -->
@@ -926,7 +927,7 @@
     <!-- v302: logo goes to the dashboard -->
     <a href="/" title="Dashboard" style="text-decoration:none;color:inherit;">
       <div class="logo"><span>PARTS</span>LISTER</div>
-      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v401</span></div>
+      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v402</span></div>
     </a>
     <!-- v303: removed — the logo is the dashboard button
     <a href="/" class="btn btn-secondary btn-sm" title="Back to your dashboard" style="font-size:11px;padding:4px 10px;text-decoration:none;margin-left:6px;">⌂ Dashboard</a>
@@ -982,10 +983,12 @@
 
     <!-- Step 1: Photos -->
     <div class="card">
+      <!-- v402: Step 1 bar removed
       <div class="card-header">
         <div class="step-num">1</div>
         <div class="card-title">Upload Part Photos</div>
       </div>
+      -->
       <div class="card-body">
         <div class="drop-zone" id="drop-zone" style="margin-bottom:8px;min-height:140px;display:flex;flex-direction:column;align-items:center;justify-content:center;">   <!-- v385: same height as before the icon/text came out -->
           <input type="file" accept="image/*" multiple id="photo-input" onchange="handlePhotos(this.files)">
@@ -1007,6 +1010,7 @@
         <div id="photo-count-warning" style="display:none;margin-top:6px;padding:8px 10px;background:rgba(224,82,82,0.12);border:1px solid #e05252;border-radius:6px;font-size:12px;color:#e05252;">⚠ <strong>Too many photos</strong> — eBay allows a maximum of 24. Only the first 24 will be uploaded.</div>
         <div id="trash-all-wrap" style="display:none;margin-top:6px;">
           <div id="photo-tools-wrap" style="display:flex;align-items:center;gap:12px;">
+            <span id="photo-count-label" style="font-size:11px;font-weight:600;color:var(--muted);"></span>   <!-- v402 -->
             <button onclick="trashAllPhotos()" style="background:none;border:none;cursor:pointer;color:var(--danger);font-size:11px;padding:0;display:flex;align-items:center;gap:4px;" title="Remove all photos">Remove all photos</button>
             <div style="display:flex;align-items:center;gap:6px;margin-left:auto;">
               <input type="checkbox" id="rotate-mode-toggle" onchange="setRotateMode(this.checked)" title="Rotate mode — click photos to select them" style="appearance:none;-webkit-appearance:none;width:22px;height:22px;border:1px solid var(--border);border-radius:4px;background:var(--surface);cursor:pointer;margin:0;flex-shrink:0;transition:background 0.15s,border-color 0.15s;">
@@ -1021,8 +1025,10 @@
     <div class="card">
       <div class="card-header" style="justify-content:space-between;">
         <div style="display:flex;align-items:center;gap:8px;">
+          <!-- v402: step number and title removed (the box stays for Auto / Scan)
           <div class="step-num">2</div>
           <div class="card-title">Part Lookup</div>
+          -->
         </div>
         <div style="display:flex;align-items:center;gap:8px;">
           <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);cursor:pointer;user-select:none;" title="Auto-scan photos on upload">
@@ -2436,6 +2442,7 @@ function renderPhotoStrip() {
   if (countWarn) countWarn.style.display = uploadedFiles.length > 24 ? 'block' : 'none';
   const trashWrap = document.getElementById('trash-all-wrap');
   if (trashWrap) trashWrap.style.display = uploadedFiles.length > 0 ? 'block' : 'none';
+  { const pc = document.getElementById('photo-count-label'); if (pc) { pc.textContent = uploadedFiles.length + (uploadedFiles.length === 1 ? ' photo' : ' photos'); pc.style.color = uploadedFiles.length > 24 ? '#e05252' : 'var(--muted)'; } }   // v402
 
   uploadedFiles.forEach((f, i) => {
     const url = URL.createObjectURL(f);
@@ -9157,43 +9164,93 @@ async function resumeDraftFromUrl() {
 // ─── v400: UNFINISHED LISTING IS KEPT (this computer) ────────────────────────
 // What is on the page (fields, scan results, photos) is saved a moment after every change, and put back when the page is opened again,
 // until the listing is launched, scheduled, cleared or discarded. Kept in this browser (IndexedDB), so "clear site data" removes it.
+// v400 version (one big record):
+// let _workDB = null, _workSig = null, _workBusy = false;
+// function _workOpen() {
+//   if (_workDB) return Promise.resolve(_workDB);
+//   return new Promise((res, rej) => {
+//     let rq; try { rq = indexedDB.open('plp-work', 1); } catch (e) { rej(e); return; }
+//     rq.onupgradeneeded = () => rq.result.createObjectStore('w');
+//     rq.onsuccess = () => { _workDB = rq.result; res(_workDB); }; rq.onerror = () => rej(rq.error);
+//   });
+// }
+// async function _workPut(val) { const db = await _workOpen(); return new Promise((res, rej) => { const t = db.transaction('w', 'readwrite'); if (val) t.objectStore('w').put(val, 'cur'); else t.objectStore('w').delete('cur'); t.oncomplete = res; t.onerror = () => rej(t.error); }); }
+// async function _workGet() { const db = await _workOpen(); return new Promise((res, rej) => { const t = db.transaction('w'); const q = t.objectStore('w').get('cur'); q.onsuccess = () => res(q.result || null); q.onerror = () => rej(q.error); }); }
+// async function workSaveNow() {
+//   if (_workBusy || window._workRestoring || !window._workReady) return; _workBusy = true;
+//   try {
+//     if (!_draftHasContent()) { if (_workSig !== 'empty') { await _workPut(null); _workSig = 'empty'; } return; }
+//     const snap = _draftSnapshot(), sig = _draftSigOf(snap) + '|' + JSON.stringify([snap.boxes, snap.vars && snap.vars.pnPhotoIdx]);
+//     if (sig === _workSig) return;
+//     await _workPut({ snap, id: window._draftId || null, savedAt: Date.now(), files: uploadedFiles.map(f => ({ name: f.name, type: f.type, blob: f })) });
+//     _workSig = sig;
+//   } catch (e) { /* storage full or blocked — the unfinished-listing memory just doesn't work this time */ }
+//   finally { _workBusy = false; }
+// }
+// async function workRestore() {
+//   try {
+//     if (_bootHadDraft) { await new Promise(r => setTimeout(r, 1500)); return; }   // opening a draft takes over
+//     if (_draftHasContent()) return;
+//     const w = await _workGet(); if (!w || !w.snap) return;
+//     window._workRestoring = true;
+//     const files = (w.files || []).map(f => new File([f.blob], f.name, { type: f.type || f.blob.type }));
+//     _restoreDraft({ id: w.id, snap: w.snap }, files, false, '✓ Your unfinished listing is back');
+//     window._draftId = w.id || null;
+//     _workSig = null;
+//   } catch (e) { /* nothing to restore */ }
+//   finally { window._workRestoring = false; window._workReady = true; workSaveNow(); }
+// }
 let _workDB = null, _workSig = null, _workBusy = false;
 const _bootHadDraft = /[?&]draft=/.test(location.search);   // opened from the Drafts page: that draft wins
+// v402: the photos are stored one by one (store 'p', each under its own key) and written FIRST, as soon as they are added; the fields go in store 'w'.
+// (v400 wrote everything as one big record, which could be lost if it was still being written when you left the page.)
 function _workOpen() {
   if (_workDB) return Promise.resolve(_workDB);
   return new Promise((res, rej) => {
-    let rq; try { rq = indexedDB.open('plp-work', 1); } catch (e) { rej(e); return; }
-    rq.onupgradeneeded = () => rq.result.createObjectStore('w');
+    let rq; try { rq = indexedDB.open('plp-work', 2); } catch (e) { rej(e); return; }
+    rq.onupgradeneeded = () => { const d = rq.result; if (!d.objectStoreNames.contains('w')) d.createObjectStore('w'); if (!d.objectStoreNames.contains('p')) d.createObjectStore('p'); };
     rq.onsuccess = () => { _workDB = rq.result; res(_workDB); }; rq.onerror = () => rej(rq.error);
   });
 }
-async function _workPut(val) { const db = await _workOpen(); return new Promise((res, rej) => { const t = db.transaction('w', 'readwrite'); if (val) t.objectStore('w').put(val, 'cur'); else t.objectStore('w').delete('cur'); t.oncomplete = res; t.onerror = () => rej(t.error); }); }
-async function _workGet() { const db = await _workOpen(); return new Promise((res, rej) => { const t = db.transaction('w'); const q = t.objectStore('w').get('cur'); q.onsuccess = () => res(q.result || null); q.onerror = () => rej(q.error); }); }
+function _wReq(store, mode, fn) {
+  return _workOpen().then(db => new Promise((res, rej) => { const t = db.transaction(store, mode); let out; try { out = fn(t.objectStore(store)); } catch (e) { rej(e); return; } t.oncomplete = () => res(out && out.result !== undefined ? out.result : undefined); t.onerror = () => rej(t.error); t.onabort = () => rej(t.error || new Error('aborted')); }));
+}
+const _photoKey = f => f.name + '|' + f.size + '|' + f.lastModified;
+async function workClear() { await _wReq('w', 'readwrite', s => s.delete('cur')); await _wReq('p', 'readwrite', s => s.clear()); }
 async function workSaveNow() {
   if (_workBusy || window._workRestoring || !window._workReady) return; _workBusy = true;
   try {
-    if (!_draftHasContent()) { if (_workSig !== 'empty') { await _workPut(null); _workSig = 'empty'; } return; }
-    const snap = _draftSnapshot(), sig = _draftSigOf(snap) + '|' + JSON.stringify([snap.boxes, snap.vars && snap.vars.pnPhotoIdx]);
+    if (!_draftHasContent()) { if (_workSig !== 'empty') { await workClear(); _workSig = 'empty'; } return; }
+    const snap = _draftSnapshot(), files = uploadedFiles.slice(), keys = files.map(_photoKey);
+    const sig = _draftSigOf(snap) + '|' + JSON.stringify([snap.boxes, snap.vars && snap.vars.pnPhotoIdx]);
     if (sig === _workSig) return;
-    await _workPut({ snap, id: window._draftId || null, savedAt: Date.now(), files: uploadedFiles.map(f => ({ name: f.name, type: f.type, blob: f })) });
+    const have = await _wReq('p', 'readonly', s => s.getAllKeys());
+    for (let i = 0; i < files.length; i++) if (!have.includes(keys[i])) await _wReq('p', 'readwrite', s => s.put(files[i], keys[i]));
+    await _wReq('w', 'readwrite', s => s.put({ snap, id: window._draftId || null, savedAt: Date.now(), photos: files.map((f, i) => ({ key: keys[i], name: f.name, type: f.type, lm: f.lastModified })) }, 'cur'));
+    for (const k of have) if (!keys.includes(k)) await _wReq('p', 'readwrite', s => s.delete(k));
     _workSig = sig;
-  } catch (e) { /* storage full or blocked — the unfinished-listing memory just doesn't work this time */ }
+  } catch (e) { console.warn('unfinished-listing save failed', e); }
   finally { _workBusy = false; }
 }
 async function workRestore() {
   try {
     if (_bootHadDraft) { await new Promise(r => setTimeout(r, 1500)); return; }   // opening a draft takes over
     if (_draftHasContent()) return;
-    const w = await _workGet(); if (!w || !w.snap) return;
+    const w = await _wReq('w', 'readonly', s => s.get('cur')); if (!w || !w.snap) return;
     window._workRestoring = true;
-    const files = (w.files || []).map(f => new File([f.blob], f.name, { type: f.type || f.blob.type }));
+    const files = [];
+    for (const p of (w.photos || [])) {
+      const blob = await _wReq('p', 'readonly', s => s.get(p.key));
+      if (blob) files.push(new File([blob], p.name, { type: p.type || blob.type, lastModified: p.lm }));
+    }
+    for (const f of (w.files || [])) files.push(new File([f.blob], f.name, { type: f.type || f.blob.type }));   // v400-format record
     _restoreDraft({ id: w.id, snap: w.snap }, files, false, '✓ Your unfinished listing is back');
     window._draftId = w.id || null;
     _workSig = null;
-  } catch (e) { /* nothing to restore */ }
+  } catch (e) { console.warn('unfinished-listing restore failed', e); }
   finally { window._workRestoring = false; window._workReady = true; workSaveNow(); }
 }
-setInterval(workSaveNow, 2500);
+setInterval(workSaveNow, 1500);
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') workSaveNow(); });
 window.addEventListener('pagehide', workSaveNow);
 
