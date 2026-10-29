@@ -1,4 +1,4 @@
-// PartsLister Pro server — v421
+// PartsLister Pro server — v422
 // v409: yard tickets — the whole-ticket text look and the Look checkboxes are gone; every text row and the logo each have the full set of sliders (boldness, thinner, lighter, weathered, gravel, fuzzy, faded gray, spots).
 // v408: yard tickets — each text row has a Look checkbox (row.useLook, default on): the whole-ticket text look only changes the rows that are checked.
 // v406: yard tickets — a whole-ticket Boldness for the text (design.textLook.bold) and a Lighter slider for the logo (less ink).
@@ -418,6 +418,28 @@ async function setupDatabase() {
       width      INTEGER NOT NULL DEFAULT 80
     );
     -- ALTER TABLE ticket_settings ADD COLUMN IF NOT EXISTS randomize BOOLEAN NOT NULL DEFAULT FALSE;   (v388 — v389: no longer used; it also ran before the table was created)
+    -- v422: LISTING DRAFTS — a half-finished listing saved from the Listing Tool (all fields in snap, photos in their own table), up to 50 per account
+    CREATE TABLE IF NOT EXISTS listing_drafts (
+      id          SERIAL PRIMARY KEY,
+      user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      label       TEXT NOT NULL DEFAULT '',
+      price       TEXT NOT NULL DEFAULT '',
+      pn          TEXT NOT NULL DEFAULT '',
+      vehicle     TEXT NOT NULL DEFAULT '',
+      snap        JSONB NOT NULL DEFAULT '{}'::jsonb,
+      photo_count INTEGER NOT NULL DEFAULT 0,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    CREATE INDEX IF NOT EXISTS listing_drafts_user ON listing_drafts (user_id, updated_at DESC);
+    CREATE TABLE IF NOT EXISTS listing_draft_photos (
+      draft_id INTEGER NOT NULL REFERENCES listing_drafts(id) ON DELETE CASCADE,
+      pos      INTEGER NOT NULL,
+      name     TEXT,
+      mime     TEXT NOT NULL DEFAULT 'image/jpeg',
+      data     BYTEA NOT NULL,
+      PRIMARY KEY (draft_id, pos)
+    );
     ALTER TABLE ticket_prints ADD COLUMN IF NOT EXISTS valid_for DATE;                    -- v389: the day an advance ticket is good for (NULL = the day it was sold)
     ALTER TABLE ebay_connections ADD COLUMN IF NOT EXISTS active_count INTEGER;          -- v316: live listings on eBay
     ALTER TABLE ebay_connections ADD COLUMN IF NOT EXISTS active_value NUMERIC(14,2);    -- v316: their asking prices added up
@@ -4058,6 +4080,80 @@ app.post('/api/tickets/settings', requireUser, express.json(), async (req, res) 
 // v389: the date and time are the real moment of the sale. { advance: true } = a ticket sold today that is
 //       good for tomorrow; it says VALID FOR tomorrow's date and still shows the real sale date and time.
 // v421: FIX COUNTS — every ticket sold is one row in ticket_prints. These two routes list them (newest first, days in your time zone) and remove the ones you pick, e.g. test tickets, so tickets sold and money made are right again.
+// ─── v422: LISTING DRAFTS ────────────────────────────────────────────────────
+// Save a half-finished listing and come back to it from any device. The Listing Tool shrinks each photo (about 1600 px, ~300 KB) and sends
+// it one at a time; a draft is the fields (snap) plus its photos. At most DRAFT_MAX drafts per account, DRAFT_PHOTOS photos each.
+const DRAFT_MAX = 50, DRAFT_PHOTOS = 30;
+app.get('/api/drafts', requireUser, async (req, res) => {
+  try {
+    const rows = (await pool.query('SELECT id, label, price, pn, vehicle, photo_count, updated_at FROM listing_drafts WHERE user_id = $1 ORDER BY updated_at DESC, id DESC', [req.user.id])).rows;
+    const bytes = (await pool.query('SELECT COALESCE(SUM(length(p.data)), 0)::bigint AS b FROM listing_draft_photos p JOIN listing_drafts d ON d.id = p.draft_id WHERE d.user_id = $1', [req.user.id])).rows[0].b;
+    res.json({ max: DRAFT_MAX, bytes: Number(bytes), drafts: rows.map(r => ({ id: r.id, label: r.label, price: r.price, pn: r.pn, vehicle: r.vehicle, photoCount: r.photo_count, updatedAt: r.updated_at })) });
+  } catch (e) { console.error('[drafts list]', e.message); res.status(500).json({ error: 'Could not load your drafts' }); }
+});
+app.get('/api/drafts/:id', requireUser, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const d = (await pool.query('SELECT id, label, price, pn, vehicle, snap, photo_count, updated_at FROM listing_drafts WHERE id = $1 AND user_id = $2', [id, req.user.id])).rows[0];
+    if (!d) return res.status(404).json({ error: 'That draft is gone.' });
+    const photos = (await pool.query('SELECT pos, name, mime FROM listing_draft_photos WHERE draft_id = $1 ORDER BY pos', [id])).rows;
+    res.json({ id: d.id, label: d.label, price: d.price, pn: d.pn, vehicle: d.vehicle, snap: d.snap, updatedAt: d.updated_at, photos });
+  } catch (e) { console.error('[drafts get]', e.message); res.status(500).json({ error: 'Could not open that draft' }); }
+});
+app.post('/api/drafts', requireUser, express.json({ limit: '5mb' }), async (req, res) => {   // create, or update when id is given (the photos follow, one request each)
+  try {
+    const b = req.body || {}, clip = (v, n) => String(v === undefined || v === null ? '' : v).slice(0, n);
+    const snap = b.snap && typeof b.snap === 'object' && !Array.isArray(b.snap) ? b.snap : {};
+    const id = parseInt(b.id, 10);
+    if (Number.isInteger(id)) {
+      const r = await pool.query('UPDATE listing_drafts SET label = $3, price = $4, pn = $5, vehicle = $6, snap = $7::jsonb, updated_at = now() WHERE id = $1 AND user_id = $2 RETURNING id',
+        [id, req.user.id, clip(b.label, 200), clip(b.price, 20), clip(b.pn, 80), clip(b.vehicle, 120), JSON.stringify(snap)]);
+      if (r.rows.length) return res.json({ id: r.rows[0].id });   // not found (deleted elsewhere) → saved as a new one below
+    }
+    const n = (await pool.query('SELECT COUNT(*)::int AS n FROM listing_drafts WHERE user_id = $1', [req.user.id])).rows[0].n;
+    if (n >= DRAFT_MAX) return res.status(409).json({ error: 'You already have ' + DRAFT_MAX + ' drafts — delete one first.' });
+    const r = await pool.query('INSERT INTO listing_drafts (user_id, label, price, pn, vehicle, snap) VALUES ($1, $2, $3, $4, $5, $6::jsonb) RETURNING id',
+      [req.user.id, clip(b.label, 200), clip(b.price, 20), clip(b.pn, 80), clip(b.vehicle, 120), JSON.stringify(snap)]);
+    res.json({ id: r.rows[0].id });
+  } catch (e) { console.error('[drafts save]', e.message); res.status(500).json({ error: 'Could not save the draft' }); }
+});
+app.put('/api/drafts/:id/photos/:pos', requireUser, express.raw({ type: () => true, limit: '4mb' }), async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10), pos = parseInt(req.params.pos, 10);
+    if (!Number.isInteger(pos) || pos < 0 || pos >= DRAFT_PHOTOS) return res.status(400).json({ error: 'A draft keeps up to ' + DRAFT_PHOTOS + ' photos.' });
+    if (!Buffer.isBuffer(req.body) || !req.body.length) return res.status(400).json({ error: 'No photo received.' });
+    const mime = /^image\/(jpeg|png|webp|gif)$/.test(String(req.headers['content-type'] || '')) ? String(req.headers['content-type']) : 'image/jpeg';
+    let name = ''; try { name = decodeURIComponent(String(req.headers['x-photo-name'] || '')).slice(0, 200); } catch (e) { name = ''; }
+    const own = await pool.query('SELECT 1 FROM listing_drafts WHERE id = $1 AND user_id = $2', [id, req.user.id]);
+    if (!own.rows.length) return res.status(404).json({ error: 'That draft is gone.' });
+    await pool.query('INSERT INTO listing_draft_photos (draft_id, pos, name, mime, data) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (draft_id, pos) DO UPDATE SET name = EXCLUDED.name, mime = EXCLUDED.mime, data = EXCLUDED.data', [id, pos, name, mime, req.body]);
+    res.json({ ok: true });
+  } catch (e) { console.error('[drafts photo]', e.message); res.status(500).json({ error: 'Could not save a photo' }); }
+});
+app.post('/api/drafts/:id/commit', requireUser, express.json(), async (req, res) => {   // after the photos: drop leftovers from an older save and set the photo count
+  try {
+    const id = parseInt(req.params.id, 10), count = Math.max(0, Math.min(DRAFT_PHOTOS, parseInt((req.body || {}).count, 10) || 0));
+    const own = await pool.query('SELECT 1 FROM listing_drafts WHERE id = $1 AND user_id = $2', [id, req.user.id]);
+    if (!own.rows.length) return res.status(404).json({ error: 'That draft is gone.' });
+    await pool.query('DELETE FROM listing_draft_photos WHERE draft_id = $1 AND pos >= $2', [id, count]);
+    const have = (await pool.query('SELECT COUNT(*)::int AS n FROM listing_draft_photos WHERE draft_id = $1', [id])).rows[0].n;
+    await pool.query('UPDATE listing_drafts SET photo_count = $2, updated_at = now() WHERE id = $1', [id, have]);
+    res.json({ ok: true, photoCount: have, expected: count });
+  } catch (e) { console.error('[drafts commit]', e.message); res.status(500).json({ error: 'Could not finish saving the draft' }); }
+});
+app.get('/api/drafts/:id/photos/:pos', requireUser, async (req, res) => {
+  try {
+    const r = (await pool.query('SELECT p.mime, p.data FROM listing_draft_photos p JOIN listing_drafts d ON d.id = p.draft_id WHERE p.draft_id = $1 AND p.pos = $2 AND d.user_id = $3', [parseInt(req.params.id, 10), parseInt(req.params.pos, 10), req.user.id])).rows[0];
+    if (!r) return res.status(404).end();
+    res.set('Content-Type', r.mime); res.set('Cache-Control', 'private, max-age=60'); res.send(r.data);
+  } catch (e) { console.error('[drafts photo get]', e.message); res.status(500).end(); }
+});
+app.post('/api/drafts/:id/delete', requireUser, async (req, res) => {
+  try {
+    const r = await pool.query('DELETE FROM listing_drafts WHERE id = $1 AND user_id = $2', [parseInt(req.params.id, 10), req.user.id]);   // its photos go with it (ON DELETE CASCADE)
+    res.json({ ok: true, removed: r.rowCount });
+  } catch (e) { console.error('[drafts delete]', e.message); res.status(500).json({ error: 'Could not delete that draft' }); }
+});
 app.get('/api/tickets/prints', requireUser, async (req, res) => {
   try {
     const tz = msgSettingsOf(await getUserSettings(req.user.id)).timezone || 'America/Chicago';
@@ -4835,9 +4931,9 @@ app.post('/api/returns/cancel/:id/decline', requireUser, express.json(), async (
 
 // ─── v327: DIAGNOSTICS (admin) ───────────────────────────────────────────────
 // One place to see what's working, what isn't, and what to do about it.
-const PAGE_FILES = ['home.html', 'dashboard.html', 'orders.html', 'messages.html', 'messages-classic.html', 'returns.html', 'active.html', 'index.html', 'diagnostics.html'];
+const PAGE_FILES = ['home.html', 'dashboard.html', 'orders.html', 'messages.html', 'messages-classic.html', 'returns.html', 'active.html', 'drafts.html', 'index.html', 'diagnostics.html'];   // v422: + drafts.html
 const PAGE_NAMES = { 'home.html': 'Home', 'dashboard.html': 'Sales', 'orders.html': 'Orders', 'messages.html': 'Messages', 'messages-classic.html': 'Messages (classic)',
-  'returns.html': 'Returns', 'active.html': 'Active', 'index.html': 'Listing Tool', 'diagnostics.html': 'Diagnostics' };
+  'returns.html': 'Returns', 'active.html': 'Active', 'drafts.html': 'Drafts', 'index.html': 'Listing Tool', 'diagnostics.html': 'Diagnostics' };
 function fileVersion(file) {
   try {
     const head = fs.readFileSync(path.join(__dirname, file), 'utf8').slice(0, 3000);
@@ -5218,6 +5314,7 @@ const ORDERS = path.join(__dirname, 'orders.html');        // v319
 const MESSAGES = path.join(__dirname, 'messages.html');    // v321
 const MESSAGES_CLASSIC = path.join(__dirname, 'messages-classic.html');   // v322: the v321 email-style view
 const RETURNS = path.join(__dirname, 'returns.html');      // v324
+const DRAFTS_PAGE = path.join(__dirname, 'drafts.html');      // v422
 const DIAGNOSTICS = path.join(__dirname, 'diagnostics.html');   // v327
 
 // app.get('/', (req, res) => res.sendFile(DASHBOARD));
@@ -5229,6 +5326,7 @@ app.get(['/active', '/active/'], (req, res) => res.sendFile(ACTIVE));           
 app.get(['/orders', '/orders/'], (req, res) => res.sendFile(ORDERS));                     // v319
 app.get(['/messages', '/messages/'], (req, res) => res.sendFile(MESSAGES));               // v321
 app.get(['/messages/classic'], (req, res) => res.sendFile(MESSAGES_CLASSIC));             // v322
+app.get(['/drafts', '/drafts/'], (req, res) => res.sendFile(DRAFTS_PAGE));                   // v422
 app.get(['/returns', '/returns/'], (req, res) => res.sendFile(RETURNS));                  // v324
 app.get(['/returns.html'], (req, res) => res.redirect(301, '/returns'));                  // v324
 app.get(['/diagnostics', '/diagnostics/'], (req, res) => res.sendFile(DIAGNOSTICS));      // v327 (the page itself checks you're the admin)
@@ -5278,5 +5376,6 @@ setupDatabase()
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v418 listening on ' + PORT)))   // v419
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v419 listening on ' + PORT)))   // v420
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v420 listening on ' + PORT)))   // v421
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v421 listening on ' + PORT)))
+  // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v421 listening on ' + PORT)))   // v422
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v422 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });

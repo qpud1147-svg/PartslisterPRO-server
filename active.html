@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Active v382</title>
+<title>PartsLister Pro Active v383</title>
+<!-- v383: Drafts button next to the title (opens the Drafts page). -->
 <!-- v382: switching views is instant; browser reload / Refresh really reloads. v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
 <!-- PartsLister Pro — Active page (v316: new as the Listings page, listings.html; v318: renamed Active, active.html, at /active). Shares the sign-in, account and
      eBay connection with the Sales page (/sales) and the listing tool (/list).
@@ -162,7 +163,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v382</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v383</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -191,7 +192,9 @@
   <!-- <div class="page-title">Listings</div> -->
   <!-- <div class="page-title">Active listings</div>   v318 -->
   <div class="title-row"><div class="page-title">Active listings</div>
-    <button type="button" class="sample-badge" id="l-badge" onclick="refreshListings()">eBay</button></div>   <!-- v382: same box as Sales -->
+    <button type="button" class="sample-badge" id="l-badge" onclick="refreshListings()">eBay</button>
+    <a href="/drafts" class="btn btn-secondary btn-sm" id="drafts-link" title="Listings you saved to finish later">Drafts <span id="drafts-n" style="color:var(--accent)"></span></a></div>   <!-- v382: same box as Sales; v383: Drafts -->
+<script>fetch('/api/drafts').then(r=>r.ok?r.json():null).then(d=>{if(d&&d.drafts.length)document.getElementById('drafts-n').textContent=d.drafts.length}).catch(()=>{});</script>
   <div class="page-note" style="display:none"><span id="l-note">&nbsp;</span> <button type="button" id="l-refresh" onclick="refreshListings()">Refresh from eBay</button></div>   <!-- v382: replaced by the box above -->
   <div class="error-box" id="l-error"></div>
 
