@@ -9,7 +9,8 @@
   // refresh, overriding anything init does.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 </script>
-<title>PartsLister Pro v397</title>
+<title>PartsLister Pro v398</title>
+<!-- v398: HEIC photos are converted to JPEG when added. -->
 <!-- v397: photos the browser can't open are marked CAN'T READ (hover for type/size) with a red bar and Remove unreadable. -->
 <!-- v396: a draft is deleted automatically once its listing (Launch or Scheduled) succeeds; the eBay User Token box and its status are removed from Settings. -->
 <!-- v395: Launch / Scheduled no longer greyed out without the User Token. -->
@@ -922,7 +923,7 @@
     <!-- v302: logo goes to the dashboard -->
     <a href="/" title="Dashboard" style="text-decoration:none;color:inherit;">
       <div class="logo"><span>PARTS</span>LISTER</div>
-      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v397</span></div>
+      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v398</span></div>
     </a>
     <!-- v303: removed — the logo is the dashboard button
     <a href="/" class="btn btn-secondary btn-sm" title="Back to your dashboard" style="font-size:11px;padding:4px 10px;text-decoration:none;margin-left:6px;">⌂ Dashboard</a>
@@ -992,7 +993,7 @@
         </div>
         <div class="photo-strip" id="photo-strip"></div>
         <!-- v397 -->
-        <div id="unreadable-warning" style="display:none;margin-top:6px;padding:8px 10px;background:rgba(224,82,82,0.12);border:1px solid #e05252;border-radius:6px;font-size:12px;color:#e05252;">⚠ <strong>Some photos can't be opened</strong> — <span id="unreadable-list"></span>. They usually haven't finished downloading from the shared album, or are in a format the browser can't show. Remove them, make sure they're downloaded (open them in Photos), and add them again. <button type="button" onclick="removeUnreadablePhotos()" style="margin-left:6px;padding:3px 9px;font-size:11px;background:#e05252;color:#fff;border:none;border-radius:4px;cursor:pointer;">Remove unreadable</button></div>
+        <div id="unreadable-warning" style="display:none;margin-top:6px;padding:8px 10px;background:rgba(224,82,82,0.12);border:1px solid #e05252;border-radius:6px;font-size:12px;color:#e05252;">⚠ <strong>Some photos can't be opened</strong> — <span id="unreadable-list"></span>. They may not have finished downloading from the shared album, or are in a format the browser can't show. Remove them, make sure they're downloaded (open them in Photos), and add them again. <button type="button" onclick="removeUnreadablePhotos()" style="margin-left:6px;padding:3px 9px;font-size:11px;background:#e05252;color:#fff;border:none;border-radius:4px;cursor:pointer;">Remove unreadable</button></div>
         <div id="low-res-warning">⚠ <strong>Low-resolution photos detected</strong> — these images weren't fully loaded from your Apple Shared Album. Please remove the highlighted photos and re-upload after they've fully downloaded.</div>
         <div id="photo-count-warning" style="display:none;margin-top:6px;padding:8px 10px;background:rgba(224,82,82,0.12);border:1px solid #e05252;border-radius:6px;font-size:12px;color:#e05252;">⚠ <strong>Too many photos</strong> — eBay allows a maximum of 24. Only the first 24 will be uploaded.</div>
         <div id="trash-all-wrap" style="display:none;margin-top:6px;">
@@ -2332,7 +2333,40 @@ function updateAutoScanUI() {
 }
 
 // ─── PHOTO HANDLING ───────────────────────────────────────────────────────────
-function handlePhotos(files) {
+// v398: iPhone / shared-album photos are often HEIC, which Chrome can't show or scan. They are converted to full-size JPEG as they are added (library loaded only when needed).
+const _isHeic = f => /^image\/hei[cf]/i.test(f.type || '') || /\.hei[cf]$/i.test(f.name || '');
+let _heicLoad = null;
+function _loadHeic() {
+  if (window.heic2any) return Promise.resolve(window.heic2any);
+  if (!_heicLoad) _heicLoad = new Promise((res, rej) => {
+    const s = document.createElement('script'); s.src = 'https://cdnjs.cloudflare.com/ajax/libs/heic2any/0.0.4/heic2any.min.js';
+    s.onload = () => window.heic2any ? res(window.heic2any) : rej(new Error('converter missing')); s.onerror = () => { _heicLoad = null; rej(new Error('could not load the HEIC converter')); };
+    document.head.appendChild(s);
+  });
+  return _heicLoad;
+}
+async function _heicToJpeg(f) {
+  const conv = await _loadHeic();
+  let out = await conv({ blob: f, toType: 'image/jpeg', quality: 0.95 });
+  if (Array.isArray(out)) out = out[0];
+  return new File([out], (f.name || 'photo').replace(/\.hei[cf]$/i, '') + '.jpg', { type: 'image/jpeg', lastModified: f.lastModified });
+}
+async function handlePhotos(files) {
+  files = Array.from(files);
+  const heics = files.filter(_isHeic);
+  if (heics.length) {
+    showNotif('Converting ' + heics.length + ' HEIC photo' + (heics.length === 1 ? '' : 's') + '…');
+    const done = [];
+    for (const f of files) {
+      if (!_isHeic(f)) { done.push(f); continue; }
+      try { done.push(await _heicToJpeg(f)); }
+      catch (e) { console.warn('HEIC convert failed', f.name, e); done.push(f); }   // left as is → shows CAN'T READ
+    }
+    files = done;
+  }
+  return _handlePhotosNow(files);
+}
+function _handlePhotosNow(files) {
   // Accumulate — add new files to existing, skip duplicates by name
   const existingNames = new Set(uploadedFiles.map(f => f.name));
   const newFiles = Array.from(files).filter(f => !existingNames.has(f.name));
