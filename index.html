@@ -9,7 +9,8 @@
   // refresh, overriding anything init does.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 </script>
-<title>PartsLister Pro v406</title>
+<title>PartsLister Pro v407</title>
+<!-- v407: a scan that finds no part number opens No Part Number by itself; a cleared listing starts on Has Part Number. -->
 <!-- v406: Identify Part is greyed out and unclickable unless No Part Number is selected (no more auto-switch). -->
 <!-- v405: Identify Part switches to No Part Number mode first. -->
 <!-- v404: photo count/Remove-all row clear after a listing; Part Lookup box = Auto (left), Identify Part (middle), Scan (right). -->
@@ -931,7 +932,7 @@
     <!-- v302: logo goes to the dashboard -->
     <a href="/" title="Dashboard" style="text-decoration:none;color:inherit;">
       <div class="logo"><span>PARTS</span>LISTER</div>
-      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v406</span></div>
+      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v407</span></div>
     </a>
     <!-- v303: removed — the logo is the dashboard button
     <a href="/" class="btn btn-secondary btn-sm" title="Back to your dashboard" style="font-size:11px;padding:4px 10px;text-decoration:none;margin-left:6px;">⌂ Dashboard</a>
@@ -3108,6 +3109,15 @@ async function runOCR() {
     box.innerHTML = resultHtml;
     if (_scanBtn) _scanBtn.disabled = false;
     _gsMaybeHide();
+    // v407: no part number found → open No Part Number by itself; a later scan that does find one (while it was opened this way) goes back to Has Part Number
+    try {
+      if (!parsed.partNumber && currentMode === 'partnumber' && !document.getElementById('part-number').value.trim()) {
+        try { setMode('nopartnumber'); } catch (e) { /* setMode has a known hiccup in this mode; the switch itself already happened */ }
+        window._modeAutoNP = true;
+      } else if (parsed.partNumber && currentMode === 'nopartnumber' && window._modeAutoNP) {
+        setMode('partnumber');
+      }
+    } catch (e) { console.warn('auto mode switch failed', e); }
     showNotif('✓ Stickers scanned!');
 
   } catch(err) {
@@ -3175,6 +3185,7 @@ function syncIdentifyBtn() {
 }
 function setMode(mode) {
   currentMode = mode;
+  window._modeAutoNP = false;   // v407: any switch clears the 'opened by the scan' mark (the scan sets it again after)
   syncIdentifyBtn();   // v406
   if (typeof _syncExactToggles === 'function') _syncExactToggles();   // v289
   document.getElementById('mode-partnumber').style.display   = mode === 'partnumber'   ? 'block' : 'none';
@@ -5639,6 +5650,7 @@ function exportCSV() {
 // ─── RESET FORM ───────────────────────────────────────────────────────────────
 function resetForm(shippingOverride) {
   window._draftId = null; window._draftSig = null;   // v396: a cleared page is no longer any draft
+  try { setMode('partnumber'); } catch (e) { /* fine */ }   // v407: a cleared page starts on Has Part Number again
   uploadedFiles = [];
   window._selectedPhotos = [];   // v296
   document.getElementById('photo-strip').innerHTML = '';
