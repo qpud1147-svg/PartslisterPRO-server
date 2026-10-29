@@ -9,7 +9,10 @@
   // refresh, overriding anything init does.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 </script>
-<title>PartsLister Pro v403</title>
+<title>PartsLister Pro v406</title>
+<!-- v406: Identify Part is greyed out and unclickable unless No Part Number is selected (no more auto-switch). -->
+<!-- v405: Identify Part switches to No Part Number mode first. -->
+<!-- v404: photo count/Remove-all row clear after a listing; Part Lookup box = Auto (left), Identify Part (middle), Scan (right). -->
 <!-- v403: restoring an unfinished listing / draft can no longer stop half-way (photos were loaded but not shown, and couldn't be dropped again). -->
 <!-- v402: unfinished listing now keeps its PHOTOS reliably (each photo stored on its own, saved as soon as it is added); photo count next to Remove all; the Step 1 bar and the Step 2 title are gone. -->
 <!-- v401: List Pigtail / List Other Side drop-downs show a small photo thumbnail next to each title, and both titles are white. -->
@@ -928,7 +931,7 @@
     <!-- v302: logo goes to the dashboard -->
     <a href="/" title="Dashboard" style="text-decoration:none;color:inherit;">
       <div class="logo"><span>PARTS</span>LISTER</div>
-      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v403</span></div>
+      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v406</span></div>
     </a>
     <!-- v303: removed — the logo is the dashboard button
     <a href="/" class="btn btn-secondary btn-sm" title="Back to your dashboard" style="font-size:11px;padding:4px 10px;text-decoration:none;margin-left:6px;">⌂ Dashboard</a>
@@ -1025,11 +1028,23 @@
     <!-- Step 2: Part Number -->
     <div class="card">
       <div class="card-header" style="justify-content:space-between;">
+        <!-- v404: Auto on the left, Identify Part in the middle, Scan on the right (was: Auto and Scan bunched on the right) -->
+        <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);cursor:pointer;user-select:none;" title="Auto-scan photos on upload">
+          <div id="autoscan-toggle" onclick="toggleAutoScan()" style="width:32px;height:18px;border-radius:9px;background:var(--accent);cursor:pointer;position:relative;transition:background 0.2s;flex-shrink:0;">
+            <div id="autoscan-thumb" style="position:absolute;top:3px;left:15px;width:12px;height:12px;border-radius:50%;background:#fff;transition:left 0.2s;"></div>
+          </div>
+          Auto
+        </label>
+        <button id="identify-part-btn" onclick="identifyPart()" style="flex:none;white-space:nowrap;height:28px;box-sizing:border-box;background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:0 12px;font-size:12px;font-weight:600;color:var(--accent);cursor:pointer;font-family:'Barlow Condensed',sans-serif;letter-spacing:0.5px;">Identify Part</button>
+        <button class="btn btn-primary btn-sm" id="scan-btn" onclick="rerunOCR()" style="flex:none;width:auto;white-space:nowrap;height:28px;box-sizing:border-box;font-size:12px;padding:0 14px;" title="Scan photos for part number and stickers">⟳ Scan</button>
+      </div>
+      <!-- v403 header (old layout, kept for reference):
+      <div class="card-header" style="justify-content:space-between;">
         <div style="display:flex;align-items:center;gap:8px;">
-          <!-- v402: step number and title removed (the box stays for Auto / Scan)
+          <! - v402: step number and title removed (the box stays for Auto / Scan)
           <div class="step-num">2</div>
           <div class="card-title">Part Lookup</div>
-          -->
+          - ->
         </div>
         <div style="display:flex;align-items:center;gap:8px;">
           <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);cursor:pointer;user-select:none;" title="Auto-scan photos on upload">
@@ -1041,6 +1056,7 @@
           <button class="btn btn-primary btn-sm" id="scan-btn" onclick="rerunOCR()" style="font-size:12px;padding:4px 14px;" title="Scan photos for part number and stickers">⟳ Scan</button>
         </div>
       </div>
+      -->
       <div class="card-body">
 
         <!-- Mode Toggle -->
@@ -1076,9 +1092,7 @@
           <div class="field" style="margin-bottom:8px;">
             <label>Year Make Model</label>
             <input type="text" id="np-vehicle" placeholder="" autocomplete="off" oninput="parseVehicleInput();updateNoPartSearch()">
-            <div style="margin-top:6px;">
-              <button id="identify-part-btn" onclick="identifyPart()" style="background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:4px 10px;font-size:12px;font-weight:600;color:var(--accent);cursor:pointer;font-family:'Barlow Condensed',sans-serif;letter-spacing:0.5px;">Identify Part</button>
-            </div>
+            <!-- v404: Identify Part moved up into the Part Lookup header -->
             <div id="vehicle-guess-wrap" style="display:none;margin-top:8px;">
               <div style="font-size:11px;color:var(--muted);margin-bottom:4px;">Suggested vehicles</div>
               <div id="vehicle-guess-list" style="display:flex;flex-direction:column;gap:4px;"></div>
@@ -3152,8 +3166,16 @@ async function readVehicleSticker(file) {
 // ─── MODE SWITCHING ───────────────────────────────────────────────────────────
 let currentMode = 'partnumber';
 
+// v406: Identify Part is a No Part Number feature — greyed out (with a hint) under Has Part Number
+function syncIdentifyBtn() {
+  const b = document.getElementById('identify-part-btn'); if (!b) return;
+  const on = currentMode === 'nopartnumber';
+  b.disabled = !on; b.style.opacity = on ? '1' : '0.4'; b.style.cursor = on ? 'pointer' : 'not-allowed';
+  b.title = on ? 'Guess the part and vehicle from the photo' : 'Switch to No Part Number to use this';
+}
 function setMode(mode) {
   currentMode = mode;
+  syncIdentifyBtn();   // v406
   if (typeof _syncExactToggles === 'function') _syncExactToggles();   // v289
   document.getElementById('mode-partnumber').style.display   = mode === 'partnumber'   ? 'block' : 'none';
   document.getElementById('mode-nopartnumber').style.display = mode === 'nopartnumber' ? 'block' : 'none';
@@ -5620,6 +5642,7 @@ function resetForm(shippingOverride) {
   uploadedFiles = [];
   window._selectedPhotos = [];   // v296
   document.getElementById('photo-strip').innerHTML = '';
+  { const _tw = document.getElementById('trash-all-wrap'); if (_tw) _tw.style.display = 'none'; const _pc = document.getElementById('photo-count-label'); if (_pc) _pc.textContent = ''; }   // v404: count and Remove all go away with the photos
   document.getElementById('photo-input').value = '';
   document.getElementById('part-number').value = '';
   document.getElementById('pn-display').value = '';
@@ -6789,6 +6812,7 @@ function applyAltPartNumber() {
 // year/make/model fitments. Shows them as clickable chips under the vehicle box.
 // Does NOT autofill — the user picks one.
 async function identifyPart() {
+  // if (currentMode !== 'nopartnumber') setMode('nopartnumber');   // v405 — replaced in v406: the button is greyed out outside No Part Number instead
   if (uploadedFiles.length === 0) { showNotif('⚠ Upload photos first', true); return; }
   if (!settings.cloudinaryCloudName || !settings.cloudinaryApiKey || !settings.cloudinaryApiSecret) {
     showNotif('⚠ Add Cloudinary credentials in Settings (needed to host the photo for lookup)', true); return;
@@ -6922,6 +6946,7 @@ async function identifyPart() {
     showNotif('⚠ Identification failed: ' + (e && e.message ? e.message : String(e)), true);
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = origText || 'Identify Part'; }
+    syncIdentifyBtn();   // v406
   }
 }
 
