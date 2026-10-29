@@ -9,7 +9,8 @@
   // refresh, overriding anything init does.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 </script>
-<title>PartsLister Pro v407</title>
+<title>PartsLister Pro v408</title>
+<!-- v408: clearing a listing also clears the low-resolution / unreadable / too-many photo warnings. -->
 <!-- v407: a scan that finds no part number opens No Part Number by itself; a cleared listing starts on Has Part Number. -->
 <!-- v406: Identify Part is greyed out and unclickable unless No Part Number is selected (no more auto-switch). -->
 <!-- v405: Identify Part switches to No Part Number mode first. -->
@@ -932,7 +933,7 @@
     <!-- v302: logo goes to the dashboard -->
     <a href="/" title="Dashboard" style="text-decoration:none;color:inherit;">
       <div class="logo"><span>PARTS</span>LISTER</div>
-      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v407</span></div>
+      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v408</span></div>
     </a>
     <!-- v303: removed — the logo is the dashboard button
     <a href="/" class="btn btn-secondary btn-sm" title="Back to your dashboard" style="font-size:11px;padding:4px 10px;text-decoration:none;margin-left:6px;">⌂ Dashboard</a>
@@ -5654,6 +5655,7 @@ function resetForm(shippingOverride) {
   uploadedFiles = [];
   window._selectedPhotos = [];   // v296
   document.getElementById('photo-strip').innerHTML = '';
+  ['low-res-warning', 'unreadable-warning', 'photo-count-warning'].forEach(id => { const w = document.getElementById(id); if (w) w.style.display = 'none'; }); lowResFiles.clear(); unreadableFiles = new Set();   // v408: photo warnings don't outlive the listing
   { const _tw = document.getElementById('trash-all-wrap'); if (_tw) _tw.style.display = 'none'; const _pc = document.getElementById('photo-count-label'); if (_pc) _pc.textContent = ''; }   // v404: count and Remove all go away with the photos
   document.getElementById('photo-input').value = '';
   document.getElementById('part-number').value = '';
