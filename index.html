@@ -9,7 +9,8 @@
   // refresh, overriding anything init does.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 </script>
-<title>PartsLister Pro v396</title>
+<title>PartsLister Pro v397</title>
+<!-- v397: photos the browser can't open are marked CAN'T READ (hover for type/size) with a red bar and Remove unreadable. -->
 <!-- v396: a draft is deleted automatically once its listing (Launch or Scheduled) succeeds; the eBay User Token box and its status are removed from Settings. -->
 <!-- v395: Launch / Scheduled no longer greyed out without the User Token. -->
 <!-- v394: Launch / Scheduled no longer need the eBay User Token (it kept expiring) — the server uses your connected eBay account. -->
@@ -921,7 +922,7 @@
     <!-- v302: logo goes to the dashboard -->
     <a href="/" title="Dashboard" style="text-decoration:none;color:inherit;">
       <div class="logo"><span>PARTS</span>LISTER</div>
-      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v396</span></div>
+      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v397</span></div>
     </a>
     <!-- v303: removed — the logo is the dashboard button
     <a href="/" class="btn btn-secondary btn-sm" title="Back to your dashboard" style="font-size:11px;padding:4px 10px;text-decoration:none;margin-left:6px;">⌂ Dashboard</a>
@@ -990,6 +991,8 @@
           <!-- <div class="drop-sub">Part photos + SKU + BIN + vehicle sticker</div>   v384 -->
         </div>
         <div class="photo-strip" id="photo-strip"></div>
+        <!-- v397 -->
+        <div id="unreadable-warning" style="display:none;margin-top:6px;padding:8px 10px;background:rgba(224,82,82,0.12);border:1px solid #e05252;border-radius:6px;font-size:12px;color:#e05252;">⚠ <strong>Some photos can't be opened</strong> — <span id="unreadable-list"></span>. They usually haven't finished downloading from the shared album, or are in a format the browser can't show. Remove them, make sure they're downloaded (open them in Photos), and add them again. <button type="button" onclick="removeUnreadablePhotos()" style="margin-left:6px;padding:3px 9px;font-size:11px;background:#e05252;color:#fff;border:none;border-radius:4px;cursor:pointer;">Remove unreadable</button></div>
         <div id="low-res-warning">⚠ <strong>Low-resolution photos detected</strong> — these images weren't fully loaded from your Apple Shared Album. Please remove the highlighted photos and re-upload after they've fully downloaded.</div>
         <div id="photo-count-warning" style="display:none;margin-top:6px;padding:8px 10px;background:rgba(224,82,82,0.12);border:1px solid #e05252;border-radius:6px;font-size:12px;color:#e05252;">⚠ <strong>Too many photos</strong> — eBay allows a maximum of 24. Only the first 24 will be uploaded.</div>
         <div id="trash-all-wrap" style="display:none;margin-top:6px;">
@@ -1962,6 +1965,7 @@
 // ─── STATE ───────────────────────────────────────────────────────────────────
 let uploadedFiles = [];
 let lowResFiles = new Set();
+let unreadableFiles = new Set();   // v397
 let queue = [];
 let settings = {
   apiKey: '',
@@ -2386,6 +2390,7 @@ function renderPhotoStrip() {
   if (_prevH) strip.style.minHeight = _prevH + 'px';
   strip.innerHTML = '';
   lowResFiles.clear();
+  unreadableFiles = new Set(); { const uw = document.getElementById('unreadable-warning'); if (uw) uw.style.display = 'none'; }   // v397
   const warn = document.getElementById('low-res-warning');
   if (warn) warn.style.display = 'none';
   const countWarn = document.getElementById('photo-count-warning');
@@ -2434,7 +2439,23 @@ function renderPhotoStrip() {
         if (warn) warn.style.display = 'block';
       }
     };
+    // v397: a photo the browser can't open (not fully downloaded from a shared album, a format it can't show such as HEIC, or an empty file) is marked
+    // CAN'T READ, with its type and size, and listed in a red bar with a one-click "Remove unreadable"
+    img.onerror = () => {
+      if (wrap.classList.contains('unreadable')) return;
+      wrap.classList.add('unreadable'); wrap.style.outline = '2px solid #e05252';
+      const badge = document.createElement('div');
+      badge.className = 'low-res-badge'; badge.textContent = "CAN'T READ"; badge.title = f.name + ' · ' + (f.type || 'unknown type') + ' · ' + f.size + ' bytes';
+      wrap.appendChild(badge);
+      unreadableFiles.add(f);
+      const w = document.getElementById('unreadable-warning');
+      if (w) {
+        w.style.display = 'block';
+        document.getElementById('unreadable-list').textContent = Array.from(unreadableFiles).map(u => u.name + ' (' + (u.type || 'unknown type') + ', ' + (u.size >= 1024 ? Math.round(u.size / 1024) + ' KB' : u.size + ' bytes') + ')').join('; ');
+      }
+    };
     img.src = url;
+    // img.src = url;   // v396
 
     // Remove button
     const del = document.createElement('div');
@@ -2668,6 +2689,14 @@ async function rotatePhoto(index, degrees) {
   }
 }
 
+function removeUnreadablePhotos() {   // v397
+  const bad = unreadableFiles; if (!bad.size) return;
+  uploadedFiles = uploadedFiles.filter(f => !bad.has(f));
+  window._selectedPhotos = []; window._pnPhotoIdx = (window._pnPhotoFile && bad.has(window._pnPhotoFile)) ? -1 : window._pnPhotoIdx;
+  unreadableFiles = new Set();
+  renderPhotoStrip();
+  showNotif('✓ Removed the photos that could not be opened');
+}
 function removePhoto(index) {
   lockScroll(window.scrollY);
   uploadedFiles.splice(index, 1);
