@@ -9,7 +9,8 @@
   // refresh, overriding anything init does.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 </script>
-<title>PartsLister Pro v392</title>
+<title>PartsLister Pro v393</title>
+<!-- v393: small green L circle in the Price box while the price follows the shipping choice; "Required" in the Cost box fits (no spinner arrows); photo placeholder icon replaces "Drop photos here". -->
 <!-- v392: shipping options show their cost ("Standard · $18", "Free shipping" at 0, red "cost required" when a policy has an ID but no cost); the cost comes ONLY from the Cost box (name-reading dropped). -->
 <!-- v391: your shipping cost now comes from the Cost box if filled in, otherwise from the dollar amount in the shipping preset's name (e.g. "Standard $18"); the little note under the Price box is gone. -->
 <!-- v390: SUGGESTED PRICE — picking listings in the picker fills the Price box with their average total (price + shipping), adjusted by a % you choose, minus your own shipping for the shipping option you use, rounded to the nearest $1 / $5 / $10. Settings → Suggested Price; each shipping preset in Settings has a Cost box. -->
@@ -216,6 +217,9 @@
     position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
   }
   .drop-icon { font-size: 32px; margin-bottom: 8px; }
+  .shipping-preset-cost::-webkit-outer-spin-button, .shipping-preset-cost::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }   /* v393 */
+  .shipping-preset-cost { -moz-appearance: textfield; }
+  .shipping-preset-cost::placeholder { font-size: 10px; }
   .drop-title { font-weight: 600; color: var(--text); margin-bottom: 4px; }
   .drop-sub { font-size: 12px; color: var(--muted); }
 
@@ -914,7 +918,7 @@
     <!-- v302: logo goes to the dashboard -->
     <a href="/" title="Dashboard" style="text-decoration:none;color:inherit;">
       <div class="logo"><span>PARTS</span>LISTER</div>
-      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v392</span></div>
+      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v393</span></div>
     </a>
     <!-- v303: removed — the logo is the dashboard button
     <a href="/" class="btn btn-secondary btn-sm" title="Back to your dashboard" style="font-size:11px;padding:4px 10px;text-decoration:none;margin-left:6px;">⌂ Dashboard</a>
@@ -978,7 +982,8 @@
         <div class="drop-zone" id="drop-zone" style="margin-bottom:8px;min-height:140px;display:flex;flex-direction:column;align-items:center;justify-content:center;">   <!-- v385: same height as before the icon/text came out -->
           <input type="file" accept="image/*" multiple id="photo-input" onchange="handlePhotos(this.files)">
           <!-- <div class="drop-icon">📷</div>   v384 -->
-          <div class="drop-title">Drop photos here</div>
+          <!-- <div class="drop-title">Drop photos here</div>   v393: replaced by a flat gray mountain-and-sun placeholder -->
+          <svg width="64" height="64" viewBox="0 0 64 64" aria-hidden="true" style="display:block;pointer-events:none;" fill="#555"><circle cx="46" cy="18" r="6"/><path d="M4 54 L22 24 L33 42 L40 32 L60 54 Z"/></svg>
           <!-- <div class="drop-sub">Part photos + SKU + BIN + vehicle sticker</div>   v384 -->
         </div>
         <div class="photo-strip" id="photo-strip"></div>
@@ -1294,7 +1299,8 @@
         <div class="field">
           <label>Price</label>
           <div style="display:flex;align-items:stretch;background:var(--surface);border:1px solid var(--border);border-radius:4px;overflow:hidden;transition:border-color 0.2s;" onfocusin="this.style.borderColor='var(--accent)'" onfocusout="this.style.borderColor='var(--border)'">
-            <input type="number" id="your-price" placeholder="0.00" step="5" min="0" style="flex:1;border:none;background:transparent;padding:8px 10px;min-width:0;font-size:13px;color:var(--text);outline:none;" oninput="window._priceFromStore=false;" onfocus="avgPriceClear()">   <!-- v390: a click clears a price the tool filled in -->
+            <input type="number" id="your-price" placeholder="0.00" step="5" min="0" style="flex:1;border:none;background:transparent;padding:8px 10px;min-width:0;font-size:13px;color:var(--text);outline:none;" oninput="window._priceFromStore=false;" onfocus="avgPriceClear()">
+            <span id="avg-link" title="Linked to shipping — the price follows your shipping choice" style="display:none;align-self:center;width:15px;height:15px;margin-right:6px;border-radius:50%;background:#3fa65b;color:#fff;font:700 10px/15px 'Barlow Condensed',sans-serif;text-align:center;flex-shrink:0;cursor:default;">L</span>   <!-- v393 -->   <!-- v390: a click clears a price the tool filled in -->
             <button type="button" onclick="adjustPrice(5)" style="padding:0 9px;background:var(--surface2);border:none;border-left:1px solid var(--border);color:var(--muted);cursor:pointer;font-size:11px;line-height:1;transition:color 0.15s;" onmouseover="this.style.color='var(--accent)'" onmouseout="this.style.color='var(--muted)'">▲</button>
             <button type="button" onclick="adjustPrice(-5)" style="padding:0 9px;background:var(--surface2);border:none;border-left:1px solid var(--border);color:var(--muted);cursor:pointer;font-size:11px;line-height:1;transition:color 0.15s;" onmouseover="this.style.color='var(--accent)'" onmouseout="this.style.color='var(--muted)'">▼</button>
           </div>
@@ -5542,7 +5548,7 @@ function resetForm(shippingOverride) {
   window._lastEbayQueryBase = null;   // v272
   window._activeDescEmoji = undefined;
   window._priceFromStore = false;
-  window._avgTotal = null; window._avgFilled = null; window._avgCount = 0; { const n = document.getElementById('avg-note'); if (n) n.style.display = 'none'; }   // v390
+  window._avgTotal = null; window._avgFilled = null; window._avgCount = 0; if (typeof avgLinkRefresh === 'function') avgLinkRefresh(); { const n = document.getElementById('avg-note'); if (n) n.style.display = 'none'; }   // v390
   window._pickedListingTitle = null; // legacy compat
   resetListingContext();
   if (document.getElementById('vm-overlay')) document.getElementById('vm-overlay').style.display = 'none';
@@ -5806,6 +5812,7 @@ function adjustPrice(delta) {
   const next = Math.max(0, Math.round((current + delta) * 100) / 100);
   el.value = next % 1 === 0 ? next.toFixed(2) : next.toFixed(2);
   window._priceFromStore = false;
+  window._avgFilled = null; if (typeof avgLinkRefresh === 'function') avgLinkRefresh();   // v393: the arrows unlink it
 }
 
 function updateTitleCount() {
@@ -7948,7 +7955,12 @@ function avgCompute() {
   const val = Math.max(0, Math.round(raw / step) * step);
   return { val, adj, ship, step, pct };
 }
+function avgLinkRefresh() {   // v393: the green L shows only while the price is the one the tool filled in
+  const el = document.getElementById('your-price'), b = document.getElementById('avg-link');
+  if (b) b.style.display = (el && window._avgFilled != null && el.value === window._avgFilled) ? 'block' : 'none';
+}
 function avgShowNote(c) {
+  avgLinkRefresh();
   const n = document.getElementById('avg-note'); if (!n) return;
   if (!c || window._avgFilled == null) { n.style.display = 'none'; return; }
   return;   // v391: the note under the Price box is no longer shown
@@ -7976,7 +7988,8 @@ function avgPriceRecalc() {
   const c = avgCompute(); if (!c) return;
   el.value = c.val.toFixed(2); window._avgFilled = el.value; avgShowNote(c);
 }
-document.addEventListener('change', e => { if (e.target && e.target.id === 'shipping-policy-select') avgPriceRecalc(); });   // v391: any way the policy changes
+document.addEventListener('change', e => { if (e.target && e.target.id === 'shipping-policy-select') avgPriceRecalc(); });
+document.addEventListener('input', e => { if (e.target && e.target.id === 'your-price') { if (window._avgFilled != null && e.target.value !== window._avgFilled) window._avgFilled = null; avgLinkRefresh(); } });   // v393: typing a price unlinks it   // v391: any way the policy changes
 // one click in the box clears a price the tool filled in
 function avgPriceClear() {
   const el = document.getElementById('your-price');
