@@ -9,7 +9,9 @@
   // refresh, overriding anything init does.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 </script>
-<title>PartsLister Pro v399c</title>
+<title>PartsLister Pro v401</title>
+<!-- v401: List Pigtail / List Other Side drop-downs show a small photo thumbnail next to each title, and both titles are white. -->
+<!-- v400: Pool closes when you click outside it; the listing in progress is kept on this computer until it is launched, scheduled, cleared or discarded. -->
 <!-- v399: Scheduled Listing shows the same progress bar as Launch; a little cabin joins the photo placeholder. -->
 <!-- v398: HEIC photos are converted to JPEG when added. -->
 <!-- v397: photos the browser can't open are marked CAN'T READ (hover for type/size) with a red bar and Remove unreadable. -->
@@ -924,7 +926,7 @@
     <!-- v302: logo goes to the dashboard -->
     <a href="/" title="Dashboard" style="text-decoration:none;color:inherit;">
       <div class="logo"><span>PARTS</span>LISTER</div>
-      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v399</span></div>
+      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v401</span></div>
     </a>
     <!-- v303: removed — the logo is the dashboard button
     <a href="/" class="btn btn-secondary btn-sm" title="Back to your dashboard" style="font-size:11px;padding:4px 10px;text-decoration:none;margin-left:6px;">⌂ Dashboard</a>
@@ -1946,7 +1948,7 @@
 </div>
 
 <!-- DATA POOL OVERLAY -->
-<div id="dp-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:1000;overflow-y:auto;">
+<div id="dp-overlay" onclick="if(event.target===this)this.style.display='none'" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:1000;overflow-y:auto;">   <!-- v400: click outside the box closes it -->
   <div style="max-width:800px;margin:40px auto;background:var(--bg);border:1px solid var(--border);border-radius:8px;overflow:hidden;">
     <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--border);background:var(--surface);">
       <div style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--accent);">Data Pool <span id="dp-count" style="font-size:11px;opacity:0.6;font-weight:400;"></span></div>
@@ -6216,6 +6218,21 @@ const pigtailHistory = []; // max 3 — v301: saved to your account
 
 const PIGTAIL_KEYWORDS = ['pigtail','connector','plug','harness','wiring'];
 
+// v401: a small square thumbnail of the listing's first photo (about 96 px, a few KB) kept with each recent-listing entry
+async function _makeThumb(file) {
+  const bmp = await createImageBitmap(file), s = Math.min(bmp.width, bmp.height), c = document.createElement('canvas');
+  c.width = c.height = 96;
+  c.getContext('2d').drawImage(bmp, (bmp.width - s) / 2, (bmp.height - s) / 2, s, s, 0, 0, 96, 96);
+  if (bmp.close) bmp.close();
+  return c.toDataURL('image/jpeg', 0.7);
+}
+function _attachThumb(entry, file) {
+  if (!file) return;
+  _makeThumb(file).then(u => { entry.thumb = u; if (typeof _saveUserData === 'function') _saveUserData(); }).catch(() => { /* no thumbnail */ });
+}
+function _histThumbHtml(e) {
+  return e && e.thumb ? `<img src="${e.thumb}" alt="" style="width:36px;height:36px;object-fit:cover;border-radius:4px;flex-shrink:0;border:1px solid var(--border);">` : `<div style="width:36px;height:36px;border-radius:4px;flex-shrink:0;background:var(--surface);border:1px solid var(--border);"></div>`;
+}
 function savePigtailHistory() {
   const title = document.getElementById('listing-title').value.trim();
   const yearRange = document.getElementById('year-range').value.trim();
@@ -6237,6 +6254,7 @@ function savePigtailHistory() {
   const idx = pigtailHistory.findIndex(e => e.label === label);
   if (idx >= 0) pigtailHistory.splice(idx, 1);
   pigtailHistory.unshift(entry);
+  _attachThumb(entry, uploadedFiles[0]);   // v401
   if (pigtailHistory.length > 3) pigtailHistory.pop();
 }
 
@@ -6251,9 +6269,10 @@ function togglePigtailMenu() {
   } else {
     list.innerHTML = pigtailHistory.map((e, i) =>
       `<div onclick="applyPigtail(${i})" style="padding:8px 10px;font-size:12px;cursor:pointer;border-bottom:1px solid var(--border);color:var(--text);" onmouseover="this.style.background='var(--surface)'" onmouseout="this.style.background=''">`
-      + `<div style="font-weight:600;color:var(--accent);font-family:Barlow Condensed,sans-serif;">${escHtml(e.label)}</div>`
+      + `<div style="display:flex;align-items:center;gap:8px;">${_histThumbHtml(e)}<div style="min-width:0;">`
+      + `<div style="font-weight:600;color:var(--text);font-family:Barlow Condensed,sans-serif;">${escHtml(e.label)}</div>`   // v401: white (was --accent yellow)
       + `<div style="font-size:10px;color:var(--muted);">${[e.yearRange, e.make, e.model].filter(Boolean).join(' ')}</div>`
-      + `</div>`
+      + `</div></div></div>`
     ).join('');
   }
   menu.style.display = 'block';
@@ -6508,6 +6527,7 @@ function saveOtherSideHistory() {
   const idx = othersideHistory.findIndex(e => e.label === entry.label);
   if (idx >= 0) othersideHistory.splice(idx, 1);
   othersideHistory.unshift(entry);
+  _attachThumb(entry, uploadedFiles[0]);   // v401
   if (othersideHistory.length > 3) othersideHistory.pop();
   renderOtherSideHistory();
 }
@@ -6520,7 +6540,7 @@ function renderOtherSideHistory() {
     return;
   }
   list.innerHTML = othersideHistory.map((e, i) =>
-    `<div onclick="applyOtherSide(${i})" style="padding:8px 12px;font-size:12px;cursor:pointer;border-bottom:1px solid var(--border);color:var(--text);" onmouseover="this.style.background='var(--surface)'" onmouseout="this.style.background=''">${e.label}</div>`
+    `<div onclick="applyOtherSide(${i})" style="padding:8px 12px;font-size:12px;cursor:pointer;border-bottom:1px solid var(--border);color:var(--text);" onmouseover="this.style.background='var(--surface)'" onmouseout="this.style.background=''"><div style="display:flex;align-items:center;gap:8px;">${_histThumbHtml(e)}<div style="min-width:0;">${e.label}</div></div></div>`
   ).join('');
 }
 
@@ -8807,6 +8827,7 @@ async function _bootstrap() {
   _renderCount(d.account.listingCount);
   draftsRefreshCount();   // v386
   setTimeout(resumeDraftFromUrl, 300);   // v387: Resume on the Drafts page
+  setTimeout(workRestore, 600);   // v400: bring back the unfinished listing
   document.getElementById('auth-overlay').classList.add('hidden');
   try { sessionStorage.setItem('plp-signed-in', '1'); } catch (e) { /* fine */ }   // v381
 }
@@ -9081,7 +9102,7 @@ function draftsLeave() {
   return same || confirm('Go to Drafts? The listing on screen is not saved — press Cancel and use Save draft first if you want to keep it.');
 }
 // put a draft back on the page: every field, the photos in order, the scan results
-function _restoreDraft(d, files, rescan) {
+function _restoreDraft(d, files, rescan, msg) {
   resetForm();
   uploadedFiles = files;
   window._draftId = rescan ? null : d.id;
@@ -9113,7 +9134,7 @@ function _restoreDraft(d, files, rescan) {
   const rb = document.getElementById('rescan-btn'); if (rb && uploadedFiles.length) rb.style.display = 'inline-flex';
   updateEbayAuthStatus();
   try { window._draftSig = _draftSigOf(_draftSnapshot()); } catch (e) { window._draftSig = null; }
-  showNotif('✓ Draft opened — everything is as you left it');
+  showNotif(msg || '✓ Draft opened — everything is as you left it');
   setTimeout(() => window.scrollTo({ top: 0, behavior: 'instant' }), 50);
 }
 // /list?draft=12 (Resume) or /list?draft=12&rescan=1 (Start over with the photos) — from the Drafts page
@@ -9132,6 +9153,49 @@ async function resumeDraftFromUrl() {
     _restoreDraft(d, files, rescan);
   } catch (e) { showNotif('⚠ Could not open the draft — ' + (e && e.message ? e.message : 'try again'), true); }
 }
+
+// ─── v400: UNFINISHED LISTING IS KEPT (this computer) ────────────────────────
+// What is on the page (fields, scan results, photos) is saved a moment after every change, and put back when the page is opened again,
+// until the listing is launched, scheduled, cleared or discarded. Kept in this browser (IndexedDB), so "clear site data" removes it.
+let _workDB = null, _workSig = null, _workBusy = false;
+const _bootHadDraft = /[?&]draft=/.test(location.search);   // opened from the Drafts page: that draft wins
+function _workOpen() {
+  if (_workDB) return Promise.resolve(_workDB);
+  return new Promise((res, rej) => {
+    let rq; try { rq = indexedDB.open('plp-work', 1); } catch (e) { rej(e); return; }
+    rq.onupgradeneeded = () => rq.result.createObjectStore('w');
+    rq.onsuccess = () => { _workDB = rq.result; res(_workDB); }; rq.onerror = () => rej(rq.error);
+  });
+}
+async function _workPut(val) { const db = await _workOpen(); return new Promise((res, rej) => { const t = db.transaction('w', 'readwrite'); if (val) t.objectStore('w').put(val, 'cur'); else t.objectStore('w').delete('cur'); t.oncomplete = res; t.onerror = () => rej(t.error); }); }
+async function _workGet() { const db = await _workOpen(); return new Promise((res, rej) => { const t = db.transaction('w'); const q = t.objectStore('w').get('cur'); q.onsuccess = () => res(q.result || null); q.onerror = () => rej(q.error); }); }
+async function workSaveNow() {
+  if (_workBusy || window._workRestoring || !window._workReady) return; _workBusy = true;
+  try {
+    if (!_draftHasContent()) { if (_workSig !== 'empty') { await _workPut(null); _workSig = 'empty'; } return; }
+    const snap = _draftSnapshot(), sig = _draftSigOf(snap) + '|' + JSON.stringify([snap.boxes, snap.vars && snap.vars.pnPhotoIdx]);
+    if (sig === _workSig) return;
+    await _workPut({ snap, id: window._draftId || null, savedAt: Date.now(), files: uploadedFiles.map(f => ({ name: f.name, type: f.type, blob: f })) });
+    _workSig = sig;
+  } catch (e) { /* storage full or blocked — the unfinished-listing memory just doesn't work this time */ }
+  finally { _workBusy = false; }
+}
+async function workRestore() {
+  try {
+    if (_bootHadDraft) { await new Promise(r => setTimeout(r, 1500)); return; }   // opening a draft takes over
+    if (_draftHasContent()) return;
+    const w = await _workGet(); if (!w || !w.snap) return;
+    window._workRestoring = true;
+    const files = (w.files || []).map(f => new File([f.blob], f.name, { type: f.type || f.blob.type }));
+    _restoreDraft({ id: w.id, snap: w.snap }, files, false, '✓ Your unfinished listing is back');
+    window._draftId = w.id || null;
+    _workSig = null;
+  } catch (e) { /* nothing to restore */ }
+  finally { window._workRestoring = false; window._workReady = true; workSaveNow(); }
+}
+setInterval(workSaveNow, 2500);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') workSaveNow(); });
+window.addEventListener('pagehide', workSaveNow);
 
 _bootstrap();
 
