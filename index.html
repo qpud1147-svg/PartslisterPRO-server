@@ -9,7 +9,8 @@
   // refresh, overriding anything init does.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 </script>
-<title>PartsLister Pro v398</title>
+<title>PartsLister Pro v399c</title>
+<!-- v399: Scheduled Listing shows the same progress bar as Launch; a little cabin joins the photo placeholder. -->
 <!-- v398: HEIC photos are converted to JPEG when added. -->
 <!-- v397: photos the browser can't open are marked CAN'T READ (hover for type/size) with a red bar and Remove unreadable. -->
 <!-- v396: a draft is deleted automatically once its listing (Launch or Scheduled) succeeds; the eBay User Token box and its status are removed from Settings. -->
@@ -923,7 +924,7 @@
     <!-- v302: logo goes to the dashboard -->
     <a href="/" title="Dashboard" style="text-decoration:none;color:inherit;">
       <div class="logo"><span>PARTS</span>LISTER</div>
-      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v398</span></div>
+      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v399</span></div>
     </a>
     <!-- v303: removed — the logo is the dashboard button
     <a href="/" class="btn btn-secondary btn-sm" title="Back to your dashboard" style="font-size:11px;padding:4px 10px;text-decoration:none;margin-left:6px;">⌂ Dashboard</a>
@@ -988,7 +989,13 @@
           <input type="file" accept="image/*" multiple id="photo-input" onchange="handlePhotos(this.files)">
           <!-- <div class="drop-icon">📷</div>   v384 -->
           <!-- <div class="drop-title">Drop photos here</div>   v393: replaced by a flat gray mountain-and-sun placeholder -->
-          <svg width="64" height="64" viewBox="0 0 64 64" aria-hidden="true" style="display:block;pointer-events:none;" fill="#555"><circle cx="46" cy="18" r="6"/><path d="M4 54 L22 24 L33 42 L40 32 L60 54 Z"/></svg>
+          <!-- v399: cabin added on the left; was: -->
+          <!-- <svg width="64" height="64" viewBox="0 0 64 64" aria-hidden="true" style="display:block;pointer-events:none;" fill="#555"><circle cx="46" cy="18" r="6"/><path d="M4 54 L22 24 L33 42 L40 32 L60 54 Z"/></svg> -->
+          <!-- v399b: cabin redrawn after the painting (broad slate roof, chimney, steep wooden gable with balcony, door and window); was: -->
+          <!-- <svg width="88" height="64" viewBox="0 0 88 64" aria-hidden="true" style="display:block;pointer-events:none;" fill="#555"><circle cx="68" cy="16" r="6"/><path d="M24 54 L42 24 L53 42 L60 32 L82 54 Z"/><path fill-rule="evenodd" d="M2 44 L13 34 L24 44 L21 44 L21 54 L5 54 L5 44 Z M10 54 L10 46 L14 46 L14 54 Z M16.5 46 L16.5 49.5 L19 49.5 L19 46 Z"/><rect x="17" y="33" width="3" height="6"/></svg> -->
+          <!-- v399c: cabin in the bottom-left corner with more detail, a taller mountain range across the top; was: -->
+          <!-- <svg width="120" height="74" viewBox="0 0 104 64" aria-hidden="true" style="display:block;pointer-events:none;" fill="#555"><circle cx="86" cy="15" r="6"/><path d="M40 54 L58 24 L69 42 L76 32 L98 54 Z"/><g transform="translate(1,24.3) scale(0.55)"><path fill-rule="evenodd" d="M0.5 35 L16 20.5 L47 17 L66 33.5 L61.5 37 L61.5 54 L2.7 54 L2.7 38 Z M29.6 54 L29.6 43.8 L34.2 43.8 L34.2 54 Z M38.5 49.6 L38.5 44.6 L47.7 44.6 L47.7 49.6 Z M46.9 35.4 L46.9 31 L50 31 L50 35.4 Z M40 38.2 L40 37.2 L61.5 37.2 L61.5 38.2 Z M23 54 L23 39 L23.9 39 L23.9 54 Z"/><rect x="19.6" y="11.5" width="3.8" height="9.5"/></g></svg> -->
+          <svg viewBox="0 0 220 100" preserveAspectRatio="xMidYMax meet" aria-hidden="true" style="position:absolute;left:0;bottom:0;width:100%;height:100%;pointer-events:none;" fill="#555"><circle cx="190" cy="20" r="6.5"/><path d="M72 92 L98.7 44 L109.3 62 L130.7 20 L150.2 56 L162.7 38 L178.7 62 L189.4 50 L216 92 Z"/><g transform="translate(6,43.4) scale(0.9)"><path fill-rule="evenodd" d="M0.5 35 L16 20.5 L47 17 L66 33.5 L61.5 37 L61.5 54 L2.7 54 L2.7 38 Z M29.6 54 L29.6 43.8 L34.2 43.8 L34.2 54 Z M38.5 49.6 L38.5 44.6 L42.7 44.6 L42.7 49.6 Z M43.5 49.6 L43.5 44.6 L47.7 44.6 L47.7 49.6 Z M46.9 35.4 L46.9 31 L50 31 L50 35.4 Z M40 38.2 L40 37.2 L61.5 37.2 L61.5 38.2 Z M23 54 L23 39 L23.9 39 L23.9 54 Z M21 27 L29 26 L29 27.3 L21 28.3 Z M33 23.5 L41 23 L41 24.2 L33 24.7 Z M8 32.5 L15 31 L15 32.2 L8 33.7 Z M12 28 L18 25.5 L18 26.7 L12 29.2 Z M52 25 L52.7 25 L52.7 35 L52 35 Z M55.5 25.5 L56.2 25.5 L56.2 35 L55.5 35 Z M59 29 L59.7 29 L59.7 35 L59 35 Z"/><rect x="19.6" y="11.5" width="3.8" height="9.5"/></g></svg>
           <!-- <div class="drop-sub">Part photos + SKU + BIN + vehicle sticker</div>   v384 -->
         </div>
         <div class="photo-strip" id="photo-strip"></div>
@@ -5275,6 +5282,7 @@ async function saveToDraft() {
   btn.disabled = true;
   btn.textContent = 'Scheduling...';
   _setDraftStatus('Scheduling listing on eBay...');
+  _launchProgressStart();   // v399: same progress bar as Launch
 
   try {
     const partNum = document.getElementById('pn-display').value || '';
@@ -5322,6 +5330,7 @@ async function saveToDraft() {
         const file = uploadedFiles[i];
         try {
           _setDraftStatus(`Uploading photo ${i+1} of ${Math.min(uploadedFiles.length, 24)}...`);
+          _launchProgress(10 + (i / Math.min(uploadedFiles.length, 24)) * 70);   // v399
           const timestamp = Math.round(Date.now() / 1000);
           const folder = 'partslister';
           const strToSign = `folder=${folder}&timestamp=${timestamp}${settings.cloudinaryApiSecret}`;
@@ -5353,6 +5362,7 @@ async function saveToDraft() {
     const scheduleDate = new Date(Date.now() + scheduleDaysValue() * 24 * 60 * 60 * 1000).toISOString();   // v383: your choice, 1–21 days (eBay's max is 21)
 
     _setDraftStatus('Scheduling listing on eBay...');
+    _launchProgress(82); _launchCreep(96);   // v399
     const xml = `<?xml version="1.0" encoding="utf-8"?>
 <AddItemRequest xmlns="urn:ebay:apis:eBLBaseComponents">
   <RequesterCredentials><eBayAuthToken>${settings.ebayUserToken}</eBayAuthToken></RequesterCredentials>
@@ -5424,8 +5434,10 @@ async function saveToDraft() {
       statusEl.style.color = 'var(--success)';
       statusEl.textContent = '✓ Scheduled on eBay! Item ID: ' + itemIdMatch[1] + ' — find it in Seller Hub → Listings → Scheduled';
       showNotif('✓ Scheduled on eBay! ID: ' + itemIdMatch[1]);
+      _launchProgressEnd(true);   // v399
       savePigtailHistory(); saveOtherSideHistory(); _countListing();   // v301
       const _scheduledDraft = window._draftId;   // v396
+      await new Promise(r => setTimeout(r, 1100));   // v399: let the bar fill and turn green, like Launch
       resetForm();
       draftDeleteLaunched(_scheduledDraft);   // v396
     } else {
@@ -5435,6 +5447,7 @@ async function saveToDraft() {
     statusEl.style.color = 'var(--danger)';
     statusEl.textContent = '⚠ ' + e.message;
     showNotif('⚠ Schedule failed: ' + e.message, true);
+    _launchProgressEnd(false);   // v399
   } finally {
     btn.disabled = false;
     btn.textContent = 'Scheduled Listing';
