@@ -9,7 +9,9 @@
   // refresh, overriding anything init does.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 </script>
-<title>PartsLister Pro v390</title>
+<title>PartsLister Pro v392</title>
+<!-- v392: shipping options show their cost ("Standard · $18", "Free shipping" at 0, red "cost required" when a policy has an ID but no cost); the cost comes ONLY from the Cost box (name-reading dropped). -->
+<!-- v391: your shipping cost now comes from the Cost box if filled in, otherwise from the dollar amount in the shipping preset's name (e.g. "Standard $18"); the little note under the Price box is gone. -->
 <!-- v390: SUGGESTED PRICE — picking listings in the picker fills the Price box with their average total (price + shipping), adjusted by a % you choose, minus your own shipping for the shipping option you use, rounded to the nearest $1 / $5 / $10. Settings → Suggested Price; each shipping preset in Settings has a Cost box. -->
 <!-- v387: DRAFTS are saved on the server (so any device can open them) and live on their own Drafts page. The top-bar Drafts button just goes there; Save draft / Save draft & clear sit under Launch to eBay; Resume on the Drafts page brings the listing back here. -->
 <!-- v386: DRAFTS — a small Drafts menu in the top bar saves the listing on screen (photos and every field) and opens it again exactly as left, or reloads just its photos for a fresh scan. The top bar's other buttons got shorter names to make room. -->
@@ -912,7 +914,7 @@
     <!-- v302: logo goes to the dashboard -->
     <a href="/" title="Dashboard" style="text-decoration:none;color:inherit;">
       <div class="logo"><span>PARTS</span>LISTER</div>
-      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v390</span></div>
+      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v392</span></div>
     </a>
     <!-- v303: removed — the logo is the dashboard button
     <a href="/" class="btn btn-secondary btn-sm" title="Back to your dashboard" style="font-size:11px;padding:4px 10px;text-decoration:none;margin-left:6px;">⌂ Dashboard</a>
@@ -5888,15 +5890,21 @@ function renderShippingPresetsList() {
     const quickBadge = i < 4 ? `style="color:var(--accent);font-weight:700;"` : `style="color:var(--muted);"`;
     row.innerHTML = `
       <span ${quickBadge} style="font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;text-align:center;">#${i+1}</span>
-      <input type="text" class="shipping-preset-id" placeholder="Policy ID" value="${p.policyId || ''}" style="font-family:monospace;font-size:12px;">
+      <input type="text" class="shipping-preset-id" oninput="flagShipCosts()" placeholder="Policy ID" value="${p.policyId || ''}" style="font-family:monospace;font-size:12px;">
       <input type="text" class="shipping-preset-note" placeholder="e.g. Free Shipping" value="${p.note || ''}" style="font-size:12px;">
-      <input type="number" class="shipping-preset-cost" placeholder="Cost $" min="0" step="0.01" value="${p.cost === undefined || p.cost === '' || p.cost === null ? '' : p.cost}" title="What you charge for this shipping option — taken off the suggested price" style="font-size:12px;padding:6px 4px;">
+      <input type="number" class="shipping-preset-cost" oninput="flagShipCosts()" placeholder="Cost $" min="0" step="0.01" value="${p.cost === undefined || p.cost === '' || p.cost === null ? '' : p.cost}" title="What you charge for this shipping option — taken off the suggested price" style="font-size:12px;padding:6px 4px;">
       <input type="radio" name="shipping-default" id="sd-${i}" ${p.isDefault ? 'checked' : ''} onchange="setShippingDefault(${i})" style="accent-color:var(--accent);width:16px;height:16px;cursor:pointer;">
     `;
     list.appendChild(row);
   });
+  flagShipCosts();   // v392
 }
 
+// v392: a row with a policy ID but no cost gets a red outline and says Required (saving is not blocked; blank counts as 0)
+function flagShipCosts() {
+  const ids = document.querySelectorAll('.shipping-preset-id'), costs = document.querySelectorAll('.shipping-preset-cost');
+  costs.forEach((c, i) => { const bad = ids[i] && ids[i].value.trim() && c.value === ''; c.style.borderColor = bad ? '#e05252' : ''; c.placeholder = bad ? 'Required' : 'Cost $'; });
+}
 function setShippingDefault(idx) {
   const presets = readShippingPresetsList();
   presets.forEach((p, i) => p.isDefault = (i === idx));
@@ -5927,7 +5935,8 @@ function populateShippingDropdown() {
     const num = (settings.shippingPresets || []).indexOf(p) + 1;
     const opt = document.createElement('option');
     opt.value = p.policyId;
-    opt.textContent = '#' + num + (p.isDefault ? ' ★' : '') + '  ' + (p.note || p.policyId);
+    opt.textContent = '#' + num + (p.isDefault ? ' ★' : '') + '  ' + shipLabel(p);   // v392 (was: p.note || p.policyId)
+    if (shipCostText(p) === null) opt.style.color = '#e05252';
     if (p.policyId === current) opt.selected = true;
     sel.appendChild(opt);
   });
@@ -5951,7 +5960,7 @@ function renderShippingQuickButtons() {
     btn.dataset.policyId = p.policyId;
     btn.className = 'ship-quick-btn';
     btn.style.cssText = 'font-family:"Barlow Condensed",sans-serif;font-size:12px;font-weight:700;padding:5px 11px;border-radius:4px;border:1px solid var(--border);background:var(--surface);color:var(--muted);cursor:pointer;white-space:nowrap;transition:all 0.15s;letter-spacing:0.5px;flex-shrink:0;';
-    btn.innerHTML = '<span style="color:var(--accent);margin-right:4px;">#' + num + '</span>' + (p.note || p.policyId);
+    btn.innerHTML = '<span style="color:var(--accent);margin-right:4px;">#' + num + '</span>' + shipLabel(p).replace(/cost required$/, '<span style="color:#e05252;font-weight:700;">cost required</span>');   // v392
     btn.onclick = () => selectShippingQuick(p.policyId);
     wrap.appendChild(btn);
   });
@@ -5965,6 +5974,7 @@ function selectShippingQuick(policyId) {
 }
 
 function syncShippingQuickHighlight(policyId) {
+  { const _s = document.getElementById('shipping-policy-select'), _p = (settings.shippingPresets || []).find(q => q.policyId && q.policyId === policyId); if (_s) { const bad = !!_p && shipCostText(_p) === null; _s.style.borderColor = bad ? '#e05252' : ''; _s.title = bad ? 'This shipping policy has no cost — set it in Settings' : 'All shipping policies'; } }   // v392
   document.querySelectorAll('.ship-quick-btn').forEach(btn => {
     const active = btn.dataset.policyId === policyId;
     btn.style.background = active ? 'rgba(245,166,35,0.15)' : 'var(--surface)';
@@ -5987,7 +5997,7 @@ function applyShippingPolicy(policyId) {
     const preset = (settings.shippingPresets || []).find(p => p.policyId === pid);
     opt = document.createElement('option');
     opt.value = pid;
-    opt.textContent = preset ? ((preset.note || pid)) : pid;
+    opt.textContent = preset ? shipLabel(preset) : pid;   // v392
     sel.appendChild(opt);
   }
   sel.value = pid;
@@ -7914,10 +7924,22 @@ function ssClearSelection() {
 // ─── v390: SUGGESTED PRICE ───────────────────────────────────────────────
 // average of (price + shipping) over the picked listings → × (1 + percent) → minus what you charge for the shipping option in use → rounded to $1 / $5 / $10
 function avgMyShipCost() {
+  // v392: only the Cost box (blank = 0). v391 also read a dollar amount from the preset's name — dropped.
   const sel = document.getElementById('shipping-policy-select'); const pid = sel ? sel.value : '';
   const p = (settings.shippingPresets || []).find(q => q.policyId && q.policyId === pid);
   const c = p && p.cost !== '' && p.cost != null ? parseFloat(p.cost) : 0;
   return isFinite(c) ? c : 0;
+}
+// v392: how a shipping preset is shown — "Standard · $18", "Standard · Free shipping", or just the cost when there is no name; missing cost → "cost required" (red)
+function shipCostText(p) {
+  if (!p || p.cost === '' || p.cost == null || !isFinite(parseFloat(p.cost))) return null;
+  const c = parseFloat(p.cost);
+  return c === 0 ? 'Free shipping' : '$' + (c % 1 === 0 ? c.toFixed(0) : c.toFixed(2));
+}
+function shipLabel(p) {
+  const ct = shipCostText(p), nm = (p.note || '').trim();
+  const tail = ct === null ? 'cost required' : ct;
+  return (nm ? nm + ' · ' : '') + tail;
 }
 function avgCompute() {
   if (window._avgTotal == null) return null;
@@ -7929,6 +7951,7 @@ function avgCompute() {
 function avgShowNote(c) {
   const n = document.getElementById('avg-note'); if (!n) return;
   if (!c || window._avgFilled == null) { n.style.display = 'none'; return; }
+  return;   // v391: the note under the Price box is no longer shown
   n.textContent = 'Avg of ' + window._avgCount + ' picked: $' + window._avgTotal.toFixed(2) + ' incl. shipping' + (c.pct ? ' ' + (c.pct > 0 ? '+' : '') + c.pct + '%' : '') + (c.ship ? ' − $' + c.ship.toFixed(2) + ' your shipping' : '') + ' → $' + c.val;
   n.style.display = 'block';
 }
@@ -7953,6 +7976,7 @@ function avgPriceRecalc() {
   const c = avgCompute(); if (!c) return;
   el.value = c.val.toFixed(2); window._avgFilled = el.value; avgShowNote(c);
 }
+document.addEventListener('change', e => { if (e.target && e.target.id === 'shipping-policy-select') avgPriceRecalc(); });   // v391: any way the policy changes
 // one click in the box clears a price the tool filled in
 function avgPriceClear() {
   const el = document.getElementById('your-price');
