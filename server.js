@@ -1,4 +1,4 @@
-// PartsLister Pro server — v422
+// PartsLister Pro server — v423
 // v409: yard tickets — the whole-ticket text look and the Look checkboxes are gone; every text row and the logo each have the full set of sliders (boldness, thinner, lighter, weathered, gravel, fuzzy, faded gray, spots).
 // v408: yard tickets — each text row has a Look checkbox (row.useLook, default on): the whole-ticket text look only changes the rows that are checked.
 // v406: yard tickets — a whole-ticket Boldness for the text (design.textLook.bold) and a Lighter slider for the logo (less ink).
@@ -4083,7 +4083,8 @@ app.post('/api/tickets/settings', requireUser, express.json(), async (req, res) 
 // ─── v422: LISTING DRAFTS ────────────────────────────────────────────────────
 // Save a half-finished listing and come back to it from any device. The Listing Tool shrinks each photo (about 1600 px, ~300 KB) and sends
 // it one at a time; a draft is the fields (snap) plus its photos. At most DRAFT_MAX drafts per account, DRAFT_PHOTOS photos each.
-const DRAFT_MAX = 50, DRAFT_PHOTOS = 30;
+// const DRAFT_MAX = 50, DRAFT_PHOTOS = 30;   // v423
+const DRAFT_MAX = 50, DRAFT_PHOTOS = 24;   // v423: 24 = eBay's photo limit; photos are kept at full quality (eBay allows up to 12 MB each)
 app.get('/api/drafts', requireUser, async (req, res) => {
   try {
     const rows = (await pool.query('SELECT id, label, price, pn, vehicle, photo_count, updated_at FROM listing_drafts WHERE user_id = $1 ORDER BY updated_at DESC, id DESC', [req.user.id])).rows;
@@ -4117,7 +4118,7 @@ app.post('/api/drafts', requireUser, express.json({ limit: '5mb' }), async (req,
     res.json({ id: r.rows[0].id });
   } catch (e) { console.error('[drafts save]', e.message); res.status(500).json({ error: 'Could not save the draft' }); }
 });
-app.put('/api/drafts/:id/photos/:pos', requireUser, express.raw({ type: () => true, limit: '4mb' }), async (req, res) => {
+app.put('/api/drafts/:id/photos/:pos', requireUser, express.raw({ type: () => true, limit: '13mb' }), async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10), pos = parseInt(req.params.pos, 10);
     if (!Number.isInteger(pos) || pos < 0 || pos >= DRAFT_PHOTOS) return res.status(400).json({ error: 'A draft keeps up to ' + DRAFT_PHOTOS + ' photos.' });

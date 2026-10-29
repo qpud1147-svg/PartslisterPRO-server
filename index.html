@@ -9,7 +9,7 @@
   // refresh, overriding anything init does.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 </script>
-<title>PartsLister Pro v387</title>
+<title>PartsLister Pro v389</title>
 <!-- v387: DRAFTS are saved on the server (so any device can open them) and live on their own Drafts page. The top-bar Drafts button just goes there; Save draft / Save draft & clear sit under Launch to eBay; Resume on the Drafts page brings the listing back here. -->
 <!-- v386: DRAFTS — a small Drafts menu in the top bar saves the listing on screen (photos and every field) and opens it again exactly as left, or reloads just its photos for a fresh scan. The top bar's other buttons got shorter names to make room. -->
 <!-- v385: photo drop box back to its old height; the right side moved up to fill the gap above Refinement Notes. -->
@@ -911,7 +911,7 @@
     <!-- v302: logo goes to the dashboard -->
     <a href="/" title="Dashboard" style="text-decoration:none;color:inherit;">
       <div class="logo"><span>PARTS</span>LISTER</div>
-      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v387</span></div>
+      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v389</span></div>
     </a>
     <!-- v303: removed — the logo is the dashboard button
     <a href="/" class="btn btn-secondary btn-sm" title="Back to your dashboard" style="font-size:11px;padding:4px 10px;text-decoration:none;margin-left:6px;">⌂ Dashboard</a>
@@ -944,7 +944,7 @@
       </div>
     </div>
     <!-- v387: Drafts is a link to the Drafts page now (v386 had a dropdown here) -->
-    <a href="/drafts" id="drafts-header-btn" onclick="return draftsLeave()" title="Your saved drafts" style="font-size:11px;padding:4px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;font-family:Barlow Condensed,sans-serif;font-weight:700;letter-spacing:0.06em;color:var(--text);cursor:pointer;display:flex;align-items:center;gap:5px;white-space:nowrap;text-decoration:none;">Drafts <span id="drafts-count" style="display:none;background:var(--accent);color:#000;border-radius:8px;padding:0 6px;font-size:10px;line-height:15px;">0</span></a>
+    <a href="/active?view=drafts" id="drafts-header-btn" onclick="return draftsLeave()" title="Your saved drafts" style="font-size:11px;padding:4px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;font-family:Barlow Condensed,sans-serif;font-weight:700;letter-spacing:0.06em;color:var(--text);cursor:pointer;display:flex;align-items:center;gap:5px;white-space:nowrap;text-decoration:none;">Drafts <span id="drafts-count" style="display:none;background:var(--accent);color:#000;border-radius:8px;padding:0 6px;font-size:10px;line-height:15px;">0</span></a>
     <button onclick="openActiveListings()" id="active-count-btn" style="display:flex;align-items:center;background:none;border:none;cursor:pointer;padding:4px 8px;border-radius:4px;transition:background 0.15s;" onmouseover="this.style.background='rgba(245,166,35,0.1)'" onmouseout="this.style.background='none'" title="View active listings">
       <span style="font-size:22px;font-weight:800;font-family:'Barlow Condensed',sans-serif;color:var(--accent);line-height:1;" id="ebay-active-count">—</span>
     </button>
@@ -1434,6 +1434,10 @@
         <div style="flex:1;display:flex;flex-direction:column;gap:6px;">
           <!-- Missing BIN warning (shows only when no BIN code) -->
           <div id="bin-warning" style="display:none;padding:6px 10px;background:rgba(224,168,0,0.12);border:1px solid #e0a800;border-radius:4px;color:#e0a800;font-size:11px;font-weight:600;line-height:1.3;">⚠ No BIN location</div>
+          <!-- v388: Launch to eBay and Scheduled Listing swapped places -->
+          <button class="btn" id="launch-btn" onclick="launchToEbay()" style="width:100%;background:#0064d2;color:#fff;font-size:13px;padding:9px;opacity:0.85;" disabled>
+            Launch to eBay
+          </button>
           <!-- v383: + how many days ahead (saved with your settings) -->
           <div style="position:relative;">   <!-- v384: the days box sits inside the button's right edge, so the button stays full width -->
           <button class="btn btn-secondary" id="draft-btn" onclick="saveToDraft()" style="width:100%;font-size:12px;padding:8px;" disabled>
@@ -1441,9 +1445,6 @@
           </button>
           <select id="schedule-days" title="How many days ahead eBay schedules it (eBay allows up to 21)" onchange="setScheduleDays(this.value)" style="position:absolute;right:4px;top:50%;transform:translateY(-50%);width:auto;font-size:11px;padding:2px 4px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:3px;cursor:pointer;"></select>
           </div>
-          <button class="btn" id="launch-btn" onclick="launchToEbay()" style="width:100%;background:#0064d2;color:#fff;font-size:13px;padding:9px;opacity:0.85;" disabled>
-            Launch to eBay
-          </button>
           <!-- v387: save this listing as a draft (kept on the server — find it under Drafts) -->
           <div style="display:flex;gap:6px;">
             <button class="btn btn-secondary" id="save-draft-btn" onclick="saveDraft(false)" title="Save this listing as a draft and keep working on it" style="flex:1;font-size:12px;padding:7px;">Save draft</button>
@@ -8761,7 +8762,7 @@ async function _bootstrap() {
 //   if (!e.target.closest('#drafts-header-btn') && !e.target.closest('#drafts-menu')) { const m = document.getElementById('drafts-menu'); if (m) m.style.display = 'none'; }
 // });
 // ─── v387: DRAFTS (saved on the server) ──────────────────────────────────
-// A draft is the listing on screen frozen as it is: every field, plus the photos (each shrunk to about 1600 px so 20 of them stay small).
+// A draft is the listing on screen frozen as it is: every field, plus the photos (kept at full quality, as eBay takes them).
 // It is saved on the server under your account, so any device can open it. The Drafts page (/drafts) lists them; Resume there comes back here.
 const DRAFT_FIELDS = ['part-number','np-vehicle','np-year','np-make','np-model','np-desc','refinement-notes','listing-title','your-price','pn-display','sku-bin','sku-field','bin-field','ebay-category','ebay-category-id','year-range','make','model','part-type','color','location','description-preset-select','description-box','shipping-policy-select','condition','warranty','pkg-length','pkg-width','pkg-height','pkg-weight'];
 const DRAFT_BOXES = ['ai-result-box','np-scan-result-box','pn-variants-display','color-picker-wrap','material-picker-wrap','vehicle-guess-wrap','pn-alt-suggestion','rescan-btn','rescan-btn-np'];
@@ -8800,24 +8801,40 @@ function _draftLabel(snap) {
   return (v['listing-title'] || '').trim() || (v['part-number'] || '').trim() || [v['np-vehicle'], v['np-desc']].filter(Boolean).join(' ').trim() || 'Untitled draft';
 }
 // a photo shrunk to at most 1600 px on its long side (JPEG); a photo that is already small is sent as it is
+// async function _draftShrink(file) {
+//   try {
+//     const bmp = await createImageBitmap(file), longSide = Math.max(bmp.width, bmp.height), sc = Math.min(1, 1600 / longSide);
+//     if (sc === 1 && file.size <= 450000 && /^image\/(jpeg|png|webp|gif)$/.test(file.type)) { if (bmp.close) bmp.close(); return file; }
+//     const w = Math.max(1, Math.round(bmp.width * sc)), h = Math.max(1, Math.round(bmp.height * sc));
+//     const c = document.createElement('canvas'); c.width = w; c.height = h;
+//     const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, w, h); x.drawImage(bmp, 0, 0, w, h); if (bmp.close) bmp.close();
+//     const blob = await new Promise(res => c.toBlob(res, 'image/jpeg', 0.82));
+//     return blob && blob.size ? blob : file;
+//   } catch (e) {
+//     if (/^image\/(jpeg|png|webp|gif)$/.test(file.type)) return file;
+//     throw new Error('the photo ' + file.name + ' could not be read');
+//   }
+// }
 async function _draftShrink(file) {
-  try {
-    const bmp = await createImageBitmap(file), longSide = Math.max(bmp.width, bmp.height), sc = Math.min(1, 1600 / longSide);
-    if (sc === 1 && file.size <= 450000 && /^image\/(jpeg|png|webp|gif)$/.test(file.type)) { if (bmp.close) bmp.close(); return file; }
+  // v423: full quality — the original file goes up untouched (eBay takes up to 12 MB per photo). Only a type eBay can't use (e.g. HEIC) is converted, at high JPEG quality and full size; a file over 12 MB is scaled down just enough to fit.
+  const okType = /^image\/(jpeg|png|webp|gif)$/.test(file.type);
+  if (okType && file.size <= 12 * 1024 * 1024) return file;
+  const bmp = await createImageBitmap(file).catch(() => { throw new Error('the photo ' + file.name + ' could not be read'); });
+  let sc = 1;
+  for (let tries = 0; tries < 6; tries++) {
     const w = Math.max(1, Math.round(bmp.width * sc)), h = Math.max(1, Math.round(bmp.height * sc));
     const c = document.createElement('canvas'); c.width = w; c.height = h;
-    const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, w, h); x.drawImage(bmp, 0, 0, w, h); if (bmp.close) bmp.close();
-    const blob = await new Promise(res => c.toBlob(res, 'image/jpeg', 0.82));
-    return blob && blob.size ? blob : file;
-  } catch (e) {
-    if (/^image\/(jpeg|png|webp|gif)$/.test(file.type)) return file;
-    throw new Error('the photo ' + file.name + ' could not be read');
+    const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, w, h); x.drawImage(bmp, 0, 0, w, h);
+    const blob = await new Promise(res => c.toBlob(res, 'image/jpeg', 0.95));
+    if (blob && blob.size && blob.size <= 12 * 1024 * 1024) { if (bmp.close) bmp.close(); return blob; }
+    sc *= 0.8;
   }
+  throw new Error('the photo ' + file.name + ' is too large');
 }
 async function saveDraft(startNew) {
   if (_draftSaving) return;
   if (!_draftHasContent()) { showNotif('⚠ Nothing to save yet — add photos or fill in the listing first', true); return; }
-  if (uploadedFiles.length > 30) { showNotif('⚠ A draft keeps up to 30 photos — remove some first', true); return; }
+  if (uploadedFiles.length > 24) { showNotif('⚠ A draft keeps up to 24 photos (eBay’s limit) — remove some first', true); return; }
   _draftSaving = true;
   const b1 = document.getElementById('save-draft-btn'), b2 = document.getElementById('save-draft-new-btn'), t1 = b1.textContent, t2 = b2.textContent;
   const label = (txt) => { b1.textContent = txt; b2.textContent = txt; };
