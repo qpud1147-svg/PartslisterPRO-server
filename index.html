@@ -9,7 +9,8 @@
   // refresh, overriding anything init does.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 </script>
-<title>PartsLister Pro v389</title>
+<title>PartsLister Pro v390</title>
+<!-- v390: SUGGESTED PRICE — picking listings in the picker fills the Price box with their average total (price + shipping), adjusted by a % you choose, minus your own shipping for the shipping option you use, rounded to the nearest $1 / $5 / $10. Settings → Suggested Price; each shipping preset in Settings has a Cost box. -->
 <!-- v387: DRAFTS are saved on the server (so any device can open them) and live on their own Drafts page. The top-bar Drafts button just goes there; Save draft / Save draft & clear sit under Launch to eBay; Resume on the Drafts page brings the listing back here. -->
 <!-- v386: DRAFTS — a small Drafts menu in the top bar saves the listing on screen (photos and every field) and opens it again exactly as left, or reloads just its photos for a fresh scan. The top bar's other buttons got shorter names to make room. -->
 <!-- v385: photo drop box back to its old height; the right side moved up to fill the gap above Refinement Notes. -->
@@ -911,7 +912,7 @@
     <!-- v302: logo goes to the dashboard -->
     <a href="/" title="Dashboard" style="text-decoration:none;color:inherit;">
       <div class="logo"><span>PARTS</span>LISTER</div>
-      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v389</span></div>
+      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v390</span></div>
     </a>
     <!-- v303: removed — the logo is the dashboard button
     <a href="/" class="btn btn-secondary btn-sm" title="Back to your dashboard" style="font-size:11px;padding:4px 10px;text-decoration:none;margin-left:6px;">⌂ Dashboard</a>
@@ -1291,10 +1292,11 @@
         <div class="field">
           <label>Price</label>
           <div style="display:flex;align-items:stretch;background:var(--surface);border:1px solid var(--border);border-radius:4px;overflow:hidden;transition:border-color 0.2s;" onfocusin="this.style.borderColor='var(--accent)'" onfocusout="this.style.borderColor='var(--border)'">
-            <input type="number" id="your-price" placeholder="0.00" step="5" min="0" style="flex:1;border:none;background:transparent;padding:8px 10px;min-width:0;font-size:13px;color:var(--text);outline:none;" oninput="window._priceFromStore=false;">
+            <input type="number" id="your-price" placeholder="0.00" step="5" min="0" style="flex:1;border:none;background:transparent;padding:8px 10px;min-width:0;font-size:13px;color:var(--text);outline:none;" oninput="window._priceFromStore=false;" onfocus="avgPriceClear()">   <!-- v390: a click clears a price the tool filled in -->
             <button type="button" onclick="adjustPrice(5)" style="padding:0 9px;background:var(--surface2);border:none;border-left:1px solid var(--border);color:var(--muted);cursor:pointer;font-size:11px;line-height:1;transition:color 0.15s;" onmouseover="this.style.color='var(--accent)'" onmouseout="this.style.color='var(--muted)'">▲</button>
             <button type="button" onclick="adjustPrice(-5)" style="padding:0 9px;background:var(--surface2);border:none;border-left:1px solid var(--border);color:var(--muted);cursor:pointer;font-size:11px;line-height:1;transition:color 0.15s;" onmouseover="this.style.color='var(--accent)'" onmouseout="this.style.color='var(--muted)'">▼</button>
           </div>
+          <div id="avg-note" style="display:none;font-size:10px;color:var(--muted);margin-top:3px;line-height:1.3;"></div>   <!-- v390 -->
         </div>
         <div class="field">
           <label>Part Number</label>
@@ -1391,7 +1393,7 @@
         <label style="margin-bottom:5px;">Shipping Policy &amp; Condition</label>
         <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;">
           <div id="shipping-quick-btns" style="display:flex;gap:4px;flex-wrap:wrap;flex:1;min-width:0;"></div>
-          <select id="shipping-policy-select" style="width:160px;font-size:12px;padding:5px 6px;flex-shrink:0;" onchange="syncShippingQuickHighlight(this.value)" title="All shipping policies">
+          <select id="shipping-policy-select" style="width:160px;font-size:12px;padding:5px 6px;flex-shrink:0;" onchange="syncShippingQuickHighlight(this.value);avgPriceRecalc()" title="All shipping policies">
             <option value="">Shipping</option>
           </select>
           <select id="condition" style="width:90px;font-size:12px;padding:5px 6px;flex-shrink:0;">
@@ -1825,6 +1827,25 @@
           </label>
         </div>
         <hr>
+        <div style="font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--accent);margin-bottom:10px;">Suggested Price</div>
+        <p style="font-size:11px;color:var(--muted);margin-bottom:10px;">When you pick listings in the picker, the Price box is filled with their average total (price + shipping), adjusted by the percent below, minus what you charge for shipping (the Cost box on each shipping preset above), then rounded.</p>
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;font-weight:400;text-transform:none;">
+            <input type="checkbox" id="avg-price-toggle" style="accent-color:var(--accent);width:15px;height:15px;">
+            Fill the Price box from the selected listings
+          </label>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+            <div class="field">
+              <label>Percent of their average total</label>
+              <input type="number" id="avg-pct-input" placeholder="0" step="1" title="+10 = price 10% above the others, -10 = 10% below. 0 = the same">
+            </div>
+            <div class="field">
+              <label>Round to nearest</label>
+              <select id="avg-round-select"><option value="1">$1</option><option value="5">$5</option><option value="10">$10</option></select>
+            </div>
+          </div>
+        </div>
+        <hr>
         <div style="font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--accent);margin-bottom:10px;">List Pigtail Defaults</div>
         <p style="font-size:11px;color:var(--muted);margin-bottom:10px;">When you click List Pigtail, these values will be pre-filled automatically.</p>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
@@ -1936,6 +1957,9 @@ let settings = {
   oemNoPartNumber: true,
   deduct1c: false,
   deduct2c: false,
+  avgPriceOn: true,   // v390: suggested price from the selected listings
+  avgPct: 0,
+  avgRound: '5',
   autoScan: true,
   // pickExactOnly: false,   // v282-v288 — superseded by the per-mode keys below, kept for migration
   pickExactPN: false,     // v289: Exact filter, remembered for Has Part Number
@@ -5516,6 +5540,7 @@ function resetForm(shippingOverride) {
   window._lastEbayQueryBase = null;   // v272
   window._activeDescEmoji = undefined;
   window._priceFromStore = false;
+  window._avgTotal = null; window._avgFilled = null; window._avgCount = 0; { const n = document.getElementById('avg-note'); if (n) n.style.display = 'none'; }   // v390
   window._pickedListingTitle = null; // legacy compat
   resetListingContext();
   if (document.getElementById('vm-overlay')) document.getElementById('vm-overlay').style.display = 'none';
@@ -5660,6 +5685,9 @@ function openSettings() {
   if (document.getElementById('preserve-picked-title-toggle')) document.getElementById('preserve-picked-title-toggle').checked = !!settings.preservePickedTitle;
   document.getElementById('deduct-1c-toggle').checked = settings.deduct1c === true;
   document.getElementById('deduct-2c-toggle').checked = settings.deduct2c === true;
+  document.getElementById('avg-price-toggle').checked = settings.avgPriceOn !== false;   // v390
+  document.getElementById('avg-pct-input').value = settings.avgPct || 0;
+  document.getElementById('avg-round-select').value = String(settings.avgRound || '5');
   document.getElementById('returns-input').value = settings.returns;
   document.getElementById('payment-policy-input').value = settings.paymentPolicyId || '';
   document.getElementById('return-policy-input').value = settings.returnPolicyId || '';
@@ -5732,6 +5760,9 @@ function saveSettings() {
   settings.preservePickedTitle = document.getElementById('preserve-picked-title-toggle') ? document.getElementById('preserve-picked-title-toggle').checked : false;
   settings.deduct1c = document.getElementById('deduct-1c-toggle').checked;
   settings.deduct2c = document.getElementById('deduct-2c-toggle').checked;
+  settings.avgPriceOn = document.getElementById('avg-price-toggle').checked;   // v390
+  settings.avgPct = parseFloat(document.getElementById('avg-pct-input').value) || 0;
+  settings.avgRound = document.getElementById('avg-round-select').value || '5';
   settings.returns     = document.getElementById('returns-input').value.trim();
   settings.paymentPolicyId  = document.getElementById('payment-policy-input').value.trim();
   settings.returnPolicyId   = document.getElementById('return-policy-input').value.trim();
@@ -5853,12 +5884,13 @@ function renderShippingPresetsList() {
   list.innerHTML = '';
   presets.slice(0, 10).forEach((p, i) => {
     const row = document.createElement('div');
-    row.style.cssText = 'display:grid;grid-template-columns:22px 1fr 1fr auto;gap:6px;align-items:center;';
+    row.style.cssText = 'display:grid;grid-template-columns:22px 1fr 1fr 62px auto;gap:6px;align-items:center;';   // v390: + Cost
     const quickBadge = i < 4 ? `style="color:var(--accent);font-weight:700;"` : `style="color:var(--muted);"`;
     row.innerHTML = `
       <span ${quickBadge} style="font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;text-align:center;">#${i+1}</span>
       <input type="text" class="shipping-preset-id" placeholder="Policy ID" value="${p.policyId || ''}" style="font-family:monospace;font-size:12px;">
       <input type="text" class="shipping-preset-note" placeholder="e.g. Free Shipping" value="${p.note || ''}" style="font-size:12px;">
+      <input type="number" class="shipping-preset-cost" placeholder="Cost $" min="0" step="0.01" value="${p.cost === undefined || p.cost === '' || p.cost === null ? '' : p.cost}" title="What you charge for this shipping option — taken off the suggested price" style="font-size:12px;padding:6px 4px;">
       <input type="radio" name="shipping-default" id="sd-${i}" ${p.isDefault ? 'checked' : ''} onchange="setShippingDefault(${i})" style="accent-color:var(--accent);width:16px;height:16px;cursor:pointer;">
     `;
     list.appendChild(row);
@@ -5875,10 +5907,12 @@ function setShippingDefault(idx) {
 function readShippingPresetsList() {
   const ids = document.querySelectorAll('.shipping-preset-id');
   const notes = document.querySelectorAll('.shipping-preset-note');
+  const costs = document.querySelectorAll('.shipping-preset-cost');   // v390
   const radios = document.querySelectorAll('input[name="shipping-default"]');
   return Array.from(ids).map((inp, i) => ({
     policyId: inp.value.trim(),
     note: notes[i] ? notes[i].value.trim() : '',
+    cost: (costs[i] && costs[i].value !== '' && isFinite(parseFloat(costs[i].value))) ? Math.max(0, parseFloat(costs[i].value)) : '',   // v390
     isDefault: radios[i] ? radios[i].checked : false
   }));
 }
@@ -5927,6 +5961,7 @@ function selectShippingQuick(policyId) {
   const sel = document.getElementById('shipping-policy-select');
   if (sel) sel.value = policyId;
   syncShippingQuickHighlight(policyId);
+  avgPriceRecalc();   // v390
 }
 
 function syncShippingQuickHighlight(policyId) {
@@ -5957,6 +5992,7 @@ function applyShippingPolicy(policyId) {
   }
   sel.value = pid;
   syncShippingQuickHighlight(pid);
+  avgPriceRecalc();   // v390
   return true;
 }
 
@@ -7875,14 +7911,65 @@ function ssClearSelection() {
   ssUpdateSelectBar();
 }
 
+// ─── v390: SUGGESTED PRICE ───────────────────────────────────────────────
+// average of (price + shipping) over the picked listings → × (1 + percent) → minus what you charge for the shipping option in use → rounded to $1 / $5 / $10
+function avgMyShipCost() {
+  const sel = document.getElementById('shipping-policy-select'); const pid = sel ? sel.value : '';
+  const p = (settings.shippingPresets || []).find(q => q.policyId && q.policyId === pid);
+  const c = p && p.cost !== '' && p.cost != null ? parseFloat(p.cost) : 0;
+  return isFinite(c) ? c : 0;
+}
+function avgCompute() {
+  if (window._avgTotal == null) return null;
+  const pct = parseFloat(settings.avgPct) || 0, step = parseFloat(settings.avgRound) || 5, ship = avgMyShipCost();
+  const adj = window._avgTotal * (1 + pct / 100), raw = adj - ship;
+  const val = Math.max(0, Math.round(raw / step) * step);
+  return { val, adj, ship, step, pct };
+}
+function avgShowNote(c) {
+  const n = document.getElementById('avg-note'); if (!n) return;
+  if (!c || window._avgFilled == null) { n.style.display = 'none'; return; }
+  n.textContent = 'Avg of ' + window._avgCount + ' picked: $' + window._avgTotal.toFixed(2) + ' incl. shipping' + (c.pct ? ' ' + (c.pct > 0 ? '+' : '') + c.pct + '%' : '') + (c.ship ? ' − $' + c.ship.toFixed(2) + ' your shipping' : '') + ' → $' + c.val;
+  n.style.display = 'block';
+}
+function avgPriceFill(items) {
+  if (settings.avgPriceOn === false) return;
+  const tot = (items || []).map(it => {
+    const p = parseFloat(it.price); if (!isFinite(p) || p <= 0) return null;
+    const s = (it.shipping === 'Free' || it.shipping == null) ? 0 : (parseFloat(it.shipping) || 0);
+    return p + s;
+  }).filter(v => v !== null);
+  if (!tot.length) return;
+  window._avgTotal = tot.reduce((a, b) => a + b, 0) / tot.length; window._avgCount = tot.length;
+  const c = avgCompute(), el = document.getElementById('your-price');
+  if (!el || !c) return;
+  el.value = c.val.toFixed(2); window._avgFilled = el.value; window._priceFromStore = false;
+  avgShowNote(c);
+}
+// shipping option changed: re-do the price, but only while the box still holds the number we filled in
+function avgPriceRecalc() {
+  const el = document.getElementById('your-price');
+  if (!el || window._avgFilled == null || el.value !== window._avgFilled) return;
+  const c = avgCompute(); if (!c) return;
+  el.value = c.val.toFixed(2); window._avgFilled = el.value; avgShowNote(c);
+}
+// one click in the box clears a price the tool filled in
+function avgPriceClear() {
+  const el = document.getElementById('your-price');
+  if (!el || window._avgFilled == null || el.value !== window._avgFilled) return;
+  el.value = ''; window._avgFilled = null; avgShowNote(null);
+}
+
 async function ssGenerateFromSelected() {
   const selected = window._ssSelectedItems;
   if (!selected.length) return;
+  const _avgItems = selected.slice();   // v390
 
   if (selected.length === 1) {
     // Single selection — use existing pickSellSimilar flow
     closeSellSimilar();
     await pickSellSimilar(selected[0]);
+    avgPriceFill(_avgItems);   // v390
     return;
   }
 
@@ -7928,6 +8015,7 @@ async function ssGenerateFromSelected() {
   window._lc.selectedItems = selected; // Persist selection for re-highlight on reopen
 
   await searchEbay(false, { overrideTitles: titles, overrideCategory: _sortedCats[0] || null });
+  avgPriceFill(_avgItems);   // v390
   _gsMaybeHide();
 }
 
@@ -8436,6 +8524,7 @@ async function alGenerateFromSelected() {
   if (selected.length === 1) {
     closeActiveListings();
     await pickSellSimilar(selected[0]);
+    avgPriceFill(selected);   // v390
     return;
   }
   // Multiple — delegate to ssGenerateFromSelected logic
