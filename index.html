@@ -9,7 +9,9 @@
   // refresh, overriding anything init does.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 </script>
-<title>PartsLister Pro v394</title>
+<title>PartsLister Pro v396</title>
+<!-- v396: a draft is deleted automatically once its listing (Launch or Scheduled) succeeds; the eBay User Token box and its status are removed from Settings. -->
+<!-- v395: Launch / Scheduled no longer greyed out without the User Token. -->
 <!-- v394: Launch / Scheduled no longer need the eBay User Token (it kept expiring) — the server uses your connected eBay account. -->
 <!-- v393: small green L circle in the Price box while the price follows the shipping choice; "Required" in the Cost box fits (no spinner arrows); photo placeholder icon replaces "Drop photos here". -->
 <!-- v392: shipping options show their cost ("Standard · $18", "Free shipping" at 0, red "cost required" when a policy has an ID but no cost); the cost comes ONLY from the Cost box (name-reading dropped). -->
@@ -919,7 +921,7 @@
     <!-- v302: logo goes to the dashboard -->
     <a href="/" title="Dashboard" style="text-decoration:none;color:inherit;">
       <div class="logo"><span>PARTS</span>LISTER</div>
-      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v394</span></div>
+      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v396</span></div>
     </a>
     <!-- v303: removed — the logo is the dashboard button
     <a href="/" class="btn btn-secondary btn-sm" title="Back to your dashboard" style="font-size:11px;padding:4px 10px;text-decoration:none;margin-left:6px;">⌂ Dashboard</a>
@@ -1446,12 +1448,12 @@
           <!-- Missing BIN warning (shows only when no BIN code) -->
           <div id="bin-warning" style="display:none;padding:6px 10px;background:rgba(224,168,0,0.12);border:1px solid #e0a800;border-radius:4px;color:#e0a800;font-size:11px;font-weight:600;line-height:1.3;">⚠ No BIN location</div>
           <!-- v388: Launch to eBay and Scheduled Listing swapped places -->
-          <button class="btn" id="launch-btn" onclick="launchToEbay()" style="width:100%;background:#0064d2;color:#fff;font-size:13px;padding:9px;opacity:0.85;" disabled>
+          <button class="btn" id="launch-btn" onclick="launchToEbay()" style="width:100%;background:#0064d2;color:#fff;font-size:13px;padding:9px;opacity:0.85;">
             Launch to eBay
           </button>
           <!-- v383: + how many days ahead (saved with your settings) -->
           <div style="position:relative;">   <!-- v384: the days box sits inside the button's right edge, so the button stays full width -->
-          <button class="btn btn-secondary" id="draft-btn" onclick="saveToDraft()" style="width:100%;font-size:12px;padding:8px;" disabled>
+          <button class="btn btn-secondary" id="draft-btn" onclick="saveToDraft()" style="width:100%;font-size:12px;padding:8px;">
             Scheduled Listing
           </button>
           <select id="schedule-days" title="How many days ahead eBay schedules it (eBay allows up to 21)" onchange="setScheduleDays(this.value)" style="position:absolute;right:4px;top:50%;transform:translateY(-50%);width:auto;font-size:11px;padding:2px 4px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:3px;cursor:pointer;"></select>
@@ -1550,21 +1552,25 @@
           <input type="password" id="ebay-client-secret" placeholder="Cert-...">
         </div>
       </div>
+      <!-- v396: eBay User Token box removed (listing uses your connected eBay account now)
       <div class="field" style="margin-bottom:8px;">
         <label>eBay User Token <span style="color:var(--muted);font-size:10px;font-weight:400;text-transform:none">— from User Tokens → Auth'n'Auth → Sign in to Production</span></label>
         <textarea id="ebay-user-token-input" rows="3" placeholder="AgAAAA..." style="resize:vertical;font-family:monospace;font-size:11px;"></textarea>
         <p style="font-size:11px;color:var(--muted);margin-top:4px;">Token lasts 18 months. Paste the full token exactly as shown.</p>
       </div>
+      -->
       <div class="field" style="margin-bottom:8px;">
         <label>eBay Username <span style="color:var(--muted);font-size:10px;font-weight:400;text-transform:none">— your eBay login name, not store name (ebay.com/usr/<b>username</b>)</span></label>
         <input type="text" id="ebay-username-input" placeholder="e.g. johndoe_motors">
       </div>
+      <!-- v396: token status / Disconnect box removed
       <div id="ebay-auth-status" style="margin-bottom:10px;padding:8px 12px;border-radius:4px;font-size:12px;background:var(--surface2);border:1px solid var(--border);color:var(--muted);">
         Not connected to eBay
       </div>
       <button class="btn btn-secondary btn-sm" onclick="disconnectEbay()" id="ebay-disconnect-btn" style="display:none;margin-bottom:8px;">
         Disconnect eBay
       </button>
+      -->
         <hr>
         <div style="font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--accent);margin-bottom:10px;">Photo Hosting (Cloudinary)</div>
       <p style="font-size:11px;color:var(--muted);margin-bottom:10px;">Free photo hosting for eBay listings. Get your keys at cloudinary.com → Dashboard.</p>
@@ -4545,12 +4551,12 @@ function updateEbayAuthStatus() {
   // if (!status) return;
   const hasToken = settings.ebayUserToken && settings.ebayTokenExpiry;
   const tokenValid = hasToken && new Date(settings.ebayTokenExpiry) > new Date();
-  // v326: the status box moved out with the Account tab — still turn Launch / Save Draft on or off
-  if (!status) {
-    if (launchBtn) launchBtn.disabled = !tokenValid;
-    if (draftBtn) draftBtn.disabled = !tokenValid;
-    return;
-  }
+  // v395: Launch / Scheduled are always clickable — the server signs in with your connected eBay account, so the old User Token isn't needed (v326 turned them off without it)
+  if (launchBtn) launchBtn.disabled = false;
+  if (draftBtn) draftBtn.disabled = false;
+  if (!status) return;
+  // v326 (replaced by v395):
+  // if (!status) { launchBtn.disabled = !tokenValid; draftBtn.disabled = !tokenValid; return; }
   if (tokenValid) {
     status.style.cssText = 'margin-bottom:10px;padding:8px 12px;border-radius:4px;font-size:12px;background:rgba(76,175,130,0.1);border:1px solid var(--success);color:var(--success);';
     status.textContent = '✓ Connected to eBay — token valid until ' + new Date(settings.ebayTokenExpiry).toLocaleDateString();
@@ -4563,15 +4569,13 @@ function updateEbayAuthStatus() {
     status.textContent = '⚠ eBay token expired — please reconnect';
     if (connectBtn) connectBtn.style.display = 'block';
     if (disconnectBtn) disconnectBtn.style.display = 'none';
-    if (launchBtn) launchBtn.disabled = true;
-    if (draftBtn) draftBtn.disabled = true;
+    // v395: stay clickable
   } else {
     status.style.cssText = 'margin-bottom:10px;padding:8px 12px;border-radius:4px;font-size:12px;background:var(--surface2);border:1px solid var(--border);color:var(--muted);';
     status.textContent = 'Not connected to eBay';
     if (connectBtn) connectBtn.style.display = 'block';
     if (disconnectBtn) disconnectBtn.style.display = 'none';
-    if (launchBtn) launchBtn.disabled = true;
-    if (draftBtn) draftBtn.disabled = true;
+    // v395: stay clickable
   }
 }
 
@@ -5155,12 +5159,14 @@ async function launchToEbay() {
       // v281: success popup removed — the item ID already shows on the
       // status line right under the progress bar.
       savePigtailHistory(); saveOtherSideHistory(); _countListing();   // v301
+      const _launchedDraft = window._draftId;   // v396: the draft this listing came from
       // Give the bar time to visibly fill to 100% and turn green, and the
       // "Live on eBay" line time to register, before the form is cleared.
       // Wiping everything the same instant made a successful launch feel
       // unfinished, like the bar never got there.
       await new Promise(r => setTimeout(r, 1100));
       resetForm();
+      draftDeleteLaunched(_launchedDraft);   // v396
     } else {
       throw new Error(allErrors.length ? allErrors.join(' | ') : 'eBay returned an error — check console for details');
     }
@@ -5360,7 +5366,9 @@ async function saveToDraft() {
       statusEl.textContent = '✓ Scheduled on eBay! Item ID: ' + itemIdMatch[1] + ' — find it in Seller Hub → Listings → Scheduled';
       showNotif('✓ Scheduled on eBay! ID: ' + itemIdMatch[1]);
       savePigtailHistory(); saveOtherSideHistory(); _countListing();   // v301
+      const _scheduledDraft = window._draftId;   // v396
       resetForm();
+      draftDeleteLaunched(_scheduledDraft);   // v396
     } else {
       throw new Error(allErrors.length ? allErrors.join(' | ') : 'eBay returned an error — check console for details');
     }
@@ -5524,6 +5532,7 @@ function exportCSV() {
 
 // ─── RESET FORM ───────────────────────────────────────────────────────────────
 function resetForm(shippingOverride) {
+  window._draftId = null; window._draftSig = null;   // v396: a cleared page is no longer any draft
   uploadedFiles = [];
   window._selectedPhotos = [];   // v296
   document.getElementById('photo-strip').innerHTML = '';
@@ -8959,6 +8968,11 @@ async function _draftShrink(file) {
     sc *= 0.8;
   }
   throw new Error('the photo ' + file.name + ' is too large');
+}
+// v396: after a listing really lands on eBay, the draft it came from is deleted (a failed launch never gets here, so the draft stays)
+async function draftDeleteLaunched(id) {
+  if (!id) return;
+  try { await _draftApi('/api/drafts/' + id + '/delete', { method: 'POST' }); draftsRefreshCount(); } catch (e) { /* the draft just stays; delete it on the Drafts page */ }
 }
 async function saveDraft(startNew) {
   if (_draftSaving) return;
