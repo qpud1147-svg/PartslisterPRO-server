@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Sales v382</title>
+<title>PartsLister Pro Sales v383</title>
+<!-- v383: eBay User Token removed from Keys. -->
 <!-- v382: switching views is instant; browser reload / Refresh really reloads. v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@400;500;600&display=swap');
@@ -765,12 +766,14 @@
       </div>
       <div class="set-section">
         <h3>eBay</h3>
-        <p class="set-help">From <strong>developer.ebay.com</strong> → Application Keys → Production. The User Token (User Tokens → Auth'n'Auth) is what the Listing Tool lists with; it lasts 18 months.</p>
+        <p class="set-help">From <strong>developer.ebay.com</strong> → Application Keys → Production. The Listing Tool lists with your connected eBay account (Connect eBay), so no User Token is needed.</p>
         <div class="set-row"><label for="k-ebayClientId">Client ID (App ID)</label><div class="set-input-row"><input id="k-ebayClientId" type="text" autocomplete="off"></div></div>
         <div class="set-row"><label for="k-ebayClientSecret">Client Secret (Cert ID)</label><div class="set-input-row"><input id="k-ebayClientSecret" type="password" autocomplete="off"></div></div>
         <div class="set-row"><label for="k-ebayUsername">eBay username</label><div class="set-input-row"><input id="k-ebayUsername" type="text" placeholder="your eBay login name" autocomplete="off"></div></div>
+        <!-- v383: User Token (Auth'n'Auth) row removed — the Listing Tool now lists with your connected eBay account, so no token is needed
         <div class="set-row"><label for="k-ebayUserToken">User Token (Auth'n'Auth)</label><div class="set-input-row"><textarea id="k-ebayUserToken" rows="3" autocomplete="off" style="flex:1;min-width:0;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:4px;font-family:ui-monospace,Menlo,monospace;font-size:11.5px;resize:vertical;"></textarea></div>
           <div class="set-help" id="k-token-status" style="margin-top:4px;"></div></div>
+        -->
       </div>
       <div class="set-section">
         <h3>Photo hosting (Cloudinary)</h3>
@@ -1853,6 +1856,7 @@ async function loadKeys() {
 }
 function showTokenStatus(token, expiry) {
   const el = document.getElementById('k-token-status');
+  if (!el) return;   // v383: the token row is gone
   if (!token) { el.textContent = 'No User Token saved — the Listing Tool can\u2019t launch listings without it.'; el.style.color = 'var(--danger)'; return; }
   if (expiry && new Date(expiry) < new Date()) { el.textContent = 'This token expired ' + new Date(expiry).toLocaleDateString() + ' — paste a new one.'; el.style.color = 'var(--danger)'; return; }
   el.textContent = expiry ? 'Token good until about ' + new Date(expiry).toLocaleDateString() : 'Token saved.';
