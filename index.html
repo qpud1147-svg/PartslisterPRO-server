@@ -9,7 +9,8 @@
   // refresh, overriding anything init does.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 </script>
-<title>PartsLister Pro v402</title>
+<title>PartsLister Pro v403</title>
+<!-- v403: restoring an unfinished listing / draft can no longer stop half-way (photos were loaded but not shown, and couldn't be dropped again). -->
 <!-- v402: unfinished listing now keeps its PHOTOS reliably (each photo stored on its own, saved as soon as it is added); photo count next to Remove all; the Step 1 bar and the Step 2 title are gone. -->
 <!-- v401: List Pigtail / List Other Side drop-downs show a small photo thumbnail next to each title, and both titles are white. -->
 <!-- v400: Pool closes when you click outside it; the listing in progress is kept on this computer until it is launched, scheduled, cleared or discarded. -->
@@ -927,7 +928,7 @@
     <!-- v302: logo goes to the dashboard -->
     <a href="/" title="Dashboard" style="text-decoration:none;color:inherit;">
       <div class="logo"><span>PARTS</span>LISTER</div>
-      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v402</span></div>
+      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v403</span></div>
     </a>
     <!-- v303: removed — the logo is the dashboard button
     <a href="/" class="btn btn-secondary btn-sm" title="Back to your dashboard" style="font-size:11px;padding:4px 10px;text-decoration:none;margin-left:6px;">⌂ Dashboard</a>
@@ -2379,8 +2380,10 @@ async function handlePhotos(files) {
 }
 function _handlePhotosNow(files) {
   // Accumulate — add new files to existing, skip duplicates by name
-  const existingNames = new Set(uploadedFiles.map(f => f.name));
-  const newFiles = Array.from(files).filter(f => !existingNames.has(f.name));
+  // const existingNames = new Set(uploadedFiles.map(f => f.name));
+  // const newFiles = Array.from(files).filter(f => !existingNames.has(f.name));
+  const existingNames = new Set(uploadedFiles.map(f => f.name + '|' + f.size));   // v403: same name AND size = same photo
+  const newFiles = Array.from(files).filter(f => !existingNames.has(f.name + '|' + f.size));
   if (newFiles.length === 0) return;
   uploadedFiles = uploadedFiles.concat(newFiles);
   if (document.activeElement) document.activeElement.blur();
@@ -9109,6 +9112,42 @@ function draftsLeave() {
   return same || confirm('Go to Drafts? The listing on screen is not saved — press Cancel and use Save draft first if you want to keep it.');
 }
 // put a draft back on the page: every field, the photos in order, the scan results
+// v402 version (one failing step stopped everything after it):
+// function _restoreDraft(d, files, rescan, msg) {
+//   resetForm();
+//   uploadedFiles = files;
+//   window._draftId = rescan ? null : d.id;
+//   if (rescan) {
+//     renderPhotoStrip();
+//     if (files.length && typeof runOCR === 'function') runOCR();
+//     showNotif('✓ Photos loaded — scanning again');
+//     return;
+//   }
+//   const s = d.snap || {};
+//   window._selectedPhotos = ((s.vars && s.vars.selectedPhotos) || []).filter(i => uploadedFiles[i]);
+//   Object.keys(s.val || {}).forEach(k => { const el = document.getElementById(k); if (el) el.value = s.val[k]; });
+//   Object.keys(s.boxes || {}).forEach(k => { const el = document.getElementById(k), b = s.boxes[k]; if (el && b) { el.innerHTML = b.html; el.className = b.cls; el.style.display = b.disp; } });
+//   Array.from(document.querySelectorAll('input[name="nploc"]')).forEach((c, i) => { c.checked = !!(s.nploc && s.nploc[i]); });
+//   Array.from(document.querySelectorAll('.interchange-input')).forEach((inp, i) => { inp.value = (s.inter && s.inter[i]) || ''; updateInterchangeCount(inp); });
+//   ['coupe','convertible','pair'].forEach(v => { const b = document.getElementById('variant-' + v + '-btn'); if (!b) return; const on = !!(s.variants && s.variants[v]); b.dataset.active = on ? '1' : '0'; b.style.background = on ? 'var(--accent)' : 'var(--surface)'; b.style.color = on ? '#000' : 'var(--muted)'; b.style.borderColor = on ? 'var(--accent)' : 'var(--border)'; });
+//   const vr = s.vars || {};
+//   window._priceFromStore = !!vr.priceFromStore; window._activeDescEmoji = vr.activeDescEmoji; window._ocrDescGuess = vr.ocrDescGuess || ''; window._lensPartType = vr.lensPartType || '';
+//   window._ebayListingTotal = vr.ebayListingTotal || 0;
+//   if (vr.lc) window._lc = Object.assign({}, window._lc || {}, vr.lc);
+//   window._pnPhotoIdx = (typeof vr.pnPhotoIdx === 'number' && uploadedFiles[vr.pnPhotoIdx]) ? vr.pnPhotoIdx : -1;
+//   if (window._pnPhotoIdx >= 0) { window._pnPhotoFile = uploadedFiles[window._pnPhotoIdx]; try { const rd = new FileReader(); rd.onload = e => { window._pnPhotoDataUrl = e.target.result; }; rd.readAsDataURL(window._pnPhotoFile); } catch (e) { /* only the re-open link needs it */ } }
+//   if (s.val) { document.getElementById('ebay-category-id').value = s.val['ebay-category-id'] || ''; document.getElementById('ebay-category').value = s.val['ebay-category'] || ''; }
+//   if (s.val && s.val['shipping-policy-select'] && typeof applyShippingPolicy === 'function') applyShippingPolicy(s.val['shipping-policy-select']);
+//   setMode(s.mode || 'partnumber');
+//   if (typeof updateNoPartSearch === 'function') updateNoPartSearch();
+//   renderPhotoStrip();
+//   updateTitleCount();
+//   const rb = document.getElementById('rescan-btn'); if (rb && uploadedFiles.length) rb.style.display = 'inline-flex';
+//   updateEbayAuthStatus();
+//   try { window._draftSig = _draftSigOf(_draftSnapshot()); } catch (e) { window._draftSig = null; }
+//   showNotif(msg || '✓ Draft opened — everything is as you left it');
+//   setTimeout(() => window.scrollTo({ top: 0, behavior: 'instant' }), 50);
+// }
 function _restoreDraft(d, files, rescan, msg) {
   resetForm();
   uploadedFiles = files;
@@ -9120,28 +9159,30 @@ function _restoreDraft(d, files, rescan, msg) {
     return;
   }
   const s = d.snap || {};
-  window._selectedPhotos = ((s.vars && s.vars.selectedPhotos) || []).filter(i => uploadedFiles[i]);
-  Object.keys(s.val || {}).forEach(k => { const el = document.getElementById(k); if (el) el.value = s.val[k]; });
-  Object.keys(s.boxes || {}).forEach(k => { const el = document.getElementById(k), b = s.boxes[k]; if (el && b) { el.innerHTML = b.html; el.className = b.cls; el.style.display = b.disp; } });
-  Array.from(document.querySelectorAll('input[name="nploc"]')).forEach((c, i) => { c.checked = !!(s.nploc && s.nploc[i]); });
-  Array.from(document.querySelectorAll('.interchange-input')).forEach((inp, i) => { inp.value = (s.inter && s.inter[i]) || ''; updateInterchangeCount(inp); });
-  ['coupe','convertible','pair'].forEach(v => { const b = document.getElementById('variant-' + v + '-btn'); if (!b) return; const on = !!(s.variants && s.variants[v]); b.dataset.active = on ? '1' : '0'; b.style.background = on ? 'var(--accent)' : 'var(--surface)'; b.style.color = on ? '#000' : 'var(--muted)'; b.style.borderColor = on ? 'var(--accent)' : 'var(--border)'; });
+  try { renderPhotoStrip(); } catch (e) { console.warn('photo strip failed', e); }   // v403: photos first
+  const T = (fn) => { try { fn(); } catch (e) { console.warn('restore step failed', e); } };   // v403: one stubborn step must not stop the rest (a failure here used to leave the photos loaded but never shown)
+  T(() => { window._selectedPhotos = ((s.vars && s.vars.selectedPhotos) || []).filter(i => uploadedFiles[i]); });
+  T(() => { Object.keys(s.val || {}).forEach(k => { const el = document.getElementById(k); if (el) el.value = s.val[k]; }); });
+  T(() => { Object.keys(s.boxes || {}).forEach(k => { const el = document.getElementById(k), b = s.boxes[k]; if (el && b) { el.innerHTML = b.html; el.className = b.cls; el.style.display = b.disp; } }); });
+  T(() => { Array.from(document.querySelectorAll('input[name="nploc"]')).forEach((c, i) => { c.checked = !!(s.nploc && s.nploc[i]); }); });
+  T(() => { Array.from(document.querySelectorAll('.interchange-input')).forEach((inp, i) => { inp.value = (s.inter && s.inter[i]) || ''; updateInterchangeCount(inp); }); });
+  T(() => { ['coupe','convertible','pair'].forEach(v => { const b = document.getElementById('variant-' + v + '-btn'); if (!b) return; const on = !!(s.variants && s.variants[v]); b.dataset.active = on ? '1' : '0'; b.style.background = on ? 'var(--accent)' : 'var(--surface)'; b.style.color = on ? '#000' : 'var(--muted)'; b.style.borderColor = on ? 'var(--accent)' : 'var(--border)'; }); });
   const vr = s.vars || {};
-  window._priceFromStore = !!vr.priceFromStore; window._activeDescEmoji = vr.activeDescEmoji; window._ocrDescGuess = vr.ocrDescGuess || ''; window._lensPartType = vr.lensPartType || '';
-  window._ebayListingTotal = vr.ebayListingTotal || 0;
-  if (vr.lc) window._lc = Object.assign({}, window._lc || {}, vr.lc);
-  window._pnPhotoIdx = (typeof vr.pnPhotoIdx === 'number' && uploadedFiles[vr.pnPhotoIdx]) ? vr.pnPhotoIdx : -1;
-  if (window._pnPhotoIdx >= 0) { window._pnPhotoFile = uploadedFiles[window._pnPhotoIdx]; try { const rd = new FileReader(); rd.onload = e => { window._pnPhotoDataUrl = e.target.result; }; rd.readAsDataURL(window._pnPhotoFile); } catch (e) { /* only the re-open link needs it */ } }
-  if (s.val) { document.getElementById('ebay-category-id').value = s.val['ebay-category-id'] || ''; document.getElementById('ebay-category').value = s.val['ebay-category'] || ''; }
-  if (s.val && s.val['shipping-policy-select'] && typeof applyShippingPolicy === 'function') applyShippingPolicy(s.val['shipping-policy-select']);
-  setMode(s.mode || 'partnumber');
-  if (typeof updateNoPartSearch === 'function') updateNoPartSearch();
-  renderPhotoStrip();
-  updateTitleCount();
-  const rb = document.getElementById('rescan-btn'); if (rb && uploadedFiles.length) rb.style.display = 'inline-flex';
-  updateEbayAuthStatus();
+  T(() => { window._priceFromStore = !!vr.priceFromStore; window._activeDescEmoji = vr.activeDescEmoji; window._ocrDescGuess = vr.ocrDescGuess || ''; window._lensPartType = vr.lensPartType || ''; });
+  T(() => { window._ebayListingTotal = vr.ebayListingTotal || 0; });
+  T(() => { if (vr.lc) window._lc = Object.assign({}, window._lc || {}, vr.lc); });
+  T(() => { window._pnPhotoIdx = (typeof vr.pnPhotoIdx === 'number' && uploadedFiles[vr.pnPhotoIdx]) ? vr.pnPhotoIdx : -1; });
+  T(() => { if (window._pnPhotoIdx >= 0) { window._pnPhotoFile = uploadedFiles[window._pnPhotoIdx]; try { const rd = new FileReader(); rd.onload = e => { window._pnPhotoDataUrl = e.target.result; }; rd.readAsDataURL(window._pnPhotoFile); } catch (e) { /* only the re-open link needs it */ } } });
+  T(() => { if (s.val) { document.getElementById('ebay-category-id').value = s.val['ebay-category-id'] || ''; document.getElementById('ebay-category').value = s.val['ebay-category'] || ''; } });
+  T(() => { if (s.val && s.val['shipping-policy-select'] && typeof applyShippingPolicy === 'function') applyShippingPolicy(s.val['shipping-policy-select']); });
+  T(() => { setMode(s.mode || 'partnumber'); });
+  T(() => { if (typeof updateNoPartSearch === 'function') updateNoPartSearch(); });
+  T(() => { renderPhotoStrip(); });
+  T(() => { updateTitleCount(); });
+  T(() => { const rb = document.getElementById('rescan-btn'); if (rb && uploadedFiles.length) rb.style.display = 'inline-flex'; });
+  T(() => { updateEbayAuthStatus(); });
   try { window._draftSig = _draftSigOf(_draftSnapshot()); } catch (e) { window._draftSig = null; }
-  showNotif(msg || '✓ Draft opened — everything is as you left it');
+  T(() => { showNotif(msg || '✓ Draft opened — everything is as you left it'); });
   setTimeout(() => window.scrollTo({ top: 0, behavior: 'instant' }), 50);
 }
 // /list?draft=12 (Resume) or /list?draft=12&rescan=1 (Start over with the photos) — from the Drafts page
@@ -9247,7 +9288,7 @@ async function workRestore() {
     _restoreDraft({ id: w.id, snap: w.snap }, files, false, '✓ Your unfinished listing is back');
     window._draftId = w.id || null;
     _workSig = null;
-  } catch (e) { console.warn('unfinished-listing restore failed', e); }
+  } catch (e) { console.warn('unfinished-listing restore failed', e); try { showNotif('⚠ Could not bring back your unfinished listing — ' + (e && e.message ? e.message : 'unknown problem'), true); } catch (e2) { /* fine */ } }
   finally { window._workRestoring = false; window._workReady = true; workSaveNow(); }
 }
 setInterval(workSaveNow, 1500);
