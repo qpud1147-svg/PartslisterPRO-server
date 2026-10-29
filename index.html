@@ -9,7 +9,8 @@
   // refresh, overriding anything init does.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 </script>
-<title>PartsLister Pro v393</title>
+<title>PartsLister Pro v394</title>
+<!-- v394: Launch / Scheduled no longer need the eBay User Token (it kept expiring) — the server uses your connected eBay account. -->
 <!-- v393: small green L circle in the Price box while the price follows the shipping choice; "Required" in the Cost box fits (no spinner arrows); photo placeholder icon replaces "Drop photos here". -->
 <!-- v392: shipping options show their cost ("Standard · $18", "Free shipping" at 0, red "cost required" when a policy has an ID but no cost); the cost comes ONLY from the Cost box (name-reading dropped). -->
 <!-- v391: your shipping cost now comes from the Cost box if filled in, otherwise from the dollar amount in the shipping preset's name (e.g. "Standard $18"); the little note under the Price box is gone. -->
@@ -918,7 +919,7 @@
     <!-- v302: logo goes to the dashboard -->
     <a href="/" title="Dashboard" style="text-decoration:none;color:inherit;">
       <div class="logo"><span>PARTS</span>LISTER</div>
-      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v393</span></div>
+      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v394</span></div>
     </a>
     <!-- v303: removed — the logo is the dashboard button
     <a href="/" class="btn btn-secondary btn-sm" title="Back to your dashboard" style="font-size:11px;padding:4px 10px;text-decoration:none;margin-left:6px;">⌂ Dashboard</a>
@@ -4950,7 +4951,8 @@ function _launchProgressEnd(ok) {
 }
 
 async function launchToEbay() {
-  if (!settings.ebayUserToken) { showNotif('⚠ Add your eBay User Token in Settings first', true); return; }
+  // v394: no User Token needed any more — the server signs in with your connected eBay account (Sales page); the old token is only a fallback
+  // if (!settings.ebayUserToken) { showNotif('⚠ Add your eBay User Token in Settings first', true); return; }
   const title = document.getElementById('listing-title').value.trim();
   const _rawPrice = parseFloat(document.getElementById('your-price').value) || 0;
   const _priceDeduct = (settings.deduct1c ? 0.01 : (settings.deduct2c ? 0.02 : 0));
@@ -5176,7 +5178,8 @@ async function launchToEbay() {
 
 // ─── SAVE AS DRAFT ───────────────────────────────────────────────────────────
 async function saveToDraft() {
-  if (!settings.ebayUserToken) { showNotif('⚠ Add your eBay User Token in Settings first', true); return; }
+  // v394: no User Token needed any more — the server signs in with your connected eBay account (Sales page); the old token is only a fallback
+  // if (!settings.ebayUserToken) { showNotif('⚠ Add your eBay User Token in Settings first', true); return; }
   const title = document.getElementById('listing-title').value.trim();
   const _rawPrice = parseFloat(document.getElementById('your-price').value) || 0;
   const _priceDeduct = (settings.deduct1c ? 0.01 : (settings.deduct2c ? 0.02 : 0));

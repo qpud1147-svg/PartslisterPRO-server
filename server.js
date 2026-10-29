@@ -1,4 +1,4 @@
-// PartsLister Pro server — v423
+// PartsLister Pro server — v424
 // v409: yard tickets — the whole-ticket text look and the Look checkboxes are gone; every text row and the logo each have the full set of sliders (boldness, thinner, lighter, weathered, gravel, fuzzy, faded gray, spots).
 // v408: yard tickets — each text row has a Look checkbox (row.useLook, default on): the whole-ticket text look only changes the rows that are checked.
 // v406: yard tickets — a whole-ticket Boldness for the text (design.textLook.bold) and a Lighter slider for the logo (less ink).
@@ -789,30 +789,66 @@ app.post('/api/listing-count', requireUser, async (req, res) => {
 // allowed. The old Finding API branch is gone — eBay shut that API down.
 const ALLOWED_CALLS = ['AddItem', 'VerifyAddItem'];
 
+// v424: listing now signs in with the SAME eBay connection as the Sales page (OAuth — it renews itself), so the old Auth'n'Auth
+// "User Token" that kept expiring is no longer needed. The old token is only a fallback: used if eBay isn't connected, or if eBay
+// refuses the connection's sign-in (e.g. it was connected before listing permission was added — Reconnect eBay fixes that).
 app.post('/api/ebay', requireUser, express.text({ type: '*/*', limit: '2mb' }), async (req, res) => {
   const callName = req.get('x-ebay-api-call-name') || '';
   if (!ALLOWED_CALLS.includes(callName)) {
     return res.status(400).type('text/xml').send(`<error>Call not allowed: ${callName}</error>`);
   }
+  const body = String(req.body || '');
+  const legacy = (body.match(/<eBayAuthToken>\s*([^<\s][^<]*?)\s*<\/eBayAuthToken>/) || [])[1] || '';
+  const failXml = (msg) => `<?xml version="1.0" encoding="UTF-8"?><${callName}Response xmlns="urn:ebay:apis:eBLBaseComponents"><Ack>Failure</Ack><Errors><ShortMessage>${xmlEsc(msg)}</ShortMessage><LongMessage>${xmlEsc(msg)}</LongMessage><SeverityCode>Error</SeverityCode></Errors></${callName}Response>`;
+  const post = async (xml, iaf) => {
+    const h = { 'X-EBAY-API-CALL-NAME': callName, 'X-EBAY-API-SITEID': req.get('x-ebay-api-siteid') || '0', 'X-EBAY-API-COMPATIBILITY-LEVEL': '967', 'Content-Type': 'text/xml' };
+    if (iaf) h['X-EBAY-API-IAF-TOKEN'] = iaf;
+    else { h['X-EBAY-API-APP-NAME'] = req.get('x-ebay-api-app-name') || ''; h['X-EBAY-API-DEV-NAME'] = req.get('x-ebay-api-dev-name') || ''; h['X-EBAY-API-CERT-NAME'] = req.get('x-ebay-api-cert-name') || ''; }
+    const r = await fetch('https://api.ebay.com/ws/api.dll', { method: 'POST', headers: h, body: xml, signal: AbortSignal.timeout(60000) });
+    return r.text();
+  };
   try {
-    const r = await fetch('https://api.ebay.com/ws/api.dll', {
-      method: 'POST',
-      headers: {
-        'X-EBAY-API-CALL-NAME': callName,
-        'X-EBAY-API-APP-NAME': req.get('x-ebay-api-app-name') || '',
-        'X-EBAY-API-DEV-NAME': req.get('x-ebay-api-dev-name') || '',
-        'X-EBAY-API-CERT-NAME': req.get('x-ebay-api-cert-name') || '',
-        'X-EBAY-API-SITEID': req.get('x-ebay-api-siteid') || '0',
-        'X-EBAY-API-COMPATIBILITY-LEVEL': '967',
-        'Content-Type': 'text/xml'
-      },
-      body: String(req.body || '')
-    });
-    res.status(200).type('text/xml').send(await r.text());
+    let oauth = null, oauthErr = '';
+    try { oauth = await getAccessToken(req.user.id); } catch (e) { oauthErr = e.message || 'eBay is not connected'; }
+    if (oauth) {
+      const noCreds = body.replace(/<RequesterCredentials>[\s\S]*?<\/RequesterCredentials>/, '');
+      const txt = await post(noCreds, oauth);
+      const authFail = /<Ack>Failure<\/Ack>/.test(txt) && /<ErrorCode>(931|932|16110|17470|21916984|21916013|21917053)<\/ErrorCode>|scope|IAF token|Invalid.{0,20}token/i.test(txt);
+      if (!authFail || !legacy) return res.status(200).type('text/xml').send(authFail ? txt.replace(/<LongMessage>/, '<LongMessage>(eBay refused the connection’s sign-in — click Reconnect eBay on the Sales page to allow listing.) ') : txt);
+      // refused → try the old token
+      return res.status(200).type('text/xml').send(await post(body, null));
+    }
+    if (legacy) return res.status(200).type('text/xml').send(await post(body, null));
+    return res.status(200).type('text/xml').send(failXml(oauthErr + ' — connect eBay on the Sales page.'));
   } catch (e) {
     res.status(500).type('text/xml').send(`<error>${e.message}</error>`);
   }
 });
+// v422 version (needed the old User Token every time):
+// app.post('/api/ebay', requireUser, express.text({ type: '*/*', limit: '2mb' }), async (req, res) => {
+//   const callName = req.get('x-ebay-api-call-name') || '';
+//   if (!ALLOWED_CALLS.includes(callName)) {
+//     return res.status(400).type('text/xml').send(`<error>Call not allowed: ${callName}</error>`);
+//   }
+//   try {
+//     const r = await fetch('https://api.ebay.com/ws/api.dll', {
+//       method: 'POST',
+//       headers: {
+//         'X-EBAY-API-CALL-NAME': callName,
+//         'X-EBAY-API-APP-NAME': req.get('x-ebay-api-app-name') || '',
+//         'X-EBAY-API-DEV-NAME': req.get('x-ebay-api-dev-name') || '',
+//         'X-EBAY-API-CERT-NAME': req.get('x-ebay-api-cert-name') || '',
+//         'X-EBAY-API-SITEID': req.get('x-ebay-api-siteid') || '0',
+//         'X-EBAY-API-COMPATIBILITY-LEVEL': '967',
+//         'Content-Type': 'text/xml'
+//       },
+//       body: String(req.body || '')
+//     });
+//     res.status(200).type('text/xml').send(await r.text());
+//   } catch (e) {
+//     res.status(500).type('text/xml').send(`<error>${e.message}</error>`);
+//   }
+// });
 
 // ─── EBAY BROWSE (port of netlify/functions/ebaybrowse.js) ──────────────────
 // App tokens are cached per Client ID so every search doesn't fetch a new one.
