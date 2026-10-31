@@ -9,7 +9,8 @@
   // refresh, overriding anything init does.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 </script>
-<title>PartsLister Pro v408</title>
+<title>PartsLister Pro v409</title>
+<!-- v409: hover the green L to see exactly which listings (price + shipping) were averaged. -->
 <!-- v408: clearing a listing also clears the low-resolution / unreadable / too-many photo warnings. -->
 <!-- v407: a scan that finds no part number opens No Part Number by itself; a cleared listing starts on Has Part Number. -->
 <!-- v406: Identify Part is greyed out and unclickable unless No Part Number is selected (no more auto-switch). -->
@@ -933,7 +934,7 @@
     <!-- v302: logo goes to the dashboard -->
     <a href="/" title="Dashboard" style="text-decoration:none;color:inherit;">
       <div class="logo"><span>PARTS</span>LISTER</div>
-      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v408</span></div>
+      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v409</span></div>
     </a>
     <!-- v303: removed — the logo is the dashboard button
     <a href="/" class="btn btn-secondary btn-sm" title="Back to your dashboard" style="font-size:11px;padding:4px 10px;text-decoration:none;margin-left:6px;">⌂ Dashboard</a>
@@ -8110,7 +8111,7 @@ function avgCompute() {
 }
 function avgLinkRefresh() {   // v393: the green L shows only while the price is the one the tool filled in
   const el = document.getElementById('your-price'), b = document.getElementById('avg-link');
-  if (b) b.style.display = (el && window._avgFilled != null && el.value === window._avgFilled) ? 'block' : 'none';
+  if (b) { b.style.display = (el && window._avgFilled != null && el.value === window._avgFilled) ? 'block' : 'none'; b.title = 'Linked to shipping — the price follows your shipping choice' + (window._avgDetail ? '\nAverage of the ' + window._avgCount + ' picked listings: ' + window._avgDetail : ''); }
 }
 function avgShowNote(c) {
   avgLinkRefresh();
@@ -8129,6 +8130,8 @@ function avgPriceFill(items) {
   }).filter(v => v !== null);
   if (!tot.length) return;
   window._avgTotal = tot.reduce((a, b) => a + b, 0) / tot.length; window._avgCount = tot.length;
+  window._avgDetail = (items || []).filter(it => parseFloat(it.price) > 0).map(it => '$' + parseFloat(it.price).toFixed(0) + ((it.shipping === 'Free' || it.shipping == null || !parseFloat(it.shipping)) ? '' : ' +$' + parseFloat(it.shipping).toFixed(0) + ' ship')).join(', ');   // v409: what was averaged (hover the green L)
+  console.log('[suggested price] averaged', window._avgCount, 'picked listings:', window._avgDetail);
   const c = avgCompute(), el = document.getElementById('your-price');
   if (!el || !c) return;
   el.value = c.val.toFixed(2); window._avgFilled = el.value; window._priceFromStore = false;

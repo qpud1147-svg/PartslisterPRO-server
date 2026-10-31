@@ -927,10 +927,10 @@ app.post('/api/ebaybrowse', requireUser, express.json(), async (req, res) => {
         price: item.price ? item.price.value : null,
         shipping: (() => {
           if (item.shippingOptions && item.shippingOptions.length > 0) {
-            const opt = item.shippingOptions[0];
-            if (!opt.shippingCost) return 'Free';
-            const cost = parseFloat(opt.shippingCost.value);
-            return isNaN(cost) ? 'Free' : cost;
+            // v424: the CHEAPEST shipping option (the first one listed is not always it — an expedited or freight option can come first)
+            const costs = item.shippingOptions.map(o => (!o.shippingCost ? 0 : parseFloat(o.shippingCost.value))).filter(c => isFinite(c));
+            if (!costs.length) return 'Free';
+            return Math.min.apply(null, costs);
           }
           return null;
         })(),
