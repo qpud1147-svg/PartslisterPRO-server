@@ -9,7 +9,7 @@
   // refresh, overriding anything init does.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 </script>
-<title>PartsLister Pro v409</title>
+<title>PartsLister Pro v411</title>
 <!-- v409: hover the green L to see exactly which listings (price + shipping) were averaged. -->
 <!-- v408: clearing a listing also clears the low-resolution / unreadable / too-many photo warnings. -->
 <!-- v407: a scan that finds no part number opens No Part Number by itself; a cleared listing starts on Has Part Number. -->
@@ -934,7 +934,7 @@
     <!-- v302: logo goes to the dashboard -->
     <a href="/" title="Dashboard" style="text-decoration:none;color:inherit;">
       <div class="logo"><span>PARTS</span>LISTER</div>
-      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v409</span></div>
+      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v411</span></div>
     </a>
     <!-- v303: removed — the logo is the dashboard button
     <a href="/" class="btn btn-secondary btn-sm" title="Back to your dashboard" style="font-size:11px;padding:4px 10px;text-decoration:none;margin-left:6px;">⌂ Dashboard</a>
@@ -1875,6 +1875,10 @@
           </label>
         </div>
         <hr>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;font-weight:400;text-transform:none;margin-bottom:12px;">
+          <input type="checkbox" id="variant-chips-toggle" style="accent-color:var(--accent);width:15px;height:15px;">
+          Ask which version I have when picked listings differ (No Part Number)
+        </label>
         <div style="font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--accent);margin-bottom:10px;">Suggested Price</div>
         <p style="font-size:11px;color:var(--muted);margin-bottom:10px;">When you pick listings in the picker, the Price box is filled with their average total (price + shipping), adjusted by the percent below, minus what you charge for shipping (the Cost box on each shipping preset above), then rounded.</p>
         <div style="display:flex;flex-direction:column;gap:8px;">
@@ -2006,6 +2010,7 @@ let settings = {
   oemNoPartNumber: true,
   deduct1c: false,
   deduct2c: false,
+  variantChipsOn: true,   // v411: ask which version when picked listings differ
   avgPriceOn: true,   // v390: suggested price from the selected listings
   avgPct: 0,
   avgRound: '5',
@@ -3831,9 +3836,10 @@ async function searchEbay(useZip = false, options = {}) {
 
     const promptInfoPromise = isNoPartNumber
       ? Promise.resolve((function() {
-          const titlesBlock = realTitles.length
+          let titlesBlock = realTitles.length
             ? `Real eBay active listings for "${_browseQuery}":\n${realTitles.map((t,i) => `  ${i+1}. "${t}"`).join('\n')}`
             : `No listings were fetched from eBay for this search.`;
+          if (options.variantHint) titlesBlock += `\n\nIMPORTANT - the seller's part is this exact version: ${options.variantHint}. Write the title, description and item specifics for exactly this version. Include these features. Leave out any feature seen in the listings above that is not part of this version.`;   // v411
           return (settings.promptNoPartNumber || DEFAULT_PROMPT_NO_PART_NUMBER)
             .replace(/\{TITLES_BLOCK\}/g, titlesBlock)
             .replace(/\{TITLES_INSTRUCTION\}/g, realTitles.length ? 'Write your title based ONLY on the real listings above.' : 'Set title to "" and noListingsFound to true.')
@@ -5828,6 +5834,7 @@ function openSettings() {
   document.getElementById('deduct-1c-toggle').checked = settings.deduct1c === true;
   document.getElementById('deduct-2c-toggle').checked = settings.deduct2c === true;
   document.getElementById('avg-price-toggle').checked = settings.avgPriceOn !== false;   // v390
+  document.getElementById('variant-chips-toggle').checked = settings.variantChipsOn !== false;   // v411
   document.getElementById('avg-pct-input').value = settings.avgPct || 0;
   document.getElementById('avg-round-select').value = String(settings.avgRound || '5');
   document.getElementById('returns-input').value = settings.returns;
@@ -5903,6 +5910,7 @@ function saveSettings() {
   settings.deduct1c = document.getElementById('deduct-1c-toggle').checked;
   settings.deduct2c = document.getElementById('deduct-2c-toggle').checked;
   settings.avgPriceOn = document.getElementById('avg-price-toggle').checked;   // v390
+  settings.variantChipsOn = document.getElementById('variant-chips-toggle').checked;   // v411
   settings.avgPct = parseFloat(document.getElementById('avg-pct-input').value) || 0;
   settings.avgRound = document.getElementById('avg-round-select').value || '5';
   settings.returns     = document.getElementById('returns-input').value.trim();
@@ -8207,9 +8215,56 @@ async function ssGenerateFromSelected() {
   window._lc.source = 'pool';
   window._lc.selectedItems = selected; // Persist selection for re-highlight on reopen
 
-  await searchEbay(false, { overrideTitles: titles, overrideCategory: _sortedCats[0] || null });
+  let _variantHint = '';
+  if (currentMode === 'nopartnumber' && settings.variantChipsOn !== false && titles.length >= 2) {
+    try { _variantHint = await variantAsk(titles); } catch (e) { console.warn('[variant]', e); }   // v411
+  }
+  await searchEbay(false, { overrideTitles: titles, overrideCategory: _sortedCats[0] || null, variantHint: _variantHint });
   avgPriceFill(_avgItems);   // v390
   _gsMaybeHide();
+}
+
+// v411: group picked titles into real feature combinations and let the user tap the one that matches
+async function variantAsk(titles) {
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-api-key': settings.apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
+    body: JSON.stringify({ model: settings.claudeModel || 'claude-sonnet-4-5', max_tokens: 500,
+      system: 'You compare used auto part listing titles. Find features that differ between them (examples: halogen/xenon/HID/LED/adaptive for headlights; blind spot, auto dim, heated, camera, memory, power fold, turn signal for mirrors; LED vs bulb for tail lights; lid, armrest, leather for consoles). Ignore color, left/right side, condition, year, brand and shipping words. Group the titles into the REAL feature combinations that appear. Reply ONLY with JSON: {"combos":["short label like Blind Spot + Auto Dim", ...]}. Max 6 combos, most common first, each label 2-6 words. If the titles do not differ in features, reply {"combos":[]}.',
+      messages: [{ role: 'user', content: titles.map((t, i) => (i + 1) + '. ' + t).join('\n') }] })
+  });
+  const d = await res.json();
+  if (d.error) throw new Error(d.error.message);
+  const txt = (d.content || []).map(b => b.type === 'text' ? b.text : '').join('');
+  const m = txt.match(/\{[\s\S]*\}/);
+  const combos = m ? (JSON.parse(m[0]).combos || []).filter(c => typeof c === 'string' && c.trim()).slice(0, 6) : [];
+  if (combos.length < 2) return '';
+  return new Promise(resolve => {
+    const ov = document.createElement('div');
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:100000;display:flex;align-items:center;justify-content:center;';
+    const box = document.createElement('div');
+    box.style.cssText = 'background:var(--surface,#1a1a1a);border:1px solid var(--border,#333);border-radius:10px;padding:18px;max-width:460px;width:90%;';
+    box.innerHTML = '<div style="font-size:14px;margin-bottom:12px;color:var(--text,#eee);">Which one is yours?</div>';
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px;';
+    const done = v => { ov.remove(); resolve(v); };
+    combos.forEach(c => {
+      const b = document.createElement('button');
+      b.textContent = c;
+      b.style.cssText = 'padding:8px 14px;border-radius:18px;border:1px solid var(--accent,#4a9);background:transparent;color:var(--text,#eee);cursor:pointer;font-size:13px;';
+      b.onclick = () => done(c);
+      row.appendChild(b);
+    });
+    box.appendChild(row);
+    const sk = document.createElement('button');
+    sk.textContent = 'None of these';
+    sk.style.cssText = 'margin-top:14px;background:none;border:none;color:var(--muted,#888);cursor:pointer;font-size:12px;';
+    sk.onclick = () => done('');
+    box.appendChild(sk);
+    ov.appendChild(box);
+    ov.onclick = e => { if (e.target === ov) done(''); };
+    document.body.appendChild(ov);
+  });
 }
 
 function closeSellSimilar() {
