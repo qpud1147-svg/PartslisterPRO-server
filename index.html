@@ -9,7 +9,7 @@
   // refresh, overriding anything init does.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 </script>
-<title>PartsLister Pro v411</title>
+<title>PartsLister Pro v412</title>
 <!-- v409: hover the green L to see exactly which listings (price + shipping) were averaged. -->
 <!-- v408: clearing a listing also clears the low-resolution / unreadable / too-many photo warnings. -->
 <!-- v407: a scan that finds no part number opens No Part Number by itself; a cleared listing starts on Has Part Number. -->
@@ -934,7 +934,7 @@
     <!-- v302: logo goes to the dashboard -->
     <a href="/" title="Dashboard" style="text-decoration:none;color:inherit;">
       <div class="logo"><span>PARTS</span>LISTER</div>
-      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v411</span></div>
+      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v412</span></div>
     </a>
     <!-- v303: removed — the logo is the dashboard button
     <a href="/" class="btn btn-secondary btn-sm" title="Back to your dashboard" style="font-size:11px;padding:4px 10px;text-decoration:none;margin-left:6px;">⌂ Dashboard</a>
@@ -8230,14 +8230,14 @@ async function variantAsk(titles) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-api-key': settings.apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
     body: JSON.stringify({ model: settings.claudeModel || 'claude-sonnet-4-5', max_tokens: 500,
-      system: 'You compare used auto part listing titles. Find features that differ between them (examples: halogen/xenon/HID/LED/adaptive for headlights; blind spot, auto dim, heated, camera, memory, power fold, turn signal for mirrors; LED vs bulb for tail lights; lid, armrest, leather for consoles). Ignore color, left/right side, condition, year, brand and shipping words. Group the titles into the REAL feature combinations that appear. Reply ONLY with JSON: {"combos":["short label like Blind Spot + Auto Dim", ...]}. Max 6 combos, most common first, each label 2-6 words. If the titles do not differ in features, reply {"combos":[]}.',
+      system: 'You compare used auto part listing titles. Find features that differ between them (examples: halogen/xenon/HID/LED/adaptive for headlights; blind spot, auto dim, heated, camera, memory, power fold, turn signal for mirrors; LED or bulb and inner or outer for tail lights; lid, armrest, leather for consoles). Ignore color, left/right side, condition, year, brand and shipping words. Then list the REAL versions of the part that appear in the titles. Each item must name ONE specific version, a full combination of its features, so the seller can say "mine is exactly this". NEVER write comparisons or the word "vs" or "or" in a label (wrong: "Inner vs Outer", "LED vs Bulb"). Right: "LED Outer", "LED Inner", "Bulb Outer", "Bulb Inner" or "Blind Spot + Auto Dim + Heated", "Heated Only". Only list versions that actually appear in the titles, most common first, max 6, each 2-6 words. If the titles do not differ in features, reply {"combos":[]}. Reply ONLY with JSON: {"combos":["...","..."]}.',
       messages: [{ role: 'user', content: titles.map((t, i) => (i + 1) + '. ' + t).join('\n') }] })
   });
   const d = await res.json();
   if (d.error) throw new Error(d.error.message);
   const txt = (d.content || []).map(b => b.type === 'text' ? b.text : '').join('');
   const m = txt.match(/\{[\s\S]*\}/);
-  const combos = m ? (JSON.parse(m[0]).combos || []).filter(c => typeof c === 'string' && c.trim()).slice(0, 6) : [];
+  const combos = m ? (JSON.parse(m[0]).combos || []).filter(c => typeof c === 'string' && c.trim() && !/\bvs\.?\b|\//i.test(c)).slice(0, 6) : [];
   if (combos.length < 2) return '';
   return new Promise(resolve => {
     const ov = document.createElement('div');
