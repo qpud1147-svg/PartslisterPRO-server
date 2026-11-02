@@ -9,7 +9,7 @@
   // refresh, overriding anything init does.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 </script>
-<title>PartsLister Pro v420</title>
+<title>PartsLister Pro v422</title>
 <!-- v409: hover the green L to see exactly which listings (price + shipping) were averaged. -->
 <!-- v408: clearing a listing also clears the low-resolution / unreadable / too-many photo warnings. -->
 <!-- v407: a scan that finds no part number opens No Part Number by itself; a cleared listing starts on Has Part Number. -->
@@ -934,7 +934,7 @@
     <!-- v302: logo goes to the dashboard -->
     <a href="/" title="Dashboard" style="text-decoration:none;color:inherit;">
       <div class="logo"><span>PARTS</span>LISTER</div>
-      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v420</span></div>
+      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v422</span></div>
     </a>
     <!-- v303: removed — the logo is the dashboard button
     <a href="/" class="btn btn-secondary btn-sm" title="Back to your dashboard" style="font-size:11px;padding:4px 10px;text-decoration:none;margin-left:6px;">⌂ Dashboard</a>
@@ -8291,14 +8291,17 @@ function variantPrice(items) {   // v413: what the Price box would get from thes
   return Math.max(0, Math.round((tot.reduce((x, y) => x + y, 0) / tot.length * (1 + pct / 100) - ship) / step) * step);
 }
 async function variantAsk(titles, titleItems) {
-  const key = titles.join('|');
+  // v422: if a color is already chosen (it is in the description), colors are ignored; if not, they count as variants
+  let _colorChosen = false;
+  try { _colorChosen = !!getDetectedColor(document.getElementById('np-desc').value); } catch (e) {}
+  const key = titles.join('|') + (_colorChosen ? '|c1' : '|c0');
   let combos = window._variantCache[key];
   if (!combos) {
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': settings.apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
       body: JSON.stringify({ model: settings.claudeModel || 'claude-sonnet-4-5', max_tokens: 700,
-        system: 'You compare used auto part listing titles. Find features that differ between them (examples: halogen/xenon/HID/LED/adaptive for headlights; blind spot, auto dim, heated, camera, memory, power fold, turn signal for mirrors; LED or bulb and inner or outer for tail lights; lid, armrest, leather for consoles). Ignore color, left/right side, condition, year, brand and shipping words. Then list the REAL versions of the part that appear in the titles. Each item must name ONE specific version, a full combination of its features, so the seller can say "mine is exactly this". NEVER write comparisons or the word "vs" or "or" in a label (wrong: "Inner vs Outer", "LED vs Bulb"). Right: "LED Outer", "LED Inner", "Bulb Outer", "Bulb Inner" or "Blind Spot + Auto Dim + Heated", "Heated Only". Only list versions that actually appear in the titles, most common first, max 6, each 2-6 words. For each version also give the numbers of the titles (as numbered in the input) that are that version. If the titles do not differ in features, reply {"combos":[]}. Reply ONLY with JSON: {"combos":[{"label":"...","titles":[1,2]}]}.',
+        system: 'You compare used auto part listing titles. Find features that differ between them (examples: halogen/xenon/HID/LED/adaptive for headlights; blind spot, auto dim, heated, camera, memory, power fold, turn signal for mirrors; LED or bulb and inner or outer for tail lights; lid, armrest, leather for consoles). ' + (_colorChosen ? 'Colors (gray, grey, tan, black, beige, brown, white, red, blue and so on) are NEVER a difference here: the seller already chose a color, so ignore colors completely, even if the titles show different ones. ' : 'The seller has NOT chosen a color yet, so a color difference between titles (for example gray vs tan) counts as a real difference and each color can be part of a version label. ') + 'Also ignore left/right side, condition, year, brand and shipping words. Then list the REAL versions of the part that appear in the titles. Each item must name ONE specific version, a full combination of its features, so the seller can say "mine is exactly this". NEVER write comparisons or the word "vs" or "or" in a label (wrong: "Inner vs Outer", "LED vs Bulb"). Right: "LED Outer", "LED Inner", "Bulb Outer", "Bulb Inner" or "Blind Spot + Auto Dim + Heated", "Heated Only". Only list versions that actually appear in the titles, most common first, max 6, each 2-6 words. For each version also give the numbers of the titles (as numbered in the input) that are that version. If the titles do not differ in features, reply {"combos":[]}. Reply ONLY with JSON: {"combos":[{"label":"...","titles":[1,2]}]}.',
         messages: [{ role: 'user', content: titles.map((t, i) => (i + 1) + '. ' + t).join('\n') }] })
     });
     const d = await res.json();
@@ -8308,6 +8311,12 @@ async function variantAsk(titles, titleItems) {
     const raw = m ? (JSON.parse(m[0]).combos || []) : [];
     combos = raw.map(c => typeof c === 'string' ? { label: c, titles: [] } : { label: String((c && c.label) || ''), titles: Array.isArray(c && c.titles) ? c.titles : [] })
       .filter(c => c.label.trim() && !/\bvs\.?\b|\//i.test(c.label)).slice(0, 6);
+    // v421: colors are never a variant (the color picker handles them): strip color words, drop what's left empty, drop repeats
+    const _colorRx = /\b(black|gr[ae]y|silver|white|beige|tan|brown|red|blue|green|yellow|orange|purple|gold|chrome|charcoal|ebony|ivory|cream|camel|dark|light|two[- ]?tone)\b/gi;
+    const _seen = new Set();
+    if (_colorChosen) combos = combos.map(c => Object.assign({}, c, { label: c.label.replace(_colorRx, '').replace(/\s*\+\s*(?=\+|$)|^\s*\+\s*/g, '').replace(/\s{2,}/g, ' ').trim() }))
+      .filter(c => { const k = c.label.toLowerCase(); if (!c.label || _seen.has(k)) return false; _seen.add(k); return true; });
+    else combos = combos.filter(c => { const k = c.label.toLowerCase(); if (_seen.has(k)) return false; _seen.add(k); return true; });
     window._variantCache[key] = combos;
   }
   if (combos.length < 2) return null;
