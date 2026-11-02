@@ -9,7 +9,7 @@
   // refresh, overriding anything init does.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 </script>
-<title>PartsLister Pro v414</title>
+<title>PartsLister Pro v415</title>
 <!-- v409: hover the green L to see exactly which listings (price + shipping) were averaged. -->
 <!-- v408: clearing a listing also clears the low-resolution / unreadable / too-many photo warnings. -->
 <!-- v407: a scan that finds no part number opens No Part Number by itself; a cleared listing starts on Has Part Number. -->
@@ -934,7 +934,7 @@
     <!-- v302: logo goes to the dashboard -->
     <a href="/" title="Dashboard" style="text-decoration:none;color:inherit;">
       <div class="logo"><span>PARTS</span>LISTER</div>
-      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v414</span></div>
+      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v415</span></div>
     </a>
     <!-- v303: removed — the logo is the dashboard button
     <a href="/" class="btn btn-secondary btn-sm" title="Back to your dashboard" style="font-size:11px;padding:4px 10px;text-decoration:none;margin-left:6px;">⌂ Dashboard</a>
@@ -9328,6 +9328,8 @@ function _restoreDraft(d, files, rescan, msg) {
   T(() => { if (s.val) { document.getElementById('ebay-category-id').value = s.val['ebay-category-id'] || ''; document.getElementById('ebay-category').value = s.val['ebay-category'] || ''; } });
   T(() => { if (s.val && s.val['shipping-policy-select'] && typeof applyShippingPolicy === 'function') applyShippingPolicy(s.val['shipping-policy-select']); });
   T(() => { setMode(s.mode || 'partnumber'); });
+  // v415: rebuild the color swatches (restored HTML loses its click handlers) and keep the color the description already has
+  T(() => { if (currentMode === 'nopartnumber') showColorPicker(getDetectedColor(document.getElementById('np-desc').value) || null); });
   T(() => { if (typeof updateNoPartSearch === 'function') updateNoPartSearch(); });
   T(() => { renderPhotoStrip(); });
   T(() => { updateTitleCount(); });
