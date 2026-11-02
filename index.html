@@ -9,7 +9,7 @@
   // refresh, overriding anything init does.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 </script>
-<title>PartsLister Pro v416</title>
+<title>PartsLister Pro v417</title>
 <!-- v409: hover the green L to see exactly which listings (price + shipping) were averaged. -->
 <!-- v408: clearing a listing also clears the low-resolution / unreadable / too-many photo warnings. -->
 <!-- v407: a scan that finds no part number opens No Part Number by itself; a cleared listing starts on Has Part Number. -->
@@ -934,7 +934,7 @@
     <!-- v302: logo goes to the dashboard -->
     <a href="/" title="Dashboard" style="text-decoration:none;color:inherit;">
       <div class="logo"><span>PARTS</span>LISTER</div>
-      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v416</span></div>
+      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v417</span></div>
     </a>
     <!-- v303: removed — the logo is the dashboard button
     <a href="/" class="btn btn-secondary btn-sm" title="Back to your dashboard" style="font-size:11px;padding:4px 10px;text-decoration:none;margin-left:6px;">⌂ Dashboard</a>
@@ -2847,7 +2847,7 @@ function noListingsFeedback(query) {
 // v271: click any eBay listing thumbnail to blow it up over the screen.
 // Click anywhere (or press Esc) to dismiss. Tries eBay's full-size image and
 // quietly falls back to the thumbnail URL if that isn't available.
-function zoomListingImage(src) {
+function zoomListingImage(src, itemUrl) {
   if (!src) return;
   closeListingZoom();
   const ov = document.createElement('div');
@@ -2857,15 +2857,48 @@ function zoomListingImage(src) {
   const big = document.createElement('img');
   big.style.cssText = 'max-width:90vw;max-height:90vh;object-fit:contain;border-radius:6px;'
     + 'box-shadow:0 8px 40px rgba(0,0,0,0.6);';
-  big.onerror = () => { big.onerror = null; big.src = src; };
-  big.src = src.replace(/\/s-l\d+\./i, '/s-l1600.');
+  const big1600 = u => (u || '').replace(/\/s-l\d+\./i, '/s-l1600.');
+  const show = u => { big.onerror = () => { big.onerror = null; big.src = u; }; big.src = big1600(u); };
+  show(src);
   ov.appendChild(big);
   ov.onclick = closeListingZoom;
   document.body.appendChild(ov);
+  // v417: the rest of this listing's photos load only now, when its photo is opened
+  if (!itemUrl) return;
+  window._lzPhotos = window._lzPhotos || {};
+  const mk = (txt, side) => {
+    const b = document.createElement('button');
+    b.textContent = txt;
+    b.style.cssText = 'position:absolute;top:50%;' + side + ':18px;transform:translateY(-50%);width:44px;height:44px;border-radius:50%;border:none;background:rgba(255,255,255,0.18);color:#fff;font-size:24px;cursor:pointer;';
+    return b;
+  };
+  const apply = list => {
+    if (!document.getElementById('listing-zoom') || ov.parentNode !== document.body || list.length < 2) return;
+    let i = Math.max(0, list.findIndex(u => u.replace(/\/s-l\d+\./i, '') === src.replace(/\/s-l\d+\./i, '')));
+    const cnt = document.createElement('div');
+    cnt.style.cssText = 'position:absolute;bottom:18px;left:0;right:0;text-align:center;color:#fff;font-size:13px;';
+    const go = d => { i = (i + d + list.length) % list.length; show(list[i]); cnt.textContent = (i + 1) + ' / ' + list.length; };
+    const prev = mk('‹', 'left'), next = mk('›', 'right');
+    prev.onclick = e => { e.stopPropagation(); go(-1); };
+    next.onclick = e => { e.stopPropagation(); go(1); };
+    ov._lzKey = e => { if (e.key === 'ArrowLeft') { e.preventDefault(); go(-1); } else if (e.key === 'ArrowRight') { e.preventDefault(); go(1); } };
+    document.addEventListener('keydown', ov._lzKey);
+    cnt.textContent = (i + 1) + ' / ' + list.length;
+    ov.appendChild(prev); ov.appendChild(next); ov.appendChild(cnt);
+  };
+  if (window._lzPhotos[itemUrl]) { apply(window._lzPhotos[itemUrl]); return; }
+  fetch('/api/ebayitemphotos', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ clientId: settings.ebayClientId, clientSecret: settings.ebayClientSecret, url: itemUrl })
+  }).then(r => r.json()).then(d => {
+    const list = (d && d.photos) || [];
+    if (list.length) window._lzPhotos[itemUrl] = list;
+    apply(list);
+  }).catch(() => {});
 }
-
 function closeListingZoom() {
   const ov = document.getElementById('listing-zoom');
+  if (ov && ov._lzKey) document.removeEventListener('keydown', ov._lzKey);   // v417
   if (ov && ov.parentNode) ov.parentNode.removeChild(ov);
 }
 
@@ -4789,7 +4822,7 @@ function openDataPool() {
     const highlight = isPicked ? 'border:1px solid var(--accent);background:rgba(255,200,0,0.07);' : 'border:1px solid var(--border);';
     return `<div style="display:flex;gap:10px;align-items:flex-start;padding:8px;background:var(--surface);border-radius:4px;${highlight}">
       ${isPicked ? '<div style="font-size:9px;color:var(--accent);font-weight:700;flex-shrink:0;align-self:center;writing-mode:vertical-lr;transform:rotate(180deg);letter-spacing:1px;">PICKED</div>' : ''}
-      ${item.image ? `<img src="${item.image}" style="width:48px;height:48px;object-fit:cover;border-radius:3px;flex-shrink:0;cursor:zoom-in;" onerror="this.style.display='none'" onclick="event.stopPropagation();zoomListingImage(this.src)">` : '<div style="width:48px;height:48px;background:var(--surface2);border-radius:3px;flex-shrink:0;"></div>'}
+      ${item.image ? `<img src="${item.image}" style="width:48px;height:48px;object-fit:cover;border-radius:3px;flex-shrink:0;cursor:zoom-in;" onerror="this.style.display='none'" data-url="${url}" onclick="event.stopPropagation();zoomListingImage(this.src, this.dataset.url)">` : '<div style="width:48px;height:48px;background:var(--surface2);border-radius:3px;flex-shrink:0;"></div>'}
       <div style="flex:1;min-width:0;">
         <div style="font-size:12px;color:var(--text);line-height:1.4;margin-bottom:3px;">${url ? `<a href="${url}" target="_blank" style="color:var(--text);text-decoration:none;" onmouseover="this.style.color='var(--accent)'" onmouseout="this.style.color='var(--text)'">${item.title || ''}</a>` : (item.title || '')}</div>
         <div style="font-size:10px;color:var(--muted);display:flex;gap:8px;flex-wrap:wrap;">

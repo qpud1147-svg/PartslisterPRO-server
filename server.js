@@ -1,4 +1,4 @@
-// PartsLister Pro server — v424
+// PartsLister Pro server — v425
 // v409: yard tickets — the whole-ticket text look and the Look checkboxes are gone; every text row and the logo each have the full set of sliders (boldness, thinner, lighter, weathered, gravel, fuzzy, faded gray, spots).
 // v408: yard tickets — each text row has a Look checkbox (row.useLook, default on): the whole-ticket text look only changes the rows that are checked.
 // v406: yard tickets — a whole-ticket Boldness for the text (design.textLook.bold) and a Lighter slider for the logo (less ink).
@@ -879,6 +879,31 @@ async function getAppToken(clientId, clientSecret) {
   });
   return d.access_token;
 }
+
+// v425: all the photos of one listing, fetched only when the user opens a photo in the Pick list
+app.post('/api/ebayitemphotos', requireUser, express.json(), async (req, res) => {
+  const b = req.body || {};
+  const clientId = String(b.clientId || ''), clientSecret = String(b.clientSecret || '');
+  const m = String(b.url || '').match(/\/itm\/(?:[^\/?]*\/)?(\d{9,14})/);
+  if (!clientId || !clientSecret || !m) return res.status(400).json({ error: 'Missing keys or listing link', photos: [] });
+  let token;
+  try { token = await getAppToken(clientId, clientSecret); }
+  catch (e) { return res.status(401).json({ error: e.message, photos: [] }); }
+  try {
+    const r = await fetch('https://api.ebay.com/buy/browse/v1/item/get_item_by_legacy_id?legacy_item_id=' + m[1], {
+      headers: { 'Authorization': 'Bearer ' + token, 'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US' },
+      signal: AbortSignal.timeout(8000)
+    });
+    const d = await r.json();
+    if (d.errors && d.errors.length) return res.json({ photos: [], error: d.errors.map(e => e.message).join('; ') });
+    const photos = [];
+    if (d.image && d.image.imageUrl) photos.push(d.image.imageUrl);
+    (d.additionalImages || []).forEach(i => { if (i && i.imageUrl && !photos.includes(i.imageUrl)) photos.push(i.imageUrl); });
+    res.json({ photos });
+  } catch (e) {
+    res.json({ photos: [], error: 'Could not load more photos' });
+  }
+});
 
 app.post('/api/ebaybrowse', requireUser, express.json(), async (req, res) => {
   const b = req.body || {};
@@ -5414,5 +5439,6 @@ setupDatabase()
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v419 listening on ' + PORT)))   // v420
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v420 listening on ' + PORT)))   // v421
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v421 listening on ' + PORT)))   // v422
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v422 listening on ' + PORT)))
+  // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v422 listening on ' + PORT)))   // v425
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v425 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });
