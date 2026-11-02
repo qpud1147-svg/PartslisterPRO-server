@@ -9,7 +9,7 @@
   // refresh, overriding anything init does.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 </script>
-<title>PartsLister Pro v412</title>
+<title>PartsLister Pro v413</title>
 <!-- v409: hover the green L to see exactly which listings (price + shipping) were averaged. -->
 <!-- v408: clearing a listing also clears the low-resolution / unreadable / too-many photo warnings. -->
 <!-- v407: a scan that finds no part number opens No Part Number by itself; a cleared listing starts on Has Part Number. -->
@@ -934,7 +934,7 @@
     <!-- v302: logo goes to the dashboard -->
     <a href="/" title="Dashboard" style="text-decoration:none;color:inherit;">
       <div class="logo"><span>PARTS</span>LISTER</div>
-      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v412</span></div>
+      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v413</span></div>
     </a>
     <!-- v303: removed — the logo is the dashboard button
     <a href="/" class="btn btn-secondary btn-sm" title="Back to your dashboard" style="font-size:11px;padding:4px 10px;text-decoration:none;margin-left:6px;">⌂ Dashboard</a>
@@ -1332,6 +1332,7 @@
           <span class="title-chars" id="title-chars">0 / 80</span>
         </div>
         <input type="text" id="listing-title" placeholder="" oninput="updateTitleCount()" maxlength="90">
+        <div id="variant-tag" style="display:none;font-size:11px;color:var(--muted);margin-top:4px;"></div>
       </div>
 
       <!-- Row 1: Price + Part Number + SKU/BIN -->
@@ -2010,6 +2011,7 @@ let settings = {
   oemNoPartNumber: true,
   deduct1c: false,
   deduct2c: false,
+  variantPriceMode: 'all',   // v413: 'all' picked or 'match' the chip
   variantChipsOn: true,   // v411: ask which version when picked listings differ
   avgPriceOn: true,   // v390: suggested price from the selected listings
   avgPct: 0,
@@ -3223,7 +3225,8 @@ function setMode(mode) {
     setEbayBtnsDisabled(!hasPN);
   } else {
     if (searchBtn) searchBtn.disabled = true;
-    if (pnSsBtn) pnSsBtn.disabled = true;
+    // v413: pnSsBtn was never defined and threw here, skipping the three lines below
+    // if (pnSsBtn) pnSsBtn.disabled = true;
     setEbayBtnsDisabled(true);
     updateNoPartSearch();
     showColorPicker(null);
@@ -8195,6 +8198,9 @@ async function ssGenerateFromSelected() {
   ).filter(t => t.length >= 10);
 
   if (!titles.length) { showNotif('⚠ No valid titles from selected listings', true); return; }
+  // v413: the picked items that go with each title (same filter as above)
+  const _titleItems = selected.filter(item => (item.title || '').replace(_promoPattern, '').replace(/\s{2,}/g, ' ').trim().length >= 10);
+  const _vt = document.getElementById('variant-tag'); if (_vt) _vt.style.display = 'none';
 
   // Build category vote pool from selected items
   const _catCounts = {};
@@ -8215,55 +8221,103 @@ async function ssGenerateFromSelected() {
   window._lc.source = 'pool';
   window._lc.selectedItems = selected; // Persist selection for re-highlight on reopen
 
-  let _variantHint = '';
+  let _variantHint = '', _vChoice = null;
   if (currentMode === 'nopartnumber' && settings.variantChipsOn !== false && titles.length >= 2) {
-    try { _variantHint = await variantAsk(titles); } catch (e) { console.warn('[variant]', e); }   // v411
+    try { _vChoice = await variantAsk(titles, _titleItems); } catch (e) { console.warn('[variant]', e); }   // v411
+    if (_vChoice) _variantHint = _vChoice.hint;
   }
   await searchEbay(false, { overrideTitles: titles, overrideCategory: _sortedCats[0] || null, variantHint: _variantHint });
-  avgPriceFill(_avgItems);   // v390
+  // v413: price from only the listings that match the chip, if the user chose that in the window
+  avgPriceFill((_vChoice && _vChoice.useMatch && _vChoice.items.length) ? _vChoice.items : _avgItems);   // v390
+  if (_vChoice && _vt) { _vt.textContent = 'Version: ' + _vChoice.hint; _vt.style.display = 'block'; }
   _gsMaybeHide();
 }
 
-// v411: group picked titles into real feature combinations and let the user tap the one that matches
-async function variantAsk(titles) {
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-api-key': settings.apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
-    body: JSON.stringify({ model: settings.claudeModel || 'claude-sonnet-4-5', max_tokens: 500,
-      system: 'You compare used auto part listing titles. Find features that differ between them (examples: halogen/xenon/HID/LED/adaptive for headlights; blind spot, auto dim, heated, camera, memory, power fold, turn signal for mirrors; LED or bulb and inner or outer for tail lights; lid, armrest, leather for consoles). Ignore color, left/right side, condition, year, brand and shipping words. Then list the REAL versions of the part that appear in the titles. Each item must name ONE specific version, a full combination of its features, so the seller can say "mine is exactly this". NEVER write comparisons or the word "vs" or "or" in a label (wrong: "Inner vs Outer", "LED vs Bulb"). Right: "LED Outer", "LED Inner", "Bulb Outer", "Bulb Inner" or "Blind Spot + Auto Dim + Heated", "Heated Only". Only list versions that actually appear in the titles, most common first, max 6, each 2-6 words. If the titles do not differ in features, reply {"combos":[]}. Reply ONLY with JSON: {"combos":["...","..."]}.',
-      messages: [{ role: 'user', content: titles.map((t, i) => (i + 1) + '. ' + t).join('\n') }] })
-  });
-  const d = await res.json();
-  if (d.error) throw new Error(d.error.message);
-  const txt = (d.content || []).map(b => b.type === 'text' ? b.text : '').join('');
-  const m = txt.match(/\{[\s\S]*\}/);
-  const combos = m ? (JSON.parse(m[0]).combos || []).filter(c => typeof c === 'string' && c.trim() && !/\bvs\.?\b|\//i.test(c)).slice(0, 6) : [];
-  if (combos.length < 2) return '';
+// v411/v413: group picked titles into real feature combinations and let the user tap the one that matches
+window._variantCache = window._variantCache || {};
+function variantPrice(items) {   // v413: what the Price box would get from these listings (no side effects)
+  const tot = (items || []).map(it => {
+    const p = parseFloat(it.price); if (!isFinite(p) || p <= 0) return null;
+    return p + ((it.shipping === 'Free' || it.shipping == null) ? 0 : (parseFloat(it.shipping) || 0));
+  }).filter(v => v !== null);
+  if (!tot.length) return null;
+  const pct = parseFloat(settings.avgPct) || 0, step = parseFloat(settings.avgRound) || 5, ship = avgMyShipCost();
+  return Math.max(0, Math.round((tot.reduce((x, y) => x + y, 0) / tot.length * (1 + pct / 100) - ship) / step) * step);
+}
+async function variantAsk(titles, titleItems) {
+  const key = titles.join('|');
+  let combos = window._variantCache[key];
+  if (!combos) {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': settings.apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
+      body: JSON.stringify({ model: settings.claudeModel || 'claude-sonnet-4-5', max_tokens: 700,
+        system: 'You compare used auto part listing titles. Find features that differ between them (examples: halogen/xenon/HID/LED/adaptive for headlights; blind spot, auto dim, heated, camera, memory, power fold, turn signal for mirrors; LED or bulb and inner or outer for tail lights; lid, armrest, leather for consoles). Ignore color, left/right side, condition, year, brand and shipping words. Then list the REAL versions of the part that appear in the titles. Each item must name ONE specific version, a full combination of its features, so the seller can say "mine is exactly this". NEVER write comparisons or the word "vs" or "or" in a label (wrong: "Inner vs Outer", "LED vs Bulb"). Right: "LED Outer", "LED Inner", "Bulb Outer", "Bulb Inner" or "Blind Spot + Auto Dim + Heated", "Heated Only". Only list versions that actually appear in the titles, most common first, max 6, each 2-6 words. For each version also give the numbers of the titles (as numbered in the input) that are that version. If the titles do not differ in features, reply {"combos":[]}. Reply ONLY with JSON: {"combos":[{"label":"...","titles":[1,2]}]}.',
+        messages: [{ role: 'user', content: titles.map((t, i) => (i + 1) + '. ' + t).join('\n') }] })
+    });
+    const d = await res.json();
+    if (d.error) throw new Error(d.error.message);
+    const txt = (d.content || []).map(b => b.type === 'text' ? b.text : '').join('');
+    const m = txt.match(/\{[\s\S]*\}/);
+    const raw = m ? (JSON.parse(m[0]).combos || []) : [];
+    combos = raw.map(c => typeof c === 'string' ? { label: c, titles: [] } : { label: String((c && c.label) || ''), titles: Array.isArray(c && c.titles) ? c.titles : [] })
+      .filter(c => c.label.trim() && !/\bvs\.?\b|\//i.test(c.label)).slice(0, 6);
+    window._variantCache[key] = combos;
+  }
+  if (combos.length < 2) return null;
+  const itemsFor = c => (c.titles || []).map(n => (titleItems || [])[n - 1]).filter(Boolean);
   return new Promise(resolve => {
+    let sel = null, mode = settings.variantPriceMode === 'match' ? 'match' : 'all';
     const ov = document.createElement('div');
     ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:100000;display:flex;align-items:center;justify-content:center;';
     const box = document.createElement('div');
-    box.style.cssText = 'background:var(--surface,#1a1a1a);border:1px solid var(--border,#333);border-radius:10px;padding:18px;max-width:460px;width:90%;';
-    box.innerHTML = '<div style="font-size:14px;margin-bottom:12px;color:var(--text,#eee);">Which one is yours?</div>';
+    box.style.cssText = 'background:var(--surface,#1a1a1a);border:1px solid var(--border,#333);border-radius:10px;padding:18px;max-width:480px;width:90%;color:var(--text,#eee);';
+    box.innerHTML = '<div style="font-size:14px;margin-bottom:12px;">Which one is yours?</div>';
     const row = document.createElement('div');
     row.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px;';
+    const priceBox = document.createElement('div');
+    priceBox.style.cssText = 'margin-top:14px;font-size:12px;display:none;align-items:center;gap:8px;flex-wrap:wrap;';
+    const foot = document.createElement('div');
+    foot.style.cssText = 'margin-top:16px;display:flex;gap:10px;justify-content:flex-end;';
     const done = v => { ov.remove(); resolve(v); };
-    combos.forEach(c => {
+    const chipBtns = [];
+    const apply = document.createElement('button');
+    const skip = document.createElement('button');
+    const render = () => {
+      chipBtns.forEach((b, i) => { const on = sel === i; b.style.background = on ? 'var(--accent,#4a9)' : 'transparent'; b.style.color = on ? '#000' : 'var(--text,#eee)'; });
+      apply.disabled = sel === null; apply.style.opacity = sel === null ? '0.4' : '1';
+      if (sel === null) { priceBox.style.display = 'none'; return; }
+      const m = itemsFor(combos[sel]);
+      const pAll = variantPrice(titleItems), pMatch = m.length ? variantPrice(m) : null;
+      if (pMatch == null) mode = 'all';   // nothing matched: fall back to all picked
+      priceBox.style.display = (settings.avgPriceOn === false || pAll == null) ? 'none' : 'flex';
+      priceBox.innerHTML = '<span style="color:var(--muted,#888)">Price from:</span>';
+      [['all', 'All picked' + ' $' + pAll, true], ['match', 'Matching only' + (pMatch != null ? ' $' + pMatch + ' (' + m.length + ')' : ' (none)'), pMatch != null]].forEach(([k, label, ok]) => {
+        const b = document.createElement('button');
+        b.textContent = label; b.disabled = !ok;
+        const on = mode === k;
+        b.style.cssText = 'padding:5px 10px;border-radius:14px;border:1px solid var(--accent,#4a9);cursor:' + (ok ? 'pointer' : 'default') + ';font-size:12px;opacity:' + (ok ? 1 : 0.4) + ';background:' + (on ? 'var(--accent,#4a9)' : 'transparent') + ';color:' + (on ? '#000' : 'var(--text,#eee)');
+        b.onclick = () => { mode = k; settings.variantPriceMode = k; try { _saveUserData(); } catch (e) {} render(); };
+        priceBox.appendChild(b);
+      });
+    };
+    combos.forEach((c, i) => {
       const b = document.createElement('button');
-      b.textContent = c;
-      b.style.cssText = 'padding:8px 14px;border-radius:18px;border:1px solid var(--accent,#4a9);background:transparent;color:var(--text,#eee);cursor:pointer;font-size:13px;';
-      b.onclick = () => done(c);
-      row.appendChild(b);
+      b.textContent = c.label;
+      b.style.cssText = 'padding:8px 14px;border-radius:18px;border:1px solid var(--accent,#4a9);cursor:pointer;font-size:13px;';
+      b.onclick = () => { sel = i; render(); };
+      chipBtns.push(b); row.appendChild(b);
     });
-    box.appendChild(row);
-    const sk = document.createElement('button');
-    sk.textContent = 'None of these';
-    sk.style.cssText = 'margin-top:14px;background:none;border:none;color:var(--muted,#888);cursor:pointer;font-size:12px;';
-    sk.onclick = () => done('');
-    box.appendChild(sk);
+    skip.textContent = 'Skip'; skip.style.cssText = 'padding:8px 16px;border-radius:6px;border:1px solid var(--border,#333);background:transparent;color:var(--text,#eee);cursor:pointer;font-size:13px;';
+    skip.onclick = () => done(null);
+    apply.textContent = 'Apply'; apply.style.cssText = 'padding:8px 18px;border-radius:6px;border:none;background:var(--accent,#4a9);color:#000;cursor:pointer;font-size:13px;font-weight:600;';
+    apply.onclick = () => { if (sel === null) return; const m = itemsFor(combos[sel]); done({ hint: combos[sel].label, items: m, useMatch: mode === 'match' && m.length > 0 }); };
+    foot.appendChild(skip); foot.appendChild(apply);
+    box.appendChild(row); box.appendChild(priceBox); box.appendChild(foot);
     ov.appendChild(box);
-    ov.onclick = e => { if (e.target === ov) done(''); };
+    ov.onclick = e => { if (e.target === ov) done(null); };
     document.body.appendChild(ov);
+    render();
   });
 }
 
