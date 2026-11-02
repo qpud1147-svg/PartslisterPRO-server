@@ -9,7 +9,7 @@
   // refresh, overriding anything init does.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 </script>
-<title>PartsLister Pro v419</title>
+<title>PartsLister Pro v420</title>
 <!-- v409: hover the green L to see exactly which listings (price + shipping) were averaged. -->
 <!-- v408: clearing a listing also clears the low-resolution / unreadable / too-many photo warnings. -->
 <!-- v407: a scan that finds no part number opens No Part Number by itself; a cleared listing starts on Has Part Number. -->
@@ -934,7 +934,7 @@
     <!-- v302: logo goes to the dashboard -->
     <a href="/" title="Dashboard" style="text-decoration:none;color:inherit;">
       <div class="logo"><span>PARTS</span>LISTER</div>
-      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v419</span></div>
+      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v420</span></div>
     </a>
     <!-- v303: removed — the logo is the dashboard button
     <a href="/" class="btn btn-secondary btn-sm" title="Back to your dashboard" style="font-size:11px;padding:4px 10px;text-decoration:none;margin-left:6px;">⌂ Dashboard</a>
@@ -2916,10 +2916,10 @@ document.addEventListener('keydown', e => {
 
 // v271: attach zoom to a listing thumbnail without letting the click also
 // select/pick the listing row underneath it.
-function _enableListingZoom(img) {
+function _enableListingZoom(img, item) {   // v420: item.url lets the photo viewer load the listing's other photos
   if (!img) return;
   img.style.cursor = 'zoom-in';
-  img.addEventListener('click', e => { e.stopPropagation(); zoomListingImage(img.src); });
+  img.addEventListener('click', e => { e.stopPropagation(); zoomListingImage(img.src, item && item.url); });
 }
 
 function closeLightbox() {
@@ -3632,7 +3632,7 @@ function _vmCard(item) {
     img.src = item.image;
     img.style.cssText = 'width:100%;height:100%;object-fit:cover;';
     img.onerror = () => { img.style.display = 'none'; };
-    _enableListingZoom(img);   // v271
+    _enableListingZoom(img, item);   // v271
     imgWrap.appendChild(img);
   }
   card.appendChild(imgWrap);
@@ -7898,7 +7898,7 @@ async function _fetchSellSimilar(query, offset, openOverlay, opts = {}) {
         img.src = item.image;
         img.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;';
         img.onerror = () => { imgWrap.style.background = 'var(--surface2)'; };
-        _enableListingZoom(img);   // v271
+        _enableListingZoom(img, item);   // v271
         imgWrap.appendChild(img);
       }
 
@@ -8452,7 +8452,7 @@ async function searchMyStore() {
         img.src = item.image;
         img.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;';
         img.onerror = () => { imgWrap.style.background = 'var(--surface2)'; };
-        _enableListingZoom(img);   // v271
+        _enableListingZoom(img, item);   // v271
         imgWrap.appendChild(img);
       }
 
@@ -8788,7 +8788,7 @@ function openActiveListings() {
       img.src = item.image;
       img.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;';
       img.onerror = () => { imgWrap.style.background = 'var(--surface2)'; };
-      _enableListingZoom(img);   // v271
+      _enableListingZoom(img, item);   // v271
       imgWrap.appendChild(img);
     }
 
