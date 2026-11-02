@@ -9,7 +9,7 @@
   // refresh, overriding anything init does.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 </script>
-<title>PartsLister Pro v415</title>
+<title>PartsLister Pro v416</title>
 <!-- v409: hover the green L to see exactly which listings (price + shipping) were averaged. -->
 <!-- v408: clearing a listing also clears the low-resolution / unreadable / too-many photo warnings. -->
 <!-- v407: a scan that finds no part number opens No Part Number by itself; a cleared listing starts on Has Part Number. -->
@@ -934,7 +934,7 @@
     <!-- v302: logo goes to the dashboard -->
     <a href="/" title="Dashboard" style="text-decoration:none;color:inherit;">
       <div class="logo"><span>PARTS</span>LISTER</div>
-      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v415</span></div>
+      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v416</span></div>
     </a>
     <!-- v303: removed — the logo is the dashboard button
     <a href="/" class="btn btn-secondary btn-sm" title="Back to your dashboard" style="font-size:11px;padding:4px 10px;text-decoration:none;margin-left:6px;">⌂ Dashboard</a>
@@ -2816,6 +2816,14 @@ function reopenPartNumberPhoto(reason) {
   if (reason) showNotif(reason, true);
   return true;
 }
+
+// v416: clicking into the Part Number box brings up the photo the number was read from, so a wrong read can be fixed without hunting for the photo
+document.addEventListener('focusin', e => {
+  if (!e.target || e.target.id !== 'part-number') return;
+  const lb = document.getElementById('lightbox');
+  if (!window._pnPhotoDataUrl || (lb && lb.classList.contains('open'))) return;
+  openLightbox(window._pnPhotoDataUrl);
+});
 
 // v267: is there a second part-number guess the user has not tried yet?
 function _pnAltAvailable() {
