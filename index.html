@@ -9,7 +9,7 @@
   // refresh, overriding anything init does.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 </script>
-<title>PartsLister Pro v413</title>
+<title>PartsLister Pro v414</title>
 <!-- v409: hover the green L to see exactly which listings (price + shipping) were averaged. -->
 <!-- v408: clearing a listing also clears the low-resolution / unreadable / too-many photo warnings. -->
 <!-- v407: a scan that finds no part number opens No Part Number by itself; a cleared listing starts on Has Part Number. -->
@@ -934,7 +934,7 @@
     <!-- v302: logo goes to the dashboard -->
     <a href="/" title="Dashboard" style="text-decoration:none;color:inherit;">
       <div class="logo"><span>PARTS</span>LISTER</div>
-      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v413</span></div>
+      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v414</span></div>
     </a>
     <!-- v303: removed — the logo is the dashboard button
     <a href="/" class="btn btn-secondary btn-sm" title="Back to your dashboard" style="font-size:11px;padding:4px 10px;text-decoration:none;margin-left:6px;">⌂ Dashboard</a>
@@ -3229,7 +3229,8 @@ function setMode(mode) {
     // if (pnSsBtn) pnSsBtn.disabled = true;
     setEbayBtnsDisabled(true);
     updateNoPartSearch();
-    showColorPicker(null);
+    // v414: no color reset on a mode switch (it wiped the picked color); the form reset still clears it
+    // showColorPicker(null);
   }
 }
 
@@ -8276,7 +8277,7 @@ async function variantAsk(titles, titleItems) {
     const row = document.createElement('div');
     row.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px;';
     const priceBox = document.createElement('div');
-    priceBox.style.cssText = 'margin-top:14px;font-size:12px;display:none;align-items:center;gap:8px;flex-wrap:wrap;';
+    priceBox.style.cssText = 'margin-top:14px;font-size:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-height:30px;';
     const foot = document.createElement('div');
     foot.style.cssText = 'margin-top:16px;display:flex;gap:10px;justify-content:flex-end;';
     const done = v => { ov.remove(); resolve(v); };
@@ -8286,13 +8287,13 @@ async function variantAsk(titles, titleItems) {
     const render = () => {
       chipBtns.forEach((b, i) => { const on = sel === i; b.style.background = on ? 'var(--accent,#4a9)' : 'transparent'; b.style.color = on ? '#000' : 'var(--text,#eee)'; });
       apply.disabled = sel === null; apply.style.opacity = sel === null ? '0.4' : '1';
-      if (sel === null) { priceBox.style.display = 'none'; return; }
-      const m = itemsFor(combos[sel]);
+      // v414: the price row is always there (greyed out until a chip is picked) so the window never jumps
+      const m = sel === null ? [] : itemsFor(combos[sel]);
       const pAll = variantPrice(titleItems), pMatch = m.length ? variantPrice(m) : null;
-      if (pMatch == null) mode = 'all';   // nothing matched: fall back to all picked
-      priceBox.style.display = (settings.avgPriceOn === false || pAll == null) ? 'none' : 'flex';
+      if (sel !== null && pMatch == null) mode = 'all';   // nothing matched: fall back to all picked
+      priceBox.style.visibility = (settings.avgPriceOn === false || pAll == null) ? 'hidden' : 'visible';
       priceBox.innerHTML = '<span style="color:var(--muted,#888)">Price from:</span>';
-      [['all', 'All picked' + ' $' + pAll, true], ['match', 'Matching only' + (pMatch != null ? ' $' + pMatch + ' (' + m.length + ')' : ' (none)'), pMatch != null]].forEach(([k, label, ok]) => {
+      [['all', 'All picked $' + pAll, sel !== null], ['match', 'Matching only' + (sel === null ? '' : pMatch != null ? ' $' + pMatch + ' (' + m.length + ')' : ' (none)'), sel !== null && pMatch != null]].forEach(([k, label, ok]) => {
         const b = document.createElement('button');
         b.textContent = label; b.disabled = !ok;
         const on = mode === k;
