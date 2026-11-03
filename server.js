@@ -1,4 +1,4 @@
-// PartsLister Pro server — v427
+// PartsLister Pro server — v428
 // v409: yard tickets — the whole-ticket text look and the Look checkboxes are gone; every text row and the logo each have the full set of sliders (boldness, thinner, lighter, weathered, gravel, fuzzy, faded gray, spots).
 // v408: yard tickets — each text row has a Look checkbox (row.useLook, default on): the whole-ticket text look only changes the rows that are checked.
 // v406: yard tickets — a whole-ticket Boldness for the text (design.textLook.bold) and a Lighter slider for the logo (less ink).
@@ -431,6 +431,9 @@ async function setupDatabase() {
       listed_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
       UNIQUE (user_id, item_id)
     );
+    ALTER TABLE yolo_listings ADD COLUMN IF NOT EXISTS image TEXT;               -- v428
+    ALTER TABLE yolo_listings ADD COLUMN IF NOT EXISTS sold_price NUMERIC(10,2); -- v428
+    ALTER TABLE yolo_listings ADD COLUMN IF NOT EXISTS sold_at TIMESTAMPTZ;      -- v428
     -- v422: LISTING DRAFTS — a half-finished listing saved from the Listing Tool (all fields in snap, photos in their own table), up to 50 per account
     CREATE TABLE IF NOT EXISTS listing_drafts (
       id          SERIAL PRIMARY KEY,
@@ -4174,10 +4177,86 @@ app.post('/api/yolo', requireUser, express.json(), async (req, res) => {
     res.json({ ok: true });
   } catch (e) { console.error('[yolo save]', e.message); res.status(500).json({ error: 'Could not save the YOLO record' }); }
 });
+// v428: all live listings (photo, title, price, SKU, start) — kept 10 minutes so the Active page and the YOLO check don't ask eBay every time
+const liveCache = new Map();   // userId → { at, items }
+async function fetchLiveList(userId, force) {
+  const c = liveCache.get(userId);
+  if (!force && c && Date.now() - c.at < 10 * 60000) return c.items;
+  const items = [];
+  let page = 1, pages = 1;
+  while (page <= pages && page <= 30) {
+    const xml = await tradingCall(userId, 'GetMyeBaySelling',
+      `<ActiveList><Include>true</Include><Pagination><EntriesPerPage>200</EntriesPerPage><PageNumber>${page}</PageNumber></Pagination></ActiveList>` +
+      '<ScheduledList><Include>false</Include></ScheduledList><SoldList><Include>false</Include></SoldList><UnsoldList><Include>false</Include></UnsoldList><BidList><Include>false</Include></BidList><DeletedFromSoldList><Include>false</Include></DeletedFromSoldList><DeletedFromUnsoldList><Include>false</Include></DeletedFromUnsoldList>');
+    const active = xmlTag(xml, 'ActiveList') || '';
+    if (page === 1) pages = parseInt(xmlTag(xmlTag(active, 'PaginationResult') || '', 'TotalNumberOfPages') || '1', 10) || 1;
+    const got = active.match(/<Item>[\s\S]*?<\/Item>/g) || [];
+    for (const it of got) {
+      const ld = xmlTag(it, 'ListingDetails') || '';
+      const qty = parseInt(xmlTag(it, 'QuantityAvailable') || xmlTag(it, 'Quantity') || '1', 10);
+      items.push({
+        itemId: xmlTag(it, 'ItemID') || '',
+        title: xmlDecode(xmlTag(it, 'Title') || ''),
+        sku: xmlDecode(xmlTag(it, 'SKU') || ''),
+        price: parseFloat(xmlTag(xmlTag(it, 'SellingStatus') || '', 'CurrentPrice') || xmlTag(it, 'BuyItNowPrice') || '0') || 0,
+        qty: Number.isFinite(qty) ? qty : 1,
+        start: xmlTag(ld, 'StartTime') || null,
+        image: xmlDecode(xmlTag(xmlTag(it, 'PictureDetails') || '', 'GalleryURL') || '') || null,
+        url: xmlDecode(xmlTag(ld, 'ViewItemURL') || '') || ('https://www.ebay.com/itm/' + (xmlTag(it, 'ItemID') || '')),
+        watchers: parseInt(xmlTag(it, 'WatchCount') || '0', 10) || 0
+      });
+    }
+    if (!got.length) break;
+    page++;
+  }
+  liveCache.set(userId, { at: Date.now(), items });
+  return items;
+}
+app.get('/api/active/items', requireUser, async (req, res) => {
+  try {
+    const items = await fetchLiveList(req.user.id, req.query.refresh === '1');
+    res.json({ items, total: items.length, at: (liveCache.get(req.user.id) || {}).at || Date.now() });
+  } catch (e) { console.error('[active items]', e.message); res.status(502).json({ error: 'Could not load your listings from eBay: ' + e.message }); }
+});
+// v428: a YOLO listing that is no longer live is looked up on eBay: sold → moves to Sold (with price and date), ended without a sale → dropped
+async function yoloSync(userId) {
+  const rows = (await pool.query("SELECT item_id, image FROM yolo_listings WHERE user_id = $1 AND status = 'active'", [userId])).rows;
+  if (!rows.length) return;
+  const live = await fetchLiveList(userId, false);
+  const byId = new Map(live.map(l => [l.itemId, l]));
+  let looked = 0;
+  for (const r of rows) {
+    const l = byId.get(r.item_id);
+    if (l) {
+      if (l.image && l.image !== r.image) await pool.query('UPDATE yolo_listings SET image = $3 WHERE user_id = $1 AND item_id = $2', [userId, r.item_id, l.image]);
+      continue;
+    }
+    if (looked++ >= 15) continue;   // a few per visit
+    try {
+      const xml = await tradingCall(userId, 'GetItem', `<ItemID>${r.item_id}</ItemID>`);
+      const item = xmlTag(xml, 'Item') || '';
+      const status = xmlTag(xmlTag(item, 'SellingStatus') || '', 'ListingStatus') || xmlTag(item, 'ListingStatus') || '';
+      if (!/^(Completed|Ended)$/i.test(status)) continue;   // scheduled or still starting: leave it
+      const ss = xmlTag(item, 'SellingStatus') || '';
+      const sold = parseInt(xmlTag(ss, 'QuantitySold') || '0', 10) > 0;
+      const img = xmlDecode(xmlTag(xmlTag(item, 'PictureDetails') || '', 'GalleryURL') || xmlTag(xmlTag(item, 'PictureDetails') || '', 'PictureURL') || '') || null;
+      if (sold) {
+        await pool.query("UPDATE yolo_listings SET status = 'sold', sold_price = $3, sold_at = $4, image = COALESCE($5, image) WHERE user_id = $1 AND item_id = $2",
+          [userId, r.item_id, parseFloat(xmlTag(ss, 'CurrentPrice') || '0') || null, xmlTag(xmlTag(item, 'ListingDetails') || '', 'EndTime') || new Date().toISOString(), img]);
+      } else {
+        await pool.query("UPDATE yolo_listings SET status = 'ended' WHERE user_id = $1 AND item_id = $2", [userId, r.item_id]);
+      }
+    } catch (e) { console.error('[yolo sync item]', r.item_id, e.message); }
+  }
+}
 app.get('/api/yolo', requireUser, async (req, res) => {
   try {
-    const rows = (await pool.query("SELECT item_id, title, sku, normal_price, yolo_price, status, listed_at FROM yolo_listings WHERE user_id = $1 AND status = 'active' ORDER BY listed_at ASC", [req.user.id])).rows;   // v427: only the live YOLO ones, oldest first
-    res.json({ items: rows.map(r => ({ itemId: r.item_id, title: r.title, sku: r.sku, normalPrice: Number(r.normal_price), yoloPrice: Number(r.yolo_price), status: r.status, listedAt: r.listed_at })) });
+    try { await yoloSync(req.user.id); } catch (e) { console.error('[yolo sync]', e.message); }   // a failed check never blocks the list
+    const mk = r => ({ itemId: r.item_id, title: r.title, sku: r.sku, normalPrice: Number(r.normal_price), yoloPrice: Number(r.yolo_price), status: r.status, listedAt: r.listed_at, image: r.image || null, soldPrice: r.sold_price == null ? null : Number(r.sold_price), soldAt: r.sold_at });
+    const cols = 'item_id, title, sku, normal_price, yolo_price, status, listed_at, image, sold_price, sold_at';
+    const active = (await pool.query(`SELECT ${cols} FROM yolo_listings WHERE user_id = $1 AND status = 'active' ORDER BY listed_at ASC`, [req.user.id])).rows;
+    const sold = (await pool.query(`SELECT ${cols} FROM yolo_listings WHERE user_id = $1 AND status = 'sold' ORDER BY sold_at DESC NULLS LAST`, [req.user.id])).rows;
+    res.json({ items: active.map(mk), sold: sold.map(mk) });
   } catch (e) { console.error('[yolo list]', e.message); res.status(500).json({ error: 'Could not load YOLO listings' }); }
 });
 // v427: Revert — put the regular price back on the live eBay listing, then stop tracking it
@@ -5497,5 +5576,6 @@ setupDatabase()
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v422 listening on ' + PORT)))   // v425
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v425 listening on ' + PORT)))   // v426
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v426 listening on ' + PORT)))   // v427
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v427 listening on ' + PORT)))
+  // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v427 listening on ' + PORT)))   // v428
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v428 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });
