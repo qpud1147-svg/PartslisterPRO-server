@@ -3,8 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Active v387</title>
+<title>PartsLister Pro Active v388</title>
 <!-- v387: click a listing → your own eBay-style view (big photos with arrows, price, shipping, condition, item specifics, description); sharper list photos; shipping on the rows when eBay gives it. -->
+<!-- v388: live listings show a running number (position in current sort/search) on the right; Check Active / Check Sold buttons bottom-left open eBay searches (part number taken from the title) in the one shared eBay tab. -->
 <!-- v386: YOLO has Active | Sold inside (sold ones move over by themselves), eBay-style listing rows with photos, no count on the YOLO button, and a Live listings list on the Active view with search and sorting. -->
 <!-- v385: a YOLO view next to Drafts — listings priced high on purpose, how long they've been up, and a Revert button that puts the regular price back on eBay. -->
 <!-- v384: a bar under the title — Active · Drafts — switches the view in place (like Messages). v383: Drafts button next to the title (opens the Drafts page). -->
@@ -183,6 +184,11 @@
   .ebl-price small { font-size: 12px; font-weight: 400; color: var(--muted); margin-left: 6px; }
   .ebl-sub { color: var(--muted); font-size: 12px; }
   .ebl-sub b { color: var(--text); font-weight: 600; }
+  .ebl.ll { position: relative; }
+  .ebl-n { position: absolute; right: 12px; top: 10px; font-size: 12px; font-weight: 700; color: var(--muted, #888); }
+  .ebl-chk { display: flex; gap: 8px; margin-top: 8px; }
+  .ebl-chk button { font-size: 12px; padding: 4px 10px; border-radius: 4px; border: 1px solid var(--border); background: transparent; color: var(--text, #ddd); cursor: pointer; }
+  .ebl-chk button:hover { border-color: var(--accent); color: var(--accent); }
   .ebl-btns { display: flex; flex-direction: column; gap: 6px; justify-content: center; min-width: 130px; }
   .ebl-tag { display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: 0.5px; padding: 1px 6px; border-radius: 3px; background: #3fa65b; color: #fff; margin-left: 6px; vertical-align: middle; }
   .ld-ov { position: fixed; inset: 0; z-index: 3000; background: rgba(0,0,0,0.78); overflow-y: auto; padding: 24px 12px; }
@@ -233,7 +239,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v387</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v388</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -670,16 +676,37 @@ pageCache.rerun = () => { loadListings(false); loadDaily(false); };   // v380: f
     else if (so === 'hi') a.sort((p, q2) => q2.price - p.price); else a.sort((p, q2) => p.price - q2.price);
     return a;
   };
+  // v388: Check Active / Check Sold — search eBay for the part number found in the title, in the one shared eBay tab
+  function llPN(title) {
+    const toks = String(title || '').split(/[\s,;()]+/).map(t => t.replace(/^[^A-Za-z0-9]+|[^A-Za-z0-9]+$/g, '')).filter(Boolean);
+    let best = '';
+    toks.forEach(t => {
+      if (t.length < 5 || !/\d/.test(t)) return;
+      if (/^(19|20)\d\d(-(19|20)\d\d)?$/.test(t)) return;
+      if (/^\d{4}$/.test(t)) return;
+      if (t.length > best.length) best = t;
+    });
+    return best || String(title || '');
+  }
+  window.llCheck = function (id, sold) {
+    const x = llAll.find(i => String(i.itemId) === String(id)); if (!x) return;
+    const q = llPN(x.title);
+    const url = 'https://www.ebay.com/sch/i.html?_nkw=' + encodeURIComponent(q) + (sold ? '&LH_Sold=1&LH_Complete=1' : '') + '&LH_ItemCondition=3000&_ipg=60';
+    let w = null; try { w = window.open(url, 'partslister-sold'); } catch (e) {}
+    if (!w) { alert('The eBay tab was blocked — allow pop-ups for this site.'); return; }
+    try { w.focus(); } catch (e) {}
+  };
   window.llRender = function (keep) {
     if (!keep) llShown = LL_PAGE;
     const a = llFiltered();
     g('ll-note').textContent = llAll.length ? (a.length === llAll.length ? llAll.length + ' live listings' : a.length + ' of ' + llAll.length + ' listings') : '';
-    g('ll-list').innerHTML = a.slice(0, llShown).map(x => {
+    g('ll-list').innerHTML = a.slice(0, llShown).map((x, ix) => {
       const n = x.start ? Math.floor((Date.now() - new Date(x.start).getTime()) / 86400000) : null;
-      return '<div class="ebl">' + photo(x) + '<div class="ebl-body"><div class="ebl-title"><a href="#" onclick="openListing(\'' + esc(x.itemId) + '\');return false">' + esc(x.title) + '</a>' + (/(^|\s)YOLO$/i.test(x.sku || '') ? '<span class="ebl-tag">YOLO</span>' : '') + '</div>' +
+      return '<div class="ebl ll"><span class="ebl-n">' + (ix + 1) + '</span>' + photo(x) + '<div class="ebl-body"><div class="ebl-title"><a href="#" onclick="openListing(\'' + esc(x.itemId) + '\');return false">' + esc(x.title) + '</a>' + (/(^|\s)YOLO$/i.test(x.sku || '') ? '<span class="ebl-tag">YOLO</span>' : '') + '</div>' +
         '<div class="ebl-price">' + money(x.price) + (x.shipping != null ? '<small>' + (x.shipping === 0 ? 'Free shipping' : '+ ' + money(x.shipping) + ' shipping') + '</small>' : '') + (x.qty > 1 ? '<small>' + x.qty + ' available</small>' : '') + '</div>' +
         '<div class="ebl-sub">' + (n != null ? 'Listed <b>' + n + (n === 1 ? ' day' : ' days') + '</b> ago' : '') + (x.watchers ? ' · <b>' + x.watchers + '</b> watching' : '') + '</div>' +
-        (x.sku ? '<div class="ebl-sub">SKU ' + esc(x.sku) + '</div>' : '') + '</div></div>';
+        (x.sku ? '<div class="ebl-sub">SKU ' + esc(x.sku) + '</div>' : '') +
+        '<div class="ebl-chk"><button onclick="llCheck(\'' + esc(x.itemId) + '\',0)">Check Active</button><button onclick="llCheck(\'' + esc(x.itemId) + '\',1)">Check Sold</button></div></div></div>';
     }).join('');
     g('ll-more').style.display = a.length > llShown ? 'inline-block' : 'none';
   };
