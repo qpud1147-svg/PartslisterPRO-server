@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Active v386</title>
+<title>PartsLister Pro Active v387</title>
+<!-- v387: click a listing → your own eBay-style view (big photos with arrows, price, shipping, condition, item specifics, description); sharper list photos; shipping on the rows when eBay gives it. -->
 <!-- v386: YOLO has Active | Sold inside (sold ones move over by themselves), eBay-style listing rows with photos, no count on the YOLO button, and a Live listings list on the Active view with search and sorting. -->
 <!-- v385: a YOLO view next to Drafts — listings priced high on purpose, how long they've been up, and a Revert button that puts the regular price back on eBay. -->
 <!-- v384: a bar under the title — Active · Drafts — switches the view in place (like Messages). v383: Drafts button next to the title (opens the Drafts page). -->
@@ -184,6 +185,27 @@
   .ebl-sub b { color: var(--text); font-weight: 600; }
   .ebl-btns { display: flex; flex-direction: column; gap: 6px; justify-content: center; min-width: 130px; }
   .ebl-tag { display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: 0.5px; padding: 1px 6px; border-radius: 3px; background: #3fa65b; color: #fff; margin-left: 6px; vertical-align: middle; }
+  .ld-ov { position: fixed; inset: 0; z-index: 3000; background: rgba(0,0,0,0.78); overflow-y: auto; padding: 24px 12px; }
+  .ld { max-width: 1000px; margin: 0 auto; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 18px; position: relative; }
+  .ld-x { position: absolute; top: 8px; right: 12px; background: none; border: none; color: var(--muted); font-size: 24px; cursor: pointer; line-height: 1; }
+  .ld-top { display: flex; gap: 22px; flex-wrap: wrap; }
+  .ld-gal { flex: 0 0 420px; max-width: 100%; }
+  .ld-big { position: relative; width: 100%; aspect-ratio: 1/1; background: #fff; border-radius: 6px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+  .ld-big img { max-width: 100%; max-height: 100%; object-fit: contain; display: block; }
+  .ld-arr { position: absolute; top: 50%; transform: translateY(-50%); width: 40px; height: 40px; border-radius: 50%; border: 2px solid #fff; background: rgba(0,0,0,0.7); color: #fff; font-size: 24px; line-height: 1; cursor: pointer; }
+  .ld-cnt { position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.7); color: #fff; font-size: 12px; padding: 2px 10px; border-radius: 10px; }
+  .ld-thumbs { display: flex; gap: 6px; margin-top: 8px; overflow-x: auto; padding-bottom: 4px; }
+  .ld-thumbs img { width: 56px; height: 56px; object-fit: cover; border-radius: 4px; border: 2px solid transparent; cursor: pointer; flex: 0 0 auto; background: #fff; }
+  .ld-thumbs img.on { border-color: var(--accent); }
+  .ld-info { flex: 1; min-width: 260px; display: flex; flex-direction: column; gap: 8px; }
+  .ld-title { font-size: 20px; font-weight: 600; line-height: 1.3; padding-right: 24px; }
+  .ld-price { font-size: 28px; font-weight: 700; }
+  .ld-row { font-size: 14px; color: var(--muted); } .ld-row b { color: var(--text); font-weight: 600; }
+  .ld-link { display: inline-block; margin-top: 6px; font-size: 13px; color: var(--accent); text-decoration: none; }
+  .ld-h { font-family: 'Barlow Condensed', sans-serif; font-size: 16px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; margin: 20px 0 8px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+  .ld-spec { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 4px 24px; font-size: 13px; } .ld-spec div span { color: var(--muted); display: inline-block; min-width: 130px; }
+  .ld-desc { width: 100%; height: 420px; border: 1px solid var(--border); border-radius: 6px; background: #fff; }
+  @media (max-width: 700px) { .ld-gal { flex-basis: 100%; } }
   .ll-bar { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
   .ll-bar input, .ll-bar select { background: var(--surface); border: 1px solid var(--border); border-radius: 4px; color: var(--text); padding: 7px 10px; font-size: 13px; }
   .ll-bar input { flex: 1; min-width: 200px; }
@@ -211,7 +233,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v386</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v387</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -317,6 +339,7 @@
     <div class="error-box" id="dr-error" style="display:none"></div>
     <div class="dr-grid" id="dr-grid"></div>
   </div>
+  <div id="ld-ov" class="ld-ov" hidden onclick="if(event.target===this)closeListing()"><div class="ld" id="ld"></div></div>
   <div id="view-yolo" hidden>
     <div class="seg" role="group" aria-label="YOLO view" style="margin-top:8px">
       <button type="button" id="yseg-active" aria-pressed="true" onclick="setYoloView('active')">Active</button>
@@ -526,7 +549,7 @@ pageCache.rerun = () => { loadListings(false); loadDaily(false); };   // v380: f
   const dstr = t => t ? new Date(t).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '';
   const yfail = msg => { const e = g('yo-error'); e.textContent = msg; e.style.display = 'block'; };
   let yoData = { items: [], sold: [] }, yoView = 'active';
-  const photo = x => '<div class="ebl-img">' + (x.image ? '<img loading="lazy" alt="" src="' + esc(x.image) + '">' : 'No photo') + '</div>';
+  const photo = x => '<div class="ebl-img" style="cursor:pointer" onclick="openListing(\'' + esc(x.itemId) + '\')">' + (x.image ? '<img loading="lazy" alt="" src="' + esc(x.image.replace(/\/s-l\d+\./i, '/s-l500.')) + '" onerror="this.onerror=null;this.src=\'' + esc(x.image) + '\'">' : 'No photo') + '</div>';   // v387: bigger thumbnail, opens the listing
   async function loadYolo() {
     g('yo-error').style.display = 'none';
     g('yo-note').textContent = 'Checking eBay…';
@@ -555,7 +578,7 @@ pageCache.rerun = () => { loadListings(false); loadDaily(false); };   // v380: f
       g('yo-list').innerHTML = sold.map(x => {
         const sp = x.soldPrice != null ? x.soldPrice : x.yoloPrice;
         const took = x.soldAt ? Math.max(0, Math.round((new Date(x.soldAt) - new Date(x.listedAt)) / 86400000)) : null;
-        return '<div class="ebl">' + photo(x) + '<div class="ebl-body"><div class="ebl-title"><a href="https://www.ebay.com/itm/' + esc(x.itemId) + '" target="_blank" rel="noopener">' + esc(x.title || ('Item ' + x.itemId)) + '</a></div>' +
+        return '<div class="ebl">' + photo(x) + '<div class="ebl-body"><div class="ebl-title"><a href="#" onclick="openListing(\'' + esc(x.itemId) + '\');return false">' + esc(x.title || ('Item ' + x.itemId)) + '</a></div>' +
           '<div class="ebl-price"><span class="yo-g">' + money(sp) + '</span><small>sold' + (x.soldAt ? ' ' + esc(dstr(x.soldAt)) : '') + '</small></div>' +
           '<div class="ebl-sub">Regular price <b>' + money(x.normalPrice) + '</b> · <b class="yo-g">+' + money(sp - x.normalPrice) + '</b> over regular' + (took != null ? ' · took <b>' + took + (took === 1 ? ' day' : ' days') + '</b>' : '') + '</div>' +
           (x.sku ? '<div class="ebl-sub">SKU ' + esc(x.sku) + '</div>' : '') + '</div></div>';
@@ -567,7 +590,7 @@ pageCache.rerun = () => { loadListings(false); loadDaily(false); };   // v380: f
     if (!items.length) { g('yo-list').innerHTML = '<div class="dr-empty">No YOLO listings yet. In the Listing Tool, press <b>×5</b> next to the price before you launch.</div>'; return; }
     g('yo-list').innerHTML = items.map(x => {
       const n = days(x), isOld = n >= YO_DAYS;
-      return '<div class="ebl' + (isOld ? ' old' : '') + '">' + photo(x) + '<div class="ebl-body"><div class="ebl-title"><a href="https://www.ebay.com/itm/' + esc(x.itemId) + '" target="_blank" rel="noopener">' + esc(x.title || ('Item ' + x.itemId)) + '</a><span class="ebl-tag">YOLO</span></div>' +
+      return '<div class="ebl' + (isOld ? ' old' : '') + '">' + photo(x) + '<div class="ebl-body"><div class="ebl-title"><a href="#" onclick="openListing(\'' + esc(x.itemId) + '\');return false">' + esc(x.title || ('Item ' + x.itemId)) + '</a><span class="ebl-tag">YOLO</span></div>' +
         '<div class="ebl-price"><span class="yo-g">' + money(x.yoloPrice) + '</span><small>regular ' + money(x.normalPrice) + '</small></div>' +
         '<div class="ebl-sub">Listed <b class="yo-age" style="' + (isOld ? 'color:#ff6b66' : '') + '">' + n + (n === 1 ? ' day' : ' days') + '</b> ago' + (isOld ? ' · <b style="color:#ff6b66">time to revert</b>' : '') + '</div>' +
         (x.sku ? '<div class="ebl-sub">SKU ' + esc(x.sku) + '</div>' : '') + '</div>' +
@@ -589,6 +612,53 @@ pageCache.rerun = () => { loadListings(false); loadDaily(false); };   // v380: f
     try { const r = await fetch('/api/yolo/' + id + '/remove', { method: 'POST' }); if (!r.ok) throw 0; loadYolo(); }
     catch (e) { yfail('Could not remove it — try again.'); }
   };
+  // v387: your own eBay-style listing view (opens when you click a listing)
+  const sharp = u => (u || '').replace(/\/s-l\d+\./i, '/s-l500.');
+  let ldPhotos = [], ldIdx = 0;
+  const ldKey = e => { if (e.key === 'Escape') closeListing(); else if (e.key === 'ArrowLeft') ldGo(-1); else if (e.key === 'ArrowRight') ldGo(1); };
+  window.closeListing = function () { g('ld-ov').hidden = true; document.body.style.overflow = ''; document.removeEventListener('keydown', ldKey); };
+  function ldGo(d) {
+    if (ldPhotos.length < 2) return;
+    ldIdx = (ldIdx + d + ldPhotos.length) % ldPhotos.length; ldShow();
+  }
+  window.ldPick = function (i) { ldIdx = i; ldShow(); };
+  function ldShow() {
+    const im = g('ld-bigimg'); if (!im) return;
+    im.src = ldPhotos[ldIdx];
+    const c = g('ld-cnt'); if (c) c.textContent = (ldIdx + 1) + ' / ' + ldPhotos.length;
+    document.querySelectorAll('#ld-thumbs img').forEach((t, i) => t.classList.toggle('on', i === ldIdx));
+  }
+  window.openListing = async function (id) {
+    const box = g('ld');
+    box.innerHTML = '<button class="ld-x" onclick="closeListing()" title="Close">×</button><div class="dr-note" style="padding:40px 0;text-align:center">Loading listing…</div>';
+    g('ld-ov').hidden = false; document.body.style.overflow = 'hidden';
+    document.removeEventListener('keydown', ldKey); document.addEventListener('keydown', ldKey);
+    try {
+      const r = await fetch('/api/active/item/' + encodeURIComponent(id));
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || ('server ' + r.status + (r.status === 404 ? ' — upload the newest server.js' : '')));
+      ldPhotos = (j.photos && j.photos.length) ? j.photos.map(u => u.replace(/\/s-l\d+\./i, '/s-l1600.')) : []; ldIdx = 0;
+      const n = j.start ? Math.floor((Date.now() - new Date(j.start).getTime()) / 86400000) : null;
+      const ship = j.shipping == null ? 'see eBay' : (j.shipping === 0 ? 'Free shipping' : money(j.shipping) + ' shipping');
+      box.innerHTML = '<button class="ld-x" onclick="closeListing()" title="Close">×</button>' +
+        '<div class="ld-top"><div class="ld-gal"><div class="ld-big">' + (ldPhotos.length ? '<img id="ld-bigimg" alt="" src="' + esc(ldPhotos[0]) + '">' : '<span style="color:#888">No photos</span>') +
+        (ldPhotos.length > 1 ? '<button class="ld-arr" style="left:8px" onclick="event.stopPropagation();ldGo(-1)">‹</button><button class="ld-arr" style="right:8px" onclick="event.stopPropagation();ldGo(1)">›</button><div class="ld-cnt" id="ld-cnt">1 / ' + ldPhotos.length + '</div>' : '') + '</div>' +
+        (ldPhotos.length > 1 ? '<div class="ld-thumbs" id="ld-thumbs">' + ldPhotos.map((u, i) => '<img alt="" loading="lazy" class="' + (i === 0 ? 'on' : '') + '" src="' + esc(sharp(u.replace(/\/s-l1600\./, '/s-l140.'))) + '" onclick="ldPick(' + i + ')">').join('') + '</div>' : '') + '</div>' +
+        '<div class="ld-info"><div class="ld-title">' + esc(j.title) + '</div><div class="ld-price">' + money(j.price) + '</div>' +
+        '<div class="ld-row"><b>' + esc(ship) + '</b>' + (j.shipService ? ' · ' + esc(j.shipService) : '') + '</div>' +
+        (j.condition ? '<div class="ld-row">Condition: <b>' + esc(j.condition) + '</b></div>' : '') +
+        '<div class="ld-row">Quantity: <b>' + j.qty + ' available</b></div>' +
+        (n != null ? '<div class="ld-row">Listed <b>' + n + (n === 1 ? ' day' : ' days') + '</b> ago</div>' : '') +
+        (j.sku ? '<div class="ld-row">SKU: <b>' + esc(j.sku) + '</b></div>' : '') +
+        '<a class="ld-link" href="' + esc(j.url) + '" target="_blank" rel="noopener">Open on eBay ↗</a></div></div>' +
+        (j.specifics && j.specifics.length ? '<div class="ld-h">Item specifics</div><div class="ld-spec">' + j.specifics.map(x => '<div><span>' + esc(x.name) + '</span>' + esc(x.value) + '</div>').join('') + '</div>' : '') +
+        (j.description ? '<div class="ld-h">Description</div><iframe class="ld-desc" sandbox="" id="ld-desc"></iframe>' : '');
+      window.ldGo = ldGo;
+      if (j.description) g('ld-desc').srcdoc = '<base target="_blank"><style>body{font-family:Arial,sans-serif;font-size:14px;color:#222;margin:12px}img{max-width:100%}</style>' + j.description;
+    } catch (e) {
+      box.innerHTML = '<button class="ld-x" onclick="closeListing()" title="Close">×</button><div class="error-box" style="display:block">' + esc(e.message || 'Could not load that listing.') + '</div><a class="ld-link" href="https://www.ebay.com/itm/' + esc(id) + '" target="_blank" rel="noopener">Open on eBay ↗</a>';
+    }
+  };
   // v386: Live listings on the Active view
   let llAll = [], llShown = 0;
   const LL_PAGE = 50;
@@ -606,8 +676,8 @@ pageCache.rerun = () => { loadListings(false); loadDaily(false); };   // v380: f
     g('ll-note').textContent = llAll.length ? (a.length === llAll.length ? llAll.length + ' live listings' : a.length + ' of ' + llAll.length + ' listings') : '';
     g('ll-list').innerHTML = a.slice(0, llShown).map(x => {
       const n = x.start ? Math.floor((Date.now() - new Date(x.start).getTime()) / 86400000) : null;
-      return '<div class="ebl">' + photo(x) + '<div class="ebl-body"><div class="ebl-title"><a href="' + esc(x.url) + '" target="_blank" rel="noopener">' + esc(x.title) + '</a>' + (/(^|\s)YOLO$/i.test(x.sku || '') ? '<span class="ebl-tag">YOLO</span>' : '') + '</div>' +
-        '<div class="ebl-price">' + money(x.price) + (x.qty > 1 ? '<small>' + x.qty + ' available</small>' : '') + '</div>' +
+      return '<div class="ebl">' + photo(x) + '<div class="ebl-body"><div class="ebl-title"><a href="#" onclick="openListing(\'' + esc(x.itemId) + '\');return false">' + esc(x.title) + '</a>' + (/(^|\s)YOLO$/i.test(x.sku || '') ? '<span class="ebl-tag">YOLO</span>' : '') + '</div>' +
+        '<div class="ebl-price">' + money(x.price) + (x.shipping != null ? '<small>' + (x.shipping === 0 ? 'Free shipping' : '+ ' + money(x.shipping) + ' shipping') + '</small>' : '') + (x.qty > 1 ? '<small>' + x.qty + ' available</small>' : '') + '</div>' +
         '<div class="ebl-sub">' + (n != null ? 'Listed <b>' + n + (n === 1 ? ' day' : ' days') + '</b> ago' : '') + (x.watchers ? ' · <b>' + x.watchers + '</b> watching' : '') + '</div>' +
         (x.sku ? '<div class="ebl-sub">SKU ' + esc(x.sku) + '</div>' : '') + '</div></div>';
     }).join('');

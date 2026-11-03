@@ -1,4 +1,4 @@
-// PartsLister Pro server — v428
+// PartsLister Pro server — v429
 // v409: yard tickets — the whole-ticket text look and the Look checkboxes are gone; every text row and the logo each have the full set of sliders (boldness, thinner, lighter, weathered, gravel, fuzzy, faded gray, spots).
 // v408: yard tickets — each text row has a Look checkbox (row.useLook, default on): the whole-ticket text look only changes the rows that are checked.
 // v406: yard tickets — a whole-ticket Boldness for the text (design.textLook.bold) and a Lighter slider for the logo (less ink).
@@ -4203,7 +4203,14 @@ async function fetchLiveList(userId, force) {
         start: xmlTag(ld, 'StartTime') || null,
         image: xmlDecode(xmlTag(xmlTag(it, 'PictureDetails') || '', 'GalleryURL') || '') || null,
         url: xmlDecode(xmlTag(ld, 'ViewItemURL') || '') || ('https://www.ebay.com/itm/' + (xmlTag(it, 'ItemID') || '')),
-        watchers: parseInt(xmlTag(it, 'WatchCount') || '0', 10) || 0
+        watchers: parseInt(xmlTag(it, 'WatchCount') || '0', 10) || 0,
+        shipping: (() => {   // v429: only if eBay includes it in the list reply; the detail panel always has it
+          const sd = xmlTag(it, 'ShippingDetails') || '';
+          if (!sd) return null;
+          if (/<FreeShipping>\s*true/i.test(sd)) return 0;
+          const c = parseFloat(xmlTag(sd, 'ShippingServiceCost') || '');
+          return Number.isFinite(c) ? c : null;
+        })()
       });
     }
     if (!got.length) break;
@@ -4212,6 +4219,41 @@ async function fetchLiveList(userId, force) {
   liveCache.set(userId, { at: Date.now(), items });
   return items;
 }
+// v429: one listing's full details (big photos, price, shipping, condition, item specifics, description) — asked for when you click a listing
+const itemDetailCache = new Map();
+app.get('/api/active/item/:id', requireUser, async (req, res) => {
+  try {
+    const id = String(req.params.id || '').replace(/\D/g, '');
+    if (!id) return res.status(400).json({ error: 'Missing item number' });
+    const key = req.user.id + ':' + id, hit = itemDetailCache.get(key);
+    if (hit && Date.now() - hit.at < 5 * 60000) return res.json(hit.data);
+    const xml = await tradingCall(req.user.id, 'GetItem', `<ItemID>${id}</ItemID><DetailLevel>ReturnAll</DetailLevel><IncludeItemSpecifics>true</IncludeItemSpecifics>`);
+    const item = xmlTag(xml, 'Item') || '';
+    const ss = xmlTag(item, 'SellingStatus') || '', ld = xmlTag(item, 'ListingDetails') || '', sd = xmlTag(item, 'ShippingDetails') || '';
+    const qty = parseInt(xmlTag(item, 'Quantity') || '1', 10) - (parseInt(xmlTag(ss, 'QuantitySold') || '0', 10) || 0);
+    let shipping = null, shipService = '';
+    if (/<FreeShipping>\s*true/i.test(sd)) shipping = 0;
+    const opt = xmlTag(sd, 'ShippingServiceOptions') || '';
+    if (opt) { const c = parseFloat(xmlTag(opt, 'ShippingServiceCost') || ''); if (shipping == null && Number.isFinite(c)) shipping = c; shipService = xmlDecode(xmlTag(opt, 'ShippingService') || ''); }
+    const data = {
+      itemId: id,
+      title: xmlDecode(xmlTag(item, 'Title') || ''),
+      sku: xmlDecode(xmlTag(item, 'SKU') || ''),
+      price: parseFloat(xmlTag(ss, 'CurrentPrice') || xmlTag(item, 'StartPrice') || '0') || 0,
+      qty: Number.isFinite(qty) ? Math.max(0, qty) : 1,
+      shipping, shipService,
+      condition: xmlDecode(xmlTag(item, 'ConditionDisplayName') || ''),
+      status: xmlTag(ss, 'ListingStatus') || '',
+      start: xmlTag(ld, 'StartTime') || null,
+      url: xmlDecode(xmlTag(ld, 'ViewItemURL') || '') || ('https://www.ebay.com/itm/' + id),
+      photos: xmlAll(xmlTag(item, 'PictureDetails') || '', 'PictureURL').map(xmlDecode).filter(u => /^https:\/\//.test(u)),
+      specifics: xmlAll(xmlTag(item, 'ItemSpecifics') || '', 'NameValueList').map(nv => ({ name: xmlDecode(xmlTag(nv, 'Name') || ''), value: xmlAll(nv, 'Value').map(xmlDecode).join(', ') })).filter(x => x.name),
+      description: xmlDecode(xmlTag(item, 'Description') || '').slice(0, 60000)
+    };
+    itemDetailCache.set(key, { at: Date.now(), data });
+    res.json(data);
+  } catch (e) { console.error('[active item]', e.message); res.status(502).json({ error: 'Could not load that listing from eBay: ' + e.message }); }
+});
 app.get('/api/active/items', requireUser, async (req, res) => {
   try {
     const items = await fetchLiveList(req.user.id, req.query.refresh === '1');
@@ -5577,5 +5619,6 @@ setupDatabase()
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v425 listening on ' + PORT)))   // v426
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v426 listening on ' + PORT)))   // v427
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v427 listening on ' + PORT)))   // v428
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v428 listening on ' + PORT)))
+  // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v428 listening on ' + PORT)))   // v429
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v429 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });
