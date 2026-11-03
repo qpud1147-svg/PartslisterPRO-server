@@ -9,7 +9,7 @@
   // refresh, overriding anything init does.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 </script>
-<title>PartsLister Pro v422</title>
+<title>PartsLister Pro v423</title>
 <!-- v409: hover the green L to see exactly which listings (price + shipping) were averaged. -->
 <!-- v408: clearing a listing also clears the low-resolution / unreadable / too-many photo warnings. -->
 <!-- v407: a scan that finds no part number opens No Part Number by itself; a cleared listing starts on Has Part Number. -->
@@ -934,7 +934,7 @@
     <!-- v302: logo goes to the dashboard -->
     <a href="/" title="Dashboard" style="text-decoration:none;color:inherit;">
       <div class="logo"><span>PARTS</span>LISTER</div>
-      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v422</span></div>
+      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v423</span></div>
     </a>
     <!-- v303: removed — the logo is the dashboard button
     <a href="/" class="btn btn-secondary btn-sm" title="Back to your dashboard" style="font-size:11px;padding:4px 10px;text-decoration:none;margin-left:6px;">⌂ Dashboard</a>
@@ -1124,9 +1124,9 @@
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:4px;">
             <!-- Front - spans full width -->
             <label class="cb-label" style="grid-column:1/-1;justify-content:center;"><input type="checkbox" name="nploc" value="Front" onchange="updateNoPartSearch()"> Front</label>
-            <!-- Left / Right -->
-            <label class="cb-label"><input type="checkbox" name="nploc" value="Left" onchange="updateNoPartSearch()"> Left</label>
-            <label class="cb-label"><input type="checkbox" name="nploc" value="Right" onchange="updateNoPartSearch()"> Right</label>
+            <!-- Driver / Passenger (v423) -->
+            <label class="cb-label"><input type="checkbox" name="nploc" value="Driver" onchange="updateNoPartSearch()"> Driver</label>   <!-- v423: was Left -->
+            <label class="cb-label"><input type="checkbox" name="nploc" value="Passenger" onchange="updateNoPartSearch()"> Passenger</label>   <!-- v423: was Right -->
             <!-- Center - spans full width -->
             <label class="cb-label" style="grid-column:1/-1;justify-content:center;"><input type="checkbox" name="nploc" value="Center" onchange="updateNoPartSearch()"> Center</label>
             <!-- Rear - spans full width -->
@@ -1207,7 +1207,7 @@
               </div>
               Exact
             </label>
-            <button class="btn btn-secondary btn-sm" onclick="sellSimilarSearchNoFilters()" style="white-space:nowrap;font-size:11px;" title="Search without filters">No Filters</button>
+            <button class="btn btn-secondary btn-sm" id="ss-nofilters-btn" onclick="sellSimilarSearchNoFilters()" style="white-space:nowrap;font-size:11px;" title="Search without filters">No Filters</button>
           </div>
           <div style="flex:0 0 148px;display:flex;flex-direction:column;align-items:flex-end;gap:6px;">
             <button onclick="ssGenerateFromSelected()" id="ss-generate-btn" style="font-size:12px;font-family:'Barlow Condensed',sans-serif;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;padding:6px 16px;background:var(--accent);border:none;border-radius:4px;color:#000;cursor:pointer;white-space:nowrap;opacity:0.4;pointer-events:none;transition:opacity 0.15s;">Generate</button>
@@ -7764,23 +7764,31 @@ async function openSellSimilarFromNP() {
   _fetchSellSimilar(query, 0, true, { forceNoZip: true });
 }
 
-function sellSimilarSearchNoFilters() {
-  // Build query stripping color, material, and placement — keep vehicle, variant, and part description
+// v423: the search without color, material and placement (kept: vehicle, variant, description)
+function _ssNoFilterQuery() {
   const vehicle = document.getElementById('np-vehicle') ? document.getElementById('np-vehicle').value.trim() : '';
   const variant = getSearchVariant(); // Pair excluded from search
   const desc = document.getElementById('np-desc') ? document.getElementById('np-desc').value.trim() : '';
-
-  // Strip color from desc
   const detectedColor = getDetectedColor(desc);
   let cleanDesc = desc;
   if (detectedColor && detectedColor !== 'N/A') {
     cleanDesc = desc.replace(new RegExp('\\b' + detectedColor + '\\b', 'i'), '').replace(/\s{2,}/g, ' ').trim();
   }
-  // Strip material from desc
   cleanDesc = cleanDesc.replace(/\b(leather|cloth|plastic)\b/gi, '').replace(/\s{2,}/g, ' ').trim();
-
-  // No location — stripped entirely
-  const query = [vehicle, variant, cleanDesc].filter(Boolean).join(' ');
+  return [vehicle, variant, cleanDesc].filter(Boolean).join(' ');
+}
+// v423: grey the No Filters button out when it would not change the search that is already showing
+function ssUpdateNoFiltersBtn() {
+  const btn = document.getElementById('ss-nofilters-btn'); if (!btn) return;
+  const norm = t => (t || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  const q = _ssNoFilterQuery();
+  const off = !q || norm(q) === norm(_ssCurrentQuery);
+  btn.disabled = off;
+  btn.style.opacity = off ? '0.4' : '';
+  btn.style.cursor = off ? 'not-allowed' : '';
+}
+function sellSimilarSearchNoFilters() {
+  const query = _ssNoFilterQuery();
   if (!query) { showNotif('⚠ Enter vehicle or description first', true); return; }
 
   _ssOffset = 0;
@@ -7813,6 +7821,7 @@ async function sellSimilarLoadMore() {
 }
 
 async function _fetchSellSimilar(query, offset, openOverlay, opts = {}) {
+  try { ssUpdateNoFiltersBtn(); } catch (e) {}   // v423
   const statusEl = document.getElementById('ss-status');
   statusEl.style.display = 'block';
   statusEl.textContent = 'Searching eBay...';
