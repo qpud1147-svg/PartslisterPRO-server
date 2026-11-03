@@ -9,7 +9,7 @@
   // refresh, overriding anything init does.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 </script>
-<title>PartsLister Pro v430</title>
+<title>PartsLister Pro v431</title>
 <!-- v409: hover the green L to see exactly which listings (price + shipping) were averaged. -->
 <!-- v408: clearing a listing also clears the low-resolution / unreadable / too-many photo warnings. -->
 <!-- v407: a scan that finds no part number opens No Part Number by itself; a cleared listing starts on Has Part Number. -->
@@ -934,7 +934,7 @@
     <!-- v302: logo goes to the dashboard -->
     <a href="/" title="Dashboard" style="text-decoration:none;color:inherit;">
       <div class="logo"><span>PARTS</span>LISTER</div>
-      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v430</span></div>
+      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v431</span></div>
     </a>
     <!-- v303: removed — the logo is the dashboard button
     <a href="/" class="btn btn-secondary btn-sm" title="Back to your dashboard" style="font-size:11px;padding:4px 10px;text-decoration:none;margin-left:6px;">⌂ Dashboard</a>
@@ -1344,7 +1344,7 @@
       </div>
 
       <!-- Row 1: Price + Part Number + SKU/BIN -->
-      <div class="form-grid three" style="margin-bottom:10px;">
+      <div class="form-grid three" style="margin-bottom:10px;grid-template-columns:1fr 1.35fr 0.7fr;">   <!-- v431: SKU / BIN a little narrower -->
         <div class="field">
           <label>Price</label>
           <div style="display:flex;align-items:stretch;background:var(--surface);border:1px solid var(--border);border-radius:4px;overflow:hidden;transition:border-color 0.2s;" onfocusin="this.style.borderColor='var(--accent)'" onfocusout="this.style.borderColor='var(--border)'">
@@ -1356,8 +1356,7 @@
           </div>
           <div id="avg-note" style="display:none;font-size:10px;color:var(--muted);margin-top:3px;line-height:1.3;"></div>   <!-- v390 -->
           <div id="yolo-note" style="display:none;font-size:11px;color:#3fa65b;margin-top:3px;"></div>   <!-- v430: only while YOLO is on -->
-        </div>
-        </div>
+        </div>   <!-- v431: a stray extra closing div here (v430) broke the row -->
         <div class="field">
           <label>Part Number</label>
           <input type="hidden" id="pn-display">
@@ -5197,7 +5196,7 @@ async function launchToEbay() {
     const _skuBinRaw = document.getElementById('sku-bin').value.trim();
     const skuVal = _skuBinRaw.split(' ')[0] || '';
     const binVal = _skuBinRaw.split(' ').slice(1).join(' ') || '';
-    const skuBin = (_yoloPriceVal > 0 ? (_skuBinRaw + ' YOLO').trim() : _skuBinRaw).slice(0, 50);   // v429: YOLO listings get a YOLO tag in the SKU
+    const skuBin = ((_yoloPriceVal > 0 && !/(^|\s)YOLO$/i.test(_skuBinRaw)) ? (_skuBinRaw + ' YOLO').trim() : _skuBinRaw).slice(0, 50);   // v429: YOLO listings get a YOLO tag in the SKU
     // v271: red popup removed — the amber #bin-warning bar already covers this.
     const interchangeInputs = Array.from(document.querySelectorAll('.interchange-input')).map(i => i.value.trim());
 
@@ -5426,7 +5425,7 @@ async function saveToDraft() {
     const _skuBinRaw = document.getElementById('sku-bin').value.trim();
     const skuVal = _skuBinRaw.split(' ')[0] || '';
     const binVal = _skuBinRaw.split(' ').slice(1).join(' ') || '';
-    const skuBin = (_yoloPriceVal > 0 ? (_skuBinRaw + ' YOLO').trim() : _skuBinRaw).slice(0, 50);   // v429: YOLO listings get a YOLO tag in the SKU
+    const skuBin = ((_yoloPriceVal > 0 && !/(^|\s)YOLO$/i.test(_skuBinRaw)) ? (_skuBinRaw + ' YOLO').trim() : _skuBinRaw).slice(0, 50);   // v429: YOLO listings get a YOLO tag in the SKU
     const interchangeInputs = Array.from(document.querySelectorAll('.interchange-input')).map(i => i.value.trim());
 
     const specifics = [
@@ -6033,6 +6032,14 @@ function yoloApply() {   // repaint the box for the current mode
   const on = !!window._yoloOn;
   if (el) el.style.color = on ? '#3fa65b' : 'var(--text)';
   if (btn) { btn.style.color = on ? '#3fa65b' : 'var(--muted)'; btn.style.borderColor = ''; }
+  // v431: the YOLO tag shows in the SKU / BIN box while YOLO is on
+  const sk = document.getElementById('sku-bin');
+  if (sk) {
+    const v = sk.value.trim(), has = /(^|\s)YOLO$/i.test(v);
+    if (on && !has) sk.value = (v + ' YOLO').trim();
+    else if (!on && has) sk.value = v.replace(/\s*YOLO$/i, '').trim();
+    try { if (typeof updateBinWarning === 'function') updateBinWarning(); } catch (e) {}
+  }
   if (note) { note.style.display = on ? 'block' : 'none'; note.textContent = on ? 'YOLO price · regular $' + (Number(window._yoloRegular) || 0).toFixed(2) : ''; }
 }
 function yoloToggle() {
