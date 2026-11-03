@@ -3,8 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Active v391</title>
+<title>PartsLister Pro Active v393</title>
 <!-- v387: click a listing → your own eBay-style view (big photos with arrows, price, shipping, condition, item specifics, description); sharper list photos; shipping on the rows when eBay gives it. -->
+<!-- v393: simpler fallback - part number in title, else first part number in listing specifics, else the plain title (emoji stripped). -->
+<!-- v392: short year ranges (2006-09) are spelled out and never a part number; a part number needs 4+ digits (so RX400h is not one). -->
 <!-- v391: fix - a year range was being used as the part number; years/year ranges are now never a part number (title or listing specifics). -->
 <!-- v390: year ranges in titles (2017 - 2021) are spelled out (2017 2018 2019 2020 2021) in the fallback search. -->
 <!-- v389: Check buttons: part number from title, else from listing item specifics, else year/make/model/part name; emoji stripped. -->
@@ -242,7 +244,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v391</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v393</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -682,12 +684,12 @@ pageCache.rerun = () => { loadListings(false); loadDaily(false); };   // v380: f
   // v389: Check Active / Check Sold. Search word order: part number from the title -> part number from the listing's item specifics -> year/make/model/part name from the title. Emoji and odd symbols are stripped.
   function llClean(t) { return String(t || '').replace(/[\u{1F000}-\u{1FFFF}\u{2190}-\u{2BFF}\u{FE00}-\u{FE0F}‍]/gu, ' ').replace(/[^\w\s\-\/.]/g, ' ').replace(/\s+/g, ' ').trim(); }
   // v391: years and year ranges (2017, 2017-2021, 2017 - 2021, 2017–2021) are never a part number
-  function llIsYears(v) { return /^(?:(?:19|20)\d\d(?:\s*(?:-|–|—|\/|,|to|thru)\s*|\s+|$))+$/i.test(String(v).trim()); }
+  function llIsYears(v) { if (/^(?:19|20)\d\d\s*(?:-|–|—|\/)\s*\d\d$/.test(String(v).trim())) return true; return /^(?:(?:19|20)\d\d(?:\s*(?:-|–|—|\/|,|to|thru)\s*|\s+|$))+$/i.test(String(v).trim()); }
   function llPN(title) {
     const toks = llClean(title).split(/\s+/).map(t => t.replace(/^[^A-Za-z0-9]+|[^A-Za-z0-9]+$/g, '')).filter(Boolean);
     let best = '';
     toks.forEach(t => {
-      if (t.length < 5 || !/\d/.test(t)) return;
+      if (t.length < 5 || (t.match(/\d/g) || []).length < 4) return;   // v392: needs 4+ digits so models like RX400h aren't taken for a part number
       if (llIsYears(t)) return;
       if (/^\d{4}$/.test(t)) return;
       if (t.length > best.length) best = t;
@@ -695,10 +697,10 @@ pageCache.rerun = () => { loadListings(false); loadDaily(false); };   // v380: f
     return best;
   }
   function llYears(t) {   // v390: "2017 - 2021" or "2017-2021" -> "2017 2018 2019 2020 2021"
-    return t.replace(/\b((?:19|20)\d\d)\s*(?:-|–|—|to|thru)\s*((?:19|20)\d\d)\b/gi, (m, a, b) => { a = +a; b = +b; if (b < a || b - a > 15) return m; let o = []; for (let y = a; y <= b; y++) o.push(y); return o.join(' '); });
+    return t.replace(/\b((?:19|20)\d\d)\s*(?:-|–|—|to|thru)\s*((?:19|20)?\d\d)\b/gi, (m, a, b) => { if (b.length === 2) b = a.slice(0, 2) + b; a = +a; b = +b; if (b < a || b - a > 15) return m; let o = []; for (let y = a; y <= b; y++) o.push(y); return o.join(' '); });
   }
   function llNoPN(title) {   // year make model part name: drop filler words and any part-number-looking tokens
-    return llClean(llYears(String(title || ''))).split(/\s+/).filter(w => w !== '-' && !/^(OEM|GENUINE|USED|TESTED|FACTORY|ORIGINAL|NEW|W|WITH|FREE|SHIPPING)$/i.test(w) && !(w.length >= 5 && /\d/.test(w) && /[A-Za-z]/.test(w))).join(' ');
+    return llClean(llYears(String(title || ''))).split(/\s+/).filter(w => w !== '-' && !/^(OEM|GENUINE|USED|TESTED|FACTORY|ORIGINAL|NEW|W|WITH|FREE|SHIPPING)$/i.test(w) && !(w.length >= 5 && (w.match(/\d/g) || []).length >= 4 && /[A-Za-z]/.test(w))).join(' ');
   }
   window.llCheck = async function (id, sold) {
     const x = llAll.find(i => String(i.itemId) === String(id)); if (!x) return;
@@ -722,7 +724,7 @@ pageCache.rerun = () => { loadListings(false); loadDaily(false); };   // v380: f
         for (const nm of want) { const f = j.specifics.find(sp => String(sp.name).toLowerCase() === nm && sp.value && !/^(does not apply|n\/a|unknown)$/i.test(String(sp.value).trim())); if (f) { const pv = String(f.value).split(/[,;]/)[0].trim(); if (pv.length >= 4 && /\d/.test(pv) && !llIsYears(pv)) { q = pv; break; } } }
       }
     } catch (e) {}
-    if (!q) q = llNoPN(x.title) || llClean(x.title);
+    if (!q) q = llClean(x.title);   // v393: last resort = the plain title (emoji stripped), no year spelling / word dropping
     try { w.location.href = mk(q); w.focus(); } catch (e) {}
   };
   window.llRender = function (keep) {
