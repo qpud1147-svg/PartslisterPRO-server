@@ -3,8 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Active v388</title>
+<title>PartsLister Pro Active v389</title>
 <!-- v387: click a listing → your own eBay-style view (big photos with arrows, price, shipping, condition, item specifics, description); sharper list photos; shipping on the rows when eBay gives it. -->
+<!-- v389: Check buttons: part number from title, else from listing item specifics, else year/make/model/part name; emoji stripped. -->
 <!-- v388: live listings show a running number (position in current sort/search) on the right; Check Active / Check Sold buttons bottom-left open eBay searches (part number taken from the title) in the one shared eBay tab. -->
 <!-- v386: YOLO has Active | Sold inside (sold ones move over by themselves), eBay-style listing rows with photos, no count on the YOLO button, and a Live listings list on the Active view with search and sorting. -->
 <!-- v385: a YOLO view next to Drafts — listings priced high on purpose, how long they've been up, and a Revert button that puts the regular price back on eBay. -->
@@ -239,7 +240,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v388</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v389</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -676,9 +677,10 @@ pageCache.rerun = () => { loadListings(false); loadDaily(false); };   // v380: f
     else if (so === 'hi') a.sort((p, q2) => q2.price - p.price); else a.sort((p, q2) => p.price - q2.price);
     return a;
   };
-  // v388: Check Active / Check Sold — search eBay for the part number found in the title, in the one shared eBay tab
+  // v389: Check Active / Check Sold. Search word order: part number from the title -> part number from the listing's item specifics -> year/make/model/part name from the title. Emoji and odd symbols are stripped.
+  function llClean(t) { return String(t || '').replace(/[\u{1F000}-\u{1FFFF}\u{2190}-\u{2BFF}\u{FE00}-\u{FE0F}‍]/gu, ' ').replace(/[^\w\s\-\/.]/g, ' ').replace(/\s+/g, ' ').trim(); }
   function llPN(title) {
-    const toks = String(title || '').split(/[\s,;()]+/).map(t => t.replace(/^[^A-Za-z0-9]+|[^A-Za-z0-9]+$/g, '')).filter(Boolean);
+    const toks = llClean(title).split(/\s+/).map(t => t.replace(/^[^A-Za-z0-9]+|[^A-Za-z0-9]+$/g, '')).filter(Boolean);
     let best = '';
     toks.forEach(t => {
       if (t.length < 5 || !/\d/.test(t)) return;
@@ -686,15 +688,35 @@ pageCache.rerun = () => { loadListings(false); loadDaily(false); };   // v380: f
       if (/^\d{4}$/.test(t)) return;
       if (t.length > best.length) best = t;
     });
-    return best || String(title || '');
+    return best;
   }
-  window.llCheck = function (id, sold) {
+  function llNoPN(title) {   // year make model part name: drop filler words and any part-number-looking tokens
+    return llClean(title).split(/\s+/).filter(w => !/^(OEM|GENUINE|USED|TESTED|FACTORY|ORIGINAL|NEW|W|WITH|FREE|SHIPPING)$/i.test(w) && !(w.length >= 5 && /\d/.test(w) && /[A-Za-z]/.test(w))).join(' ');
+  }
+  window.llCheck = async function (id, sold) {
     const x = llAll.find(i => String(i.itemId) === String(id)); if (!x) return;
-    const q = llPN(x.title);
-    const url = 'https://www.ebay.com/sch/i.html?_nkw=' + encodeURIComponent(q) + (sold ? '&LH_Sold=1&LH_Complete=1' : '') + '&LH_ItemCondition=3000&_ipg=60';
-    let w = null; try { w = window.open(url, 'partslister-sold'); } catch (e) {}
+    const mk = q => 'https://www.ebay.com/sch/i.html?_nkw=' + encodeURIComponent(q) + (sold ? '&LH_Sold=1&LH_Complete=1' : '') + '&LH_ItemCondition=3000&_ipg=60';
+    let q = llPN(x.title);
+    if (q) {
+      let w = null; try { w = window.open(mk(q), 'partslister-sold'); } catch (e) {}
+      if (!w) { alert('The eBay tab was blocked — allow pop-ups for this site.'); return; }
+      try { w.focus(); } catch (e) {}
+      return;
+    }
+    // no part number in the title: open the shared tab now (inside the click) then point it at the right search
+    let w = null; try { w = window.open('', 'partslister-sold'); } catch (e) {}
     if (!w) { alert('The eBay tab was blocked — allow pop-ups for this site.'); return; }
-    try { w.focus(); } catch (e) {}
+    try { w.document.title = 'Looking up part number…'; w.document.body.innerHTML = '<p style="font:16px Arial;margin:30px">Looking up the part number on your listing…</p>'; } catch (e) {}
+    try {
+      const r = await fetch('/api/active/item/' + encodeURIComponent(id));
+      const j = await r.json().catch(() => ({}));
+      if (r.ok && j.specifics) {
+        const want = ['manufacturer part number', 'interchange part number', 'oe/oem part number', 'part number', 'oem part number'];
+        for (const nm of want) { const f = j.specifics.find(sp => String(sp.name).toLowerCase() === nm && sp.value && !/^(does not apply|n\/a|unknown)$/i.test(String(sp.value).trim())); if (f) { q = String(f.value).split(/[,;]/)[0].trim(); break; } }
+      }
+    } catch (e) {}
+    if (!q) q = llNoPN(x.title) || llClean(x.title);
+    try { w.location.href = mk(q); w.focus(); } catch (e) {}
   };
   window.llRender = function (keep) {
     if (!keep) llShown = LL_PAGE;
