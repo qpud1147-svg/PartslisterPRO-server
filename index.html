@@ -9,7 +9,7 @@
   // refresh, overriding anything init does.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 </script>
-<title>PartsLister Pro v425</title>
+<title>PartsLister Pro v426</title>
 <!-- v409: hover the green L to see exactly which listings (price + shipping) were averaged. -->
 <!-- v408: clearing a listing also clears the low-resolution / unreadable / too-many photo warnings. -->
 <!-- v407: a scan that finds no part number opens No Part Number by itself; a cleared listing starts on Has Part Number. -->
@@ -934,7 +934,7 @@
     <!-- v302: logo goes to the dashboard -->
     <a href="/" title="Dashboard" style="text-decoration:none;color:inherit;">
       <div class="logo"><span>PARTS</span>LISTER</div>
-      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v425</span></div>
+      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v426</span></div>
     </a>
     <!-- v303: removed — the logo is the dashboard button
     <a href="/" class="btn btn-secondary btn-sm" title="Back to your dashboard" style="font-size:11px;padding:4px 10px;text-decoration:none;margin-left:6px;">⌂ Dashboard</a>
@@ -1216,8 +1216,8 @@
               <span id="ss-select-count" style="font-size:11px;color:var(--muted);white-space:nowrap;"></span>
             </div>
             <div style="display:flex;flex-direction:column;gap:6px;">
-              <button onclick="ssGenerateFromSelected()" id="ss-generate-btn" style="font-size:11px;font-family:'Barlow Condensed',sans-serif;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;padding:4px 0;width:112px;text-align:center;background:var(--accent);border:none;border-radius:4px;color:#000;cursor:pointer;white-space:nowrap;opacity:0.4;pointer-events:none;transition:opacity 0.15s;">Generate</button>
-              <button onclick="ssGenerateAndOpenSold()" id="ss-generate-sold-btn" style="font-size:11px;font-family:'Barlow Condensed',sans-serif;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;padding:4px 0;width:112px;text-align:center;background:var(--accent);border:none;border-radius:4px;color:#000;cursor:pointer;white-space:nowrap;opacity:0.4;pointer-events:none;transition:opacity 0.15s;" title="Generate, and open eBay sold results in one reused tab">Generate + Sold</button>
+              <button onclick="ssGenerateFromSelected()" id="ss-generate-btn" style="font-size:12px;font-family:'Barlow Condensed',sans-serif;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;padding:6px 0;width:136px;text-align:center;background:var(--accent);border:none;border-radius:4px;color:#000;cursor:pointer;white-space:nowrap;opacity:0.4;pointer-events:none;transition:opacity 0.15s;">Generate</button>
+              <button onclick="ssGenerateAndOpenSold()" id="ss-generate-sold-btn" style="font-size:12px;font-family:'Barlow Condensed',sans-serif;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;padding:6px 0;width:136px;text-align:center;background:var(--accent);border:none;border-radius:4px;color:#000;cursor:pointer;white-space:nowrap;opacity:0.4;pointer-events:none;transition:opacity 0.15s;" title="Generate, and open eBay sold results in one reused tab">Generate + Sold</button>
             </div>
           </div>
           <button onclick="closeSellSimilar()" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:18px;line-height:1;flex-shrink:0;padding-top:6px;" title="Close">✕</button>
@@ -1267,8 +1267,8 @@
               <span id="al-select-count" style="font-size:11px;color:var(--muted);white-space:nowrap;"></span>
             </div>
             <div style="display:flex;flex-direction:column;gap:6px;">
-              <button onclick="alGenerateFromSelected()" id="al-generate-btn" style="font-size:11px;font-family:'Barlow Condensed',sans-serif;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;padding:4px 0;width:112px;text-align:center;background:var(--accent);border:none;border-radius:4px;color:#000;cursor:pointer;white-space:nowrap;opacity:0.4;pointer-events:none;transition:opacity 0.15s;">Generate</button>
-              <button onclick="alGenerateAndOpenSold()" id="al-generate-sold-btn" style="font-size:11px;font-family:'Barlow Condensed',sans-serif;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;padding:4px 0;width:112px;text-align:center;background:var(--accent);border:none;border-radius:4px;color:#000;cursor:pointer;white-space:nowrap;opacity:0.4;pointer-events:none;transition:opacity 0.15s;" title="Generate, and open eBay sold results in one reused tab">Generate + Sold</button>
+              <button onclick="alGenerateFromSelected()" id="al-generate-btn" style="font-size:12px;font-family:'Barlow Condensed',sans-serif;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;padding:6px 0;width:136px;text-align:center;background:var(--accent);border:none;border-radius:4px;color:#000;cursor:pointer;white-space:nowrap;opacity:0.4;pointer-events:none;transition:opacity 0.15s;">Generate</button>
+              <button onclick="alGenerateAndOpenSold()" id="al-generate-sold-btn" style="font-size:12px;font-family:'Barlow Condensed',sans-serif;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;padding:6px 0;width:136px;text-align:center;background:var(--accent);border:none;border-radius:4px;color:#000;cursor:pointer;white-space:nowrap;opacity:0.4;pointer-events:none;transition:opacity 0.15s;" title="Generate, and open eBay sold results in one reused tab">Generate + Sold</button>
             </div>
           </div>
           <button onclick="closeActiveListings()" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:18px;line-height:1;flex-shrink:0;padding-top:6px;" title="Close">✕</button>
@@ -6787,14 +6787,20 @@ function openEbaySoldReused() {
   const query = _ebayLinkQuery();
   if (!query) return;
   const url = 'https://www.ebay.com/sch/i.html?_nkw=' + encodeURIComponent(query) + '&LH_Sold=1&LH_Complete=1&LH_ItemCondition=3000&_ipg=60';
-  // open a blank tab with a name first so we can cut its link back to us, then send it to eBay; the same name finds the same tab next time
+  // v426: plain named open (the v424 blank-first + opener=null trick cut the tab loose, which made the browser forget its name)
   let w = null;
-  try { w = window.open('', 'partslister-sold'); } catch (e) {}
+  try { w = window.open(url, 'partslister-sold'); } catch (e) {}
   if (!w) { showNotif('\u26a0 The sold tab was blocked — allow pop-ups for this site', true); return; }
-  try { w.opener = null; } catch (e) { /* tab already on eBay: fine */ }
-  try { w.location.href = url; } catch (e) { window.open(url, '_blank', 'noopener,noreferrer'); return; }
-  // v425: if eBay cuts the tab loose from this page the browser reports it closed and the next click can't find it again
-  setTimeout(() => { try { if (w.closed && !window._soldTabNoted) { window._soldTabNoted = true; showNotif('eBay cuts the sold tab loose from this page, so it can\u2019t be reused \u2014 each click opens a new tab'); } } catch (e) {} }, 2500);
+  try { w.focus(); } catch (e) {}
+  // if eBay still cuts the tab loose within a few seconds the browser calls it closed: tell the user once
+  let n = 0;
+  const t = setInterval(() => {
+    n++;
+    try {
+      if (w.closed) { clearInterval(t); if (!window._soldTabNoted) { window._soldTabNoted = true; showNotif('eBay cuts the sold tab loose from this page, so it can\u2019t be reused \u2014 each click opens a new tab'); } }
+    } catch (e) { clearInterval(t); }
+    if (n >= 40) clearInterval(t);
+  }, 500);
 }
 function alGenerateAndOpenSold() {   // v425: the Has Part Number Pick list
   if (!(window._alSelectedItems || []).length) return;
