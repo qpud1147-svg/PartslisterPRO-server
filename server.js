@@ -1,4 +1,4 @@
-// PartsLister Pro server — v426
+// PartsLister Pro server — v427
 // v409: yard tickets — the whole-ticket text look and the Look checkboxes are gone; every text row and the logo each have the full set of sliders (boldness, thinner, lighter, weathered, gravel, fuzzy, faded gray, spots).
 // v408: yard tickets — each text row has a Look checkbox (row.useLook, default on): the whole-ticket text look only changes the rows that are checked.
 // v406: yard tickets — a whole-ticket Boldness for the text (design.textLook.bold) and a Lighter slider for the logo (less ink).
@@ -1921,14 +1921,14 @@ const xmlDecode = (t) => String(t || '')
 const xmlAll = (xml, tag) => (String(xml || '').match(new RegExp('<' + tag + '(?:\\s[^>]*)?>[\\s\\S]*?</' + tag + '>', 'g')) || [])
   .map(x => x.replace(new RegExp('^<' + tag + '(?:\\s[^>]*)?>'), '').replace(new RegExp('</' + tag + '>$'), ''));
 
-async function tradingCall(userId, callName, inner) {
+async function tradingCall(userId, callName, inner, siteId) {   // v427: optional siteId
   const token = await getAccessToken(userId);
   const r = await fetch('https://api.ebay.com/ws/api.dll', {
     method: 'POST',
     headers: {
       'Content-Type': 'text/xml',
       'X-EBAY-API-CALL-NAME': callName,
-      'X-EBAY-API-SITEID': '0',
+      'X-EBAY-API-SITEID': siteId || '0',
       'X-EBAY-API-COMPATIBILITY-LEVEL': '1193',
       'X-EBAY-API-IAF-TOKEN': token
     },
@@ -4176,9 +4176,30 @@ app.post('/api/yolo', requireUser, express.json(), async (req, res) => {
 });
 app.get('/api/yolo', requireUser, async (req, res) => {
   try {
-    const rows = (await pool.query("SELECT item_id, title, sku, normal_price, yolo_price, status, listed_at FROM yolo_listings WHERE user_id = $1 ORDER BY listed_at DESC", [req.user.id])).rows;
+    const rows = (await pool.query("SELECT item_id, title, sku, normal_price, yolo_price, status, listed_at FROM yolo_listings WHERE user_id = $1 AND status = 'active' ORDER BY listed_at ASC", [req.user.id])).rows;   // v427: only the live YOLO ones, oldest first
     res.json({ items: rows.map(r => ({ itemId: r.item_id, title: r.title, sku: r.sku, normalPrice: Number(r.normal_price), yoloPrice: Number(r.yolo_price), status: r.status, listedAt: r.listed_at })) });
   } catch (e) { console.error('[yolo list]', e.message); res.status(500).json({ error: 'Could not load YOLO listings' }); }
+});
+// v427: Revert — put the regular price back on the live eBay listing, then stop tracking it
+app.post('/api/yolo/:itemId/revert', requireUser, async (req, res) => {
+  try {
+    const itemId = String(req.params.itemId || '').replace(/\D/g, '');
+    const row = (await pool.query("SELECT normal_price FROM yolo_listings WHERE user_id = $1 AND item_id = $2 AND status = 'active'", [req.user.id, itemId])).rows[0];
+    if (!row) return res.status(404).json({ error: 'That YOLO listing is not on your list.' });
+    const price = Number(row.normal_price).toFixed(2);
+    // the listing was created on eBay Motors (site 100)
+    await tradingCall(req.user.id, 'ReviseFixedPriceItem', `<Item><ItemID>${itemId}</ItemID><StartPrice>${price}</StartPrice></Item>`, '100');
+    await pool.query("UPDATE yolo_listings SET status = 'reverted' WHERE user_id = $1 AND item_id = $2", [req.user.id, itemId]);
+    res.json({ ok: true, price });
+  } catch (e) { console.error('[yolo revert]', e.message); res.status(502).json({ error: 'eBay did not change the price: ' + e.message }); }
+});
+// v427: stop tracking a YOLO listing (sold, ended, or you changed the price yourself) — does not touch eBay
+app.post('/api/yolo/:itemId/remove', requireUser, async (req, res) => {
+  try {
+    const itemId = String(req.params.itemId || '').replace(/\D/g, '');
+    await pool.query("UPDATE yolo_listings SET status = 'removed' WHERE user_id = $1 AND item_id = $2 AND status = 'active'", [req.user.id, itemId]);
+    res.json({ ok: true });
+  } catch (e) { console.error('[yolo remove]', e.message); res.status(500).json({ error: 'Could not remove it' }); }
 });
 app.get('/api/drafts', requireUser, async (req, res) => {
   try {
@@ -5475,5 +5496,6 @@ setupDatabase()
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v421 listening on ' + PORT)))   // v422
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v422 listening on ' + PORT)))   // v425
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v425 listening on ' + PORT)))   // v426
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v426 listening on ' + PORT)))
+  // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v426 listening on ' + PORT)))   // v427
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v427 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });

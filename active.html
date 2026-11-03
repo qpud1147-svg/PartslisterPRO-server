@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Active v384</title>
+<title>PartsLister Pro Active v385</title>
+<!-- v385: a YOLO view next to Drafts — listings priced high on purpose, how long they've been up, and a Revert button that puts the regular price back on eBay. -->
 <!-- v384: a bar under the title — Active · Drafts — switches the view in place (like Messages). v383: Drafts button next to the title (opens the Drafts page). -->
 <!-- v382: switching views is instant; browser reload / Refresh really reloads. v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
 <!-- PartsLister Pro — Active page (v316: new as the Listings page, listings.html; v318: renamed Active, active.html, at /active). Shares the sign-in, account and
@@ -168,6 +169,16 @@
   .dr-btns .btn { flex: 1; text-align: center; justify-content: center; }
   .dr-note { color: var(--muted); font-size: 13px; margin-top: 6px; }
   .dr-empty { color: var(--muted); padding: 40px 0; text-align: center; }
+  .yo { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; margin-top: 10px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .yo.old { border-color: #e53935; background: rgba(229,57,53,0.08); }
+  .yo-main { flex: 1; min-width: 220px; }
+  .yo-title { font-weight: 600; font-size: 14px; line-height: 1.3; word-break: break-word; }
+  .yo-title a { color: inherit; text-decoration: none; }
+  .yo-meta { color: var(--muted); font-size: 12px; margin-top: 4px; }
+  .yo-age { font-weight: 700; }
+  .yo.old .yo-age { color: #ff6b66; }
+  .yo-g { color: #3fa65b; font-weight: 700; }
+  .yo-btns { display: flex; gap: 6px; }
   .seg { display: inline-flex; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 3px; gap: 2px; margin: 12px 0 4px; }
   .seg button { background: none; border: none; color: var(--muted); font-family: 'Barlow Condensed', sans-serif; font-size: 14px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; padding: 6px 14px; border-radius: 4px; cursor: pointer; }
   .seg button:hover { color: var(--text); }
@@ -181,7 +192,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v384</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v385</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -215,6 +226,7 @@
   <div class="seg" role="group" aria-label="View" id="seg-view">
     <button type="button" id="seg-active" aria-pressed="true" onclick="setView('active')">Active</button>
     <button type="button" id="seg-drafts" aria-pressed="false" onclick="setView('drafts')">Drafts<span class="cnt" id="drafts-n"></span></button>
+    <button type="button" id="seg-yolo" aria-pressed="false" onclick="setView('yolo')">YOLO<span class="cnt" id="yolo-n"></span></button>
   </div>
   <div class="page-note" style="display:none"><span id="l-note">&nbsp;</span> <button type="button" id="l-refresh" onclick="refreshListings()">Refresh from eBay</button></div>   <!-- v382: replaced by the box above -->
   <div id="view-active">
@@ -274,6 +286,11 @@
     <div class="dr-note" id="dr-note">&nbsp;</div>
     <div class="error-box" id="dr-error" style="display:none"></div>
     <div class="dr-grid" id="dr-grid"></div>
+  </div>
+  <div id="view-yolo" hidden>
+    <div class="dr-note" id="yo-note">&nbsp;</div>
+    <div class="error-box" id="yo-error" style="display:none"></div>
+    <div id="yo-list"></div>
   </div>
 </main>
 
@@ -469,17 +486,63 @@ pageCache.rerun = () => { loadListings(false); loadDaily(false); };   // v380: f
     try { const r = await fetch('/api/drafts/' + id + '/delete', { method: 'POST' }); if (!r.ok) throw 0; loadDrafts(); }
     catch (e) { fail('Could not delete the draft — try again.'); }
   };
+  // v385: YOLO listings — priced high on purpose; after six months the row turns red and Revert puts the regular price back on eBay
+  const YO_DAYS = 183;   // about six months
+  const money = n => '$' + Number(n).toFixed(2).replace(/\.00$/, '');
+  const yfail = msg => { const e = g('yo-error'); e.textContent = msg; e.style.display = 'block'; };
+  async function loadYolo() {
+    g('yo-error').style.display = 'none';
+    try {
+      const r = await fetch('/api/yolo');
+      if (r.status === 401) { location.href = '/sales?next=' + encodeURIComponent(location.pathname); return; }
+      if (r.status === 404) { yfail('The server is out of date — upload the newest server.js to Railway.'); return; }
+      if (!r.ok) { yfail('Could not load YOLO listings (server problem ' + r.status + ').'); return; }
+      renderYolo(await r.json());
+    } catch (e) { yfail('Could not load YOLO listings — check your connection and try again.'); }
+  }
+  function renderYolo(d) {
+    const items = d.items || [];
+    g('yolo-n').textContent = items.length ? items.length : '';
+    const days = x => Math.floor((Date.now() - new Date(x.listedAt).getTime()) / 86400000);
+    const old = items.filter(x => days(x) >= YO_DAYS).length;
+    g('yo-note').textContent = items.length ? (items.length + ' YOLO listing' + (items.length === 1 ? '' : 's') + (old ? ' · ' + old + ' past six months' : '')) : '';
+    if (!items.length) { g('yo-list').innerHTML = '<div class="dr-empty">No YOLO listings yet. In the Listing Tool, press <b>×5</b> next to the price before you launch.</div>'; return; }
+    g('yo-list').innerHTML = items.map(x => {
+      const n = days(x), isOld = n >= YO_DAYS;
+      return '<div class="yo' + (isOld ? ' old' : '') + '"><div class="yo-main"><div class="yo-title"><a href="https://www.ebay.com/itm/' + esc(x.itemId) + '" target="_blank" rel="noopener">' + esc(x.title || ('Item ' + x.itemId)) + '</a></div>' +
+        '<div class="yo-meta"><span class="yo-g">YOLO ' + money(x.yoloPrice) + '</span> · regular ' + money(x.normalPrice) + ' · <span class="yo-age">' + n + (n === 1 ? ' day' : ' days') + '</span>' + (isOld ? ' · <b style="color:#ff6b66">time to revert</b>' : '') + (x.sku ? ' · ' + esc(x.sku) : '') + '</div></div>' +
+        '<div class="yo-btns"><button class="btn btn-sm" style="background:' + (isOld ? '#e53935;color:#fff' : 'var(--accent);color:#000') + '" onclick="revertYolo(\'' + esc(x.itemId) + '\',' + Number(x.yoloPrice) + ',' + Number(x.normalPrice) + ')">Revert to ' + money(x.normalPrice) + '</button>' +
+        '<button class="btn btn-secondary btn-sm" onclick="removeYolo(\'' + esc(x.itemId) + '\')" title="Stop tracking it (does not change eBay)">Remove</button></div></div>';
+    }).join('');
+  }
+  window.revertYolo = async function (id, yolo, normal) {
+    if (!confirm('Change the price on eBay from ' + money(yolo) + ' to ' + money(normal) + '?')) return;
+    try {
+      const r = await fetch('/api/yolo/' + id + '/revert', { method: 'POST' });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || ('server ' + r.status));
+      loadYolo();
+    } catch (e) { yfail(e.message || 'Could not change the price.'); }
+  };
+  window.removeYolo = async function (id) {
+    if (!confirm('Stop tracking this YOLO listing? (eBay is not changed.)')) return;
+    try { const r = await fetch('/api/yolo/' + id + '/remove', { method: 'POST' }); if (!r.ok) throw 0; loadYolo(); }
+    catch (e) { yfail('Could not remove it — try again.'); }
+  };
   window.setView = function (v) {
-    const dr = v === 'drafts';
-    g('view-active').hidden = dr; g('view-drafts').hidden = !dr;
-    g('seg-active').setAttribute('aria-pressed', dr ? 'false' : 'true'); g('seg-drafts').setAttribute('aria-pressed', dr ? 'true' : 'false');
-    g('l-badge').hidden = dr;
-    try { history.replaceState(null, '', dr ? '/active?view=drafts' : '/active'); } catch (e) { /* fine */ }
+    const dr = v === 'drafts', yo = v === 'yolo';
+    g('view-active').hidden = dr || yo; g('view-drafts').hidden = !dr; g('view-yolo').hidden = !yo;
+    g('seg-active').setAttribute('aria-pressed', (dr || yo) ? 'false' : 'true'); g('seg-drafts').setAttribute('aria-pressed', dr ? 'true' : 'false'); g('seg-yolo').setAttribute('aria-pressed', yo ? 'true' : 'false');
+    g('l-badge').hidden = dr || yo;
+    try { history.replaceState(null, '', dr ? '/active?view=drafts' : yo ? '/active?view=yolo' : '/active'); } catch (e) { /* fine */ }
     if (dr) loadDrafts();
+    if (yo) loadYolo();
   };
   // the count on the bar, and ?view=drafts (from the Listing Tool's Drafts link)
   fetch('/api/drafts').then(r => r.ok ? r.json() : null).then(d => { if (d) g('drafts-n').textContent = d.drafts.length ? d.drafts.length : ''; }).catch(() => {});
+  fetch('/api/yolo').then(r => r.ok ? r.json() : null).then(d => { if (d) g('yolo-n').textContent = (d.items || []).length || ''; }).catch(() => {});
   if (/[?&]view=drafts\b/.test(location.search)) window.setView('drafts');
+  if (/[?&]view=yolo\b/.test(location.search)) window.setView('yolo');
 })();
 
 loadListings(false);

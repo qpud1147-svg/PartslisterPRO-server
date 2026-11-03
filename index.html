@@ -9,7 +9,7 @@
   // refresh, overriding anything init does.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 </script>
-<title>PartsLister Pro v429</title>
+<title>PartsLister Pro v430</title>
 <!-- v409: hover the green L to see exactly which listings (price + shipping) were averaged. -->
 <!-- v408: clearing a listing also clears the low-resolution / unreadable / too-many photo warnings. -->
 <!-- v407: a scan that finds no part number opens No Part Number by itself; a cleared listing starts on Has Part Number. -->
@@ -934,7 +934,7 @@
     <!-- v302: logo goes to the dashboard -->
     <a href="/" title="Dashboard" style="text-decoration:none;color:inherit;">
       <div class="logo"><span>PARTS</span>LISTER</div>
-      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v429</span></div>
+      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v430</span></div>
     </a>
     <!-- v303: removed — the logo is the dashboard button
     <a href="/" class="btn btn-secondary btn-sm" title="Back to your dashboard" style="font-size:11px;padding:4px 10px;text-decoration:none;margin-left:6px;">⌂ Dashboard</a>
@@ -1350,15 +1350,13 @@
           <div style="display:flex;align-items:stretch;background:var(--surface);border:1px solid var(--border);border-radius:4px;overflow:hidden;transition:border-color 0.2s;" onfocusin="this.style.borderColor='var(--accent)'" onfocusout="this.style.borderColor='var(--border)'">
             <input type="number" id="your-price" placeholder="0.00" step="5" min="0" style="flex:1;border:none;background:transparent;padding:8px 10px;min-width:0;font-size:13px;color:var(--text);outline:none;" oninput="window._priceFromStore=false;" onfocus="avgPriceClear()">
             <span id="avg-link" title="Linked to shipping — the price follows your shipping choice" style="display:none;align-self:center;width:15px;height:15px;margin-right:6px;border-radius:50%;background:#3fa65b;color:#fff;font:700 10px/15px 'Barlow Condensed',sans-serif;text-align:center;flex-shrink:0;cursor:default;">L</span>   <!-- v393 -->   <!-- v390: a click clears a price the tool filled in -->
+            <button type="button" id="yolo-btn" onclick="yoloToggle()" title="YOLO: flip between the regular price and five times it" style="padding:0 8px;background:var(--surface2);border:none;border-left:1px solid var(--border);color:var(--muted);cursor:pointer;font-size:11px;font-weight:700;line-height:1;">×5</button>
             <button type="button" onclick="adjustPrice(5)" style="padding:0 9px;background:var(--surface2);border:none;border-left:1px solid var(--border);color:var(--muted);cursor:pointer;font-size:11px;line-height:1;transition:color 0.15s;" onmouseover="this.style.color='var(--accent)'" onmouseout="this.style.color='var(--muted)'">▲</button>
             <button type="button" onclick="adjustPrice(-5)" style="padding:0 9px;background:var(--surface2);border:none;border-left:1px solid var(--border);color:var(--muted);cursor:pointer;font-size:11px;line-height:1;transition:color 0.15s;" onmouseover="this.style.color='var(--accent)'" onmouseout="this.style.color='var(--muted)'">▼</button>
           </div>
           <div id="avg-note" style="display:none;font-size:10px;color:var(--muted);margin-top:3px;line-height:1.3;"></div>   <!-- v390 -->
-          <!-- v429: YOLO price — if filled, the listing goes out at this price and the regular price is saved -->
-          <div style="display:flex;gap:4px;margin-top:6px;align-items:stretch;">
-            <input type="number" id="yolo-price" placeholder="YOLO price" step="5" min="0" style="flex:1;min-width:0;font-size:12px;padding:6px 8px;" title="Optional. If filled, the listing goes out at this price and your regular price is saved so you can put it back later.">
-            <button type="button" onclick="yoloFill()" title="Fill with the regular price times 5" style="padding:0 10px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;color:var(--muted);cursor:pointer;font-size:12px;font-weight:700;">×5</button>
-          </div>
+          <div id="yolo-note" style="display:none;font-size:11px;color:#3fa65b;margin-top:3px;"></div>   <!-- v430: only while YOLO is on -->
+        </div>
         </div>
         <div class="field">
           <label>Part Number</label>
@@ -5152,9 +5150,9 @@ async function launchToEbay() {
   const title = document.getElementById('listing-title').value.trim();
   const _rawPrice = parseFloat(document.getElementById('your-price').value) || 0;
   const _priceDeduct = (settings.deduct1c ? 0.01 : (settings.deduct2c ? 0.02 : 0));
-  const _yoloPriceVal = parseFloat(document.getElementById('yolo-price').value) || 0;   // v429
-  const _normalPrice = Math.max(0, _rawPrice - (window._priceFromStore ? 0 : _priceDeduct)).toFixed(2);   // v429: the regular price
-  const price = Math.max(0, (_yoloPriceVal > 0 ? _yoloPriceVal : _rawPrice) - (window._priceFromStore ? 0 : _priceDeduct)).toFixed(2);
+  const _yoloPriceVal = yoloOn() ? _rawPrice : 0;   // v430: YOLO mode = the Price box holds the YOLO price
+  const _normalPrice = Math.max(0, (_yoloPriceVal > 0 ? (Number(window._yoloRegular) || _rawPrice / 5) : _rawPrice) - (window._priceFromStore ? 0 : _priceDeduct)).toFixed(2);   // the regular price
+  const price = Math.max(0, _rawPrice - (window._priceFromStore ? 0 : _priceDeduct)).toFixed(2);
   // Sync category ID — display field is source of truth if hidden field is stale
   let categoryId = document.getElementById('ebay-category-id').value.trim();
   const _catDisplay = document.getElementById('ebay-category').value.trim();
@@ -5384,9 +5382,9 @@ async function saveToDraft() {
   const title = document.getElementById('listing-title').value.trim();
   const _rawPrice = parseFloat(document.getElementById('your-price').value) || 0;
   const _priceDeduct = (settings.deduct1c ? 0.01 : (settings.deduct2c ? 0.02 : 0));
-  const _yoloPriceVal = parseFloat(document.getElementById('yolo-price').value) || 0;   // v429
-  const _normalPrice = Math.max(0, _rawPrice - (window._priceFromStore ? 0 : _priceDeduct)).toFixed(2);   // v429: the regular price
-  const price = Math.max(0, (_yoloPriceVal > 0 ? _yoloPriceVal : _rawPrice) - (window._priceFromStore ? 0 : _priceDeduct)).toFixed(2);
+  const _yoloPriceVal = yoloOn() ? _rawPrice : 0;   // v430: YOLO mode = the Price box holds the YOLO price
+  const _normalPrice = Math.max(0, (_yoloPriceVal > 0 ? (Number(window._yoloRegular) || _rawPrice / 5) : _rawPrice) - (window._priceFromStore ? 0 : _priceDeduct)).toFixed(2);   // the regular price
+  const price = Math.max(0, _rawPrice - (window._priceFromStore ? 0 : _priceDeduct)).toFixed(2);
   // Sync category ID — display field is source of truth if hidden field is stale
   let categoryId = document.getElementById('ebay-category-id').value.trim();
   const _catDisplay2 = document.getElementById('ebay-category').value.trim();
@@ -5806,7 +5804,7 @@ function resetForm(shippingOverride) {
     const el = document.getElementById(id); if (el) el.value = '';
   });
   document.getElementById('your-price').value = '';
-  { const _y = document.getElementById('yolo-price'); if (_y) _y.value = ''; }   // v429
+  yoloOff();   // v430
   setCategoryField('', '');
   window._lastCategoryAlternatives = null;
   document.getElementById('year-range').value = '';
@@ -6028,13 +6026,31 @@ function saveSettings() {
 function switchTab(tab) { /* drafts removed */ }
 
 // ─── UI HELPERS ───────────────────────────────────────────────────────────────
-// v429: YOLO price — ×5 button, and the regular price saved on the server when a YOLO listing goes out
-function yoloFill() {
-  const p = parseFloat(document.getElementById('your-price').value) || 0;
-  if (!p) { showNotif('\u26a0 Enter the regular price first', true); return; }
-  document.getElementById('yolo-price').value = (Math.round(p * 5 / 5) * 5).toFixed(2);
+// v430: YOLO price — one Price box. ×5 flips it between the regular price and the YOLO price (green); the regular price is remembered.
+window._yoloOn = false; window._yoloRegular = 0;
+function yoloApply() {   // repaint the box for the current mode
+  const el = document.getElementById('your-price'), note = document.getElementById('yolo-note'), btn = document.getElementById('yolo-btn');
+  const on = !!window._yoloOn;
+  if (el) el.style.color = on ? '#3fa65b' : 'var(--text)';
+  if (btn) { btn.style.color = on ? '#3fa65b' : 'var(--muted)'; btn.style.borderColor = ''; }
+  if (note) { note.style.display = on ? 'block' : 'none'; note.textContent = on ? 'YOLO price · regular $' + (Number(window._yoloRegular) || 0).toFixed(2) : ''; }
 }
-function yoloOn() { return (parseFloat(document.getElementById('yolo-price').value) || 0) > 0; }
+function yoloToggle() {
+  const el = document.getElementById('your-price');
+  if (!window._yoloOn) {
+    const p = parseFloat(el.value) || 0;
+    if (!p) { showNotif('\u26a0 Enter the regular price first', true); return; }
+    window._yoloRegular = p; window._yoloOn = true;
+    el.value = (Math.round(p * 5 / 5) * 5).toFixed(2);
+  } else {
+    window._yoloOn = false;
+    el.value = (Number(window._yoloRegular) || 0).toFixed(2);
+  }
+  window._priceFromStore = false; window._avgFilled = null; if (typeof avgLinkRefresh === 'function') avgLinkRefresh();
+  yoloApply();
+}
+function yoloOff() { window._yoloOn = false; window._yoloRegular = 0; yoloApply(); }
+function yoloOn() { return !!window._yoloOn && (parseFloat(document.getElementById('your-price').value) || 0) > 0; }
 async function yoloSave(itemId, title, sku, normal, yolo) {
   try {
     const r = await fetch('/api/yolo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ itemId, title, sku, normalPrice: normal, yoloPrice: yolo }) });
@@ -8283,6 +8299,7 @@ function avgPriceFill(items) {
   const c = avgCompute(), el = document.getElementById('your-price');
   if (!el || !c) return;
   el.value = c.val.toFixed(2); window._avgFilled = el.value; window._priceFromStore = false;
+  if (window._yoloOn) yoloOff();   // v430: a new suggested price starts over
   avgShowNote(c);
 }
 // shipping option changed: re-do the price, but only while the box still holds the number we filled in
@@ -9304,7 +9321,7 @@ async function _bootstrap() {
 // ─── v387: DRAFTS (saved on the server) ──────────────────────────────────
 // A draft is the listing on screen frozen as it is: every field, plus the photos (kept at full quality, as eBay takes them).
 // It is saved on the server under your account, so any device can open it. The Drafts page (/drafts) lists them; Resume there comes back here.
-const DRAFT_FIELDS = ['yolo-price','part-number','np-vehicle','np-year','np-make','np-model','np-desc','refinement-notes','listing-title','your-price','pn-display','sku-bin','sku-field','bin-field','ebay-category','ebay-category-id','year-range','make','model','part-type','color','location','description-preset-select','description-box','shipping-policy-select','condition','warranty','pkg-length','pkg-width','pkg-height','pkg-weight'];
+const DRAFT_FIELDS = ['part-number','np-vehicle','np-year','np-make','np-model','np-desc','refinement-notes','listing-title','your-price','pn-display','sku-bin','sku-field','bin-field','ebay-category','ebay-category-id','year-range','make','model','part-type','color','location','description-preset-select','description-box','shipping-policy-select','condition','warranty','pkg-length','pkg-width','pkg-height','pkg-weight'];
 const DRAFT_BOXES = ['ai-result-box','np-scan-result-box','pn-variants-display','color-picker-wrap','material-picker-wrap','vehicle-guess-wrap','pn-alt-suggestion','rescan-btn','rescan-btn-np'];
 window._draftId = null; window._draftSig = null;
 let _draftSaving = false;
@@ -9332,7 +9349,7 @@ function _draftSnapshot() {
     v: 1, mode: currentMode, val, variants, boxes,
     nploc: Array.from(document.querySelectorAll('input[name="nploc"]')).map(c => c.checked),
     inter: Array.from(document.querySelectorAll('.interchange-input')).map(i => i.value),
-    vars: { pnPhotoIdx: window._pnPhotoIdx, priceFromStore: !!window._priceFromStore, activeDescEmoji: window._activeDescEmoji, ocrDescGuess: window._ocrDescGuess || '', lensPartType: window._lensPartType || '', selectedPhotos: window._selectedPhotos || [], ebayListingTotal: window._ebayListingTotal || 0, lc }
+    vars: { yoloOn: !!window._yoloOn, yoloRegular: window._yoloRegular || 0, pnPhotoIdx: window._pnPhotoIdx, priceFromStore: !!window._priceFromStore, activeDescEmoji: window._activeDescEmoji, ocrDescGuess: window._ocrDescGuess || '', lensPartType: window._lensPartType || '', selectedPhotos: window._selectedPhotos || [], ebayListingTotal: window._ebayListingTotal || 0, lc }
   };
 }
 const _draftSigOf = (snap) => JSON.stringify([snap.val, snap.inter, snap.nploc, snap.mode]) + '|' + uploadedFiles.map(f => f.name + f.size).join(',');
@@ -9469,6 +9486,7 @@ function _restoreDraft(d, files, rescan, msg) {
   const vr = s.vars || {};
   T(() => { window._priceFromStore = !!vr.priceFromStore; window._activeDescEmoji = vr.activeDescEmoji; window._ocrDescGuess = vr.ocrDescGuess || ''; window._lensPartType = vr.lensPartType || ''; });
   T(() => { window._ebayListingTotal = vr.ebayListingTotal || 0; });
+  T(() => { window._yoloOn = !!vr.yoloOn; window._yoloRegular = vr.yoloRegular || 0; yoloApply(); });   // v430
   T(() => { if (vr.lc) window._lc = Object.assign({}, window._lc || {}, vr.lc); });
   T(() => { window._pnPhotoIdx = (typeof vr.pnPhotoIdx === 'number' && uploadedFiles[vr.pnPhotoIdx]) ? vr.pnPhotoIdx : -1; });
   T(() => { if (window._pnPhotoIdx >= 0) { window._pnPhotoFile = uploadedFiles[window._pnPhotoIdx]; try { const rd = new FileReader(); rd.onload = e => { window._pnPhotoDataUrl = e.target.result; }; rd.readAsDataURL(window._pnPhotoFile); } catch (e) { /* only the re-open link needs it */ } } });
