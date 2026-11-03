@@ -9,7 +9,7 @@
   // refresh, overriding anything init does.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 </script>
-<title>PartsLister Pro v426</title>
+<title>PartsLister Pro v427</title>
 <!-- v409: hover the green L to see exactly which listings (price + shipping) were averaged. -->
 <!-- v408: clearing a listing also clears the low-resolution / unreadable / too-many photo warnings. -->
 <!-- v407: a scan that finds no part number opens No Part Number by itself; a cleared listing starts on Has Part Number. -->
@@ -934,7 +934,7 @@
     <!-- v302: logo goes to the dashboard -->
     <a href="/" title="Dashboard" style="text-decoration:none;color:inherit;">
       <div class="logo"><span>PARTS</span>LISTER</div>
-      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v426</span></div>
+      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v427</span></div>
     </a>
     <!-- v303: removed — the logo is the dashboard button
     <a href="/" class="btn btn-secondary btn-sm" title="Back to your dashboard" style="font-size:11px;padding:4px 10px;text-decoration:none;margin-left:6px;">⌂ Dashboard</a>
@@ -6779,20 +6779,17 @@ function openEbaySold() {
   const query = _ebayLinkQuery();
   if (!query) return;
   const url = 'https://www.ebay.com/sch/i.html?_nkw=' + encodeURIComponent(query) + '&LH_Sold=1&LH_Complete=1&LH_ItemCondition=3000&_ipg=60';
-  window.open(url, '_blank', 'noopener,noreferrer');
+  _openEbayTab(url);   // v427: was a new tab every time (_blank)
 }
 
 // v424: Generate + Sold: opens eBay sold results (same non-exact search the Sold button uses) in ONE reused tab, then generates
-function openEbaySoldReused() {
-  const query = _ebayLinkQuery();
-  if (!query) return;
-  const url = 'https://www.ebay.com/sch/i.html?_nkw=' + encodeURIComponent(query) + '&LH_Sold=1&LH_Complete=1&LH_ItemCondition=3000&_ipg=60';
-  // v426: plain named open (the v424 blank-first + opener=null trick cut the tab loose, which made the browser forget its name)
+// v427: Sold, Active and Generate + Sold all share ONE named eBay tab, so tabs don't pile up
+function _openEbayTab(url) {
   let w = null;
   try { w = window.open(url, 'partslister-sold'); } catch (e) {}
-  if (!w) { showNotif('\u26a0 The sold tab was blocked — allow pop-ups for this site', true); return; }
+  if (!w) { showNotif('\u26a0 The eBay tab was blocked \u2014 allow pop-ups for this site', true); return; }
   try { w.focus(); } catch (e) {}
-  // if eBay still cuts the tab loose within a few seconds the browser calls it closed: tell the user once
+  // if eBay cuts the tab loose within a few seconds the browser calls it closed: tell the user once
   let n = 0;
   const t = setInterval(() => {
     n++;
@@ -6801,6 +6798,11 @@ function openEbaySoldReused() {
     } catch (e) { clearInterval(t); }
     if (n >= 40) clearInterval(t);
   }, 500);
+}
+function openEbaySoldReused() {
+  const query = _ebayLinkQuery();
+  if (!query) return;
+  _openEbayTab('https://www.ebay.com/sch/i.html?_nkw=' + encodeURIComponent(query) + '&LH_Sold=1&LH_Complete=1&LH_ItemCondition=3000&_ipg=60');
 }
 function alGenerateAndOpenSold() {   // v425: the Has Part Number Pick list
   if (!(window._alSelectedItems || []).length) return;
@@ -6818,7 +6820,7 @@ function openEbayActive() {
   const query = _ebayLinkQuery();
   if (!query) return;
   const url = 'https://www.ebay.com/sch/i.html?_nkw=' + encodeURIComponent(query) + '&LH_ItemCondition=3000&_ipg=60';
-  window.open(url, '_blank', 'noopener,noreferrer');
+  _openEbayTab(url);   // v427: was a new tab every time (_blank)
 }
 
 function stripPNPrefix(val) {
