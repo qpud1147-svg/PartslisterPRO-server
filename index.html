@@ -9,7 +9,7 @@
   // refresh, overriding anything init does.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 </script>
-<title>PartsLister Pro v428</title>
+<title>PartsLister Pro v429</title>
 <!-- v409: hover the green L to see exactly which listings (price + shipping) were averaged. -->
 <!-- v408: clearing a listing also clears the low-resolution / unreadable / too-many photo warnings. -->
 <!-- v407: a scan that finds no part number opens No Part Number by itself; a cleared listing starts on Has Part Number. -->
@@ -934,7 +934,7 @@
     <!-- v302: logo goes to the dashboard -->
     <a href="/" title="Dashboard" style="text-decoration:none;color:inherit;">
       <div class="logo"><span>PARTS</span>LISTER</div>
-      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v428</span></div>
+      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v429</span></div>
     </a>
     <!-- v303: removed — the logo is the dashboard button
     <a href="/" class="btn btn-secondary btn-sm" title="Back to your dashboard" style="font-size:11px;padding:4px 10px;text-decoration:none;margin-left:6px;">⌂ Dashboard</a>
@@ -1354,6 +1354,11 @@
             <button type="button" onclick="adjustPrice(-5)" style="padding:0 9px;background:var(--surface2);border:none;border-left:1px solid var(--border);color:var(--muted);cursor:pointer;font-size:11px;line-height:1;transition:color 0.15s;" onmouseover="this.style.color='var(--accent)'" onmouseout="this.style.color='var(--muted)'">▼</button>
           </div>
           <div id="avg-note" style="display:none;font-size:10px;color:var(--muted);margin-top:3px;line-height:1.3;"></div>   <!-- v390 -->
+          <!-- v429: YOLO price — if filled, the listing goes out at this price and the regular price is saved -->
+          <div style="display:flex;gap:4px;margin-top:6px;align-items:stretch;">
+            <input type="number" id="yolo-price" placeholder="YOLO price" step="5" min="0" style="flex:1;min-width:0;font-size:12px;padding:6px 8px;" title="Optional. If filled, the listing goes out at this price and your regular price is saved so you can put it back later.">
+            <button type="button" onclick="yoloFill()" title="Fill with the regular price times 5" style="padding:0 10px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;color:var(--muted);cursor:pointer;font-size:12px;font-weight:700;">×5</button>
+          </div>
         </div>
         <div class="field">
           <label>Part Number</label>
@@ -5147,7 +5152,9 @@ async function launchToEbay() {
   const title = document.getElementById('listing-title').value.trim();
   const _rawPrice = parseFloat(document.getElementById('your-price').value) || 0;
   const _priceDeduct = (settings.deduct1c ? 0.01 : (settings.deduct2c ? 0.02 : 0));
-  const price = Math.max(0, _rawPrice - (window._priceFromStore ? 0 : _priceDeduct)).toFixed(2);
+  const _yoloPriceVal = parseFloat(document.getElementById('yolo-price').value) || 0;   // v429
+  const _normalPrice = Math.max(0, _rawPrice - (window._priceFromStore ? 0 : _priceDeduct)).toFixed(2);   // v429: the regular price
+  const price = Math.max(0, (_yoloPriceVal > 0 ? _yoloPriceVal : _rawPrice) - (window._priceFromStore ? 0 : _priceDeduct)).toFixed(2);
   // Sync category ID — display field is source of truth if hidden field is stale
   let categoryId = document.getElementById('ebay-category-id').value.trim();
   const _catDisplay = document.getElementById('ebay-category').value.trim();
@@ -5192,7 +5199,7 @@ async function launchToEbay() {
     const _skuBinRaw = document.getElementById('sku-bin').value.trim();
     const skuVal = _skuBinRaw.split(' ')[0] || '';
     const binVal = _skuBinRaw.split(' ').slice(1).join(' ') || '';
-    const skuBin = _skuBinRaw;
+    const skuBin = (_yoloPriceVal > 0 ? (_skuBinRaw + ' YOLO').trim() : _skuBinRaw).slice(0, 50);   // v429: YOLO listings get a YOLO tag in the SKU
     // v271: red popup removed — the amber #bin-warning bar already covers this.
     const interchangeInputs = Array.from(document.querySelectorAll('.interchange-input')).map(i => i.value.trim());
 
@@ -5343,6 +5350,7 @@ async function launchToEbay() {
       statusEl.style.color = 'var(--success)';
       statusEl.textContent = '✓ Live on eBay! Item ID: ' + itemIdMatch[1];
       _launchProgressEnd(true);
+      if (_yoloPriceVal > 0) yoloSave(itemIdMatch[1], title, skuBin, _normalPrice, price);   // v429
       // v281: success popup removed — the item ID already shows on the
       // status line right under the progress bar.
       savePigtailHistory(); saveOtherSideHistory(); _countListing();   // v301
@@ -5376,7 +5384,9 @@ async function saveToDraft() {
   const title = document.getElementById('listing-title').value.trim();
   const _rawPrice = parseFloat(document.getElementById('your-price').value) || 0;
   const _priceDeduct = (settings.deduct1c ? 0.01 : (settings.deduct2c ? 0.02 : 0));
-  const price = Math.max(0, _rawPrice - (window._priceFromStore ? 0 : _priceDeduct)).toFixed(2);
+  const _yoloPriceVal = parseFloat(document.getElementById('yolo-price').value) || 0;   // v429
+  const _normalPrice = Math.max(0, _rawPrice - (window._priceFromStore ? 0 : _priceDeduct)).toFixed(2);   // v429: the regular price
+  const price = Math.max(0, (_yoloPriceVal > 0 ? _yoloPriceVal : _rawPrice) - (window._priceFromStore ? 0 : _priceDeduct)).toFixed(2);
   // Sync category ID — display field is source of truth if hidden field is stale
   let categoryId = document.getElementById('ebay-category-id').value.trim();
   const _catDisplay2 = document.getElementById('ebay-category').value.trim();
@@ -5418,7 +5428,7 @@ async function saveToDraft() {
     const _skuBinRaw = document.getElementById('sku-bin').value.trim();
     const skuVal = _skuBinRaw.split(' ')[0] || '';
     const binVal = _skuBinRaw.split(' ').slice(1).join(' ') || '';
-    const skuBin = _skuBinRaw;
+    const skuBin = (_yoloPriceVal > 0 ? (_skuBinRaw + ' YOLO').trim() : _skuBinRaw).slice(0, 50);   // v429: YOLO listings get a YOLO tag in the SKU
     const interchangeInputs = Array.from(document.querySelectorAll('.interchange-input')).map(i => i.value.trim());
 
     const specifics = [
@@ -5556,6 +5566,7 @@ async function saveToDraft() {
       statusEl.textContent = '✓ Scheduled on eBay! Item ID: ' + itemIdMatch[1] + ' — find it in Seller Hub → Listings → Scheduled';
       showNotif('✓ Scheduled on eBay! ID: ' + itemIdMatch[1]);
       _launchProgressEnd(true);   // v399
+      if (_yoloPriceVal > 0) yoloSave(itemIdMatch[1], title, skuBin, _normalPrice, price);   // v429
       savePigtailHistory(); saveOtherSideHistory(); _countListing();   // v301
       const _scheduledDraft = window._draftId;   // v396
       await new Promise(r => setTimeout(r, 1100));   // v399: let the bar fill and turn green, like Launch
@@ -5795,6 +5806,7 @@ function resetForm(shippingOverride) {
     const el = document.getElementById(id); if (el) el.value = '';
   });
   document.getElementById('your-price').value = '';
+  { const _y = document.getElementById('yolo-price'); if (_y) _y.value = ''; }   // v429
   setCategoryField('', '');
   window._lastCategoryAlternatives = null;
   document.getElementById('year-range').value = '';
@@ -6016,6 +6028,22 @@ function saveSettings() {
 function switchTab(tab) { /* drafts removed */ }
 
 // ─── UI HELPERS ───────────────────────────────────────────────────────────────
+// v429: YOLO price — ×5 button, and the regular price saved on the server when a YOLO listing goes out
+function yoloFill() {
+  const p = parseFloat(document.getElementById('your-price').value) || 0;
+  if (!p) { showNotif('\u26a0 Enter the regular price first', true); return; }
+  document.getElementById('yolo-price').value = (Math.round(p * 5 / 5) * 5).toFixed(2);
+}
+function yoloOn() { return (parseFloat(document.getElementById('yolo-price').value) || 0) > 0; }
+async function yoloSave(itemId, title, sku, normal, yolo) {
+  try {
+    const r = await fetch('/api/yolo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ itemId, title, sku, normalPrice: normal, yoloPrice: yolo }) });
+    if (!r.ok) throw new Error('server ' + r.status);
+  } catch (e) {
+    // the regular price lives only on the server, so say it out loud if it could not be saved
+    showNotif('\u26a0 The YOLO record did not save \u2014 write down the regular price: $' + normal + ' (item ' + itemId + ')', true);
+  }
+}
 function adjustPrice(delta) {
   const el = document.getElementById('your-price');
   const current = parseFloat(el.value) || 0;
@@ -9276,7 +9304,7 @@ async function _bootstrap() {
 // ─── v387: DRAFTS (saved on the server) ──────────────────────────────────
 // A draft is the listing on screen frozen as it is: every field, plus the photos (kept at full quality, as eBay takes them).
 // It is saved on the server under your account, so any device can open it. The Drafts page (/drafts) lists them; Resume there comes back here.
-const DRAFT_FIELDS = ['part-number','np-vehicle','np-year','np-make','np-model','np-desc','refinement-notes','listing-title','your-price','pn-display','sku-bin','sku-field','bin-field','ebay-category','ebay-category-id','year-range','make','model','part-type','color','location','description-preset-select','description-box','shipping-policy-select','condition','warranty','pkg-length','pkg-width','pkg-height','pkg-weight'];
+const DRAFT_FIELDS = ['yolo-price','part-number','np-vehicle','np-year','np-make','np-model','np-desc','refinement-notes','listing-title','your-price','pn-display','sku-bin','sku-field','bin-field','ebay-category','ebay-category-id','year-range','make','model','part-type','color','location','description-preset-select','description-box','shipping-policy-select','condition','warranty','pkg-length','pkg-width','pkg-height','pkg-weight'];
 const DRAFT_BOXES = ['ai-result-box','np-scan-result-box','pn-variants-display','color-picker-wrap','material-picker-wrap','vehicle-guess-wrap','pn-alt-suggestion','rescan-btn','rescan-btn-np'];
 window._draftId = null; window._draftSig = null;
 let _draftSaving = false;

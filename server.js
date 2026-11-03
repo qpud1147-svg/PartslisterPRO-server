@@ -1,4 +1,4 @@
-// PartsLister Pro server — v425
+// PartsLister Pro server — v426
 // v409: yard tickets — the whole-ticket text look and the Look checkboxes are gone; every text row and the logo each have the full set of sliders (boldness, thinner, lighter, weathered, gravel, fuzzy, faded gray, spots).
 // v408: yard tickets — each text row has a Look checkbox (row.useLook, default on): the whole-ticket text look only changes the rows that are checked.
 // v406: yard tickets — a whole-ticket Boldness for the text (design.textLook.bold) and a Lighter slider for the logo (less ink).
@@ -418,6 +418,19 @@ async function setupDatabase() {
       width      INTEGER NOT NULL DEFAULT 80
     );
     -- ALTER TABLE ticket_settings ADD COLUMN IF NOT EXISTS randomize BOOLEAN NOT NULL DEFAULT FALSE;   (v388 — v389: no longer used; it also ran before the table was created)
+    -- v426: YOLO listings — items listed at a jacked-up price; the regular price is kept here so it can be put back later
+    CREATE TABLE IF NOT EXISTS yolo_listings (
+      id           SERIAL PRIMARY KEY,
+      user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      item_id      TEXT NOT NULL,
+      title        TEXT NOT NULL DEFAULT '',
+      sku          TEXT NOT NULL DEFAULT '',
+      normal_price NUMERIC(10,2) NOT NULL,
+      yolo_price   NUMERIC(10,2) NOT NULL,
+      status       TEXT NOT NULL DEFAULT 'active',
+      listed_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+      UNIQUE (user_id, item_id)
+    );
     -- v422: LISTING DRAFTS — a half-finished listing saved from the Listing Tool (all fields in snap, photos in their own table), up to 50 per account
     CREATE TABLE IF NOT EXISTS listing_drafts (
       id          SERIAL PRIMARY KEY,
@@ -4146,6 +4159,27 @@ app.post('/api/tickets/settings', requireUser, express.json(), async (req, res) 
 // it one at a time; a draft is the fields (snap) plus its photos. At most DRAFT_MAX drafts per account, DRAFT_PHOTOS photos each.
 // const DRAFT_MAX = 50, DRAFT_PHOTOS = 30;   // v423
 const DRAFT_MAX = 50, DRAFT_PHOTOS = 24;   // v423: 24 = eBay's photo limit; photos are kept at full quality (eBay allows up to 12 MB each)
+// v426: YOLO listings — save the regular price when a listing goes out at the YOLO price, and list them
+app.post('/api/yolo', requireUser, express.json(), async (req, res) => {
+  try {
+    const b = req.body || {};
+    const itemId = String(b.itemId || '').replace(/\D/g, '');
+    const normal = parseFloat(b.normalPrice), yolo = parseFloat(b.yoloPrice);
+    if (!itemId || !(normal >= 0) || !(yolo > 0)) return res.status(400).json({ error: 'Missing item or prices' });
+    await pool.query(
+      `INSERT INTO yolo_listings (user_id, item_id, title, sku, normal_price, yolo_price)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT (user_id, item_id) DO UPDATE SET title = EXCLUDED.title, sku = EXCLUDED.sku, normal_price = EXCLUDED.normal_price, yolo_price = EXCLUDED.yolo_price`,
+      [req.user.id, itemId, String(b.title || '').slice(0, 200), String(b.sku || '').slice(0, 60), normal.toFixed(2), yolo.toFixed(2)]);
+    res.json({ ok: true });
+  } catch (e) { console.error('[yolo save]', e.message); res.status(500).json({ error: 'Could not save the YOLO record' }); }
+});
+app.get('/api/yolo', requireUser, async (req, res) => {
+  try {
+    const rows = (await pool.query("SELECT item_id, title, sku, normal_price, yolo_price, status, listed_at FROM yolo_listings WHERE user_id = $1 ORDER BY listed_at DESC", [req.user.id])).rows;
+    res.json({ items: rows.map(r => ({ itemId: r.item_id, title: r.title, sku: r.sku, normalPrice: Number(r.normal_price), yoloPrice: Number(r.yolo_price), status: r.status, listedAt: r.listed_at })) });
+  } catch (e) { console.error('[yolo list]', e.message); res.status(500).json({ error: 'Could not load YOLO listings' }); }
+});
 app.get('/api/drafts', requireUser, async (req, res) => {
   try {
     const rows = (await pool.query('SELECT id, label, price, pn, vehicle, photo_count, updated_at FROM listing_drafts WHERE user_id = $1 ORDER BY updated_at DESC, id DESC', [req.user.id])).rows;
@@ -5440,5 +5474,6 @@ setupDatabase()
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v420 listening on ' + PORT)))   // v421
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v421 listening on ' + PORT)))   // v422
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v422 listening on ' + PORT)))   // v425
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v425 listening on ' + PORT)))
+  // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v425 listening on ' + PORT)))   // v426
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v426 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });
