@@ -9,7 +9,7 @@
   // refresh, overriding anything init does.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 </script>
-<title>PartsLister Pro v437</title>
+<title>PartsLister Pro v438</title>
 <!-- v409: hover the green L to see exactly which listings (price + shipping) were averaged. -->
 <!-- v408: clearing a listing also clears the low-resolution / unreadable / too-many photo warnings. -->
 <!-- v407: a scan that finds no part number opens No Part Number by itself; a cleared listing starts on Has Part Number. -->
@@ -34,6 +34,7 @@
 <!-- v386: DRAFTS — a small Drafts menu in the top bar saves the listing on screen (photos and every field) and opens it again exactly as left, or reloads just its photos for a fresh scan. The top bar's other buttons got shorter names to make room. -->
 <!-- v385: photo drop box back to its old height; the right side moved up to fill the gap above Refinement Notes. -->
 <!-- v384: cleaner Listing Tool — decorative emojis removed (kept: ⚙ settings, 📋 copy, 🎨 color picker), the "e.g." / "auto-filled" hint text removed, and the days-ahead box sits inside the Scheduled Listing button so both buttons stay centered. -->
+<!-- v438: Relaunch: buttons read End and Relaunch / End and Schedule; Scheduled ends the old listing right away; drafts (and the auto-saved unfinished listing) remember the old listing; old listing ends with reason 'listing contained an error'. -->
 <!-- v437: Flag button + reason on the Relaunch banner. -->
 <!-- v436: Relaunch uses the OLD TITLE's year/make/model (the scan's sticker read no longer overrides it; it filled 'Escape' for an EcoSport) and fills it whatever mode the scan ends in. -->
 <!-- v435: Relaunch from the Ended tab doesn't try to end the (already ended) old listing. -->
@@ -940,7 +941,7 @@
     <!-- v302: logo goes to the dashboard -->
     <a href="/" title="Dashboard" style="text-decoration:none;color:inherit;">
       <div class="logo"><span>PARTS</span>LISTER</div>
-      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v437</span></div>
+      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v438</span></div>
     </a>
     <!-- v303: removed — the logo is the dashboard button
     <a href="/" class="btn btn-secondary btn-sm" title="Back to your dashboard" style="font-size:11px;padding:4px 10px;text-decoration:none;margin-left:6px;">⌂ Dashboard</a>
@@ -5387,7 +5388,7 @@ async function launchToEbay() {
     _launchProgressEnd(false);
   } finally {
     btn.disabled = false;
-    btn.textContent = 'Launch to eBay';
+    btn.textContent = _rlLabelLaunch();   // v437: End and Relaunch while relaunching
     _clearLaunchStatus();
   }
 }
@@ -5582,7 +5583,7 @@ async function saveToDraft() {
       showNotif('✓ Scheduled on eBay! ID: ' + itemIdMatch[1]);
       _launchProgressEnd(true);   // v399
       if (_yoloPriceVal > 0) yoloSave(itemIdMatch[1], title, skuBin, _normalPrice, price);   // v429
-      if (window._relaunch) showNotif('Scheduled \u2014 the old listing was NOT ended. End it yourself once the new one is live.', true);   // v432
+      _relaunchEndOld();   // v437: scheduled listings end the old one right away
       savePigtailHistory(); saveOtherSideHistory(); _countListing();   // v301
       const _scheduledDraft = window._draftId;   // v396
       await new Promise(r => setTimeout(r, 1100));   // v399: let the bar fill and turn green, like Launch
@@ -5598,7 +5599,7 @@ async function saveToDraft() {
     _launchProgressEnd(false);   // v399
   } finally {
     btn.disabled = false;
-    btn.textContent = 'Scheduled Listing';
+    btn.textContent = _rlLabelSched();   // v437
     _clearDraftStatus();
   }
 }
@@ -5752,7 +5753,7 @@ function exportCSV() {
 
 // ─── RESET FORM ───────────────────────────────────────────────────────────────
 function resetForm(shippingOverride) {
-  try { window._relaunch = null; window._relaunchVeh = null; const rb = document.getElementById('relaunch-banner'); if (rb) rb.style.display = 'none'; } catch (e) {}   // v432
+  try { window._relaunch = null; window._relaunchVeh = null; const rb = document.getElementById('relaunch-banner'); if (rb) rb.style.display = 'none'; _rlLabels(); } catch (e) {}   // v432
   window._draftId = null; window._draftSig = null;   // v396: a cleared page is no longer any draft
   try { setMode('partnumber'); } catch (e) { /* fine */ }   // v407: a cleared page starts on Has Part Number again
   uploadedFiles = [];
@@ -9383,7 +9384,7 @@ function _draftSnapshot() {
     v: 1, mode: currentMode, val, variants, boxes,
     nploc: Array.from(document.querySelectorAll('input[name="nploc"]')).map(c => c.checked),
     inter: Array.from(document.querySelectorAll('.interchange-input')).map(i => i.value),
-    vars: { yoloOn: !!window._yoloOn, yoloRegular: window._yoloRegular || 0, pnPhotoIdx: window._pnPhotoIdx, priceFromStore: !!window._priceFromStore, activeDescEmoji: window._activeDescEmoji, ocrDescGuess: window._ocrDescGuess || '', lensPartType: window._lensPartType || '', selectedPhotos: window._selectedPhotos || [], ebayListingTotal: window._ebayListingTotal || 0, lc }
+    vars: { relaunch: window._relaunch || null, relaunchVeh: window._relaunchVeh || null, yoloOn: !!window._yoloOn, yoloRegular: window._yoloRegular || 0, pnPhotoIdx: window._pnPhotoIdx, priceFromStore: !!window._priceFromStore, activeDescEmoji: window._activeDescEmoji, ocrDescGuess: window._ocrDescGuess || '', lensPartType: window._lensPartType || '', selectedPhotos: window._selectedPhotos || [], ebayListingTotal: window._ebayListingTotal || 0, lc }
   };
 }
 const _draftSigOf = (snap) => JSON.stringify([snap.val, snap.inter, snap.nploc, snap.mode]) + '|' + uploadedFiles.map(f => f.name + f.size).join(',');
@@ -9521,6 +9522,7 @@ function _restoreDraft(d, files, rescan, msg) {
   T(() => { window._priceFromStore = !!vr.priceFromStore; window._activeDescEmoji = vr.activeDescEmoji; window._ocrDescGuess = vr.ocrDescGuess || ''; window._lensPartType = vr.lensPartType || ''; });
   T(() => { window._ebayListingTotal = vr.ebayListingTotal || 0; });
   T(() => { window._yoloOn = !!vr.yoloOn; window._yoloRegular = vr.yoloRegular || 0; yoloApply(); });   // v430
+  T(() => { if (vr.relaunch) { window._relaunch = vr.relaunch; window._relaunchVeh = vr.relaunchVeh || null; _rlShowBanner(); } });   // v437: a draft remembers which old listing it replaces
   T(() => { if (vr.lc) window._lc = Object.assign({}, window._lc || {}, vr.lc); });
   T(() => { window._pnPhotoIdx = (typeof vr.pnPhotoIdx === 'number' && uploadedFiles[vr.pnPhotoIdx]) ? vr.pnPhotoIdx : -1; });
   T(() => { if (window._pnPhotoIdx >= 0) { window._pnPhotoFile = uploadedFiles[window._pnPhotoIdx]; try { const rd = new FileReader(); rd.onload = e => { window._pnPhotoDataUrl = e.target.result; }; rd.readAsDataURL(window._pnPhotoFile); } catch (e) { /* only the re-open link needs it */ } } });
@@ -9539,6 +9541,19 @@ function _restoreDraft(d, files, rescan, msg) {
   setTimeout(() => window.scrollTo({ top: 0, behavior: 'instant' }), 50);
 }
 // ─── v432: RELAUNCH an old listing — /list?relaunch=ITEMID (from the Active page) ───
+function _rlLabelLaunch() { return (window._relaunch && !window._relaunch.ended) ? 'End and Relaunch' : 'Launch to eBay'; }
+function _rlLabelSched() { return (window._relaunch && !window._relaunch.ended) ? 'End and Schedule' : 'Scheduled Listing'; }
+function _rlLabels() {
+  const a = document.getElementById('launch-btn'), b = document.getElementById('draft-btn');
+  if (a && !a.disabled) a.textContent = _rlLabelLaunch();
+  if (b && !b.disabled) b.textContent = _rlLabelSched();
+}
+function _rlShowBanner() {
+  const r = window._relaunch, b = document.getElementById('relaunch-banner'); if (!r || !b) return;
+  b.style.display = 'flex';
+  b.innerHTML = '<span><b>Relaunching</b> ' + (r.days != null ? '(' + r.days + ' days old, $' + Number(r.price || 0).toFixed(2) + ')' : '') + ' \u2014 ' + String(r.title || '').replace(/</g, '&lt;') + '<br><small style="color:var(--muted)">' + (r.ended ? 'That listing had already ended.' : 'The old listing ends after the new one is live (right away if you schedule it).') + (settings.emojiRelaunch ? '' : ' Set the Relaunched emoji in Settings to mark it.') + '</small></span><span style="margin-left:auto;display:flex;gap:6px;align-items:center;"><select id="rl-flag-why" style="font-size:11px;padding:3px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:4px;"><option value="trash">Trash it</option><option value="missing_pn">Missing part number</option><option value="defect">Defect</option><option value="other">Other</option></select><button class="btn btn-secondary btn-sm" style="font-size:11px;padding:4px 10px;" onclick="_rlFlag()" title="Remind me to do something about this item (nothing changes on eBay)">Flag</button><a href="/active" class="btn btn-secondary btn-sm" style="text-decoration:none;font-size:11px;padding:4px 10px;">Back to Active</a></span>';
+  _rlLabels();
+}
 async function _relaunchEndOld() {
   const r = window._relaunch; if (!r) return;
   window._relaunch = null;
@@ -9623,11 +9638,7 @@ async function resumeRelaunchFromUrl() {
     };
     const sk = document.getElementById('sku-bin'); if (sk && d.sku) sk.value = d.sku.replace(/\s*YOLO$/i, '').trim();
     const days = d.start ? Math.floor((Date.now() - new Date(d.start).getTime()) / 86400000) : null;
-    const b = document.getElementById('relaunch-banner');
-    if (b) {
-      b.style.display = 'flex';
-      b.innerHTML = '<span><b>Relaunching</b> ' + (days != null ? '(' + days + ' days old, $' + Number(d.price || 0).toFixed(2) + ')' : '') + ' \u2014 ' + String(d.title || '').replace(/</g, '&lt;') + '<br><small style="color:var(--muted)">' + (_alreadyEnded ? 'That listing had already ended.' : 'The old listing ends after the new one is live.') + (settings.emojiRelaunch ? '' : ' Set the Relaunched emoji in Settings to mark it.') + '</small></span><span style="margin-left:auto;display:flex;gap:6px;align-items:center;"><select id="rl-flag-why" style="font-size:11px;padding:3px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:4px;"><option value="trash">Trash it</option><option value="missing_pn">Missing part number</option><option value="defect">Defect</option><option value="other">Other</option></select><button class="btn btn-secondary btn-sm" style="font-size:11px;padding:4px 10px;" onclick="_rlFlag()" title="Remind me to do something about this item (nothing changes on eBay)">Flag</button><a href="/active" class="btn btn-secondary btn-sm" style="text-decoration:none;font-size:11px;padding:4px 10px;">Back to Active</a></span>';
-    }
+    window._relaunch.days = days; _rlShowBanner();   // v437
     if (files.length && typeof runOCR === 'function') { try { await runOCR(); } catch (e) { /* scan problems show in its own box */ } }
     try { await window._relaunchFill(); } catch (e) {}
     showNotif('\u2713 Old listing loaded \u2014 check the part, pick listings and set a new price');

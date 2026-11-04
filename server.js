@@ -1,4 +1,4 @@
-// PartsLister Pro server — v435
+// PartsLister Pro server — v436
 // v409: yard tickets — the whole-ticket text look and the Look checkboxes are gone; every text row and the logo each have the full set of sliders (boldness, thinner, lighter, weathered, gravel, fuzzy, faded gray, spots).
 // v408: yard tickets — each text row has a Look checkbox (row.useLook, default on): the whole-ticket text look only changes the rows that are checked.
 // v406: yard tickets — a whole-ticket Boldness for the text (design.textLook.bold) and a Lighter slider for the logo (less ink).
@@ -4293,7 +4293,7 @@ app.get('/api/relaunch/photo/:id/:n', requireUser, async (req, res) => {
 app.post('/api/relaunch/end/:id', requireUser, async (req, res) => {
   try {
     const id = String(req.params.id || '').replace(/\D/g, ''); if (!id) return res.status(400).json({ error: 'Missing item number' });
-    await tradingCall(req.user.id, 'EndFixedPriceItem', `<ItemID>${id}</ItemID><EndingReason>NotAvailable</EndingReason>`, '100');
+    await tradingCall(req.user.id, 'EndFixedPriceItem', `<ItemID>${id}</ItemID><EndingReason>OtherListingError</EndingReason>`, '100');
     try { await pool.query("UPDATE yolo_listings SET status = 'ended' WHERE user_id = $1 AND item_id = $2 AND status = 'active'", [req.user.id, id]); } catch (e) { /* not a YOLO one */ }
     liveCache.delete(req.user.id); itemDetailCache.delete(req.user.id + ':' + id);
     res.json({ ok: true });
@@ -4456,7 +4456,7 @@ app.post('/api/flags/:itemId/done', requireUser, async (req, res) => {
 app.post('/api/flags/:itemId/end', requireUser, async (req, res) => {
   try {
     const id = String(req.params.itemId || '').replace(/\D/g, ''); if (!id) return res.status(400).json({ error: 'Missing item number' });
-    await tradingCall(req.user.id, 'EndFixedPriceItem', `<ItemID>${id}</ItemID><EndingReason>NotAvailable</EndingReason>`, '100');
+    await tradingCall(req.user.id, 'EndFixedPriceItem', `<ItemID>${id}</ItemID><EndingReason>OtherListingError</EndingReason>`, '100');
     try { await pool.query("UPDATE yolo_listings SET status = 'ended' WHERE user_id = $1 AND item_id = $2 AND status = 'active'", [req.user.id, id]); } catch (e) { /* not a YOLO one */ }
     await pool.query('DELETE FROM listing_flags WHERE user_id = $1 AND item_id = $2', [req.user.id, id]);
     liveCache.delete(req.user.id);
@@ -5807,5 +5807,5 @@ setupDatabase()
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v426 listening on ' + PORT)))   // v427
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v427 listening on ' + PORT)))   // v428
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v428 listening on ' + PORT)))   // v429
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v435 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v436 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });
