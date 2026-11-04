@@ -9,7 +9,7 @@
   // refresh, overriding anything init does.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 </script>
-<title>PartsLister Pro v435</title>
+<title>PartsLister Pro v436</title>
 <!-- v409: hover the green L to see exactly which listings (price + shipping) were averaged. -->
 <!-- v408: clearing a listing also clears the low-resolution / unreadable / too-many photo warnings. -->
 <!-- v407: a scan that finds no part number opens No Part Number by itself; a cleared listing starts on Has Part Number. -->
@@ -34,6 +34,7 @@
 <!-- v386: DRAFTS — a small Drafts menu in the top bar saves the listing on screen (photos and every field) and opens it again exactly as left, or reloads just its photos for a fresh scan. The top bar's other buttons got shorter names to make room. -->
 <!-- v385: photo drop box back to its old height; the right side moved up to fill the gap above Refinement Notes. -->
 <!-- v384: cleaner Listing Tool — decorative emojis removed (kept: ⚙ settings, 📋 copy, 🎨 color picker), the "e.g." / "auto-filled" hint text removed, and the days-ahead box sits inside the Scheduled Listing button so both buttons stay centered. -->
+<!-- v436: Relaunch uses the OLD TITLE's year/make/model (the scan's sticker read no longer overrides it; it filled 'Escape' for an EcoSport) and fills it whatever mode the scan ends in. -->
 <!-- v435: Relaunch from the Ended tab doesn't try to end the (already ended) old listing. -->
 <!-- v434: Relaunch finds the part number only from the photo scan; the old title's year/make/model/part name fill No Part Number mode only. -->
 <!-- v433: Relaunch reads the old title with the AI (year, make, model, part name) and loads the photos at full size. -->
@@ -938,7 +939,7 @@
     <!-- v302: logo goes to the dashboard -->
     <a href="/" title="Dashboard" style="text-decoration:none;color:inherit;">
       <div class="logo"><span>PARTS</span>LISTER</div>
-      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v435</span></div>
+      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v436</span></div>
     </a>
     <!-- v303: removed — the logo is the dashboard button
     <a href="/" class="btn btn-secondary btn-sm" title="Back to your dashboard" style="font-size:11px;padding:4px 10px;text-decoration:none;margin-left:6px;">⌂ Dashboard</a>
@@ -3133,6 +3134,7 @@ async function runOCR() {
     const skuBin = [parsed.sku, parsed.bin].filter(Boolean).join(' ');
     if (skuBin) document.getElementById('sku-bin').value = skuBin;
     updateBinWarning();
+    if (window._relaunchVeh) { const _rv = window._relaunchVeh; parsed.year = _rv.year || parsed.year; parsed.make = _rv.make; parsed.model = _rv.model; }   // v436: relaunch — the old title's year/make/model beats the sticker read
     if (parsed.year)     document.getElementById('np-year').value  = parsed.year;
     if (parsed.make)     document.getElementById('np-make').value  = parsed.make;
     if (parsed.model)    document.getElementById('np-model').value = parsed.model;
@@ -5749,7 +5751,7 @@ function exportCSV() {
 
 // ─── RESET FORM ───────────────────────────────────────────────────────────────
 function resetForm(shippingOverride) {
-  try { window._relaunch = null; const rb = document.getElementById('relaunch-banner'); if (rb) rb.style.display = 'none'; } catch (e) {}   // v432
+  try { window._relaunch = null; window._relaunchVeh = null; const rb = document.getElementById('relaunch-banner'); if (rb) rb.style.display = 'none'; } catch (e) {}   // v432
   window._draftId = null; window._draftSig = null;   // v396: a cleared page is no longer any draft
   try { setMode('partnumber'); } catch (e) { /* fine */ }   // v407: a cleared page starts on Has Part Number again
   uploadedFiles = [];
@@ -9585,17 +9587,28 @@ async function resumeRelaunchFromUrl() {
     // v434: the part number comes ONLY from the photo scan (not from the old title or specifics). The scan opens No Part Number by itself when it finds none;
     // then the vehicle and part name from the old title are filled in for any box the scan left empty.
     const _title = d.title;
-    window._relaunchFill = async () => {
-      if (currentMode !== 'nopartnumber') return;
-      let v = _rlVehicle(_title);
+    // v436: the old title is read FIRST (year, make, model, part name). Its vehicle is the one used — the photo scan only finds the part number and stickers —
+    // and it is filled in whether or not the scan ends up in No Part Number mode.
+    {
+      let v = null;
       try {
-        const pr = await fetch('/api/parse-title', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: _title }) });
+        const pr = await fetch('/api/parse-title', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: d.title }) });
         const pj = await pr.json().catch(() => ({}));
-        if (pr.ok && pj.make && pj.part) v = { year: pj.yearFrom, make: pj.make, model: pj.model, rest: pj.part };
-      } catch (e) { /* the word-guess stays */ }
-      const ve = document.getElementById('np-vehicle'), de = document.getElementById('np-desc');
-      if (ve && !ve.value.trim()) { ve.value = [v.year, v.make, v.model].filter(Boolean).join(' '); try { parseVehicleInput(); } catch (e) {} }
-      if (de && !de.value.trim()) de.value = v.rest;
+        if (pr.ok && pj.make) v = { year: pj.yearFrom, make: pj.make, model: pj.model, part: pj.part };
+      } catch (e) { /* word-guess below */ }
+      if (!v) { const g = _rlVehicle(d.title); if (g.year && g.make) v = { year: g.year, make: g.make, model: g.model, part: g.rest }; }
+      if (v) {
+        window._relaunchVeh = { year: v.year, make: v.make, model: v.model };
+        const ve = document.getElementById('np-vehicle'), de = document.getElementById('np-desc');
+        if (ve) { ve.value = [v.year, v.make, v.model].filter(Boolean).join(' '); try { parseVehicleInput(); } catch (e) {} }
+        if (de && !de.value.trim() && v.part) de.value = v.part;
+        window._relaunchPart = v.part || '';
+      }
+    }
+    window._relaunchFill = async () => {   // after the scan: a part description from the old title if the scan gave none
+      const de = document.getElementById('np-desc');
+      if (de && !de.value.trim() && window._relaunchPart) de.value = window._relaunchPart;
+      try { if (window._relaunchVeh) { const ve = document.getElementById('np-vehicle'); if (ve && !ve.value.trim()) { ve.value = [window._relaunchVeh.year, window._relaunchVeh.make, window._relaunchVeh.model].filter(Boolean).join(' '); parseVehicleInput(); } } } catch (e) {}
       try { updateNoPartSearch(); } catch (e) {}
     };
     const sk = document.getElementById('sku-bin'); if (sk && d.sku) sk.value = d.sku.replace(/\s*YOLO$/i, '').trim();
