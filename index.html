@@ -9,7 +9,7 @@
   // refresh, overriding anything init does.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 </script>
-<title>PartsLister Pro v434</title>
+<title>PartsLister Pro v435</title>
 <!-- v409: hover the green L to see exactly which listings (price + shipping) were averaged. -->
 <!-- v408: clearing a listing also clears the low-resolution / unreadable / too-many photo warnings. -->
 <!-- v407: a scan that finds no part number opens No Part Number by itself; a cleared listing starts on Has Part Number. -->
@@ -34,6 +34,7 @@
 <!-- v386: DRAFTS — a small Drafts menu in the top bar saves the listing on screen (photos and every field) and opens it again exactly as left, or reloads just its photos for a fresh scan. The top bar's other buttons got shorter names to make room. -->
 <!-- v385: photo drop box back to its old height; the right side moved up to fill the gap above Refinement Notes. -->
 <!-- v384: cleaner Listing Tool — decorative emojis removed (kept: ⚙ settings, 📋 copy, 🎨 color picker), the "e.g." / "auto-filled" hint text removed, and the days-ahead box sits inside the Scheduled Listing button so both buttons stay centered. -->
+<!-- v435: Relaunch from the Ended tab doesn't try to end the (already ended) old listing. -->
 <!-- v434: Relaunch finds the part number only from the photo scan; the old title's year/make/model/part name fill No Part Number mode only. -->
 <!-- v433: Relaunch reads the old title with the AI (year, make, model, part name) and loads the photos at full size. -->
 <!-- v432: three special title emoji in Settings (Relaunched old listing, YOLO, Reverted from YOLO). Relaunched > YOLO > description-preset emoji. YOLO toggle adds/removes the YOLO emoji in the title live. -->
@@ -937,7 +938,7 @@
     <!-- v302: logo goes to the dashboard -->
     <a href="/" title="Dashboard" style="text-decoration:none;color:inherit;">
       <div class="logo"><span>PARTS</span>LISTER</div>
-      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v434</span></div>
+      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v435</span></div>
     </a>
     <!-- v303: removed — the logo is the dashboard button
     <a href="/" class="btn btn-secondary btn-sm" title="Back to your dashboard" style="font-size:11px;padding:4px 10px;text-decoration:none;margin-left:6px;">⌂ Dashboard</a>
@@ -9538,6 +9539,7 @@ function _restoreDraft(d, files, rescan, msg) {
 async function _relaunchEndOld() {
   const r = window._relaunch; if (!r) return;
   window._relaunch = null;
+  if (r.ended) return;   // v435: it had already ended
   try {
     const x = await fetch('/api/relaunch/end/' + encodeURIComponent(r.itemId), { method: 'POST' });
     const j = await x.json().catch(() => ({}));
@@ -9567,6 +9569,7 @@ function _rlVehicle(title) {   // "2017 - 2021 KIA SPORTAGE TAILGATE ..." -> yea
 async function resumeRelaunchFromUrl() {
   let q; try { q = new URLSearchParams(location.search); } catch (e) { return; }
   const id = String(q.get('relaunch') || '').replace(/\D/g, ''); if (!id) return;
+  const _alreadyEnded = q.get('ended') === '1';   // v435: from the Ended tab — nothing to end
   try { history.replaceState(null, '', location.pathname); } catch (e) { /* fine */ }
   showNotif('Loading the old listing…');
   try {
@@ -9578,7 +9581,7 @@ async function resumeRelaunchFromUrl() {
       const blob = await pr.blob(); files.push(new File([blob], 'photo' + (i + 1) + '.jpg', { type: blob.type || 'image/jpeg' }));
     }
     resetForm(); uploadedFiles = files; try { renderPhotoStrip(); } catch (e) {}
-    window._relaunch = { itemId: id, title: d.title };
+    window._relaunch = { itemId: id, title: d.title, ended: _alreadyEnded };
     // v434: the part number comes ONLY from the photo scan (not from the old title or specifics). The scan opens No Part Number by itself when it finds none;
     // then the vehicle and part name from the old title are filled in for any box the scan left empty.
     const _title = d.title;
@@ -9600,7 +9603,7 @@ async function resumeRelaunchFromUrl() {
     const b = document.getElementById('relaunch-banner');
     if (b) {
       b.style.display = 'flex';
-      b.innerHTML = '<span><b>Relaunching</b> ' + (days != null ? '(' + days + ' days old, $' + Number(d.price || 0).toFixed(2) + ')' : '') + ' \u2014 ' + String(d.title || '').replace(/</g, '&lt;') + '<br><small style="color:var(--muted)">The old listing ends after the new one is live.' + (settings.emojiRelaunch ? '' : ' Set the Relaunched emoji in Settings to mark it.') + '</small></span><a href="/active" class="btn btn-secondary btn-sm" style="margin-left:auto;text-decoration:none;font-size:11px;padding:4px 10px;">Back to Active</a>';
+      b.innerHTML = '<span><b>Relaunching</b> ' + (days != null ? '(' + days + ' days old, $' + Number(d.price || 0).toFixed(2) + ')' : '') + ' \u2014 ' + String(d.title || '').replace(/</g, '&lt;') + '<br><small style="color:var(--muted)">' + (_alreadyEnded ? 'That listing had already ended.' : 'The old listing ends after the new one is live.') + (settings.emojiRelaunch ? '' : ' Set the Relaunched emoji in Settings to mark it.') + '</small></span><a href="/active" class="btn btn-secondary btn-sm" style="margin-left:auto;text-decoration:none;font-size:11px;padding:4px 10px;">Back to Active</a>';
     }
     if (files.length && typeof runOCR === 'function') { try { await runOCR(); } catch (e) { /* scan problems show in its own box */ } }
     try { await window._relaunchFill(); } catch (e) {}

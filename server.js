@@ -1,4 +1,4 @@
-// PartsLister Pro server — v433
+// PartsLister Pro server — v434
 // v409: yard tickets — the whole-ticket text look and the Look checkboxes are gone; every text row and the logo each have the full set of sliders (boldness, thinner, lighter, weathered, gravel, fuzzy, faded gray, spots).
 // v408: yard tickets — each text row has a Look checkbox (row.useLook, default on): the whole-ticket text look only changes the rows that are checked.
 // v406: yard tickets — a whole-ticket Boldness for the text (design.textLook.bold) and a Lighter slider for the logo (less ink).
@@ -4314,6 +4314,65 @@ app.post('/api/parse-title', requireUser, express.json({ limit: '20kb' }), async
     res.json(out);
   } catch (e) { console.error('[parse title]', e.message); res.status(502).json({ error: 'Could not read the title: ' + e.message }); }
 });
+// v434: Sold and Ended lists (eBay only gives about the last 60-90 days of these)
+const histCache = new Map();   // userId:kind -> { at, items }
+const NOLISTS = '<ScheduledList><Include>false</Include></ScheduledList><BidList><Include>false</Include></BidList><DeletedFromSoldList><Include>false</Include></DeletedFromSoldList><DeletedFromUnsoldList><Include>false</Include></DeletedFromUnsoldList>';
+const firstPic = it => { const pd = xmlTag(it, 'PictureDetails') || ''; return xmlDecode(xmlTag(pd, 'GalleryURL') || xmlTag(pd, 'PictureURL') || '') || null; };
+async function fetchHistory(userId, kind, force) {
+  const key = userId + ':' + kind, c = histCache.get(key);
+  if (!force && c && Date.now() - c.at < 10 * 60000) return c.items;
+  const items = [];
+  let page = 1, pages = 1;
+  while (page <= pages && page <= 10) {
+    const pag = `<Pagination><EntriesPerPage>200</EntriesPerPage><PageNumber>${page}</PageNumber></Pagination>`;
+    const inner = kind === 'sold'
+      ? `<SoldList><Include>true</Include><DurationInDays>60</DurationInDays>${pag}</SoldList><ActiveList><Include>false</Include></ActiveList><UnsoldList><Include>false</Include></UnsoldList>`
+      : `<UnsoldList><Include>true</Include><DurationInDays>60</DurationInDays>${pag}</UnsoldList><ActiveList><Include>false</Include></ActiveList><SoldList><Include>false</Include></SoldList>`;
+    const xml = await tradingCall(userId, 'GetMyeBaySelling', inner + NOLISTS);
+    const list = xmlTag(xml, kind === 'sold' ? 'SoldList' : 'UnsoldList') || '';
+    if (page === 1) pages = parseInt(xmlTag(xmlTag(list, 'PaginationResult') || '', 'TotalNumberOfPages') || '1', 10) || 1;
+    if (kind === 'sold') {
+      const tx = list.match(/<Transaction>[\s\S]*?<\/Transaction>/g) || [];
+      for (const t of tx) {
+        const it = xmlTag(t, 'Item') || '';
+        const sd = xmlTag(t, 'ShippingServiceSelected') || '';
+        let shipping = null; const sc = parseFloat(xmlTag(sd, 'ShippingServiceCost') || xmlTag(t, 'ActualShippingCost') || '');
+        if (Number.isFinite(sc)) shipping = sc;
+        items.push({
+          itemId: xmlTag(it, 'ItemID') || '', title: xmlDecode(xmlTag(it, 'Title') || ''), sku: xmlDecode(xmlTag(it, 'SKU') || xmlTag(t, 'SKU') || ''),
+          price: parseFloat(xmlTag(t, 'TransactionPrice') || xmlTag(t, 'AmountPaid') || '0') || 0,
+          qty: parseInt(xmlTag(t, 'QuantityPurchased') || '1', 10) || 1,
+          soldAt: xmlTag(t, 'CreatedDate') || xmlTag(t, 'PaidTime') || null, shipping,
+          image: firstPic(it), start: xmlTag(xmlTag(it, 'ListingDetails') || '', 'StartTime') || null
+        });
+      }
+      if (!tx.length) break;
+    } else {
+      const got = list.match(/<Item>[\s\S]*?<\/Item>/g) || [];
+      for (const it of got) {
+        const ld = xmlTag(it, 'ListingDetails') || '';
+        items.push({
+          itemId: xmlTag(it, 'ItemID') || '', title: xmlDecode(xmlTag(it, 'Title') || ''), sku: xmlDecode(xmlTag(it, 'SKU') || ''),
+          price: parseFloat(xmlTag(xmlTag(it, 'SellingStatus') || '', 'CurrentPrice') || xmlTag(it, 'BuyItNowPrice') || '0') || 0,
+          start: xmlTag(ld, 'StartTime') || null, endedAt: xmlTag(ld, 'EndTime') || null, image: firstPic(it)
+        });
+      }
+      if (!got.length) break;
+    }
+    page++;
+  }
+  items.sort((a, b) => new Date(b.soldAt || b.endedAt || 0) - new Date(a.soldAt || a.endedAt || 0));
+  histCache.set(key, { at: Date.now(), items });
+  return items;
+}
+app.get('/api/active/sold', requireUser, async (req, res) => {
+  try { const items = await fetchHistory(req.user.id, 'sold', req.query.refresh === '1'); res.json({ items }); }
+  catch (e) { console.error('[sold list]', e.message); res.status(502).json({ error: 'Could not load your sales from eBay: ' + e.message }); }
+});
+app.get('/api/active/ended', requireUser, async (req, res) => {
+  try { const items = await fetchHistory(req.user.id, 'ended', req.query.refresh === '1'); res.json({ items }); }
+  catch (e) { console.error('[ended list]', e.message); res.status(502).json({ error: 'Could not load your ended listings from eBay: ' + e.message }); }
+});
 app.get('/api/active/items', requireUser, async (req, res) => {
   try {
     const items = await fetchLiveList(req.user.id, req.query.refresh === '1');
@@ -5695,5 +5754,5 @@ setupDatabase()
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v426 listening on ' + PORT)))   // v427
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v427 listening on ' + PORT)))   // v428
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v428 listening on ' + PORT)))   // v429
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v433 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v434 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });
