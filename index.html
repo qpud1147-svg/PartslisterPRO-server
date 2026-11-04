@@ -9,7 +9,7 @@
   // refresh, overriding anything init does.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 </script>
-<title>PartsLister Pro v438</title>
+<title>PartsLister Pro v439</title>
 <!-- v409: hover the green L to see exactly which listings (price + shipping) were averaged. -->
 <!-- v408: clearing a listing also clears the low-resolution / unreadable / too-many photo warnings. -->
 <!-- v407: a scan that finds no part number opens No Part Number by itself; a cleared listing starts on Has Part Number. -->
@@ -34,6 +34,7 @@
 <!-- v386: DRAFTS — a small Drafts menu in the top bar saves the listing on screen (photos and every field) and opens it again exactly as left, or reloads just its photos for a fresh scan. The top bar's other buttons got shorter names to make room. -->
 <!-- v385: photo drop box back to its old height; the right side moved up to fill the gap above Refinement Notes. -->
 <!-- v384: cleaner Listing Tool — decorative emojis removed (kept: ⚙ settings, 📋 copy, 🎨 color picker), the "e.g." / "auto-filled" hint text removed, and the days-ahead box sits inside the Scheduled Listing button so both buttons stay centered. -->
+<!-- v439: after a launch / relaunch, the Active page's saved list is told right away (new listing added, old one removed). -->
 <!-- v438: Relaunch: buttons read End and Relaunch / End and Schedule; Scheduled ends the old listing right away; drafts (and the auto-saved unfinished listing) remember the old listing; old listing ends with reason 'listing contained an error'. -->
 <!-- v437: Flag button + reason on the Relaunch banner. -->
 <!-- v436: Relaunch uses the OLD TITLE's year/make/model (the scan's sticker read no longer overrides it; it filled 'Escape' for an EcoSport) and fills it whatever mode the scan ends in. -->
@@ -941,7 +942,7 @@
     <!-- v302: logo goes to the dashboard -->
     <a href="/" title="Dashboard" style="text-decoration:none;color:inherit;">
       <div class="logo"><span>PARTS</span>LISTER</div>
-      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v438</span></div>
+      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v439</span></div>
     </a>
     <!-- v303: removed — the logo is the dashboard button
     <a href="/" class="btn btn-secondary btn-sm" title="Back to your dashboard" style="font-size:11px;padding:4px 10px;text-decoration:none;margin-left:6px;">⌂ Dashboard</a>
@@ -5366,6 +5367,7 @@ async function launchToEbay() {
       statusEl.textContent = '✓ Live on eBay! Item ID: ' + itemIdMatch[1];
       _launchProgressEnd(true);
       if (_yoloPriceVal > 0) yoloSave(itemIdMatch[1], title, skuBin, _normalPrice, price);   // v429
+      try { _liveOp({ add: [{ itemId: itemIdMatch[1], title: title, sku: skuBin, price: Number(price) || 0, qty: 1, start: new Date().toISOString(), image: null, url: 'https://www.ebay.com/itm/' + itemIdMatch[1], watchers: 0, shipping: null }] }); } catch (e) {}   // v438: shows on the Active page at once
       _relaunchEndOld();   // v432: the old listing ends only after this one is live
       // v281: success popup removed — the item ID already shows on the
       // status line right under the progress bar.
@@ -9554,6 +9556,14 @@ function _rlShowBanner() {
   b.innerHTML = '<span><b>Relaunching</b> ' + (r.days != null ? '(' + r.days + ' days old, $' + Number(r.price || 0).toFixed(2) + ')' : '') + ' \u2014 ' + String(r.title || '').replace(/</g, '&lt;') + '<br><small style="color:var(--muted)">' + (r.ended ? 'That listing had already ended.' : 'The old listing ends after the new one is live (right away if you schedule it).') + (settings.emojiRelaunch ? '' : ' Set the Relaunched emoji in Settings to mark it.') + '</small></span><span style="margin-left:auto;display:flex;gap:6px;align-items:center;"><select id="rl-flag-why" style="font-size:11px;padding:3px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:4px;"><option value="trash">Trash it</option><option value="missing_pn">Missing part number</option><option value="defect">Defect</option><option value="other">Other</option></select><button class="btn btn-secondary btn-sm" style="font-size:11px;padding:4px 10px;" onclick="_rlFlag()" title="Remind me to do something about this item (nothing changes on eBay)">Flag</button><a href="/active" class="btn btn-secondary btn-sm" style="text-decoration:none;font-size:11px;padding:4px 10px;">Back to Active</a></span>';
   _rlLabels();
 }
+// v438: tell the Active page what just changed, so its saved list shows it at once (it clears this on its next full pull)
+function _liveOp(op) {
+  try {
+    const o = JSON.parse(localStorage.getItem('plp_live_ops') || '{}') || {};
+    o.remove = (o.remove || []).concat(op.remove || []); o.add = (o.add || []).concat(op.add || []);
+    localStorage.setItem('plp_live_ops', JSON.stringify(o));
+  } catch (e) { /* fine — the Active page just shows the old list until it checks eBay */ }
+}
 async function _relaunchEndOld() {
   const r = window._relaunch; if (!r) return;
   window._relaunch = null;
@@ -9562,6 +9572,7 @@ async function _relaunchEndOld() {
     const x = await fetch('/api/relaunch/end/' + encodeURIComponent(r.itemId), { method: 'POST' });
     const j = await x.json().catch(() => ({}));
     if (!x.ok) throw new Error(j.error || ('server ' + x.status));
+    _liveOp({ remove: [r.itemId] });   // v438
     showNotif('\u2713 Old listing ' + r.itemId + ' ended');
   } catch (e) { showNotif('\u26a0 The new listing is live, but the old one (' + r.itemId + ') did not end: ' + (e.message || 'try again') + ' \u2014 end it on eBay', true); }
 }

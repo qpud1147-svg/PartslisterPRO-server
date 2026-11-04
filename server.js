@@ -1,4 +1,4 @@
-// PartsLister Pro server — v436
+// PartsLister Pro server — v437
 // v409: yard tickets — the whole-ticket text look and the Look checkboxes are gone; every text row and the logo each have the full set of sliders (boldness, thinner, lighter, weathered, gravel, fuzzy, faded gray, spots).
 // v408: yard tickets — each text row has a Look checkbox (row.useLook, default on): the whole-ticket text look only changes the rows that are checked.
 // v406: yard tickets — a whole-ticket Boldness for the text (design.textLook.bold) and a Lighter slider for the logo (less ink).
@@ -4387,8 +4387,32 @@ app.get('/api/active/ended', requireUser, async (req, res) => {
   try { const items = await fetchHistory(req.user.id, 'ended', req.query.refresh === '1'); res.json({ items }); }
   catch (e) { console.error('[ended list]', e.message); res.status(502).json({ error: 'Could not load your ended listings from eBay: ' + e.message }); }
 });
+// v437: the newest 200 live listings + the eBay total — a small check the Active page makes while it shows its saved copy
+async function fetchLiveRecent(userId) {
+  const xml = await tradingCall(userId, 'GetMyeBaySelling',
+    '<ActiveList><Include>true</Include><Sort>StartTimeDescending</Sort><Pagination><EntriesPerPage>200</EntriesPerPage><PageNumber>1</PageNumber></Pagination></ActiveList>' +
+    '<ScheduledList><Include>false</Include></ScheduledList><SoldList><Include>false</Include></SoldList><UnsoldList><Include>false</Include></UnsoldList><BidList><Include>false</Include></BidList><DeletedFromSoldList><Include>false</Include></DeletedFromSoldList><DeletedFromUnsoldList><Include>false</Include></DeletedFromUnsoldList>');
+  const active = xmlTag(xml, 'ActiveList') || '';
+  const total = parseInt(xmlTag(xmlTag(active, 'PaginationResult') || '', 'TotalNumberOfEntries') || '', 10);
+  const items = (active.match(/<Item>[\s\S]*?<\/Item>/g) || []).map(it => {
+    const ld = xmlTag(it, 'ListingDetails') || '';
+    const qty = parseInt(xmlTag(it, 'QuantityAvailable') || xmlTag(it, 'Quantity') || '1', 10);
+    const sd = xmlTag(it, 'ShippingDetails') || '';
+    let shipping = null; if (sd) { if (/<FreeShipping>\s*true/i.test(sd)) shipping = 0; else { const c = parseFloat(xmlTag(sd, 'ShippingServiceCost') || ''); if (Number.isFinite(c)) shipping = c; } }
+    return {
+      itemId: xmlTag(it, 'ItemID') || '', title: xmlDecode(xmlTag(it, 'Title') || ''), sku: xmlDecode(xmlTag(it, 'SKU') || ''),
+      price: parseFloat(xmlTag(xmlTag(it, 'SellingStatus') || '', 'CurrentPrice') || xmlTag(it, 'BuyItNowPrice') || '0') || 0,
+      qty: Number.isFinite(qty) ? qty : 1, start: xmlTag(ld, 'StartTime') || null,
+      image: xmlDecode(xmlTag(xmlTag(it, 'PictureDetails') || '', 'GalleryURL') || '') || null,
+      url: xmlDecode(xmlTag(ld, 'ViewItemURL') || '') || ('https://www.ebay.com/itm/' + (xmlTag(it, 'ItemID') || '')),
+      watchers: parseInt(xmlTag(it, 'WatchCount') || '0', 10) || 0, shipping
+    };
+  });
+  return { items, total: Number.isFinite(total) ? total : null };
+}
 app.get('/api/active/items', requireUser, async (req, res) => {
   try {
+    if (req.query.recent === '1') return res.json(Object.assign({ recent: true }, await fetchLiveRecent(req.user.id)));
     const items = await fetchLiveList(req.user.id, req.query.refresh === '1');
     res.json({ items, total: items.length, at: (liveCache.get(req.user.id) || {}).at || Date.now() });
   } catch (e) { console.error('[active items]', e.message); res.status(502).json({ error: 'Could not load your listings from eBay: ' + e.message }); }
@@ -5807,5 +5831,5 @@ setupDatabase()
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v426 listening on ' + PORT)))   // v427
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v427 listening on ' + PORT)))   // v428
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v428 listening on ' + PORT)))   // v429
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v436 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v437 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });

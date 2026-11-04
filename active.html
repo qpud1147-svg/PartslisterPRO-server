@@ -3,8 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Active v400</title>
+<title>PartsLister Pro Active v401</title>
 <!-- v387: click a listing → your own eBay-style view (big photos with arrows, price, shipping, condition, item specifics, description); sharper list photos; shipping on the rows when eBay gives it. -->
+<!-- v401: the live list is saved in this browser — Active opens instantly, then quietly checks eBay (newest 200 + recent sales/endings); full pull only first time / Refresh / daily; flag + reason shown by the row number; bigger row number. -->
 <!-- v400: Flagged tab (reminders: Trash it / Missing part number / Defect / Other + note; Done; End listing on Trash flags) and a Flag button on rows. -->
 <!-- v399: tabs Active · YOLO · Sold · Ended · Drafts. Sold = all sales, Ended = unsold endings (eBay's ~60 days); Drafts redone as eBay-style rows. -->
 <!-- v397: Relaunch button on live rows (opens the Listing Tool with the old listing's photos and part/vehicle filled in). -->
@@ -196,7 +197,8 @@
   .ebl-sub { color: var(--muted); font-size: 12px; }
   .ebl-sub b { color: var(--text); font-weight: 600; }
   .ebl.ll { position: relative; }
-  .ebl-n { position: absolute; right: 12px; top: 10px; font-size: 12px; font-weight: 700; color: var(--muted, #888); }
+  .ebl-n { position: absolute; right: 12px; top: 8px; font-size: 17px; font-weight: 700; color: var(--muted, #888); }   /* v437: bigger */
+  .ebl-flag { font-size: 12px; font-weight: 700; color: #ff6b66; margin-right: 10px; letter-spacing: .3px; }
   .ebl-chk { display: flex; gap: 8px; margin-top: 8px; }
   .ebl-chk button { font-size: 12px; padding: 4px 10px; border-radius: 4px; border: 1px solid var(--border); background: transparent; color: var(--text, #ddd); cursor: pointer; }
   .ebl-chk button:hover { border-color: var(--accent); color: var(--accent); }
@@ -250,7 +252,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v400</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v401</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -641,6 +643,7 @@ pageCache.rerun = () => { loadListings(false); loadDaily(false); };   // v380: f
       const r = await fetch('/api/yolo/' + id + '/revert', { method: 'POST' });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j.error || ('server ' + r.status));
+      try { llSimulate({ price: { [id]: Number(normal) } }); } catch (e) {}   // v437: the Active list shows the regular price at once
       loadYolo();
     } catch (e) { yfail(e.message || 'Could not change the price.'); }
   };
@@ -697,7 +700,7 @@ pageCache.rerun = () => { loadListings(false); loadDaily(false); };   // v380: f
     }
   };
   // v386: Live listings on the Active view
-  let llAll = [], llShown = 0, soAll = [], enAll = [], flAll = [];
+  let llAll = [], llShown = 0, soAll = [], enAll = [], flAll = [], llStatus = '';
   const LL_PAGE = 50;
   const llFiltered = () => {
     const q = (g('ll-q').value || '').trim().toLowerCase(), so = g('ll-sort').value;
@@ -766,9 +769,10 @@ pageCache.rerun = () => { loadListings(false); loadDaily(false); };   // v380: f
     if (!keep) llShown = LL_PAGE;
     const a = llFiltered();
     g('ll-note').textContent = llAll.length ? (a.length === llAll.length ? llAll.length + ' live listings' : a.length + ' of ' + llAll.length + ' listings') : '';
+    if (llStatus && llAll.length) g('ll-note').textContent += ' · ' + llStatus;   // v437
     g('ll-list').innerHTML = a.slice(0, llShown).map((x, ix) => {
       const n = x.start ? Math.floor((Date.now() - new Date(x.start).getTime()) / 86400000) : null;
-      return '<div class="ebl ll"><span class="ebl-n">' + (ix + 1) + '</span>' + photo(x) + '<div class="ebl-body"><div class="ebl-title"><a href="#" onclick="openListing(\'' + esc(x.itemId) + '\');return false">' + esc(x.title) + '</a>' + (/(^|\s)YOLO$/i.test(x.sku || '') ? '<span class="ebl-tag">YOLO</span>' : '') + '</div>' +
+      return '<div class="ebl ll"><span class="ebl-n">' + (() => { const fg = flAll.find(f => f.itemId === x.itemId); return fg ? '<span class="ebl-flag" title="Flagged">\u2691 ' + esc(FLAG_WHY[fg.reason] || 'Flagged') + '</span>' : ''; })() + (ix + 1) + '</span>' + photo(x) + '<div class="ebl-body"><div class="ebl-title"><a href="#" onclick="openListing(\'' + esc(x.itemId) + '\');return false">' + esc(x.title) + '</a>' + (/(^|\s)YOLO$/i.test(x.sku || '') ? '<span class="ebl-tag">YOLO</span>' : '') + '</div>' +
         '<div class="ebl-price">' + money(x.price) + (x.shipping != null ? '<small>' + (x.shipping === 0 ? 'Free shipping' : '+ ' + money(x.shipping) + ' shipping') + '</small>' : '') + (x.qty > 1 ? '<small>' + x.qty + ' available</small>' : '') + '</div>' +
         '<div class="ebl-sub">' + (n != null ? 'Listed <b>' + n + (n === 1 ? ' day' : ' days') + '</b> ago' : '') + (x.watchers ? ' · <b>' + x.watchers + '</b> watching' : '') + '</div>' +
         (x.sku ? '<div class="ebl-sub">SKU ' + esc(x.sku) + '</div>' : '') +
@@ -777,16 +781,70 @@ pageCache.rerun = () => { loadListings(false); loadDaily(false); };   // v380: f
     g('ll-more').style.display = a.length > llShown ? 'inline-block' : 'none';
   };
   window.llMore = function () { llShown += LL_PAGE; window.llRender(true); };
-  window.llLoad = async function (force) {
-    g('ll-error').style.display = 'none';
-    g('ll-note').textContent = 'Loading your listings…';
+  // v437: the whole live list is kept in this browser (IndexedDB). Active opens instantly from that saved copy, then quietly checks eBay:
+  // the 200 newest listings + your recent sales/endings. A full pull of everything happens only the first time, when you press Refresh, or once a day.
+  // Things you do in the tools (relaunch, list, revert, end) are applied to the page at once ("simulated") until the next full pull.
+  const LIVE_DB = { db: null, open() { if (this.db) return Promise.resolve(this.db); return new Promise((res, rej) => { let rq; try { rq = indexedDB.open('plp-live', 1); } catch (e) { rej(e); return; } rq.onupgradeneeded = () => rq.result.createObjectStore('k'); rq.onsuccess = () => { this.db = rq.result; res(this.db); }; rq.onerror = () => rej(rq.error); }); },
+    async get() { try { const db = await this.open(); return await new Promise((res, rej) => { const q = db.transaction('k').objectStore('k').get('live'); q.onsuccess = () => res(q.result || null); q.onerror = () => rej(q.error); }); } catch (e) { return null; } },
+    async put(v) { try { const db = await this.open(); await new Promise((res, rej) => { const t = db.transaction('k', 'readwrite'); t.objectStore('k').put(v, 'live'); t.oncomplete = res; t.onerror = () => rej(t.error); }); } catch (e) { /* the page still works without the saved copy */ } } };
+  const readOps = () => { try { return JSON.parse(localStorage.getItem('plp_live_ops') || '{}') || {}; } catch (e) { return {}; } };
+  const writeOps = o => { try { if (o && (o.remove || []).length + (o.add || []).length + Object.keys(o.price || {}).length) localStorage.setItem('plp_live_ops', JSON.stringify(o)); else localStorage.removeItem('plp_live_ops'); } catch (e) { /* fine */ } };
+  const applyOps = items => {
+    const o = readOps(); if (!o.remove && !o.add && !o.price) return items;
+    const rm = new Set(o.remove || []); let out = items.filter(i => !rm.has(i.itemId));
+    const have = new Set(out.map(i => i.itemId));
+    (o.add || []).forEach(n => { if (!have.has(n.itemId) && !rm.has(n.itemId)) out.push(n); });
+    if (o.price) out = out.map(i => o.price[i.itemId] != null ? Object.assign({}, i, { price: o.price[i.itemId] }) : i);
+    return out;
+  };
+  window.llSimulate = function (op) {   // used by this page (revert/end); the Listing Tool writes the same record
+    const o = readOps(); o.remove = (o.remove || []).concat(op.remove || []); o.add = (o.add || []).concat(op.add || []); o.price = Object.assign(o.price || {}, op.price || {}); writeOps(o);
+    llAll = applyOps(llAll); window.llRender(true);
+  };
+  const ago2 = t => { const m = Math.round((Date.now() - t) / 60000); return m < 1 ? 'just now' : m < 60 ? m + ' min ago' : m < 1440 ? Math.round(m / 60) + ' h ago' : Math.round(m / 1440) + ' d ago'; };
+  async function llFull(force) {
+    llStatus = ''; g('ll-error').style.display = 'none';
+    if (!llAll.length) g('ll-note').textContent = 'Loading your listings…';
+    const r = await fetch('/api/active/items' + (force ? '?refresh=1' : ''));
+    if (r.status === 401) { location.href = '/sales?next=' + encodeURIComponent(location.pathname); return; }
+    if (r.status === 404) { g('ll-note').textContent = ''; const e = g('ll-error'); e.textContent = 'The server is out of date — upload the newest server.js to Railway.'; e.style.display = 'block'; return; }
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || ('server ' + r.status));
+    writeOps({});   // the real list replaces anything simulated
+    llAll = j.items || []; llStatus = 'updated from eBay just now'; window.llRender();
+    LIVE_DB.put({ at: Date.now(), fullAt: Date.now(), items: llAll });
+  }
+  async function llQuick(saved) {
+    llStatus = 'saved copy from ' + ago2(saved.at) + ' · checking eBay…'; window.llRender(true);
     try {
-      const r = await fetch('/api/active/items' + (force ? '?refresh=1' : ''));
-      if (r.status === 401) { location.href = '/sales?next=' + encodeURIComponent(location.pathname); return; }
-      if (r.status === 404) { g('ll-note').textContent = ''; const e = g('ll-error'); e.textContent = 'The server is out of date — upload the newest server.js to Railway.'; e.style.display = 'block'; return; }
-      const j = await r.json();
-      if (!r.ok) throw new Error(j.error || ('server ' + r.status));
-      llAll = j.items || []; window.llRender();
+      const [rr, sr, er] = await Promise.all([fetch('/api/active/items?recent=1'), fetch('/api/active/sold'), fetch('/api/active/ended')]);
+      if (!rr.ok) throw new Error('check failed');
+      const rj = await rr.json(), sj = sr.ok ? await sr.json() : { items: [] }, ej = er.ok ? await er.json() : { items: [] };
+      const gone = new Set((ej.items || []).map(i => i.itemId));
+      (sj.items || []).forEach(i => gone.add(i.itemId));   // sold (a multi-quantity listing stays live, so only single ones are dropped)
+      const byId = new Map(llAll.map(i => [i.itemId, i]));
+      let items = llAll.filter(i => !(gone.has(i.itemId) && (i.qty || 1) <= 1));
+      (rj.items || []).forEach(n => { const i = items.findIndex(z => z.itemId === n.itemId); if (i >= 0) items[i] = n; else items.push(n); });
+      const o = readOps(); if (o.price) { (rj.items || []).forEach(n => delete o.price[n.itemId]); writeOps(o); }
+      llAll = applyOps(items);
+      const diff = rj.total != null ? llAll.length - rj.total : 0;
+      llStatus = 'checked eBay just now' + (diff ? ' · eBay shows ' + rj.total + ' — press Refresh to sync' : '');
+      window.llRender(true);
+      LIVE_DB.put({ at: Date.now(), fullAt: saved.fullAt || saved.at, items: llAll.filter(i => !(readOps().add || []).some(n => n.itemId === i.itemId && !(rj.items || []).some(z => z.itemId === i.itemId))) });
+    } catch (e) { llStatus = 'saved copy from ' + ago2(saved.at) + ' · could not check eBay'; window.llRender(true); }
+  }
+  window.llShowSaved = async function () { const saved = await LIVE_DB.get(); if (saved && saved.items && saved.items.length && !llAll.length) { llAll = applyOps(saved.items); llStatus = 'saved copy from ' + ago2(saved.at); window.llRender(); } };
+  window.llLoad = async function (force) {
+    try {
+      if (force) { await llFull(true); return; }
+      const saved = await LIVE_DB.get();
+      if (saved && saved.items && saved.items.length) {
+        llAll = applyOps(saved.items); window.llRender();
+        if (Date.now() - (saved.fullAt || 0) > 24 * 3600 * 1000) { llStatus = 'daily full check…'; window.llRender(true); await llFull(false); }
+        else await llQuick(saved);
+        return;
+      }
+      await llFull(false);
     } catch (e) { g('ll-note').textContent = ''; const er = g('ll-error'); er.textContent = e.message || 'Could not load your listings.'; er.style.display = 'block'; }
   };
   // v434: Sold (all your sales) and Ended (listings that ran out without selling) — whatever eBay still gives us (about 60 days)
@@ -832,6 +890,7 @@ pageCache.rerun = () => { loadListings(false); loadDaily(false); };   // v380: f
   }
   function flRender() {
     g('flag-n').textContent = flAll.length ? flAll.length : '';
+    if (llAll.length) window.llRender(true);   // v437: the flag shows on the Active row
     g('fl-note').textContent = flAll.length ? flAll.length + ' flagged — things you still need to do' : 'Nothing flagged. Use the Flag button on a listing to remind yourself.';
     g('fl-list').innerHTML = flAll.map(x => {
       const when = x.flaggedAt ? Math.floor((Date.now() - new Date(x.flaggedAt).getTime()) / 86400000) : null;
@@ -849,7 +908,7 @@ pageCache.rerun = () => { loadListings(false); loadDaily(false); };   // v380: f
   };
   window.flagEnd = async function (id) {
     if (!confirm('End this listing on eBay now? Only do this once you have found the item.')) return;
-    try { const r = await fetch('/api/flags/' + id + '/end', { method: 'POST' }); const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || ('server ' + r.status)); flAll = flAll.filter(x => x.itemId !== id); llAll = llAll.filter(x => x.itemId !== id); flRender(); }
+    try { const r = await fetch('/api/flags/' + id + '/end', { method: 'POST' }); const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || ('server ' + r.status)); flAll = flAll.filter(x => x.itemId !== id); try { llSimulate({ remove: [id] }); } catch (e) {} flRender(); }
     catch (e) { fhFail(e.message || 'Could not end the listing.'); }
   };
   window.flagClose = function () { g('fl-ov').hidden = true; };
@@ -869,7 +928,7 @@ pageCache.rerun = () => { loadListings(false); loadDaily(false); };   // v380: f
       } catch (e) { g('fl-save').disabled = false; alert('Could not save the flag — try again.'); }
     };
   };
-  fetch('/api/flags').then(r => r.ok ? r.json() : null).then(d => { if (d) { flAll = d.items || []; g('flag-n').textContent = flAll.length ? flAll.length : ''; } }).catch(() => {});
+  fetch('/api/flags').then(r => r.ok ? r.json() : null).then(d => { if (d) { flAll = d.items || []; g('flag-n').textContent = flAll.length ? flAll.length : ''; if (llAll.length) window.llRender(true); } }).catch(() => {});
   window.setView = function (v) {
     const dr = v === 'drafts', yo = v === 'yolo', so = v === 'sold', en = v === 'ended', fl = v === 'flagged', other = dr || yo || so || en || fl;
     g('view-flagged').hidden = !fl; g('seg-flagged').setAttribute('aria-pressed', fl ? 'true' : 'false'); if (fl) flLoad();
@@ -890,7 +949,8 @@ pageCache.rerun = () => { loadListings(false); loadDaily(false); };   // v380: f
   if (/[?&]view=sold\b/.test(location.search)) window.setView('sold');
   if (/[?&]view=ended\b/.test(location.search)) window.setView('ended');
   if (/[?&]view=flagged\b/.test(location.search)) window.setView('flagged');
-  setTimeout(() => window.llLoad(false), 1500);   // v386: the live list loads a moment after the page
+  window.llShowSaved();   // v437: the saved copy shows at once
+  setTimeout(() => window.llLoad(false), 1500);   // v386: the check of eBay starts a moment after the page
 })();
 
 loadListings(false);
