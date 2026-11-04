@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Active v397</title>
+<title>PartsLister Pro Active v398</title>
 <!-- v387: click a listing → your own eBay-style view (big photos with arrows, price, shipping, condition, item specifics, description); sharper list photos; shipping on the rows when eBay gives it. -->
 <!-- v397: Relaunch button on live rows (opens the Listing Tool with the old listing's photos and part/vehicle filled in). -->
 <!-- v396: with several part numbers, prefer the one with no dashes/spaces. -->
@@ -248,7 +248,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v397</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v398</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -652,7 +652,7 @@ pageCache.rerun = () => { loadListings(false); loadDaily(false); };   // v380: f
       const r = await fetch('/api/active/item/' + encodeURIComponent(id));
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j.error || ('server ' + r.status + (r.status === 404 ? ' — upload the newest server.js' : '')));
-      ldPhotos = (j.photos && j.photos.length) ? j.photos.map(u => u.replace(/\/s-l\d+\./i, '/s-l1600.')) : []; ldIdx = 0;
+      ldPhotos = (j.photos && j.photos.length) ? j.photos.map(u => u.replace(/\/s-l\d+\./i, '/s-l1600.').replace(/\$_\d+\.(jpg|jpeg|png)/i, '$_57.$1')) : []; ldIdx = 0;
       const n = j.start ? Math.floor((Date.now() - new Date(j.start).getTime()) / 86400000) : null;
       const ship = j.shipping == null ? 'see eBay' : (j.shipping === 0 ? 'Free shipping' : money(j.shipping) + ' shipping');
       box.innerHTML = '<button class="ld-x" onclick="closeListing()" title="Close">×</button>' +
@@ -730,7 +730,14 @@ pageCache.rerun = () => { loadListings(false); loadDaily(false); };   // v380: f
         for (const nm of want) { const f = j.specifics.find(sp => String(sp.name).toLowerCase() === nm && sp.value && !/^(does not apply|n\/a|unknown)$/i.test(String(sp.value).trim())); if (f) { const pv = llPickPN(String(f.value).split(/\s+\/\s+|[,;|\n]/).map(z => z.trim()).filter(z => z.length >= 4 && /\d/.test(z) && !llIsYears(z))); if (pv) { q = pv; break; } } }
       }
     } catch (e) {}
-    if (!q) q = llClean(x.title);   // v393: last resort = the plain title (emoji stripped), no year spelling / word dropping
+    if (!q) {   // v433: no part number anywhere -> year make model part name, read from the title by the AI; the plain title if that fails
+      try {
+        const pr = await fetch('/api/parse-title', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: x.title }) });
+        const pj = await pr.json().catch(() => ({}));
+        if (pr.ok && pj.make && pj.part) q = [pj.yearFrom, pj.make, pj.model, pj.part].filter(Boolean).join(' ');
+      } catch (e) { /* plain title below */ }
+    }
+    if (!q) q = llClean(x.title);   // v393: last resort = the plain title (emoji stripped)
     try { w.location.href = mk(q); w.focus(); } catch (e) {}
   };
   window.llRender = function (keep) {

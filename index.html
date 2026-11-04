@@ -9,7 +9,7 @@
   // refresh, overriding anything init does.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 </script>
-<title>PartsLister Pro v432</title>
+<title>PartsLister Pro v433</title>
 <!-- v409: hover the green L to see exactly which listings (price + shipping) were averaged. -->
 <!-- v408: clearing a listing also clears the low-resolution / unreadable / too-many photo warnings. -->
 <!-- v407: a scan that finds no part number opens No Part Number by itself; a cleared listing starts on Has Part Number. -->
@@ -34,6 +34,7 @@
 <!-- v386: DRAFTS — a small Drafts menu in the top bar saves the listing on screen (photos and every field) and opens it again exactly as left, or reloads just its photos for a fresh scan. The top bar's other buttons got shorter names to make room. -->
 <!-- v385: photo drop box back to its old height; the right side moved up to fill the gap above Refinement Notes. -->
 <!-- v384: cleaner Listing Tool — decorative emojis removed (kept: ⚙ settings, 📋 copy, 🎨 color picker), the "e.g." / "auto-filled" hint text removed, and the days-ahead box sits inside the Scheduled Listing button so both buttons stay centered. -->
+<!-- v433: Relaunch reads the old title with the AI (year, make, model, part name) and loads the photos at full size. -->
 <!-- v432: three special title emoji in Settings (Relaunched old listing, YOLO, Reverted from YOLO). Relaunched > YOLO > description-preset emoji. YOLO toggle adds/removes the YOLO emoji in the title live. -->
 <!-- v383: Scheduled Listing — a dropdown next to the button picks how many days ahead (1–21); your choice is saved with your settings. -->
 <!-- v381: no sign-in screen flash when you're already signed in in this tab (the other pages remember it). -->
@@ -935,7 +936,7 @@
     <!-- v302: logo goes to the dashboard -->
     <a href="/" title="Dashboard" style="text-decoration:none;color:inherit;">
       <div class="logo"><span>PARTS</span>LISTER</div>
-      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v432</span></div>
+      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v433</span></div>
     </a>
     <!-- v303: removed — the logo is the dashboard button
     <a href="/" class="btn btn-secondary btn-sm" title="Back to your dashboard" style="font-size:11px;padding:4px 10px;text-decoration:none;margin-left:6px;">⌂ Dashboard</a>
@@ -9580,7 +9581,12 @@ async function resumeRelaunchFromUrl() {
     const pn = _rlPN(d.title, d.specifics);
     if (pn) { setMode('partnumber'); document.getElementById('part-number').value = pn; }
     else {
-      setMode('nopartnumber'); const v = _rlVehicle(d.title);
+      setMode('nopartnumber'); let v = _rlVehicle(d.title);
+      try {   // v433: the AI reads the title (year, make, model, part name) — the word-guess above is only the fallback
+        const pr = await fetch('/api/parse-title', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: d.title }) });
+        const pj = await pr.json().catch(() => ({}));
+        if (pr.ok && pj.make && pj.part) v = { year: pj.yearFrom, make: pj.make, model: pj.model, rest: pj.part };
+      } catch (e) { /* fallback stays */ }
       document.getElementById('np-vehicle').value = [v.year, v.make, v.model].filter(Boolean).join(' '); try { parseVehicleInput(); } catch (e) {}
       document.getElementById('np-desc').value = v.rest; try { updateNoPartSearch(); } catch (e) {}
     }
