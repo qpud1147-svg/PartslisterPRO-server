@@ -1,4 +1,4 @@
-// PartsLister Pro server — v429
+// PartsLister Pro server — v430
 // v409: yard tickets — the whole-ticket text look and the Look checkboxes are gone; every text row and the logo each have the full set of sliders (boldness, thinner, lighter, weathered, gravel, fuzzy, faded gray, spots).
 // v408: yard tickets — each text row has a Look checkbox (row.useLook, default on): the whole-ticket text look only changes the rows that are checked.
 // v406: yard tickets — a whole-ticket Boldness for the text (design.textLook.bold) and a Lighter slider for the logo (less ink).
@@ -4254,6 +4254,34 @@ app.get('/api/active/item/:id', requireUser, async (req, res) => {
     res.json(data);
   } catch (e) { console.error('[active item]', e.message); res.status(502).json({ error: 'Could not load that listing from eBay: ' + e.message }); }
 });
+// v430: Relaunch — the old listing's photos come through here (full size) so the Listing Tool can load them as files
+const relaunchPhotoCache = new Map();
+app.get('/api/relaunch/photo/:id/:n', requireUser, async (req, res) => {
+  try {
+    const id = String(req.params.id || '').replace(/\D/g, ''), n = parseInt(req.params.n, 10);
+    const key = req.user.id + ':' + id; let hit = relaunchPhotoCache.get(key);
+    if (!hit || Date.now() - hit.at > 10 * 60000) {
+      const xml = await tradingCall(req.user.id, 'GetItem', `<ItemID>${id}</ItemID>`);
+      hit = { at: Date.now(), urls: xmlAll(xmlTag(xmlTag(xml, 'Item') || '', 'PictureDetails') || '', 'PictureURL').map(xmlDecode).filter(u => /^https:\/\/[^/]*ebayimg\.com\//i.test(u)) };
+      relaunchPhotoCache.set(key, hit);
+    }
+    const u = hit.urls[n]; if (!u) return res.status(404).json({ error: 'No such photo' });
+    const pr = await fetch(u.replace(/\/s-l\d+\./i, '/s-l1600.'), { signal: AbortSignal.timeout(20000) });
+    const type = (pr.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+    if (!pr.ok || !/^image\//.test(type)) return res.status(502).json({ error: 'eBay would not send that photo' });
+    res.set('Content-Type', type).send(Buffer.from(await pr.arrayBuffer()));
+  } catch (e) { console.error('[relaunch photo]', e.message); res.status(502).json({ error: 'Could not get that photo: ' + e.message }); }
+});
+// the old listing is ended only after the new one is live (the Listing Tool calls this after a successful launch)
+app.post('/api/relaunch/end/:id', requireUser, async (req, res) => {
+  try {
+    const id = String(req.params.id || '').replace(/\D/g, ''); if (!id) return res.status(400).json({ error: 'Missing item number' });
+    await tradingCall(req.user.id, 'EndFixedPriceItem', `<ItemID>${id}</ItemID><EndingReason>NotAvailable</EndingReason>`, '100');
+    try { await pool.query("UPDATE yolo_listings SET status = 'ended' WHERE user_id = $1 AND item_id = $2 AND status = 'active'", [req.user.id, id]); } catch (e) { /* not a YOLO one */ }
+    liveCache.delete(req.user.id); itemDetailCache.delete(req.user.id + ':' + id);
+    res.json({ ok: true });
+  } catch (e) { console.error('[relaunch end]', e.message); res.status(502).json({ error: 'eBay did not end the old listing: ' + e.message }); }
+});
 app.get('/api/active/items', requireUser, async (req, res) => {
   try {
     const items = await fetchLiveList(req.user.id, req.query.refresh === '1');
@@ -4308,10 +4336,25 @@ app.post('/api/yolo/:itemId/revert', requireUser, async (req, res) => {
     const row = (await pool.query("SELECT normal_price FROM yolo_listings WHERE user_id = $1 AND item_id = $2 AND status = 'active'", [req.user.id, itemId])).rows[0];
     if (!row) return res.status(404).json({ error: 'That YOLO listing is not on your list.' });
     const price = Number(row.normal_price).toFixed(2);
+    // v430: the title's emoji changes to the "Reverted from YOLO" emoji (Listing Tool settings). Not allowed on some listings (e.g. ones that already sold) → then the price still changes.
+    let newTitle = '';
+    try {
+      const em = (((await readUserData(req.user.id)) || {}).settings || {}).emojiReverted || '';
+      if (em) {
+        const gi = await tradingCall(req.user.id, 'GetItem', `<ItemID>${itemId}</ItemID>`, '100');
+        const cur = xmlDecode(xmlTag(xmlTag(gi, 'Item') || '', 'Title') || '');
+        if (cur) newTitle = (em + ' ' + cur.replace(/^[\p{Emoji_Presentation}\p{Extended_Pictographic}\uFE0F\u200D\s]+/gu, '').trim()).slice(0, 80);
+      }
+    } catch (e) { newTitle = ''; }
     // the listing was created on eBay Motors (site 100)
-    await tradingCall(req.user.id, 'ReviseFixedPriceItem', `<Item><ItemID>${itemId}</ItemID><StartPrice>${price}</StartPrice></Item>`, '100');
+    let titleChanged = false;
+    if (newTitle) {
+      try { await tradingCall(req.user.id, 'ReviseFixedPriceItem', `<Item><ItemID>${itemId}</ItemID><StartPrice>${price}</StartPrice><Title>${newTitle.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</Title></Item>`, '100'); titleChanged = true; }
+      catch (e) { console.warn('[yolo revert] title not changed, price only:', e.message); }
+    }
+    if (!titleChanged) await tradingCall(req.user.id, 'ReviseFixedPriceItem', `<Item><ItemID>${itemId}</ItemID><StartPrice>${price}</StartPrice></Item>`, '100');
     await pool.query("UPDATE yolo_listings SET status = 'reverted' WHERE user_id = $1 AND item_id = $2", [req.user.id, itemId]);
-    res.json({ ok: true, price });
+    res.json({ ok: true, price, titleChanged });
   } catch (e) { console.error('[yolo revert]', e.message); res.status(502).json({ error: 'eBay did not change the price: ' + e.message }); }
 });
 // v427: stop tracking a YOLO listing (sold, ended, or you changed the price yourself) — does not touch eBay
@@ -5620,5 +5663,5 @@ setupDatabase()
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v426 listening on ' + PORT)))   // v427
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v427 listening on ' + PORT)))   // v428
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v428 listening on ' + PORT)))   // v429
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v429 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v430 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });

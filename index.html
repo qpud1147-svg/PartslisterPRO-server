@@ -9,7 +9,7 @@
   // refresh, overriding anything init does.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 </script>
-<title>PartsLister Pro v431</title>
+<title>PartsLister Pro v432</title>
 <!-- v409: hover the green L to see exactly which listings (price + shipping) were averaged. -->
 <!-- v408: clearing a listing also clears the low-resolution / unreadable / too-many photo warnings. -->
 <!-- v407: a scan that finds no part number opens No Part Number by itself; a cleared listing starts on Has Part Number. -->
@@ -34,6 +34,7 @@
 <!-- v386: DRAFTS — a small Drafts menu in the top bar saves the listing on screen (photos and every field) and opens it again exactly as left, or reloads just its photos for a fresh scan. The top bar's other buttons got shorter names to make room. -->
 <!-- v385: photo drop box back to its old height; the right side moved up to fill the gap above Refinement Notes. -->
 <!-- v384: cleaner Listing Tool — decorative emojis removed (kept: ⚙ settings, 📋 copy, 🎨 color picker), the "e.g." / "auto-filled" hint text removed, and the days-ahead box sits inside the Scheduled Listing button so both buttons stay centered. -->
+<!-- v432: three special title emoji in Settings (Relaunched old listing, YOLO, Reverted from YOLO). Relaunched > YOLO > description-preset emoji. YOLO toggle adds/removes the YOLO emoji in the title live. -->
 <!-- v383: Scheduled Listing — a dropdown next to the button picks how many days ahead (1–21); your choice is saved with your settings. -->
 <!-- v381: no sign-in screen flash when you're already signed in in this tab (the other pages remember it). -->
 <!-- auth removed -->
@@ -934,7 +935,7 @@
     <!-- v302: logo goes to the dashboard -->
     <a href="/" title="Dashboard" style="text-decoration:none;color:inherit;">
       <div class="logo"><span>PARTS</span>LISTER</div>
-      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v431</span></div>
+      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v432</span></div>
     </a>
     <!-- v303: removed — the logo is the dashboard button
     <a href="/" class="btn btn-secondary btn-sm" title="Back to your dashboard" style="font-size:11px;padding:4px 10px;text-decoration:none;margin-left:6px;">⌂ Dashboard</a>
@@ -944,6 +945,7 @@
 
   <!-- All header buttons — right-aligned, order: View Sold, View Active, List Pigtail, List Other Side, count, My Store, ⚙ -->
   <div style="display:flex;align-items:center;gap:6px;margin-left:auto;flex-shrink:0;">
+    <a href="/active" class="btn btn-secondary btn-sm" title="Your live listings" style="font-size:11px;padding:4px 10px;text-decoration:none;">My Listings</a>   <!-- v432 -->
     <button class="btn btn-secondary btn-sm" id="ebay-open-sold-btn" onclick="openEbaySold()" disabled title="View Sold" style="font-size:11px;padding:4px 10px;">Sold</button>   <!-- v386: was View Sold -->
     <button class="btn btn-secondary btn-sm" id="ebay-open-active-btn" onclick="openEbayActive()" disabled title="View Active" style="font-size:11px;padding:4px 10px;">Active</button>   <!-- v386: was View Active -->
     <div style="position:relative;">
@@ -981,6 +983,7 @@
     <button class="btn-settings" onclick="openSettings()">⚙</button>
   </div>
 </header>
+<div id="relaunch-banner" style="display:none;background:var(--surface2);border-bottom:2px solid var(--accent);padding:8px 16px;font-size:13px;align-items:center;gap:12px;"></div>   <!-- v432 -->
 
 <!-- MAIN -->
 <div class="main-layout">
@@ -1952,6 +1955,14 @@
           <span style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;">Default</span>
         </div>
         <div id="description-presets-list" style="display:flex;flex-direction:column;gap:8px;"></div>
+        <hr>
+        <div style="font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--accent);margin-bottom:10px;">Special Title Emoji</div>
+        <p style="font-size:11px;color:var(--muted);margin-bottom:10px;">These replace the description-preset emoji at the start of the title. If a listing is both, Relaunched wins.</p>
+        <div style="display:grid;grid-template-columns:1fr 60px;gap:6px 10px;align-items:center;max-width:380px;">
+          <span style="font-size:12px;">Relaunched old listing</span><input type="text" id="emoji-relaunch" maxlength="4" style="font-size:16px;text-align:center;padding:4px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--text);">
+          <span style="font-size:12px;">YOLO price</span><input type="text" id="emoji-yolo" maxlength="4" style="font-size:16px;text-align:center;padding:4px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--text);">
+          <span style="font-size:12px;">Reverted from YOLO (set on Revert)</span><input type="text" id="emoji-reverted" maxlength="4" style="font-size:16px;text-align:center;padding:4px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--text);">
+        </div>
         <hr>
         <div style="font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--accent);margin-bottom:10px;">Word Filtering</div>
         <div class="field">
@@ -5348,6 +5359,7 @@ async function launchToEbay() {
       statusEl.textContent = '✓ Live on eBay! Item ID: ' + itemIdMatch[1];
       _launchProgressEnd(true);
       if (_yoloPriceVal > 0) yoloSave(itemIdMatch[1], title, skuBin, _normalPrice, price);   // v429
+      _relaunchEndOld();   // v432: the old listing ends only after this one is live
       // v281: success popup removed — the item ID already shows on the
       // status line right under the progress bar.
       savePigtailHistory(); saveOtherSideHistory(); _countListing();   // v301
@@ -5564,6 +5576,7 @@ async function saveToDraft() {
       showNotif('✓ Scheduled on eBay! ID: ' + itemIdMatch[1]);
       _launchProgressEnd(true);   // v399
       if (_yoloPriceVal > 0) yoloSave(itemIdMatch[1], title, skuBin, _normalPrice, price);   // v429
+      if (window._relaunch) showNotif('Scheduled \u2014 the old listing was NOT ended. End it yourself once the new one is live.', true);   // v432
       savePigtailHistory(); saveOtherSideHistory(); _countListing();   // v301
       const _scheduledDraft = window._draftId;   // v396
       await new Promise(r => setTimeout(r, 1100));   // v399: let the bar fill and turn green, like Launch
@@ -5733,6 +5746,7 @@ function exportCSV() {
 
 // ─── RESET FORM ───────────────────────────────────────────────────────────────
 function resetForm(shippingOverride) {
+  try { window._relaunch = null; const rb = document.getElementById('relaunch-banner'); if (rb) rb.style.display = 'none'; } catch (e) {}   // v432
   window._draftId = null; window._draftSig = null;   // v396: a cleared page is no longer any draft
   try { setMode('partnumber'); } catch (e) { /* fine */ }   // v407: a cleared page starts on Has Part Number again
   uploadedFiles = [];
@@ -5927,6 +5941,7 @@ function openSettings() {
   renderShippingPresetsList();
   renderDescriptionPresetsList();
   if (document.getElementById('title-strip-words-input')) document.getElementById('title-strip-words-input').value = (settings.titleStripWords || []).join(', ');
+  ['relaunch', 'yolo', 'reverted'].forEach(k => { const e = document.getElementById('emoji-' + k); if (e) e.value = settings['emoji' + k[0].toUpperCase() + k.slice(1)] || ''; });   // v432
   if (document.getElementById('desc-strip-words-input')) document.getElementById('desc-strip-words-input').value = (settings.descStripWords || []).join(', ');
   if (document.getElementById('interchange-strip-words-input')) document.getElementById('interchange-strip-words-input').value = (settings.interchangeStripWords || []).join(', ');
   if (document.getElementById('claude-model-input')) document.getElementById('claude-model-input').value = settings.claudeModel || 'claude-sonnet-4-5';
@@ -5994,6 +6009,7 @@ function saveSettings() {
   settings.paymentPolicyId  = document.getElementById('payment-policy-input').value.trim();
   settings.returnPolicyId   = document.getElementById('return-policy-input').value.trim();
   settings.itemLocation     = document.getElementById('item-location-input') ? document.getElementById('item-location-input').value.trim() : settings.itemLocation || '';
+  ['relaunch', 'yolo', 'reverted'].forEach(k => { const e = document.getElementById('emoji-' + k); if (e) settings['emoji' + k[0].toUpperCase() + k.slice(1)] = e.value.trim(); });   // v432
   const _titleStripRaw = document.getElementById('title-strip-words-input') ? document.getElementById('title-strip-words-input').value : '';
   settings.titleStripWords = _titleStripRaw.split(',').map(w => w.trim()).filter(Boolean);
   const _descStripRaw = document.getElementById('desc-strip-words-input') ? document.getElementById('desc-strip-words-input').value : '';
@@ -6055,8 +6071,9 @@ function yoloToggle() {
   }
   window._priceFromStore = false; window._avgFilled = null; if (typeof avgLinkRefresh === 'function') avgLinkRefresh();
   yoloApply();
+  try { _applyEmojiToTitle(); } catch (e) {}   // v432: YOLO emoji on/off in the title
 }
-function yoloOff() { window._yoloOn = false; window._yoloRegular = 0; yoloApply(); }
+function yoloOff() { window._yoloOn = false; window._yoloRegular = 0; yoloApply(); try { _applyEmojiToTitle(); } catch (e) {} }
 function yoloOn() { return !!window._yoloOn && (parseFloat(document.getElementById('your-price').value) || 0) > 0; }
 async function yoloSave(itemId, title, sku, normal, yolo) {
   try {
@@ -6354,6 +6371,9 @@ function _applyEmojiToTitle() {
 }
 
 function getActiveEmoji() {
+  // v432: Relaunched beats YOLO, and both beat the description-preset emoji
+  if (window._relaunch && settings.emojiRelaunch) return settings.emojiRelaunch;
+  if (window._yoloOn && settings.emojiYolo) return settings.emojiYolo;
   // Emoji lives in description presets only — no settings fallback
   return (window._activeDescEmoji !== undefined ? window._activeDescEmoji : '') || '';
 }
@@ -9160,6 +9180,7 @@ async function _bootstrap() {
   _renderCount(d.account.listingCount);
   draftsRefreshCount();   // v386
   setTimeout(resumeDraftFromUrl, 300);   // v387: Resume on the Drafts page
+  setTimeout(resumeRelaunchFromUrl, 300);   // v432: Relaunch from the Active page
   setTimeout(workRestore, 600);   // v400: bring back the unfinished listing
   document.getElementById('auth-overlay').classList.add('hidden');
   try { sessionStorage.setItem('plp-signed-in', '1'); } catch (e) { /* fine */ }   // v381
@@ -9511,6 +9532,70 @@ function _restoreDraft(d, files, rescan, msg) {
   T(() => { showNotif(msg || '✓ Draft opened — everything is as you left it'); });
   setTimeout(() => window.scrollTo({ top: 0, behavior: 'instant' }), 50);
 }
+// ─── v432: RELAUNCH an old listing — /list?relaunch=ITEMID (from the Active page) ───
+async function _relaunchEndOld() {
+  const r = window._relaunch; if (!r) return;
+  window._relaunch = null;
+  try {
+    const x = await fetch('/api/relaunch/end/' + encodeURIComponent(r.itemId), { method: 'POST' });
+    const j = await x.json().catch(() => ({}));
+    if (!x.ok) throw new Error(j.error || ('server ' + x.status));
+    showNotif('\u2713 Old listing ' + r.itemId + ' ended');
+  } catch (e) { showNotif('\u26a0 The new listing is live, but the old one (' + r.itemId + ') did not end: ' + (e.message || 'try again') + ' \u2014 end it on eBay', true); }
+}
+function _rlClean(t) { return String(t || '').replace(/[\u{1F000}-\u{1FFFF}\u{2190}-\u{2BFF}\u{FE00}-\u{FE0F}\u200D]/gu, ' ').replace(/\s+/g, ' ').trim(); }
+function _rlIsYears(v) { v = String(v).trim(); return /^(19|20)\d\d(\s*[-\u2013\u2014\/]\s*((19|20)?\d\d))?$/.test(v) || /^\d\d\s*[-\u2013\u2014\/]\s*\d\d$/.test(v); }
+function _rlPickPN(c) { const plain = c.filter(v => !/[\s\-]/.test(v)); if (plain.length) return plain.reduce((a, b) => b.length > a.length ? b : a); return c[0] || ''; }
+function _rlPN(title, specifics) {   // part number: title first, then the listing's part number fields (first value, no-dash/space preferred)
+  const fromTitle = _rlClean(title).split(/[\s,;()]+/).map(t => t.replace(/^[^A-Za-z0-9]+|[^A-Za-z0-9]+$/g, '')).filter(t => t.length >= 5 && (t.match(/\d/g) || []).length >= 4 && !_rlIsYears(t));
+  if (fromTitle.length) return _rlPickPN(fromTitle);
+  for (const nm of ['manufacturer part number', 'interchange part number', 'oe/oem part number', 'part number', 'oem part number']) {
+    const f = (specifics || []).find(sp => String(sp.name).toLowerCase() === nm && sp.value && !/^(does not apply|n\/a|unknown)$/i.test(String(sp.value).trim()));
+    if (f) { const c = String(f.value).split(/\s+\/\s+|[,;|\n]/).map(z => z.trim()).filter(z => z.length >= 4 && /\d/.test(z) && !_rlIsYears(z)); if (c.length) return _rlPickPN(c); }
+  }
+  return '';
+}
+function _rlVehicle(title) {   // "2017 - 2021 KIA SPORTAGE TAILGATE ..." -> year / make / model / the rest
+  let t = _rlClean(title), year = '';
+  const m = t.match(/^((?:19|20)\d\d)(?:\s*(?:-|\u2013|\u2014|to)\s*(?:(?:19|20)?\d\d))?\s+/i) || t.match(/^(\d\d)\s*[-\u2013\u2014]\s*\d\d\s+/);
+  if (m) { year = m[1].length === 2 ? ((+m[1] > 50 ? '19' : '20') + m[1]) : m[1]; t = t.slice(m[0].length); }
+  const w = t.split(' '), make = w.shift() || '', model = w.shift() || '';
+  return { year, make, model, rest: w.join(' ').replace(/\b(OEM|GENUINE)\b/gi, '').replace(/\s+/g, ' ').trim() };
+}
+async function resumeRelaunchFromUrl() {
+  let q; try { q = new URLSearchParams(location.search); } catch (e) { return; }
+  const id = String(q.get('relaunch') || '').replace(/\D/g, ''); if (!id) return;
+  try { history.replaceState(null, '', location.pathname); } catch (e) { /* fine */ }
+  showNotif('Loading the old listing…');
+  try {
+    const r = await fetch('/api/active/item/' + id); const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || ('server ' + r.status));
+    const files = [];
+    for (let i = 0; i < (d.photos || []).length; i++) {
+      const pr = await fetch('/api/relaunch/photo/' + id + '/' + i); if (!pr.ok) throw new Error('photo ' + (i + 1) + ' could not be loaded');
+      const blob = await pr.blob(); files.push(new File([blob], 'photo' + (i + 1) + '.jpg', { type: blob.type || 'image/jpeg' }));
+    }
+    resetForm(); uploadedFiles = files; try { renderPhotoStrip(); } catch (e) {}
+    window._relaunch = { itemId: id, title: d.title };
+    const pn = _rlPN(d.title, d.specifics);
+    if (pn) { setMode('partnumber'); document.getElementById('part-number').value = pn; }
+    else {
+      setMode('nopartnumber'); const v = _rlVehicle(d.title);
+      document.getElementById('np-vehicle').value = [v.year, v.make, v.model].filter(Boolean).join(' '); try { parseVehicleInput(); } catch (e) {}
+      document.getElementById('np-desc').value = v.rest; try { updateNoPartSearch(); } catch (e) {}
+    }
+    const sk = document.getElementById('sku-bin'); if (sk && d.sku) sk.value = d.sku.replace(/\s*YOLO$/i, '').trim();
+    const days = d.start ? Math.floor((Date.now() - new Date(d.start).getTime()) / 86400000) : null;
+    const b = document.getElementById('relaunch-banner');
+    if (b) {
+      b.style.display = 'flex';
+      b.innerHTML = '<span><b>Relaunching</b> ' + (days != null ? '(' + days + ' days old, $' + Number(d.price || 0).toFixed(2) + ')' : '') + ' \u2014 ' + String(d.title || '').replace(/</g, '&lt;') + '<br><small style="color:var(--muted)">The old listing ends after the new one is live.' + (settings.emojiRelaunch ? '' : ' Set the Relaunched emoji in Settings to mark it.') + '</small></span><a href="/active" class="btn btn-secondary btn-sm" style="margin-left:auto;text-decoration:none;font-size:11px;padding:4px 10px;">Back to Active</a>';
+    }
+    if (files.length && typeof runOCR === 'function' && !pn) { /* the vehicle is already filled in; scan only on request */ }
+    showNotif('\u2713 Old listing loaded \u2014 check the part, pick listings and set a new price');
+    setTimeout(() => window.scrollTo({ top: 0, behavior: 'instant' }), 50);
+  } catch (e) { showNotif('\u26a0 Could not load that listing \u2014 ' + (e && e.message ? e.message : 'try again'), true); }
+}
 // /list?draft=12 (Resume) or /list?draft=12&rescan=1 (Start over with the photos) — from the Drafts page
 async function resumeDraftFromUrl() {
   let q; try { q = new URLSearchParams(location.search); } catch (e) { return; }
@@ -9568,7 +9653,7 @@ async function resumeDraftFromUrl() {
 //   finally { window._workRestoring = false; window._workReady = true; workSaveNow(); }
 // }
 let _workDB = null, _workSig = null, _workBusy = false;
-const _bootHadDraft = /[?&]draft=/.test(location.search);   // opened from the Drafts page: that draft wins
+const _bootHadDraft = /[?&](draft|relaunch)=/.test(location.search);   // opened from the Drafts page: that draft wins
 // v402: the photos are stored one by one (store 'p', each under its own key) and written FIRST, as soon as they are added; the fields go in store 'w'.
 // (v400 wrote everything as one big record, which could be lost if it was still being written when you left the page.)
 function _workOpen() {

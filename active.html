@@ -3,8 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Active v396</title>
+<title>PartsLister Pro Active v397</title>
 <!-- v387: click a listing → your own eBay-style view (big photos with arrows, price, shipping, condition, item specifics, description); sharper list photos; shipping on the rows when eBay gives it. -->
+<!-- v397: Relaunch button on live rows (opens the Listing Tool with the old listing's photos and part/vehicle filled in). -->
 <!-- v396: with several part numbers, prefer the one with no dashes/spaces. -->
 <!-- v395: several part numbers in one title/field -> use the first one (split on ' / ', commas, semicolons). -->
 <!-- v394: two-digit year ranges (12-16) are never a part number. -->
@@ -247,7 +248,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v396</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v397</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -742,7 +743,7 @@ pageCache.rerun = () => { loadListings(false); loadDaily(false); };   // v380: f
         '<div class="ebl-price">' + money(x.price) + (x.shipping != null ? '<small>' + (x.shipping === 0 ? 'Free shipping' : '+ ' + money(x.shipping) + ' shipping') + '</small>' : '') + (x.qty > 1 ? '<small>' + x.qty + ' available</small>' : '') + '</div>' +
         '<div class="ebl-sub">' + (n != null ? 'Listed <b>' + n + (n === 1 ? ' day' : ' days') + '</b> ago' : '') + (x.watchers ? ' · <b>' + x.watchers + '</b> watching' : '') + '</div>' +
         (x.sku ? '<div class="ebl-sub">SKU ' + esc(x.sku) + '</div>' : '') +
-        '<div class="ebl-chk"><button onclick="llCheck(\'' + esc(x.itemId) + '\',0)">Check Active</button><button onclick="llCheck(\'' + esc(x.itemId) + '\',1)">Check Sold</button></div></div></div>';
+        '<div class="ebl-chk"><button onclick="llCheck(\'' + esc(x.itemId) + '\',0)">Check Active</button><button onclick="llCheck(\'' + esc(x.itemId) + '\',1)">Check Sold</button><button onclick="location.href=\'/list?relaunch=' + esc(x.itemId) + '\'" title="Recreate this listing in the Listing Tool with its photos; the old one ends once the new one is live">Relaunch</button></div></div></div>';
     }).join('');
     g('ll-more').style.display = a.length > llShown ? 'inline-block' : 'none';
   };
