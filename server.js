@@ -1,4 +1,4 @@
-// PartsLister Pro server — v434
+// PartsLister Pro server — v435
 // v409: yard tickets — the whole-ticket text look and the Look checkboxes are gone; every text row and the logo each have the full set of sliders (boldness, thinner, lighter, weathered, gravel, fuzzy, faded gray, spots).
 // v408: yard tickets — each text row has a Look checkbox (row.useLook, default on): the whole-ticket text look only changes the rows that are checked.
 // v406: yard tickets — a whole-ticket Boldness for the text (design.textLook.bold) and a Lighter slider for the logo (less ink).
@@ -434,6 +434,20 @@ async function setupDatabase() {
     ALTER TABLE yolo_listings ADD COLUMN IF NOT EXISTS image TEXT;               -- v428
     ALTER TABLE yolo_listings ADD COLUMN IF NOT EXISTS sold_price NUMERIC(10,2); -- v428
     ALTER TABLE yolo_listings ADD COLUMN IF NOT EXISTS sold_at TIMESTAMPTZ;      -- v428
+    -- v435: FLAGGED listings — a reminder to do something about a listing (nothing changes on eBay)
+    CREATE TABLE IF NOT EXISTS listing_flags (
+      id         SERIAL PRIMARY KEY,
+      user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      item_id    TEXT NOT NULL,
+      title      TEXT NOT NULL DEFAULT '',
+      sku        TEXT NOT NULL DEFAULT '',
+      price      NUMERIC(10,2),
+      image      TEXT,
+      reason     TEXT NOT NULL DEFAULT 'other',
+      note       TEXT NOT NULL DEFAULT '',
+      flagged_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      UNIQUE (user_id, item_id)
+    );
     -- v422: LISTING DRAFTS — a half-finished listing saved from the Listing Tool (all fields in snap, photos in their own table), up to 50 per account
     CREATE TABLE IF NOT EXISTS listing_drafts (
       id          SERIAL PRIMARY KEY,
@@ -4410,6 +4424,45 @@ async function yoloSync(userId) {
     } catch (e) { console.error('[yolo sync item]', r.item_id, e.message); }
   }
 }
+// v435: flagged listings (reminders). Reasons are fixed.
+const FLAG_REASONS = ['trash', 'missing_pn', 'defect', 'other'];
+app.get('/api/flags', requireUser, async (req, res) => {
+  try {
+    const rows = (await pool.query('SELECT item_id, title, sku, price, image, reason, note, flagged_at FROM listing_flags WHERE user_id = $1 ORDER BY flagged_at DESC', [req.user.id])).rows;
+    res.json({ items: rows.map(r => ({ itemId: r.item_id, title: r.title, sku: r.sku, price: r.price == null ? null : Number(r.price), image: r.image, reason: r.reason, note: r.note, flaggedAt: r.flagged_at })) });
+  } catch (e) { console.error('[flags list]', e.message); res.status(500).json({ error: 'Could not load your flagged listings' }); }
+});
+app.post('/api/flags', requireUser, express.json({ limit: '20kb' }), async (req, res) => {
+  try {
+    const b = req.body || {}, clip = (v, n) => String(v === undefined || v === null ? '' : v).slice(0, n);
+    const itemId = clip(b.itemId, 30).replace(/\D/g, ''); if (!itemId) return res.status(400).json({ error: 'Missing item number' });
+    const reason = FLAG_REASONS.includes(b.reason) ? b.reason : 'other';
+    const price = Number.isFinite(parseFloat(b.price)) ? parseFloat(b.price) : null;
+    const image = /^https:\/\//.test(String(b.image || '')) ? clip(b.image, 500) : null;
+    await pool.query(
+      `INSERT INTO listing_flags (user_id, item_id, title, sku, price, image, reason, note, flagged_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8, now())
+       ON CONFLICT (user_id, item_id) DO UPDATE SET title = EXCLUDED.title, sku = EXCLUDED.sku, price = EXCLUDED.price, image = COALESCE(EXCLUDED.image, listing_flags.image), reason = EXCLUDED.reason, note = EXCLUDED.note, flagged_at = now()`,
+      [req.user.id, itemId, clip(b.title, 200), clip(b.sku, 60), price, image, reason, clip(b.note, 300)]);
+    res.json({ ok: true });
+  } catch (e) { console.error('[flags save]', e.message); res.status(500).json({ error: 'Could not save the flag' }); }
+});
+app.post('/api/flags/:itemId/done', requireUser, async (req, res) => {
+  try {
+    await pool.query('DELETE FROM listing_flags WHERE user_id = $1 AND item_id = $2', [req.user.id, String(req.params.itemId || '').replace(/\D/g, '')]);
+    res.json({ ok: true });
+  } catch (e) { console.error('[flags done]', e.message); res.status(500).json({ error: 'Could not clear the flag' }); }
+});
+// optional: end the listing on eBay (only when the button is pressed), then clear the flag
+app.post('/api/flags/:itemId/end', requireUser, async (req, res) => {
+  try {
+    const id = String(req.params.itemId || '').replace(/\D/g, ''); if (!id) return res.status(400).json({ error: 'Missing item number' });
+    await tradingCall(req.user.id, 'EndFixedPriceItem', `<ItemID>${id}</ItemID><EndingReason>NotAvailable</EndingReason>`, '100');
+    try { await pool.query("UPDATE yolo_listings SET status = 'ended' WHERE user_id = $1 AND item_id = $2 AND status = 'active'", [req.user.id, id]); } catch (e) { /* not a YOLO one */ }
+    await pool.query('DELETE FROM listing_flags WHERE user_id = $1 AND item_id = $2', [req.user.id, id]);
+    liveCache.delete(req.user.id);
+    res.json({ ok: true });
+  } catch (e) { console.error('[flags end]', e.message); res.status(502).json({ error: 'eBay did not end the listing: ' + e.message }); }
+});
 app.get('/api/yolo', requireUser, async (req, res) => {
   try {
     try { await yoloSync(req.user.id); } catch (e) { console.error('[yolo sync]', e.message); }   // a failed check never blocks the list
@@ -5754,5 +5807,5 @@ setupDatabase()
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v426 listening on ' + PORT)))   // v427
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v427 listening on ' + PORT)))   // v428
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v428 listening on ' + PORT)))   // v429
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v434 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v435 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });

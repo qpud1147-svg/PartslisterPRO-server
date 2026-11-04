@@ -3,8 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Active v399</title>
+<title>PartsLister Pro Active v400</title>
 <!-- v387: click a listing → your own eBay-style view (big photos with arrows, price, shipping, condition, item specifics, description); sharper list photos; shipping on the rows when eBay gives it. -->
+<!-- v400: Flagged tab (reminders: Trash it / Missing part number / Defect / Other + note; Done; End listing on Trash flags) and a Flag button on rows. -->
 <!-- v399: tabs Active · YOLO · Sold · Ended · Drafts. Sold = all sales, Ended = unsold endings (eBay's ~60 days); Drafts redone as eBay-style rows. -->
 <!-- v397: Relaunch button on live rows (opens the Listing Tool with the old listing's photos and part/vehicle filled in). -->
 <!-- v396: with several part numbers, prefer the one with no dashes/spaces. -->
@@ -249,7 +250,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v399</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v400</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -285,6 +286,7 @@
     <button type="button" id="seg-yolo" aria-pressed="false" onclick="setView('yolo')">YOLO</button>
     <button type="button" id="seg-sold" aria-pressed="false" onclick="setView('sold')">Sold</button>
     <button type="button" id="seg-ended" aria-pressed="false" onclick="setView('ended')">Ended</button>
+    <button type="button" id="seg-flagged" aria-pressed="false" onclick="setView('flagged')">Flagged<span class="cnt" id="flag-n"></span></button>
     <button type="button" id="seg-drafts" aria-pressed="false" onclick="setView('drafts')">Drafts<span class="cnt" id="drafts-n"></span></button>   <!-- v434: order Active · YOLO · Sold · Ended · Drafts -->
   </div>
   <div class="page-note" style="display:none"><span id="l-note">&nbsp;</span> <button type="button" id="l-refresh" onclick="refreshListings()">Refresh from eBay</button></div>   <!-- v382: replaced by the box above -->
@@ -362,6 +364,12 @@
     <div class="error-box" id="so-error" style="display:none"></div>
     <div id="so-list"></div>
   </div>
+  <div id="view-flagged" hidden>
+    <div class="dr-note" id="fl-note">&nbsp;</div>
+    <div class="error-box" id="fl-error" style="display:none"></div>
+    <div id="fl-list"></div>
+  </div>
+  <div id="fl-ov" class="ld-ov" hidden onclick="if(event.target===this)flagClose()"><div class="ld" style="max-width:420px" id="fl-box"></div></div>
   <div id="view-ended" hidden>
     <div class="dr-note" id="en-note">&nbsp;</div>
     <div class="error-box" id="en-error" style="display:none"></div>
@@ -689,7 +697,7 @@ pageCache.rerun = () => { loadListings(false); loadDaily(false); };   // v380: f
     }
   };
   // v386: Live listings on the Active view
-  let llAll = [], llShown = 0, soAll = [], enAll = [];
+  let llAll = [], llShown = 0, soAll = [], enAll = [], flAll = [];
   const LL_PAGE = 50;
   const llFiltered = () => {
     const q = (g('ll-q').value || '').trim().toLowerCase(), so = g('ll-sort').value;
@@ -764,7 +772,7 @@ pageCache.rerun = () => { loadListings(false); loadDaily(false); };   // v380: f
         '<div class="ebl-price">' + money(x.price) + (x.shipping != null ? '<small>' + (x.shipping === 0 ? 'Free shipping' : '+ ' + money(x.shipping) + ' shipping') + '</small>' : '') + (x.qty > 1 ? '<small>' + x.qty + ' available</small>' : '') + '</div>' +
         '<div class="ebl-sub">' + (n != null ? 'Listed <b>' + n + (n === 1 ? ' day' : ' days') + '</b> ago' : '') + (x.watchers ? ' · <b>' + x.watchers + '</b> watching' : '') + '</div>' +
         (x.sku ? '<div class="ebl-sub">SKU ' + esc(x.sku) + '</div>' : '') +
-        '<div class="ebl-chk"><button onclick="llCheck(\'' + esc(x.itemId) + '\',0)">Check Active</button><button onclick="llCheck(\'' + esc(x.itemId) + '\',1)">Check Sold</button><button onclick="location.href=\'/list?relaunch=' + esc(x.itemId) + '\'" title="Recreate this listing in the Listing Tool with its photos; the old one ends once the new one is live">Relaunch</button></div></div></div>';
+        '<div class="ebl-chk"><button onclick="llCheck(\'' + esc(x.itemId) + '\',0)">Check Active</button><button onclick="llCheck(\'' + esc(x.itemId) + '\',1)">Check Sold</button><button onclick="location.href=\'/list?relaunch=' + esc(x.itemId) + '\'" title="Recreate this listing in the Listing Tool with its photos; the old one ends once the new one is live">Relaunch</button><button onclick="flagOpen(\'' + esc(x.itemId) + '\')" title="Remind me to do something about this item">Flag</button></div></div></div>';
     }).join('');
     g('ll-more').style.display = a.length > llShown ? 'inline-block' : 'none';
   };
@@ -783,7 +791,7 @@ pageCache.rerun = () => { loadListings(false); loadDaily(false); };   // v380: f
   };
   // v434: Sold (all your sales) and Ended (listings that ran out without selling) — whatever eBay still gives us (about 60 days)
   const daysBetween = (a, b) => (a && b) ? Math.max(0, Math.round((new Date(b) - new Date(a)) / 86400000)) : null;
-  const chkBtns = x => '<div class="ebl-chk"><button onclick="llCheck(\'' + esc(x.itemId) + '\',0)">Check Active</button><button onclick="llCheck(\'' + esc(x.itemId) + '\',1)">Check Sold</button>' + (x.__relaunch ? '<button onclick="location.href=\'/list?relaunch=' + esc(x.itemId) + '&ended=1\'" title="Recreate this listing in the Listing Tool with its photos">Relaunch</button>' : '') + '</div>';
+  const chkBtns = x => '<div class="ebl-chk"><button onclick="llCheck(\'' + esc(x.itemId) + '\',0)">Check Active</button><button onclick="llCheck(\'' + esc(x.itemId) + '\',1)">Check Sold</button>' + '<button onclick="flagOpen(\'' + esc(x.itemId) + '\')">Flag</button>' + (x.__relaunch ? '<button onclick="location.href=\'/list?relaunch=' + esc(x.itemId) + '&ended=1\'" title="Recreate this listing in the Listing Tool with its photos">Relaunch</button>' : '') + '</div>';
   const hFail = (id, m) => { const e = g(id); e.textContent = m; e.style.display = 'block'; };
   async function histLoad(kind, force) {
     const sold = kind === 'sold', P = sold ? 'so' : 'en';
@@ -810,8 +818,61 @@ pageCache.rerun = () => { loadListings(false); loadDaily(false); };   // v380: f
         (x.sku ? '<div class="ebl-sub">SKU ' + esc(x.sku) + '</div>' : '') + chkBtns(x) + '</div></div>';
     }).join('') + (a.length > histShown[kind] ? '<button class="btn btn-secondary btn-sm" style="margin-top:10px" onclick="histMore(\'' + kind + '\')">Show more</button>' : '');
   }
+  // v435: FLAGGED — a reminder list (nothing changes on eBay). Reasons are fixed.
+  const FLAG_WHY = { trash: 'Trash it', missing_pn: 'Missing part number', defect: 'Defect', other: 'Other' };
+  const fhFail = m => { const e = g('fl-error'); e.textContent = m; e.style.display = 'block'; };
+  async function flLoad() {
+    g('fl-error').style.display = 'none';
+    try {
+      const r = await fetch('/api/flags'); const j = await r.json().catch(() => ({}));
+      if (r.status === 404) { fhFail('The server is out of date — upload the newest server.js to Railway.'); return; }
+      if (!r.ok) throw new Error(j.error || ('server ' + r.status));
+      flAll = j.items || []; flRender();
+    } catch (e) { g('fl-note').textContent = ''; fhFail(e.message || 'Could not load flagged listings.'); }
+  }
+  function flRender() {
+    g('flag-n').textContent = flAll.length ? flAll.length : '';
+    g('fl-note').textContent = flAll.length ? flAll.length + ' flagged — things you still need to do' : 'Nothing flagged. Use the Flag button on a listing to remind yourself.';
+    g('fl-list').innerHTML = flAll.map(x => {
+      const when = x.flaggedAt ? Math.floor((Date.now() - new Date(x.flaggedAt).getTime()) / 86400000) : null;
+      return '<div class="ebl">' + photo(x) + '<div class="ebl-body"><div class="ebl-title"><a href="#" onclick="openListing(\'' + esc(x.itemId) + '\');return false">' + esc(x.title || ('Item ' + x.itemId)) + '</a></div>' +
+        '<div class="ebl-price">' + (x.price != null ? money(x.price) : '') + '</div>' +
+        '<div class="ebl-sub"><b style="color:#ff6b66">' + esc(FLAG_WHY[x.reason] || 'Other') + '</b>' + (x.note ? ' — ' + esc(x.note) : '') + (when != null ? ' · flagged ' + (when === 0 ? 'today' : when + (when === 1 ? ' day' : ' days') + ' ago') : '') + '</div>' +
+        (x.sku ? '<div class="ebl-sub">SKU ' + esc(x.sku) + '</div>' : '') + '</div>' +
+        '<div class="ebl-btns"><button class="btn btn-sm" style="background:var(--accent);color:#000" onclick="flagDone(\'' + esc(x.itemId) + '\')">Done</button>' +
+        (x.reason === 'trash' ? '<button class="btn btn-secondary btn-sm" onclick="flagEnd(\'' + esc(x.itemId) + '\')" title="Ends the listing on eBay — only after you have the part in hand">End listing</button>' : '') + '</div></div>';
+    }).join('');
+  }
+  window.flagDone = async function (id) {
+    try { const r = await fetch('/api/flags/' + id + '/done', { method: 'POST' }); if (!r.ok) throw 0; flAll = flAll.filter(x => x.itemId !== id); flRender(); }
+    catch (e) { fhFail('Could not clear the flag — try again.'); }
+  };
+  window.flagEnd = async function (id) {
+    if (!confirm('End this listing on eBay now? Only do this once you have found the item.')) return;
+    try { const r = await fetch('/api/flags/' + id + '/end', { method: 'POST' }); const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || ('server ' + r.status)); flAll = flAll.filter(x => x.itemId !== id); llAll = llAll.filter(x => x.itemId !== id); flRender(); }
+    catch (e) { fhFail(e.message || 'Could not end the listing.'); }
+  };
+  window.flagClose = function () { g('fl-ov').hidden = true; };
+  window.flagOpen = function (id) {
+    const x = [llAll, soAll, enAll, flAll].reduce((f, a) => f || a.find(i => String(i.itemId) === String(id)), null); if (!x) return;
+    g('fl-box').innerHTML = '<button class="ld-x" onclick="flagClose()" title="Close">×</button><div class="ld-title" style="font-size:16px;padding-right:30px">Flag this item</div><div class="ld-row" style="margin:6px 0 10px">' + esc(x.title || id) + '</div>' +
+      Object.keys(FLAG_WHY).map((k, i) => '<label style="display:block;padding:5px 0;cursor:pointer"><input type="radio" name="fl-why" value="' + k + '"' + (i === 0 ? ' checked' : '') + '> ' + esc(FLAG_WHY[k]) + '</label>').join('') +
+      '<input id="fl-note-in" type="text" maxlength="300" placeholder="Note (optional)" style="width:100%;margin:8px 0;padding:6px 8px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--text)">' +
+      '<button class="btn btn-sm" style="background:var(--accent);color:#000" id="fl-save">Flag it</button>';
+    g('fl-ov').hidden = false;
+    g('fl-save').onclick = async () => {
+      const why = (document.querySelector('input[name="fl-why"]:checked') || {}).value || 'other';
+      g('fl-save').disabled = true;
+      try {
+        const r = await fetch('/api/flags', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ itemId: id, title: x.title, sku: x.sku, price: x.price, image: x.image, reason: why, note: g('fl-note-in').value.trim() }) });
+        if (!r.ok) throw 0; flagClose(); flLoad();
+      } catch (e) { g('fl-save').disabled = false; alert('Could not save the flag — try again.'); }
+    };
+  };
+  fetch('/api/flags').then(r => r.ok ? r.json() : null).then(d => { if (d) { flAll = d.items || []; g('flag-n').textContent = flAll.length ? flAll.length : ''; } }).catch(() => {});
   window.setView = function (v) {
-    const dr = v === 'drafts', yo = v === 'yolo', so = v === 'sold', en = v === 'ended', other = dr || yo || so || en;
+    const dr = v === 'drafts', yo = v === 'yolo', so = v === 'sold', en = v === 'ended', fl = v === 'flagged', other = dr || yo || so || en || fl;
+    g('view-flagged').hidden = !fl; g('seg-flagged').setAttribute('aria-pressed', fl ? 'true' : 'false'); if (fl) flLoad();
     g('view-active').hidden = other; g('view-drafts').hidden = !dr; g('view-yolo').hidden = !yo; g('view-sold').hidden = !so; g('view-ended').hidden = !en;
     g('seg-sold').setAttribute('aria-pressed', so ? 'true' : 'false'); g('seg-ended').setAttribute('aria-pressed', en ? 'true' : 'false');
     g('seg-active').setAttribute('aria-pressed', other ? 'false' : 'true'); g('seg-drafts').setAttribute('aria-pressed', dr ? 'true' : 'false'); g('seg-yolo').setAttribute('aria-pressed', yo ? 'true' : 'false');
@@ -828,6 +889,7 @@ pageCache.rerun = () => { loadListings(false); loadDaily(false); };   // v380: f
   if (/[?&]view=yolo\b/.test(location.search)) window.setView('yolo');
   if (/[?&]view=sold\b/.test(location.search)) window.setView('sold');
   if (/[?&]view=ended\b/.test(location.search)) window.setView('ended');
+  if (/[?&]view=flagged\b/.test(location.search)) window.setView('flagged');
   setTimeout(() => window.llLoad(false), 1500);   // v386: the live list loads a moment after the page
 })();
 
