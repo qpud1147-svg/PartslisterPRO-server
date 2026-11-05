@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Returns v405</title>
+<title>PartsLister Pro Returns v408</title>
 <!-- v382: switching views is instant; browser reload / Refresh really reloads. v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
 <!-- PartsLister Pro — Returns page (v324: new). Returns, "item not received" claims and cases from
      eBay's Post-Order API, read live (nothing saved on the server). Approve / decline / refund from here.
@@ -328,7 +328,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v405</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v408</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -410,7 +410,7 @@
 // v382: switching views on a page (Open/Closed, Buyers/From eBay, 7/31/90 days…) uses the saved copy too.
 //       Reloading the browser page, or pressing a Refresh button, really reloads from eBay.
 const pageCache = { urls: [], rerun: null, liveUntil: 0, live() { this.liveUntil = Date.now() + 3000; } };
-try { if ((performance.getEntriesByType('navigation')[0] || {}).type === 'reload') pageCache.liveUntil = Date.now() + 5000; } catch (e) { /* fine */ }
+// v408: reloading the browser page keeps using the saved copy too (the check for new data starts at once); Refresh buttons still force a real pull
 (function () {
   const realFetch = window.fetch.bind(window);
   const KEY = 'plp-cache:';
@@ -418,11 +418,11 @@ try { if ((performance.getEntriesByType('navigation')[0] || {}).type === 'reload
   let pending = 0, changed = false;
   const isGet = (opt) => !opt || !opt.method || String(opt.method).toUpperCase() === 'GET';
   const want = (url, opt) => typeof url === 'string' && isGet(opt) && pageCache.urls.some(r => r.test(url));
-  const read = (url) => { try { return sessionStorage.getItem(KEY + url); } catch (e) { return null; } };
-  const write = (url, text) => { try { if (!/"(loading|checking)":true/.test(text)) sessionStorage.setItem(KEY + url, text); } catch (e) { /* full or blocked — fine */ } };
+  const read = (url) => { try { return localStorage.getItem(KEY + url); } catch (e) { return null; } };
+  const write = (url, text) => { try { if (!/"(loading|checking)":true/.test(text)) localStorage.setItem(KEY + url, text); } catch (e) { /* full or blocked — fine */ } };
   const asResponse = (text) => new Response(text, { status: 200, headers: { 'Content-Type': 'application/json' } });
   const signedIn = (yes) => { try { if (yes) sessionStorage.setItem('plp-signed-in', '1'); else sessionStorage.removeItem('plp-signed-in'); } catch (e) { /* fine */ } };   // v381
-  const clearAll = () => { try { Object.keys(sessionStorage).filter(k => k.startsWith('plp-')).forEach(k => sessionStorage.removeItem(k)); } catch (e) { /* fine */ } };
+  const clearAll = () => { try { Object.keys(sessionStorage).filter(k => k.startsWith('plp-')).forEach(k => sessionStorage.removeItem(k)); } catch (e) { /* fine */ } try { Object.keys(localStorage).filter(k => k.startsWith('plp-cache:') || k === 'plp_daily' || k === 'plp_sum').forEach(k => localStorage.removeItem(k)); } catch (e) { /* fine */ } };   // v408: the saved copies live in localStorage
   const watch = (url, r) => { if (url === '/api/me') { if (r.status === 200) signedIn(true); else if (r.status === 401) clearAll(); } };   // v381
   window.fetch = async function (url, opt) {
     if (typeof url === 'string' && url === '/api/logout') clearAll();
@@ -439,7 +439,7 @@ try { if ((performance.getEntriesByType('navigation')[0] || {}).type === 'reload
           watch(url, r);
           const text = await r.text();
           if (r.status === 200) write(url, text);
-          else { try { sessionStorage.removeItem(KEY + url); } catch (e) { /* fine */ } }
+          else { try { localStorage.removeItem(KEY + url); } catch (e) { /* fine */ } }
           fresh.set(url, { at: Date.now(), status: r.status, text });
           if (r.status !== 200 || text !== saved) changed = true;
         }).catch(() => {}).finally(() => {
