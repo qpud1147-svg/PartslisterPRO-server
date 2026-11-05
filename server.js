@@ -1,4 +1,4 @@
-// PartsLister Pro server — v441
+// PartsLister Pro server — v442
 // v409: yard tickets — the whole-ticket text look and the Look checkboxes are gone; every text row and the logo each have the full set of sliders (boldness, thinner, lighter, weathered, gravel, fuzzy, faded gray, spots).
 // v408: yard tickets — each text row has a Look checkbox (row.useLook, default on): the whole-ticket text look only changes the rows that are checked.
 // v406: yard tickets — a whole-ticket Boldness for the text (design.textLook.bold) and a Lighter slider for the logo (less ink).
@@ -2039,6 +2039,26 @@ app.get('/api/items/thumbs', requireUser, async (req, res) => {
     console.error('[thumbs]', e);
     res.status(500).json({ error: 'Could not load photos' });
   }
+});
+
+// v442: shows exactly what eBay gives for one listing's SKU (open /api/sku-check/<item number> in the browser)
+app.get('/api/sku-check/:id', requireUser, async (req, res) => {
+  const id = String(req.params.id || '');
+  if (!/^\d{6,20}$/.test(id)) return res.status(400).json({ error: 'Bad item number' });
+  try {
+    const out = { itemId: id };
+    const c = await pool.query('SELECT data FROM ebay_items WHERE user_id = $1 AND item_id = $2', [req.user.id, id]);
+    out.savedCopyHasSkuKey = !!(c.rows[0] && c.rows[0].data && 'sku' in c.rows[0].data);
+    out.savedCopySku = c.rows[0] && c.rows[0].data ? c.rows[0].data.sku : undefined;
+    const xml = await tradingCall(req.user.id, 'GetItem', `<ItemID>${id}</ItemID><DetailLevel>ReturnAll</DetailLevel>`);
+    const item = xmlTag(xml, 'Item') || '';
+    out.freshGetItemSku = xmlDecode(xmlTag(item, 'SKU') || '') || null;
+    out.variationSkus = xmlAll(item, 'SKU').map(xmlDecode);
+    out.itemFound = !!item;
+    const q = await pool.query("SELECT sku FROM ebay_order_items WHERE user_id = $1 AND item_id = $2 LIMIT 3", [req.user.id, id]);
+    out.orderSkus = q.rows.map(r => r.sku);
+    res.json(out);
+  } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
 });
 
 // Everything about one item, for the order detail view

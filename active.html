@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Active v404</title>
+<title>PartsLister Pro Active v405</title>
 <!-- v387: click a listing → your own eBay-style view (big photos with arrows, price, shipping, condition, item specifics, description); sharper list photos; shipping on the rows when eBay gives it. -->
 <!-- v403: Value chart: calculated-shipping listings use your average shipping from recent orders (30 days, else 90); fee/tax rates also 30 days (else 90); note says so. -->
 <!-- v402: listings-per-day chart gets a Listings | Value switch; in Value mode a 3-way switch: You keep / Listed / Buyer pays (price + shipping per quantity; fee and tax rates from your own last 90 days of orders). -->
@@ -257,7 +257,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v404</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v405</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -814,7 +814,9 @@ pageCache.rerun = () => { loadListings(false); loadDaily(false); };   // v380: f
         chunk.forEach(id => { skuTried[id] = 1; if (d.skus[id]) { const it = llAll.find(z => z.itemId === id); if (it) { it.sku = d.skus[id]; changed = true; } } });
       }
     } finally { skuBusy = false; }
-    if (changed) window.llRender(true);
+    const have = rows.filter(x => x.sku).length;
+    if (!/failed/.test(llStatus)) llStatus = 'SKUs on screen: ' + have + ' of ' + rows.length + (have < rows.length ? ' (the rest have none on eBay, or the lookup failed)' : '');
+    window.llRender(true);
   }
   window.llMore = function () { llShown += LL_PAGE; window.llRender(true); };
   // v437: the whole live list is kept in this browser (IndexedDB). Active opens instantly from that saved copy, then quietly checks eBay:
