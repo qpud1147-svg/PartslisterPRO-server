@@ -9,7 +9,7 @@
   // refresh, overriding anything init does.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 </script>
-<title>PartsLister Pro v439</title>
+<title>PartsLister Pro v442</title>
 <!-- v409: hover the green L to see exactly which listings (price + shipping) were averaged. -->
 <!-- v408: clearing a listing also clears the low-resolution / unreadable / too-many photo warnings. -->
 <!-- v407: a scan that finds no part number opens No Part Number by itself; a cleared listing starts on Has Part Number. -->
@@ -942,7 +942,7 @@
     <!-- v302: logo goes to the dashboard -->
     <a href="/" title="Dashboard" style="text-decoration:none;color:inherit;">
       <div class="logo"><span>PARTS</span>LISTER</div>
-      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v439</span></div>
+      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v442</span></div>
     </a>
     <!-- v303: removed — the logo is the dashboard button
     <a href="/" class="btn btn-secondary btn-sm" title="Back to your dashboard" style="font-size:11px;padding:4px 10px;text-decoration:none;margin-left:6px;">⌂ Dashboard</a>
@@ -3156,7 +3156,9 @@ async function runOCR() {
       if (parsed.bin) parts.push('<span style="color:var(--muted)">BIN: </span><strong style="color:var(--accent)">' + escHtml(parsed.bin) + '</strong>');
       if (parts.length) { npBox.innerHTML = parts.join('<br>'); npBox.style.display = 'block'; }
     }
-    if (parsed.partDesc) {
+    if (parsed.partDesc && window._relaunch && window._relaunchPart) {
+      // v442: relaunch — the part name read from the old title stays; the scan only finds the part number, SKU and bin
+    } else if (parsed.partDesc) {
       const cleanDesc = applyDescStrip(parsed.partDesc);
       document.getElementById('np-desc').value = cleanDesc;
       // Remember what the photo scan wrote, so Identify Part can tell an
@@ -3278,7 +3280,16 @@ function syncIdentifyBtn() {
   b.title = on ? 'Guess the part and vehicle from the photo' : 'Switch to No Part Number to use this';
 }
 function setMode(mode) {
+  const _prevMode = currentMode;
   currentMode = mode;
+  // v442: No Part Number clears the Part Number box (the number is kept aside); Has Part Number puts it back
+  try {
+    const _pn = document.getElementById('part-number');
+    if (_pn && mode !== _prevMode) {
+      if (mode === 'nopartnumber' && _pn.value.trim()) { window._pnStash = _pn.value; _pn.value = ''; updatePartNumber(); }
+      else if (mode === 'partnumber' && window._pnStash && !_pn.value.trim()) { _pn.value = window._pnStash; window._pnStash = ''; updatePartNumber(); }
+    }
+  } catch (e) { console.warn('part number stash', e); }
   window._modeAutoNP = false;   // v407: any switch clears the 'opened by the scan' mark (the scan sets it again after)
   syncIdentifyBtn();   // v406
   if (typeof _syncExactToggles === 'function') _syncExactToggles();   // v289
@@ -5755,7 +5766,8 @@ function exportCSV() {
 
 // ─── RESET FORM ───────────────────────────────────────────────────────────────
 function resetForm(shippingOverride) {
-  try { window._relaunch = null; window._relaunchVeh = null; const rb = document.getElementById('relaunch-banner'); if (rb) rb.style.display = 'none'; _rlLabels(); } catch (e) {}   // v432
+  window._pnStash = '';   // v442: a cleared page forgets the number kept aside by No Part Number mode
+  try { window._relaunch = null; window._relaunchVeh = null; window._relaunchPart = ''; const rb = document.getElementById('relaunch-banner'); if (rb) rb.style.display = 'none'; _rlLabels(); } catch (e) {}   // v432
   window._draftId = null; window._draftSig = null;   // v396: a cleared page is no longer any draft
   try { setMode('partnumber'); } catch (e) { /* fine */ }   // v407: a cleared page starts on Has Part Number again
   uploadedFiles = [];
