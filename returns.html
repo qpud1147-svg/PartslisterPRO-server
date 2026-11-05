@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Returns v404</title>
+<title>PartsLister Pro Returns v405</title>
 <!-- v382: switching views is instant; browser reload / Refresh really reloads. v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
 <!-- PartsLister Pro — Returns page (v324: new). Returns, "item not received" claims and cases from
      eBay's Post-Order API, read live (nothing saved on the server). Approve / decline / refund from here.
@@ -148,7 +148,7 @@
   .orders { display: flex; flex-direction: column; gap: 8px; }
   .o-thumb { width: 100%; height: 100%; object-fit: cover; display: block; }
   /* v404: listing row layout — same as the Active page */
-  .ebl { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 12px; display: flex; gap: 14px; align-items: stretch; cursor: pointer; }
+  .ebl { position: relative; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 12px; display: flex; gap: 14px; align-items: stretch; cursor: pointer; }
   .ebl:hover { border-color: #444; }
   .ebl.off { opacity: 0.55; }
   .ebl-img { flex: 0 0 132px; width: 132px; height: 132px; background: var(--surface2); border-radius: 4px; overflow: hidden; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 11px; }
@@ -160,6 +160,10 @@
   .ebl-price { font-size: 20px; font-weight: 700; }
   .ebl-price small { font-size: 12px; font-weight: 400; color: var(--muted); margin-left: 6px; }
   .ebl-sub { color: var(--muted); font-size: 12px; }
+  .ebl { position: relative; }
+  .ebl-n { position: absolute; right: 12px; top: 8px; font-size: 17px; font-weight: 700; color: var(--muted, #888); }
+  .ebl-sku-l { font-size: 17px; font-weight: 700; color: var(--accent); letter-spacing: 0.3px; line-height: 1.2; word-break: break-word; }
+  .ebl-sku-l small { font-size: 11px; font-weight: 600; color: var(--muted); letter-spacing: 1px; margin-right: 6px; text-transform: uppercase; }
   .ebl-sub b { color: var(--text); font-weight: 600; }
   .ebl-sub .chip { margin-top: 0; }
   @media (max-width: 700px) { .ebl { gap: 10px; } .ebl-img { flex-basis: 96px; width: 96px; height: 96px; } }
@@ -324,7 +328,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v404</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v405</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -600,7 +604,9 @@ function render() {
       : (items.length || lateView.length) ? 'Nothing matches.' : (view === 'open' ? 'No open returns, claims or cases. Nice.' : 'Nothing closed in the last 90 days.')));
     return;
   }
-  lateShown.forEach(x => box.append(lateRow(x)));   // v372
+  let rowNo = 0;
+  const numTo = (row) => { const n = el('span', 'ebl-n', String(++rowNo)); row.prepend(n); };
+  lateShown.forEach(x => { const lr = lateRow(x); numTo(lr); box.append(lr); });   // v372
   list.forEach(x => {
     const row = el('div', 'ebl');
     row.addEventListener('click', (e) => { if (!e.target.closest('a,button')) openDetail(x.kind + ':' + x.id); });
@@ -631,6 +637,7 @@ function render() {
     }
     const pc = el('span', 'chip ' + chipC, chipT); pc.style.marginLeft = '8px'; pc.style.verticalAlign = 'middle'; pr.append(pc);
     row.append(imgBox, mid);
+    numTo(row);
     box.append(row);
   });
   fillItems();
@@ -650,12 +657,13 @@ function eblPhoto(cls, itemId, pic) {
   if (itemId) { img.dataset.item = itemId; if (pic) setPhoto(img, pic); } else img.style.visibility = 'hidden';
   box.append(img); return box;
 }
+function skuFill(d, v) { d.textContent = ''; const sm = el('small', '', 'SKU'); d.append(sm, document.createTextNode(v)); }
 function eblSku(itemId, known) {
-  const d = el('div', 'ebl-sub ebl-sku'); if (itemId) d.dataset.sku = itemId;
-  const v = known || (itemId && skus[itemId]); if (v) d.textContent = 'SKU ' + v;
+  const d = el('div', 'ebl-sku-l ebl-sku'); if (itemId) d.dataset.sku = itemId;
+  const v = known || (itemId && skus[itemId]); if (v) skuFill(d, v);
   return d;
 }
-function showSkus(id) { document.querySelectorAll('.ebl-sku[data-sku="' + id + '"]').forEach(d => { if (skus[id] && !d.textContent) d.textContent = 'SKU ' + skus[id]; }); }
+function showSkus(id) { document.querySelectorAll('.ebl-sku[data-sku="' + id + '"]').forEach(d => { if (skus[id] && !d.textContent) skuFill(d, skus[id]); }); }
 
 // Item photos + titles (the server remembers them per item)
 let filling = false;
@@ -1163,7 +1171,7 @@ async function fillTypeItems(box, kind, type, q, limit, onAll) {
     const missing = (kind === 'returned' && typesData.store.returned === null) || (kind === 'listed' && typesData.store.listed === null);
     box.append(el('div', 't-note', missing ? 'eBay didn’t give this part last time — press the box at the top to try again.' : 'Nothing here in the last 90 days.')); return;
   }
-  items.slice(0, limit || 300).forEach(x => box.append(itemRow(kind, x)));
+  items.slice(0, limit || 300).forEach((x, ix) => { const ir = itemRow(kind, x); ir.prepend(el('span', 'ebl-n', String(ix + 1))); box.append(ir); });
   loadThumbs();
   if (items.length > (limit || 300)) {
     const more = el('div', 't-note');

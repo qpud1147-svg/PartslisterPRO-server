@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Orders v404</title>
+<title>PartsLister Pro Orders v405</title>
 <!-- v382: switching views is instant; browser reload / Refresh really reloads. v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
 <!-- PartsLister Pro — Orders page (v319: new). Your sold items from eBay, newest first.
      v320: item photos, and click an order to see the listing (photos, description, item specifics).
@@ -132,7 +132,7 @@
   .summary { color: var(--muted); font-size: 13px; margin-bottom: 10px; }
   .orders { display: flex; flex-direction: column; gap: 10px; }
   /* v404: listing row layout — same as the Active page */
-  .ebl { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 12px; display: flex; gap: 14px; align-items: stretch; cursor: pointer; }
+  .ebl { position: relative; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 12px; display: flex; gap: 14px; align-items: stretch; cursor: pointer; }
   .ebl:hover { border-color: #444; }
   .ebl.off { opacity: 0.55; }
   .ebl-img { flex: 0 0 132px; width: 132px; height: 132px; background: var(--surface2); border-radius: 4px; overflow: hidden; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 11px; }
@@ -144,6 +144,10 @@
   .ebl-price { font-size: 20px; font-weight: 700; }
   .ebl-price small { font-size: 12px; font-weight: 400; color: var(--muted); margin-left: 6px; }
   .ebl-sub { color: var(--muted); font-size: 12px; }
+  .ebl { position: relative; }
+  .ebl-n { position: absolute; right: 12px; top: 8px; font-size: 17px; font-weight: 700; color: var(--muted, #888); }
+  .ebl-sku-l { font-size: 17px; font-weight: 700; color: var(--accent); letter-spacing: 0.3px; line-height: 1.2; word-break: break-word; }
+  .ebl-sku-l small { font-size: 11px; font-weight: 600; color: var(--muted); letter-spacing: 1px; margin-right: 6px; text-transform: uppercase; }
   .ebl-sub b { color: var(--text); font-weight: 600; }
   .ebl-sub .chip { margin-top: 0; }
   @media (max-width: 700px) { .ebl { gap: 10px; } .ebl-img { flex-basis: 96px; width: 96px; height: 96px; } }
@@ -219,7 +223,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v404</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v405</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -434,7 +438,7 @@ function render() {
     e.textContent = orders.length ? 'No orders match.' : 'No orders in these dates.';
     box.append(e);
   }
-  list.slice(0, shown).forEach(o => {
+  list.slice(0, shown).forEach((o, ix) => {
     const k = kind(o);
     const row = document.createElement('div'); row.className = 'ebl' + (k === 'refunded' || k === 'cancelled' ? ' off' : '');
     row.addEventListener('click', (e) => { if (!e.target.closest('a')) openOrder(o.id); });
@@ -461,13 +465,14 @@ function render() {
     sub.textContent = 'Sold ' + dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' · ' + t + ' · order ' + o.id;
     body.append(sub);
     // SKU: same spot as the Active page (right under the date line)
-    const skuLine = (i) => { const s2 = document.createElement('div'); s2.className = 'ebl-sub'; s2.append(document.createTextNode('SKU ')); const sp = skuEl(i.sku); sp.className = ''; sp.style.fontWeight = '600'; sp.style.color = 'var(--text)'; s2.append(sp); return s2; };
+    const skuLine = (i) => { const s2 = document.createElement('div'); s2.className = 'ebl-sku-l'; const sm = document.createElement('small'); sm.textContent = 'SKU'; s2.append(sm, document.createTextNode(i.sku)); return s2; };
     if (o.items[0] && o.items[0].sku) body.append(skuLine(o.items[0]));
     o.items.slice(1).forEach(i => {
       const x = document.createElement('div'); x.className = 'ebl-sub'; x.style.marginTop = '4px';
       x.append(document.createTextNode('+ ' + (i.qty > 1 ? i.qty + '× ' : '') + (i.title || '(no title)') + (i.sku ? ' · SKU ' + i.sku : '')));
       body.append(x);
     });
+    const num = document.createElement('span'); num.className = 'ebl-n'; num.textContent = ix + 1; row.append(num);
     row.append(imgBox, body);
     box.append(row);
   });
