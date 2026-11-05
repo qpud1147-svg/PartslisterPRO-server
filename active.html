@@ -808,8 +808,9 @@ pageCache.rerun = () => { loadListings(false); loadDaily(false); };   // v380: f
     try {
       for (let k = 0; k < need.length; k += 40) {
         const chunk = need.slice(k, k + 40);
+        chunk.forEach(id => { skuTried[id] = 1; });
         const d = await getJSON('/api/items/thumbs?ids=' + chunk.join(','));
-        if (!d || !d.skus) break;
+        if (!d || !d.skus) { llStatus = 'SKU lookup failed (' + (d ? 'old server.js?' : 'no answer') + ')'; changed = true; break; }
         chunk.forEach(id => { skuTried[id] = 1; if (d.skus[id]) { const it = llAll.find(z => z.itemId === id); if (it) { it.sku = d.skus[id]; changed = true; } } });
       }
     } finally { skuBusy = false; }

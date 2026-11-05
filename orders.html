@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Orders v405</title>
+<title>PartsLister Pro Orders v406</title>
 <!-- v382: switching views is instant; browser reload / Refresh really reloads. v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
 <!-- PartsLister Pro — Orders page (v319: new). Your sold items from eBay, newest first.
      v320: item photos, and click an order to see the listing (photos, description, item specifics).
@@ -223,7 +223,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v405</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v406</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -490,19 +490,24 @@ function setPhoto(im, u) {   // bigger picture when eBay has one, else the one w
   im.src = big;
 }
 const thumbs = {};          // itemId → photo URL (or null if eBay had none)
-let thumbsBusy = false;
+let thumbsBusy = false, thumbsAgain = false;
 async function loadThumbs() {
-  if (thumbsBusy) return;
-  const need = [...new Set([...document.querySelectorAll('img.o-thumb[data-item]')].map(i => i.dataset.item).filter(id => !(id in thumbs)))];
-  if (!need.length) return;
+  if (thumbsBusy) { thumbsAgain = true; return; }   // v405: a search/filter that happens mid-load is picked up when this round ends
   thumbsBusy = true;
   try {
-    for (let k = 0; k < need.length; k += 40) {
-      const d = await getJSON('/api/items/thumbs?ids=' + need.slice(k, k + 40).join(','));
-      if (!d || !d.thumbs) break;
-      Object.assign(thumbs, d.thumbs);
+    do {
+      thumbsAgain = false; let failed = false;
+      const need = [...new Set([...document.querySelectorAll('img.o-thumb[data-item]')].filter(i => !i.dataset.set).map(i => i.dataset.item).filter(id => !(id in thumbs)))];
+      for (let k = 0; k < need.length; k += 40) {
+        const d = await getJSON('/api/items/thumbs?ids=' + need.slice(k, k + 40).join(','));
+        if (!d || !d.thumbs) { failed = true; break; }
+        Object.assign(thumbs, d.thumbs);
+        document.querySelectorAll('img.o-thumb[data-item]').forEach(im => { const u = thumbs[im.dataset.item]; if (u && !im.dataset.set) setPhoto(im, u); });
+      }
+      // rows drawn since (a new search) that already have a known photo
       document.querySelectorAll('img.o-thumb[data-item]').forEach(im => { const u = thumbs[im.dataset.item]; if (u && !im.dataset.set) setPhoto(im, u); });
-    }
+      if (!failed && !thumbsAgain && [...document.querySelectorAll('img.o-thumb[data-item]')].some(i => !i.dataset.set && !(i.dataset.item in thumbs))) thumbsAgain = true;
+    } while (thumbsAgain);
   } finally { thumbsBusy = false; }
 }
 

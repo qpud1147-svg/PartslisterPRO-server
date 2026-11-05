@@ -1,4 +1,4 @@
-// PartsLister Pro server — v440
+// PartsLister Pro server — v441
 // v409: yard tickets — the whole-ticket text look and the Look checkboxes are gone; every text row and the logo each have the full set of sliders (boldness, thinner, lighter, weathered, gravel, fuzzy, faded gray, spots).
 // v408: yard tickets — each text row has a Look checkbox (row.useLook, default on): the whole-ticket text look only changes the rows that are checked.
 // v406: yard tickets — a whole-ticket Boldness for the text (design.textLook.bold) and a Lighter slider for the logo (less ink).
@@ -2024,9 +2024,13 @@ app.get('/api/items/thumbs', requireUser, async (req, res) => {
     async function worker() {
       while (i < ids.length) {
         const id = ids[i++];
-        const r = await getItemData(req.user.id, id);
+        let r = await getItemData(req.user.id, id);
+        if (r.data && r.data.sku === undefined) { const f = await fetchItem(req.user.id, id); if (f && f.data) r = f; }   // v441: copies saved before SKUs were kept
         out[id] = r.data && r.data.pictures && r.data.pictures[0] ? smallPic(r.data.pictures[0]) : null;
         if (r.data && r.data.sku) skus[id] = r.data.sku;   // v404: the SKU goes on every listing row
+        if (!skus[id]) {   // v441: else the SKU an order for this item carried
+          try { const q = await pool.query("SELECT sku FROM ebay_order_items WHERE user_id = $1 AND item_id = $2 AND sku IS NOT NULL AND sku <> '' LIMIT 1", [req.user.id, id]); if (q.rows[0]) skus[id] = q.rows[0].sku; } catch (e) { /* no order copy */ }
+        }
       }
     }
     await Promise.all([worker(), worker(), worker(), worker()]);
