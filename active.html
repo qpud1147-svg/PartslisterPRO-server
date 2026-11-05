@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Active v409</title>
+<title>PartsLister Pro Active v410</title>
 <!-- v387: click a listing → your own eBay-style view (big photos with arrows, price, shipping, condition, item specifics, description); sharper list photos; shipping on the rows when eBay gives it. -->
 <!-- v403: Value chart: calculated-shipping listings use your average shipping from recent orders (30 days, else 90); fee/tax rates also 30 days (else 90); note says so. -->
 <!-- v402: listings-per-day chart gets a Listings | Value switch; in Value mode a 3-way switch: You keep / Listed / Buyer pays (price + shipping per quantity; fee and tax rates from your own last 90 days of orders). -->
@@ -200,6 +200,7 @@
   .ebl-sub { color: var(--muted); font-size: 12px; }
   .ebl-sub b { color: var(--text); font-weight: 600; }
   .ebl.ll { position: relative; }
+  .ebl { position: relative; }
   .ebl-n { position: absolute; right: 12px; top: 8px; font-size: 17px; font-weight: 700; color: var(--muted, #888); }   /* v437: bigger */
   .ebl-sku-l { font-size: 17px; font-weight: 700; color: var(--accent); letter-spacing: 0.3px; line-height: 1.2; word-break: break-word; }
   .ebl-sku-l small { font-size: 11px; font-weight: 600; color: var(--muted); letter-spacing: 1px; margin-right: 6px; text-transform: uppercase; }
@@ -257,7 +258,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v409</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v410</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -599,9 +600,9 @@ pageCache.rerun = () => { loadListings(false); loadDaily(false); };   // v380: f
     g('dr-note').textContent = d.drafts.length + ' of ' + d.max + ' drafts · ' + (mb < 0.1 && d.bytes ? '<0.1' : mb.toFixed(1)) + ' MB of photos';
     const grid = g('dr-grid');
     if (!d.drafts.length) { grid.innerHTML = '<div class="dr-empty">No drafts yet. In the Listing Tool, press <b>Save draft</b> under Launch to eBay.</div>'; return; }
-    grid.innerHTML = d.drafts.map(x => {   // v434: eBay-style rows like Active
+    grid.innerHTML = d.drafts.map((x, ix) => {   // v434: eBay-style rows like Active
       const meta = [x.pn, x.vehicle].filter(Boolean).map(esc).join(' · ');
-      return '<div class="ebl"><div class="ebl-img">' + (x.photoCount ? '<img loading="lazy" alt="" src="/api/drafts/' + x.id + '/photos/0">' : 'No photo') + '</div>' +
+      return '<div class="ebl"><span class="ebl-n">' + (ix + 1) + '</span><div class="ebl-img">' + (x.photoCount ? '<img loading="lazy" alt="" src="/api/drafts/' + x.id + '/photos/0">' : 'No photo') + '</div>' +
         '<div class="ebl-body"><div class="ebl-title">' + esc(x.label) + '</div>' +
         '<div class="ebl-price">' + (x.price ? '$' + esc(String(x.price).replace(/^\$/, '')) : '<small>no price yet</small>') + '</div>' +
         '<div class="ebl-sub">' + x.photoCount + ' photo' + (x.photoCount === 1 ? '' : 's') + ' · saved ' + ago(x.updatedAt) + '</div>' +
@@ -642,16 +643,17 @@ pageCache.rerun = () => { loadListings(false); loadDaily(false); };   // v380: f
   };
   function renderYolo() {
     const items = yoData.items || [], sold = yoData.sold || [];
+    setTimeout(() => fillPics(yoView === 'sold' ? sold : items, renderYolo), 0);
     const days = x => Math.floor((Date.now() - new Date(x.listedAt).getTime()) / 86400000);
     if (yoView === 'sold') {
       const tot = sold.reduce((a, x) => a + (x.soldPrice != null ? x.soldPrice : x.yoloPrice), 0);
       const extra = sold.reduce((a, x) => a + ((x.soldPrice != null ? x.soldPrice : x.yoloPrice) - x.normalPrice), 0);
       g('yo-note').textContent = sold.length ? (sold.length + ' sold at YOLO prices · ' + money(tot) + ' total · ' + (extra >= 0 ? '+' : '−') + money(Math.abs(extra)) + ' over the regular prices') : '';
       if (!sold.length) { g('yo-list').innerHTML = '<div class="dr-empty">Nothing sold at a YOLO price yet. Sold ones show up here by themselves.</div>'; return; }
-      g('yo-list').innerHTML = sold.map(x => {
+      g('yo-list').innerHTML = sold.map((x, ix) => {
         const sp = x.soldPrice != null ? x.soldPrice : x.yoloPrice;
         const took = x.soldAt ? Math.max(0, Math.round((new Date(x.soldAt) - new Date(x.listedAt)) / 86400000)) : null;
-        return '<div class="ebl">' + photo(x) + '<div class="ebl-body"><div class="ebl-title"><a href="#" onclick="openListing(\'' + esc(x.itemId) + '\');return false">' + esc(x.title || ('Item ' + x.itemId)) + '</a></div>' +
+        return '<div class="ebl"><span class="ebl-n">' + (ix + 1) + '</span>' + photo(x) + '<div class="ebl-body"><div class="ebl-title"><a href="#" onclick="openListing(\'' + esc(x.itemId) + '\');return false">' + esc(x.title || ('Item ' + x.itemId)) + '</a></div>' +
           '<div class="ebl-price"><span class="yo-g">' + money(sp) + '</span><small>sold' + (x.soldAt ? ' ' + esc(dstr(x.soldAt)) : '') + '</small></div>' +
           '<div class="ebl-sub">Regular price <b>' + money(x.normalPrice) + '</b> · <b class="yo-g">+' + money(sp - x.normalPrice) + '</b> over regular' + (took != null ? ' · took <b>' + took + (took === 1 ? ' day' : ' days') + '</b>' : '') + '</div>' +
           (x.sku ? '<div class="ebl-sku-l"><small>SKU</small>' + esc(x.sku) + '</div>' : '<div class="ebl-sub" style="opacity:.55">No SKU</div>') + '</div></div>';
@@ -661,9 +663,9 @@ pageCache.rerun = () => { loadListings(false); loadDaily(false); };   // v380: f
     const old = items.filter(x => days(x) >= YO_DAYS).length;
     g('yo-note').textContent = items.length ? (items.length + ' YOLO listing' + (items.length === 1 ? '' : 's') + (old ? ' · ' + old + ' past six months' : '')) : '';
     if (!items.length) { g('yo-list').innerHTML = '<div class="dr-empty">No YOLO listings yet. In the Listing Tool, press <b>×5</b> next to the price before you launch.</div>'; return; }
-    g('yo-list').innerHTML = items.map(x => {
+    g('yo-list').innerHTML = items.map((x, ix) => {
       const n = days(x), isOld = n >= YO_DAYS;
-      return '<div class="ebl' + (isOld ? ' old' : '') + '">' + photo(x) + '<div class="ebl-body"><div class="ebl-title"><a href="#" onclick="openListing(\'' + esc(x.itemId) + '\');return false">' + esc(x.title || ('Item ' + x.itemId)) + '</a><span class="ebl-tag">YOLO</span></div>' +
+      return '<div class="ebl' + (isOld ? ' old' : '') + '"><span class="ebl-n">' + (ix + 1) + '</span>' + photo(x) + '<div class="ebl-body"><div class="ebl-title"><a href="#" onclick="openListing(\'' + esc(x.itemId) + '\');return false">' + esc(x.title || ('Item ' + x.itemId)) + '</a><span class="ebl-tag">YOLO</span></div>' +
         '<div class="ebl-price"><span class="yo-g">' + money(x.yoloPrice) + '</span><small>regular ' + money(x.normalPrice) + '</small></div>' +
         '<div class="ebl-sub">Listed <b class="yo-age" style="' + (isOld ? 'color:#ff6b66' : '') + '">' + n + (n === 1 ? ' day' : ' days') + '</b> ago' + (isOld ? ' · <b style="color:#ff6b66">time to revert</b>' : '') + '</div>' +
         (x.sku ? '<div class="ebl-sku-l"><small>SKU</small>' + esc(x.sku) + '</div>' : '<div class="ebl-sub" style="opacity:.55">No SKU</div>') + '</div>' +
@@ -948,6 +950,20 @@ pageCache.rerun = () => { loadListings(false); loadDaily(false); };   // v380: f
     } finally { histBusy = false; }
     if (changed) histRender(kind);
   }
+  // v410: the same photo/SKU lookup for the YOLO and Flagged lists
+  const picTried = {};
+  async function fillPics(arr, redraw) {
+    const a = (arr || []).filter(x => x && x.itemId && (!x.image || !x.sku) && !picTried[x.itemId]).slice(0, 120);
+    if (!a.length) return;
+    let changed = false;
+    for (let k = 0; k < a.length; k += 40) {
+      const chunk = a.slice(k, k + 40); chunk.forEach(x => { picTried[x.itemId] = 1; });
+      const d = await getJSON('/api/items/thumbs?ids=' + chunk.map(x => x.itemId).join(','));
+      if (!d || !d.thumbs) break;
+      chunk.forEach(x => { const u = d.thumbs[x.itemId], s = d.skus && d.skus[x.itemId]; if (u && !x.image) { x.image = u; changed = true; } if (s && !x.sku) { x.sku = s; changed = true; } });
+    }
+    if (changed) redraw();
+  }
   let histShown = { sold: 50, ended: 50 };
   window.histMore = function (kind) { histShown[kind] += 50; histRender(kind); };
   function histRender(kind) {
@@ -976,12 +992,13 @@ pageCache.rerun = () => { loadListings(false); loadDaily(false); };   // v380: f
     } catch (e) { g('fl-note').textContent = ''; fhFail(e.message || 'Could not load flagged listings.'); }
   }
   function flRender() {
+    setTimeout(() => fillPics(flAll, flRender), 0);
     g('flag-n').textContent = flAll.length ? flAll.length : '';
     if (llAll.length) window.llRender(true);   // v437: the flag shows on the Active row
     g('fl-note').textContent = flAll.length ? flAll.length + ' flagged — things you still need to do' : 'Nothing flagged. Use the Flag button on a listing to remind yourself.';
-    g('fl-list').innerHTML = flAll.map(x => {
+    g('fl-list').innerHTML = flAll.map((x, ix) => {
       const when = x.flaggedAt ? Math.floor((Date.now() - new Date(x.flaggedAt).getTime()) / 86400000) : null;
-      return '<div class="ebl">' + photo(x) + '<div class="ebl-body"><div class="ebl-title"><a href="#" onclick="openListing(\'' + esc(x.itemId) + '\');return false">' + esc(x.title || ('Item ' + x.itemId)) + '</a></div>' +
+      return '<div class="ebl"><span class="ebl-n">' + (ix + 1) + '</span>' + photo(x) + '<div class="ebl-body"><div class="ebl-title"><a href="#" onclick="openListing(\'' + esc(x.itemId) + '\');return false">' + esc(x.title || ('Item ' + x.itemId)) + '</a></div>' +
         '<div class="ebl-price">' + (x.price != null ? money(x.price) : '') + '</div>' +
         '<div class="ebl-sub"><b style="color:#ff6b66">' + esc(FLAG_WHY[x.reason] || 'Other') + '</b>' + (x.note ? ' — ' + esc(x.note) : '') + (when != null ? ' · flagged ' + (when === 0 ? 'today' : when + (when === 1 ? ' day' : ' days') + ' ago') : '') + '</div>' +
         (x.sku ? '<div class="ebl-sku-l"><small>SKU</small>' + esc(x.sku) + '</div>' : '<div class="ebl-sub" style="opacity:.55">No SKU</div>') + '</div>' +

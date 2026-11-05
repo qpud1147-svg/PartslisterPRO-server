@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Messages v408</title>
+<title>PartsLister Pro Messages v409</title>
 <!-- v382: switching views is instant; browser reload / Refresh really reloads. v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
 <!-- PartsLister Pro — Messages page (v321: new; v322: conversation threads — the whole back-and-forth
      with each buyer, chat style, from eBay's Message API. Offers from a conversation. The v321
@@ -309,7 +309,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v408</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v409</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -676,7 +676,7 @@ async function showThread(id) {
     // const im = el('img'); im.alt = ''; a.append(im, el('span', '', t.title || ('Item #' + t.itemId)));
     const im = el('img'); im.alt = ''; var headTitle = el('span', '', t.title || ('Item #' + t.itemId)); a.append(im, headTitle);   // v337: filled in from the strip
     head.append(a);
-    getJSON('/api/items/thumbs?ids=' + encodeURIComponent(t.itemId)).then(x => { const u = x && x.thumbs && x.thumbs[t.itemId]; if (u) im.src = u; });
+    getJSON('/api/items/thumbs?ids=' + encodeURIComponent(t.itemId)).then(x => { const u = x && x.thumbs && x.thumbs[t.itemId]; if (u) im.src = u; const sk = x && x.skus && x.skus[t.itemId]; if (sk) { const s2 = el('span', '', 'SKU ' + sk); s2.style.cssText = 'display:block;color:var(--accent);font-weight:700;font-size:14px;'; headTitle.parentNode.append(s2); } });   // v409: the SKU, yellow, like every other listing
     if (type === 'members') {
       const ob = el('button', 'btn btn-secondary btn-sm', 'Offers'); ob.type = 'button';
       ob.onclick = () => toggleOffers(t);
