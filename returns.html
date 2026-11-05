@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Returns v402</title>
+<title>PartsLister Pro Returns v404</title>
 <!-- v382: switching views is instant; browser reload / Refresh really reloads. v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
 <!-- PartsLister Pro — Returns page (v324: new). Returns, "item not received" claims and cases from
      eBay's Post-Order API, read live (nothing saved on the server). Approve / decline / refund from here.
@@ -146,14 +146,25 @@
   .search:focus { border-color: var(--accent); }
   .summary { color: var(--muted); font-size: 13px; margin-bottom: 10px; }
   .orders { display: flex; flex-direction: column; gap: 8px; }
-  .order {
-    /* display: grid; grid-template-columns: 110px 1fr auto; gap: 14px; align-items: start; */
-    display: grid; grid-template-columns: 110px 64px 1fr auto; gap: 14px; align-items: start;   /* v320: + photo */
-    background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 12px 16px;
-    cursor: pointer;   /* v320: click to open */
-  }
-  .order:hover { border-color: #444; }
-  .o-thumb { width: 64px; height: 64px; border-radius: 4px; background: var(--surface2); border: 1px solid var(--border); object-fit: cover; display: block; }
+  .o-thumb { width: 100%; height: 100%; object-fit: cover; display: block; }
+  /* v404: listing row layout — same as the Active page */
+  .ebl { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 12px; display: flex; gap: 14px; align-items: stretch; cursor: pointer; }
+  .ebl:hover { border-color: #444; }
+  .ebl.off { opacity: 0.55; }
+  .ebl-img { flex: 0 0 132px; width: 132px; height: 132px; background: var(--surface2); border-radius: 4px; overflow: hidden; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 11px; }
+  .ebl-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .ebl-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+  .ebl-title { font-size: 15px; font-weight: 600; line-height: 1.3; word-break: break-word; }
+  .ebl-title a { color: inherit; text-decoration: none; }
+  .ebl-title a:hover { text-decoration: underline; }
+  .ebl-price { font-size: 20px; font-weight: 700; }
+  .ebl-price small { font-size: 12px; font-weight: 400; color: var(--muted); margin-left: 6px; }
+  .ebl-sub { color: var(--muted); font-size: 12px; }
+  .ebl-sub b { color: var(--text); font-weight: 600; }
+  .ebl-sub .chip { margin-top: 0; }
+  @media (max-width: 700px) { .ebl { gap: 10px; } .ebl-img { flex-basis: 96px; width: 96px; height: 96px; } }
+  .ebl-body .l-acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+  .ebl-sku:empty { display: none; }
 
   /* v320: ORDER DETAIL — looks like the eBay listing */
   #detail { position: fixed; inset: 0; background: rgba(0,0,0,0.75); z-index: 60; display: none; overflow-y: auto; padding: 24px 16px; }
@@ -223,10 +234,6 @@
   .empty { color: var(--muted); padding: 30px 0; text-align: center; }
   .more { margin: 14px auto 0; display: block; }
   @media (max-width: 700px) {
-    /* .order { grid-template-columns: 1fr auto; gap: 6px 12px; padding: 12px; } */
-    .order { grid-template-columns: 56px 1fr auto; gap: 6px 12px; padding: 12px; }   /* v320: + photo */
-    .o-thumb { width: 56px; height: 56px; }
-    .o-when { grid-column: 1 / -1; display: flex; gap: 8px; align-items: baseline; }
     .seg button { padding: 6px 9px; font-size: 13px; }
     .search { min-width: 0; width: 100%; flex-basis: 100%; }
   }
@@ -255,8 +262,6 @@
   #toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: #0b0b0b; border: 1px solid #3a3a3a; border-left: 3px solid var(--success); padding: 12px 18px; border-radius: 6px; z-index: 200; display: none; max-width: calc(100% - 32px); }
   #toast.show { display: block; }
   #toast.error { border-left-color: var(--danger); }
-  .order { grid-template-columns: 64px 1fr auto; }
-  @media (max-width: 700px) { .order { grid-template-columns: 56px 1fr auto; } }
   /* v402: the boxed refresh control — same as Sales and Active */
   .title-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
   .title-row .page-title { margin-bottom: 0; }
@@ -276,10 +281,10 @@
   table.t tr.sel td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
   table.t tr.t-detail td { text-align: left; white-space: normal; background: var(--surface); padding: 10px 14px 14px; }
   .t-inner .seg { margin-bottom: 8px; }
-  .ti-list { display: flex; flex-direction: column; }
+  .ti-list { display: flex; flex-direction: column; gap: 10px; }
   .ti-row { display: flex; justify-content: space-between; gap: 14px; padding: 9px 4px; border-bottom: 1px solid var(--border); }
   .ti-main { min-width: 0; flex: 1; }
-  .ti-thumb { width: 56px; height: 56px; border-radius: 4px; background: var(--surface2); border: 1px solid var(--border); object-fit: cover; flex-shrink: 0; display: block; }
+  .ti-thumb { width: 100%; height: 100%; object-fit: cover; display: block; }
   .ti-title { font-weight: 600; font-size: 14px; color: var(--text); }
   .ti-meta { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
   .ti-type { color: var(--accent); }
@@ -319,7 +324,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v402</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v404</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -597,23 +602,24 @@ function render() {
   }
   lateShown.forEach(x => box.append(lateRow(x)));   // v372
   list.forEach(x => {
-    const row = el('div', 'order');
-    row.addEventListener('click', () => openDetail(x.kind + ':' + x.id));
-    const img = el('img', 'o-thumb'); img.alt = ''; if (x.itemId) { img.dataset.item = x.itemId; if (pics[x.itemId]) img.src = pics[x.itemId]; } else img.style.visibility = 'hidden';
-    const mid = el('div');
-    const l1 = el('div', 'o-item');
-    l1.append(el('span', 'kind ' + x.kind, KIND[x.kind]), el('span', 'o-title', titles[x.itemId] || (x.itemId ? 'Item #' + x.itemId : '(no item)')));
+    const row = el('div', 'ebl');
+    row.addEventListener('click', (e) => { if (!e.target.closest('a,button')) openDetail(x.kind + ':' + x.id); });
+    const imgBox = eblPhoto('o-thumb', x.itemId, x.itemId && pics[x.itemId]);
+    const mid = el('div', 'ebl-body');
+    const l1 = el('div', 'ebl-title');
+    l1.append(el('span', 'kind ' + x.kind, KIND[x.kind]), document.createTextNode(' '), el('span', 'o-title', titles[x.itemId] || (x.itemId ? 'Item #' + x.itemId : '(no item)')));
     l1.querySelector('.o-title').dataset.title = x.itemId || '';
     mid.append(l1);
-    const l2 = el('div', 'r-line');
+    const pr = el('div', 'ebl-price', x.amount !== null && x.amount !== undefined ? money2.format(x.amount) : '—');
+    mid.append(pr);
+    const l2 = el('div', 'ebl-sub');
     l2.append(document.createTextNode([x.buyer && 'Buyer ' + x.buyer, x.reason && nice(x.reason), nice(x.status || x.state)].filter(Boolean).join(' · ')));
     mid.append(l2);
     const d = dueEl(view === 'open' ? x.due : null);
-    const l3 = el('div', 'r-line'); l3.append(document.createTextNode((x.kind === 'cancel' ? 'Requested ' : 'Opened ') + dateStr(x.created) + (x.orderId && (x.kind === 'cancel' || x.kind === 'dispute') ? ' · order ' + x.orderId : '') + (d ? ' · ' : ''))); if (d) l3.append(d);   // v373
+    const l3 = el('div', 'ebl-sub'); l3.append(document.createTextNode((x.kind === 'cancel' ? 'Requested ' : 'Opened ') + dateStr(x.created) + (x.orderId && (x.kind === 'cancel' || x.kind === 'dispute') ? ' · order ' + x.orderId : '') + (d ? ' · ' : '')));
+    if (d) l3.append(d);
     mid.append(l3);
-    const right = el('div', 'o-right');
-    right.append(el('div', 'o-total', x.amount !== null && x.amount !== undefined ? money2.format(x.amount) : '—'));
-    // right.append(el('div', 'chip ' + (view === 'open' ? (x.kind === 'case' ? 'bad' : 'ship') : 'part'), view === 'open' ? (x.kind === 'case' ? 'Case open' : 'Open') : 'Closed'));
+    mid.append(eblSku(x.itemId));
     // v373: say the stage
     let chipT = 'Closed', chipC = 'part';
     if (view === 'open') {
@@ -623,12 +629,33 @@ function render() {
       else if (x.kind === 'return') { chipT = needsAttention(x) ? 'Needs attention' : (STAGE_LABEL[returnStage(x)] || 'Open'); chipC = needsAttention(x) ? 'bad' : 'ship'; }
       else chipT = 'Open', chipC = 'ship';
     }
-    right.append(el('div', 'chip ' + chipC, chipT));
-    row.append(img, mid, right);
+    const pc = el('span', 'chip ' + chipC, chipT); pc.style.marginLeft = '8px'; pc.style.verticalAlign = 'middle'; pr.append(pc);
+    row.append(imgBox, mid);
     box.append(row);
   });
   fillItems();
 }
+
+
+// v404: same listing row as the Active page — photo, title, price, lines, SKU
+function setPhoto(im, u) {
+  im.dataset.set = '1';
+  const big = String(u).replace(/\/s-l\d+\./i, '/s-l500.');
+  if (big !== u) im.onerror = () => { im.onerror = null; im.src = u; };
+  im.src = big;
+}
+const skus = {};   // itemId → SKU (the server remembers it per item)
+function eblPhoto(cls, itemId, pic) {
+  const box = el('div', 'ebl-img'), img = el('img', cls); img.alt = ''; img.loading = 'lazy';
+  if (itemId) { img.dataset.item = itemId; if (pic) setPhoto(img, pic); } else img.style.visibility = 'hidden';
+  box.append(img); return box;
+}
+function eblSku(itemId, known) {
+  const d = el('div', 'ebl-sub ebl-sku'); if (itemId) d.dataset.sku = itemId;
+  const v = known || (itemId && skus[itemId]); if (v) d.textContent = 'SKU ' + v;
+  return d;
+}
+function showSkus(id) { document.querySelectorAll('.ebl-sku[data-sku="' + id + '"]').forEach(d => { if (skus[id] && !d.textContent) d.textContent = 'SKU ' + skus[id]; }); }
 
 // Item photos + titles (the server remembers them per item)
 let filling = false;
@@ -641,7 +668,9 @@ async function fillItems() {
         const d = await getJSON('/api/items/' + encodeURIComponent(id));
         titles[id] = (d && d.item && d.item.title) || '';
         pics[id] = (d && d.item && d.item.pictures && d.item.pictures[0]) || null;
-        document.querySelectorAll('img.o-thumb[data-item="' + id + '"]').forEach(im => { if (pics[id]) im.src = pics[id]; });
+        if (d && d.item && d.item.sku) skus[id] = d.item.sku;
+        showSkus(id);
+        document.querySelectorAll('img.o-thumb[data-item="' + id + '"]').forEach(im => { if (pics[id]) setPhoto(im, pics[id]); });
         document.querySelectorAll('.o-title[data-title="' + id + '"]').forEach(t => { if (titles[id]) t.textContent = titles[id]; });
       }));
     }
@@ -746,21 +775,26 @@ async function loadLate() {
     const d2 = await getJSON('/api/items/' + encodeURIComponent(id));
     titles[id] = (d2 && d2.item && d2.item.title) || '';
     pics[id] = (d2 && d2.item && d2.item.pictures && d2.item.pictures[0]) || null;
-    document.querySelectorAll('img.o-thumb[data-item="' + id + '"]').forEach(im => { if (pics[id]) im.src = pics[id]; });
+    if (d2 && d2.item && d2.item.sku) skus[id] = d2.item.sku;
+    showSkus(id);
+    document.querySelectorAll('img.o-thumb[data-item="' + id + '"]').forEach(im => { if (pics[id]) setPhoto(im, pics[id]); });
     document.querySelectorAll('.o-title[data-title="' + id + '"]').forEach(t => { if (titles[id]) t.textContent = titles[id]; });
   }
 }
 // One late return, laid out like the other rows
 function lateRow(x) {
-  const row = el('div', 'order');
-  const img = el('img', 'o-thumb'); img.alt = ''; if (x.itemId) { img.dataset.item = x.itemId; if (pics[x.itemId]) img.src = pics[x.itemId]; } else img.style.visibility = 'hidden';
-  const mid = el('div');
-  const l1 = el('div', 'o-item');
+  const row = el('div', 'ebl');
+  const imgBox = eblPhoto('o-thumb', x.itemId, x.itemId && pics[x.itemId]);
+  const mid = el('div', 'ebl-body');
+  const l1 = el('div', 'ebl-title');
   const t = el('span', 'o-title', x.title || titles[x.itemId] || (x.itemId ? 'Item #' + x.itemId : '(no item)'));
   if (!x.title && x.itemId) t.dataset.title = x.itemId;
-  l1.append(el('span', 'kind late', 'Late return'), t);
+  l1.append(el('span', 'kind late', 'Late return'), document.createTextNode(' '), t);
   mid.append(l1);
-  const l2 = el('div', 'r-line');
+  const pr = el('div', 'ebl-price', x.total !== null && x.total !== undefined ? money2.format(x.total) : '—');
+  const pc = el('span', 'chip ' + (x.refunded ? 'done' : x.received ? 'ship' : 'part'), x.refunded ? 'Refunded' : x.received ? 'Received' : 'Address sent'); pc.style.marginLeft = '8px'; pc.style.verticalAlign = 'middle'; pr.append(pc);
+  mid.append(pr);
+  const l2 = el('div', 'ebl-sub');
   if (x.refunded) l2.append(document.createTextNode('Refunded ' + dateStr(x.refunded)));
   else if (x.received) l2.append(document.createTextNode('Received ' + dateStr(x.received) + ' · refund it on eBay'));
   else {
@@ -769,7 +803,8 @@ function lateRow(x) {
     l2.append(el('span', left <= 7 ? 'late-soon' : '', left > 0 ? left + ' day' + (left === 1 ? '' : 's') + ' left' : 'drops off today'));
   }
   mid.append(l2);
-  mid.append(el('div', 'r-line', 'Order ' + (x.orderId || '?') + (x.source === 'manual' ? ' · added by hand' : '')));
+  mid.append(el('div', 'ebl-sub', 'Order ' + (x.orderId || '?') + (x.source === 'manual' ? ' · added by hand' : '')));
+  mid.append(eblSku(x.itemId));
   const acts = el('div', 'l-acts');
   const btn = (label, cls, fn) => { const b = el('button', 'btn btn-sm ' + cls, label); b.type = 'button'; b.onclick = fn; acts.append(b); return b; };
   if (!x.refunded) {
@@ -784,11 +819,8 @@ function lateRow(x) {
     }
     btn('Remove', 'btn-secondary', () => lateAct(x.id, 'remove', 'Remove this from Late returns? (e.g. the buyer is keeping it)'));
   }
-  const right = el('div', 'o-right');
-  right.append(el('div', 'o-total', x.total !== null && x.total !== undefined ? money2.format(x.total) : '—'));
-  right.append(el('div', 'chip ' + (x.refunded ? 'done' : x.received ? 'ship' : 'part'), x.refunded ? 'Refunded' : x.received ? 'Received' : 'Address sent'));
-  right.append(acts);
-  row.append(img, mid, right);
+  mid.append(acts);
+  row.append(imgBox, mid);
   return row;
 }
 
@@ -1095,25 +1127,26 @@ async function loadThumbs() {
   for (let k = 0; k < ids.length; k += 40) {
     const chunk = ids.slice(k, k + 40), d = await getJSON('/api/items/thumbs?ids=' + chunk.join(','));
     if (!d || !d.thumbs) continue;   // try again next time the list is drawn
-    chunk.forEach(id => { typesPics[id] = d.thumbs[id] || null; });
-    document.querySelectorAll('img.ti-thumb[data-item]').forEach(im => { const u = typesPics[im.dataset.item]; if (u && !im.getAttribute('src')) im.src = u; });
+    chunk.forEach(id => { typesPics[id] = d.thumbs[id] || null; if (d.skus && d.skus[id]) skus[id] = d.skus[id]; showSkus(id); });
+    document.querySelectorAll('img.ti-thumb[data-item]').forEach(im => { const u = typesPics[im.dataset.item]; if (u && !im.getAttribute('src')) setPhoto(im, u); });
   }
 }
 function itemRow(kind, x) {
-  const row = el('div', 'ti-row'), main = el('div', 'ti-main'), right = el('div', 'ti-right');
-  const img = el('img', 'ti-thumb'); img.alt = '';
-  if (x.itemId) { img.dataset.item = x.itemId; if (typesPics[x.itemId]) img.src = typesPics[x.itemId]; } else img.style.visibility = 'hidden';
-  main.append(el('div', 'ti-title', x.title || '(title not found)'));
-  const meta = el('div', 'ti-meta'); meta.append(el('span', 'ti-type', x.type));
+  const row = el('div', 'ebl');
+  const imgBox = eblPhoto('ti-thumb', x.itemId, x.itemId && typesPics[x.itemId]);
+  const main = el('div', 'ebl-body');
+  main.append(el('div', 'ebl-title', x.title || '(title not found)'));
+  const amt = kind === 'sold' ? money2.format(x.price) : kind === 'returned' ? (x.amount === null || x.amount === undefined ? '—' : money2.format(x.amount)) : null;
+  if (amt) main.append(el('div', 'ebl-price', amt));
+  const meta = el('div', 'ebl-sub'); meta.append(el('span', 'ti-type', x.type));
   const bits = [];
   if (kind === 'sold') { if (x.qty > 1) bits.push(x.qty + ' sold'); bits.push(shortDate(x.date)); if (x.days !== null && x.days !== undefined) bits.push(x.days + ' days to sell'); }
   if (kind === 'returned') { bits.push(nice(x.reason || 'unknown reason')); bits.push('opened ' + shortDate(x.date)); if (x.status) bits.push(nice(x.status)); }
   bits.filter(Boolean).forEach(t => meta.append(document.createTextNode(' · ' + t)));
   main.append(meta);
-  if (kind === 'sold') right.append(el('div', 'ti-amt', money2.format(x.price)));
-  if (kind === 'returned') right.append(el('div', 'ti-amt', x.amount === null || x.amount === undefined ? '—' : money2.format(x.amount)));
-  if (kind !== 'listed' && x.orderId) { const a = el('a', 'ti-order', 'Order ' + x.orderId); a.href = '/orders#order=' + encodeURIComponent(x.orderId); right.append(a); }
-  row.append(img, main, right);
+  if (kind !== 'listed' && x.orderId) { const a = el('a', 'ti-order', 'Order ' + x.orderId); a.href = '/orders#order=' + encodeURIComponent(x.orderId); const w = el('div', 'ebl-sub'); w.append(a); main.append(w); }
+  main.append(eblSku(x.itemId, x.sku));
+  row.append(imgBox, main);
   return row;
 }
 // fills box with one part type's items of one kind ('all' = every part, not counting "Not a part"); limit → "Show all" link

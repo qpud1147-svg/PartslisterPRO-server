@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Orders v402</title>
+<title>PartsLister Pro Orders v404</title>
 <!-- v382: switching views is instant; browser reload / Refresh really reloads. v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
 <!-- PartsLister Pro — Orders page (v319: new). Your sold items from eBay, newest first.
      v320: item photos, and click an order to see the listing (photos, description, item specifics).
@@ -130,15 +130,24 @@
   }
   .search:focus { border-color: var(--accent); }
   .summary { color: var(--muted); font-size: 13px; margin-bottom: 10px; }
-  .orders { display: flex; flex-direction: column; gap: 8px; }
-  .order {
-    /* display: grid; grid-template-columns: 110px 1fr auto; gap: 14px; align-items: start; */
-    display: grid; grid-template-columns: 110px 64px 1fr auto; gap: 14px; align-items: start;   /* v320: + photo */
-    background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 12px 16px;
-    cursor: pointer;   /* v320: click to open */
-  }
-  .order:hover { border-color: #444; }
-  .o-thumb { width: 64px; height: 64px; border-radius: 4px; background: var(--surface2); border: 1px solid var(--border); object-fit: cover; display: block; }
+  .orders { display: flex; flex-direction: column; gap: 10px; }
+  /* v404: listing row layout — same as the Active page */
+  .ebl { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 12px; display: flex; gap: 14px; align-items: stretch; cursor: pointer; }
+  .ebl:hover { border-color: #444; }
+  .ebl.off { opacity: 0.55; }
+  .ebl-img { flex: 0 0 132px; width: 132px; height: 132px; background: var(--surface2); border-radius: 4px; overflow: hidden; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 11px; }
+  .ebl-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .ebl-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+  .ebl-title { font-size: 15px; font-weight: 600; line-height: 1.3; word-break: break-word; }
+  .ebl-title a { color: inherit; text-decoration: none; }
+  .ebl-title a:hover { text-decoration: underline; }
+  .ebl-price { font-size: 20px; font-weight: 700; }
+  .ebl-price small { font-size: 12px; font-weight: 400; color: var(--muted); margin-left: 6px; }
+  .ebl-sub { color: var(--muted); font-size: 12px; }
+  .ebl-sub b { color: var(--text); font-weight: 600; }
+  .ebl-sub .chip { margin-top: 0; }
+  @media (max-width: 700px) { .ebl { gap: 10px; } .ebl-img { flex-basis: 96px; width: 96px; height: 96px; } }
+  .o-thumb { width: 100%; height: 100%; object-fit: cover; display: block; }
 
   /* v320: ORDER DETAIL — looks like the eBay listing */
   #detail { position: fixed; inset: 0; background: rgba(0,0,0,0.75); z-index: 60; display: none; overflow-y: auto; padding: 24px 16px; }
@@ -190,10 +199,6 @@
   .empty { color: var(--muted); padding: 30px 0; text-align: center; }
   .more { margin: 14px auto 0; display: block; }
   @media (max-width: 700px) {
-    /* .order { grid-template-columns: 1fr auto; gap: 6px 12px; padding: 12px; } */
-    .order { grid-template-columns: 56px 1fr auto; gap: 6px 12px; padding: 12px; }   /* v320: + photo */
-    .o-thumb { width: 56px; height: 56px; }
-    .o-when { grid-column: 1 / -1; display: flex; gap: 8px; align-items: baseline; }
     .seg button { padding: 6px 9px; font-size: 13px; }
     .search { min-width: 0; width: 100%; flex-basis: 100%; }
   }
@@ -214,7 +219,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v402</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v404</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -431,35 +436,39 @@ function render() {
   }
   list.slice(0, shown).forEach(o => {
     const k = kind(o);
-    const row = document.createElement('div'); row.className = 'order' + (k === 'refunded' || k === 'cancelled' ? ' off' : '');
-    const when = document.createElement('div'); when.className = 'o-when';
+    const row = document.createElement('div'); row.className = 'ebl' + (k === 'refunded' || k === 'cancelled' ? ' off' : '');
+    row.addEventListener('click', (e) => { if (!e.target.closest('a')) openOrder(o.id); });
+    const first = o.items.find(i => i.itemId) || o.items[0];
+    const imgBox = document.createElement('div'); imgBox.className = 'ebl-img';
+    const img = document.createElement('img'); img.alt = ''; img.loading = 'lazy'; img.className = 'o-thumb';
+    if (first && first.itemId) { img.dataset.item = first.itemId; if (thumbs[first.itemId]) setPhoto(img, thumbs[first.itemId]); } else img.style.visibility = 'hidden';
+    imgBox.append(img);
+    const body = document.createElement('div'); body.className = 'ebl-body';
+    const titleEl = (i) => {
+      const t = document.createElement('div'); t.className = 'ebl-title';
+      const a = document.createElement(i.itemId ? 'a' : 'span'); a.textContent = (i.qty > 1 ? i.qty + '× ' : '') + (i.title || '(no title)');
+      if (i.itemId) { a.href = 'https://www.ebay.com/itm/' + encodeURIComponent(i.itemId); a.target = '_blank'; a.rel = 'noopener'; }
+      t.append(a); return t;
+    };
+    if (!o.items.length) { const p = document.createElement('div'); p.className = 'ebl-title'; p.style.color = 'var(--muted)'; p.textContent = 'Items still importing…'; body.append(p); }
+    else body.append(titleEl(o.items[0]));
+    const price = document.createElement('div'); price.className = 'ebl-price'; price.textContent = money2.format(o.total);
+    const sm = document.createElement('small'); sm.textContent = CHIP[k][0] + (k !== 'refunded' && o.refunded > 0 ? ' · part refund' : ''); price.append(sm);
+    body.append(price);
     const [d, t] = o.sold.split(' ');
     const dt = new Date(d + 'T12:00:00');
-    when.append(document.createTextNode(dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' · ' + t));
-    const id = document.createElement('div'); id.className = 'o-id'; id.textContent = o.id; when.append(id);
-    // v320: photo of the first item (loaded after the list shows)
-    const first = o.items.find(i => i.itemId);
-    const img = document.createElement('img');
-    img.className = 'o-thumb'; img.alt = ''; img.loading = 'lazy';
-    if (first) { img.dataset.item = first.itemId; if (thumbs[first.itemId]) img.src = thumbs[first.itemId]; }
-    row.addEventListener('click', (e) => { if (!e.target.closest('a')) openOrder(o.id); });
-    const mid = document.createElement('div');
-    if (!o.items.length) { const p = document.createElement('div'); p.className = 'o-title'; p.style.color = 'var(--muted)'; p.textContent = 'Items still importing…'; mid.append(p); }
-    o.items.forEach(i => {
-      const line = document.createElement('div'); line.className = 'o-item';
-      if (i.sku) line.append(skuEl(i.sku));
-      if (i.qty > 1) { const q = document.createElement('span'); q.className = 'o-qty'; q.textContent = i.qty + '×'; line.append(q); }
-      const a = document.createElement(i.itemId ? 'a' : 'span'); a.className = 'o-title'; a.textContent = i.title || '(no title)';
-      if (i.itemId) { a.href = 'https://www.ebay.com/itm/' + encodeURIComponent(i.itemId); a.target = '_blank'; a.rel = 'noopener'; }
-      line.append(a);
-      mid.append(line);
+    const sub = document.createElement('div'); sub.className = 'ebl-sub';
+    sub.textContent = 'Sold ' + dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' · ' + t + ' · order ' + o.id;
+    body.append(sub);
+    // SKU: same spot as the Active page (right under the date line)
+    const skuLine = (i) => { const s2 = document.createElement('div'); s2.className = 'ebl-sub'; s2.append(document.createTextNode('SKU ')); const sp = skuEl(i.sku); sp.className = ''; sp.style.fontWeight = '600'; sp.style.color = 'var(--text)'; s2.append(sp); return s2; };
+    if (o.items[0] && o.items[0].sku) body.append(skuLine(o.items[0]));
+    o.items.slice(1).forEach(i => {
+      const x = document.createElement('div'); x.className = 'ebl-sub'; x.style.marginTop = '4px';
+      x.append(document.createTextNode('+ ' + (i.qty > 1 ? i.qty + '× ' : '') + (i.title || '(no title)') + (i.sku ? ' · SKU ' + i.sku : '')));
+      body.append(x);
     });
-    const right = document.createElement('div'); right.className = 'o-right';
-    const tot = document.createElement('div'); tot.className = 'o-total'; tot.textContent = money2.format(o.total); right.append(tot);
-    const chip = document.createElement('div'); chip.className = 'chip ' + CHIP[k][1];
-    chip.textContent = CHIP[k][0] + (k !== 'refunded' && o.refunded > 0 ? ' · part refund' : ''); right.append(chip);
-    // row.append(when, mid, right);
-    row.append(when, img, mid, right);   // v320
+    row.append(imgBox, body);
     box.append(row);
   });
   document.getElementById('o-more').style.display = list.length > shown ? '' : 'none';
@@ -469,6 +478,12 @@ function render() {
 // ─── v320: PHOTOS ────────────────────────────────────────────────────────────
 // Asks the server for the photos it doesn't have yet, 40 at a time. The server
 // asks eBay once per item and remembers it.
+function setPhoto(im, u) {   // bigger picture when eBay has one, else the one we have
+  im.dataset.set = '1';
+  const big = String(u).replace(/\/s-l\d+\./i, '/s-l500.');
+  if (big !== u) im.onerror = () => { im.onerror = null; im.src = u; };
+  im.src = big;
+}
 const thumbs = {};          // itemId → photo URL (or null if eBay had none)
 let thumbsBusy = false;
 async function loadThumbs() {
@@ -481,7 +496,7 @@ async function loadThumbs() {
       const d = await getJSON('/api/items/thumbs?ids=' + need.slice(k, k + 40).join(','));
       if (!d || !d.thumbs) break;
       Object.assign(thumbs, d.thumbs);
-      document.querySelectorAll('img.o-thumb[data-item]').forEach(im => { const u = thumbs[im.dataset.item]; if (u && im.src !== u) im.src = u; });
+      document.querySelectorAll('img.o-thumb[data-item]').forEach(im => { const u = thumbs[im.dataset.item]; if (u && !im.dataset.set) setPhoto(im, u); });
     }
   } finally { thumbsBusy = false; }
 }

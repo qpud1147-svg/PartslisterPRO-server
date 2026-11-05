@@ -1,4 +1,4 @@
-// PartsLister Pro server — v439
+// PartsLister Pro server — v440
 // v409: yard tickets — the whole-ticket text look and the Look checkboxes are gone; every text row and the logo each have the full set of sliders (boldness, thinner, lighter, weathered, gravel, fuzzy, faded gray, spots).
 // v408: yard tickets — each text row has a Look checkbox (row.useLook, default on): the whole-ticket text look only changes the rows that are checked.
 // v406: yard tickets — a whole-ticket Boldness for the text (design.textLook.bold) and a Lighter slider for the logo (less ink).
@@ -2019,17 +2019,18 @@ const smallPic = (u) => (u ? u.replace(/\/s-l\d+\.(jpg|jpeg|png|webp)/i, '/s-l22
 app.get('/api/items/thumbs', requireUser, async (req, res) => {
   try {
     const ids = [...new Set(String(req.query.ids || '').split(',').map(s => s.trim()).filter(s => /^\d{6,20}$/.test(s)))].slice(0, 40);
-    const out = {};
+    const out = {}, skus = {};
     let i = 0;
     async function worker() {
       while (i < ids.length) {
         const id = ids[i++];
         const r = await getItemData(req.user.id, id);
         out[id] = r.data && r.data.pictures && r.data.pictures[0] ? smallPic(r.data.pictures[0]) : null;
+        if (r.data && r.data.sku) skus[id] = r.data.sku;   // v404: the SKU goes on every listing row
       }
     }
     await Promise.all([worker(), worker(), worker(), worker()]);
-    res.json({ thumbs: out });
+    res.json({ thumbs: out, skus });
   } catch (e) {
     console.error('[thumbs]', e);
     res.status(500).json({ error: 'Could not load photos' });
