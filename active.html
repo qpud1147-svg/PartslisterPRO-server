@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Active v406</title>
+<title>PartsLister Pro Active v407</title>
 <!-- v387: click a listing → your own eBay-style view (big photos with arrows, price, shipping, condition, item specifics, description); sharper list photos; shipping on the rows when eBay gives it. -->
 <!-- v403: Value chart: calculated-shipping listings use your average shipping from recent orders (30 days, else 90); fee/tax rates also 30 days (else 90); note says so. -->
 <!-- v402: listings-per-day chart gets a Listings | Value switch; in Value mode a 3-way switch: You keep / Listed / Buyer pays (price + shipping per quantity; fee and tax rates from your own last 90 days of orders). -->
@@ -257,7 +257,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v406</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v407</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -430,7 +430,7 @@ try { if ((performance.getEntriesByType('navigation')[0] || {}).type === 'reload
   const clearAll = () => { try { Object.keys(sessionStorage).filter(k => k.startsWith('plp-')).forEach(k => sessionStorage.removeItem(k)); } catch (e) { /* fine */ } };
   const watch = (url, r) => { if (url === '/api/me') { if (r.status === 200) signedIn(true); else if (r.status === 401) clearAll(); } };   // v381
   window.fetch = async function (url, opt) {
-    if (typeof url === 'string' && url === '/api/logout') clearAll();
+    if (typeof url === 'string' && url === '/api/logout') { clearAll(); try { localStorage.removeItem('plp_daily'); localStorage.removeItem('plp_sum'); } catch (e) { /* fine */ } }
     if (!want(url, opt)) { const r = await realFetch(url, opt); watch(url, r); return r; }
     const f = fresh.get(url);
     if (f && Date.now() - f.at < 60000) { fresh.delete(url); if (f.status === 200) return asResponse(f.text); }
@@ -511,10 +511,30 @@ async function loadMe() {
 // v316: active listing count and value from eBay. eBay is asked at most once
 // an hour; "Refresh from eBay" asks right now.
 let pollTimer = null;
+// v407: the tiles and the chart show the last numbers at once (kept in this browser), then update when eBay answers
+const lsGet = (k) => { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch (e) { return null; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* full or blocked — fine */ } };
+function showTiles(count, value) {
+  setText('l-active', Number(count).toLocaleString());
+  setText('l-value', money0.format(value || 0));
+  setText('l-avg', count ? money2.format((value || 0) / count) : '—');
+}
+let sumShown = false;
 async function loadListings(refresh) {
   const me = await loadMe();
   if (!me) return;
+  if (!sumShown) {
+    sumShown = true;
+    const sv = lsGet('plp_sum');
+    if (sv && sv.d && sv.d.activeCount != null) {
+      if (!window.__llTiles) showTiles(sv.d.activeCount, sv.d.activeValue);
+      setText('l-lifetime', Number(sv.d.listedLifetime || 0).toLocaleString());
+      document.getElementById('loading').classList.add('hidden');
+      setText('l-note', 'Saved copy from ' + timeAgo(sv.at) + ' · checking eBay ·');
+    }
+  }
   const d = await getJSON('/api/listings/summary' + (refresh ? '?refresh=1' : ''));
+  if (d && d.connected && d.activeCount != null && !d.checking && !d.error) lsSet('plp_sum', { at: Date.now(), d });
   document.getElementById('loading').classList.add('hidden');
   const err = document.getElementById('l-error');
   err.style.display = 'none';
@@ -533,9 +553,7 @@ async function loadListings(refresh) {
   if (d.activeCount === null) {
     ['l-active', 'l-value', 'l-avg'].forEach(id => setText(id, '—'));
   } else {
-    setText('l-active', Number(d.activeCount).toLocaleString());
-    setText('l-value', money0.format(d.activeValue || 0));
-    setText('l-avg', d.activeCount ? money2.format((d.activeValue || 0) / d.activeCount) : '—');
+    if (!window.__llTiles) showTiles(d.activeCount, d.activeValue);   // v407: the saved listing list is the fresher source once it's there
   }
   setText('l-note', d.lastCheck ? 'From eBay · checked ' + timeAgo(d.lastCheck) + ' ·' : 'Checking eBay for the first time — this can take a minute ·');
   // v382: the box
@@ -796,6 +814,10 @@ pageCache.rerun = () => { loadListings(false); loadDaily(false); };   // v380: f
     }).join('');
     g('ll-more').style.display = a.length > llShown ? 'inline-block' : 'none';
     llSkuFill(a.slice(0, llShown));   // v404
+    if (llAll.length) {   // v407: the tiles come from the saved/updated listing list — no extra eBay call
+      window.__llTiles = true;
+      showTiles(llAll.length, llAll.reduce((s, x) => s + (x.price || 0) * (x.qty > 0 ? x.qty : 1), 0));
+    }
   };
   // v404: eBay's list doesn't include SKUs, so the ones on screen are looked up (the server remembers them per item)
   const skuTried = {};
@@ -1007,7 +1029,11 @@ const hourLabel = (h) => (h % 12 || 12) + (h < 12 ? ' AM' : ' PM');
 let dailyTimer = null, dailyTries = 0;
 async function loadDaily(refresh) {
   clearTimeout(dailyTimer);
-  if (!daily) setText('lc-note', 'Loading from eBay…');
+  if (!daily) {
+    const sd = lsGet('plp_daily');   // v407: last chart shows at once
+    if (sd && sd.d && Array.isArray(sd.d.days) && Array.isArray(sd.d.hours)) { daily = sd.d; drawDaily(); setText('lc-note', 'Saved copy from ' + timeAgo(sd.at) + ' · updating…'); }
+    else setText('lc-note', 'Loading from eBay…');
+  }
   // const d = await getJSON('/api/listings/daily' + (refresh ? '?refresh=1' : ''));
   // if (!d || d._signedOut) { setText('lc-note', 'Could not reach the server.'); return; }
   // v375: say what actually went wrong
@@ -1021,7 +1047,7 @@ async function loadDaily(refresh) {
   } catch (e) { setText('lc-note', 'Couldn’t reach the server — check your connection and press Refresh from eBay.'); return; }
   if (d.loading) {   // eBay is still sending the listings — check back
     dailyTries++;
-    setText('lc-note', 'Loading your listings from eBay… (this can take a minute the first time)');
+    setText('lc-note', daily ? 'Saved copy · updating from eBay…' : 'Loading your listings from eBay… (this can take a minute the first time)');
     if (dailyTries < 60) dailyTimer = setTimeout(() => { pageCache.live(); loadDaily(false); }, 3000);   // v382
     else setText('lc-note', 'eBay is taking a long time — press Refresh from eBay to try again.');
     return;
@@ -1031,6 +1057,7 @@ async function loadDaily(refresh) {
   if (d.error) { setText('lc-note', d.error); return; }
   if (!Array.isArray(d.days) || !Array.isArray(d.hours)) { setText('lc-note', 'eBay didn’t send your listing dates — press Refresh from eBay to try again.'); return; }   // v380
   daily = d;
+  lsSet('plp_daily', { at: Date.now(), d });
   drawDaily();
 }
 const fmtMoney = v => '$' + Math.round(v).toLocaleString('en-US');
