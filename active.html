@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Active v405</title>
+<title>PartsLister Pro Active v406</title>
 <!-- v387: click a listing → your own eBay-style view (big photos with arrows, price, shipping, condition, item specifics, description); sharper list photos; shipping on the rows when eBay gives it. -->
 <!-- v403: Value chart: calculated-shipping listings use your average shipping from recent orders (30 days, else 90); fee/tax rates also 30 days (else 90); note says so. -->
 <!-- v402: listings-per-day chart gets a Listings | Value switch; in Value mode a 3-way switch: You keep / Listed / Buyer pays (price + shipping per quantity; fee and tax rates from your own last 90 days of orders). -->
@@ -257,7 +257,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v405</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v406</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -636,7 +636,7 @@ pageCache.rerun = () => { loadListings(false); loadDaily(false); };   // v380: f
         return '<div class="ebl">' + photo(x) + '<div class="ebl-body"><div class="ebl-title"><a href="#" onclick="openListing(\'' + esc(x.itemId) + '\');return false">' + esc(x.title || ('Item ' + x.itemId)) + '</a></div>' +
           '<div class="ebl-price"><span class="yo-g">' + money(sp) + '</span><small>sold' + (x.soldAt ? ' ' + esc(dstr(x.soldAt)) : '') + '</small></div>' +
           '<div class="ebl-sub">Regular price <b>' + money(x.normalPrice) + '</b> · <b class="yo-g">+' + money(sp - x.normalPrice) + '</b> over regular' + (took != null ? ' · took <b>' + took + (took === 1 ? ' day' : ' days') + '</b>' : '') + '</div>' +
-          (x.sku ? '<div class="ebl-sku-l"><small>SKU</small>' + esc(x.sku) + '</div>' : '') + '</div></div>';
+          (x.sku ? '<div class="ebl-sku-l"><small>SKU</small>' + esc(x.sku) + '</div>' : '<div class="ebl-sub" style="opacity:.55">No SKU</div>') + '</div></div>';
       }).join('');
       return;
     }
@@ -648,7 +648,7 @@ pageCache.rerun = () => { loadListings(false); loadDaily(false); };   // v380: f
       return '<div class="ebl' + (isOld ? ' old' : '') + '">' + photo(x) + '<div class="ebl-body"><div class="ebl-title"><a href="#" onclick="openListing(\'' + esc(x.itemId) + '\');return false">' + esc(x.title || ('Item ' + x.itemId)) + '</a><span class="ebl-tag">YOLO</span></div>' +
         '<div class="ebl-price"><span class="yo-g">' + money(x.yoloPrice) + '</span><small>regular ' + money(x.normalPrice) + '</small></div>' +
         '<div class="ebl-sub">Listed <b class="yo-age" style="' + (isOld ? 'color:#ff6b66' : '') + '">' + n + (n === 1 ? ' day' : ' days') + '</b> ago' + (isOld ? ' · <b style="color:#ff6b66">time to revert</b>' : '') + '</div>' +
-        (x.sku ? '<div class="ebl-sku-l"><small>SKU</small>' + esc(x.sku) + '</div>' : '') + '</div>' +
+        (x.sku ? '<div class="ebl-sku-l"><small>SKU</small>' + esc(x.sku) + '</div>' : '<div class="ebl-sub" style="opacity:.55">No SKU</div>') + '</div>' +
         '<div class="ebl-btns"><button class="btn btn-sm" style="background:' + (isOld ? '#e53935;color:#fff' : 'var(--accent);color:#000') + '" onclick="revertYolo(\'' + esc(x.itemId) + '\',' + Number(x.yoloPrice) + ',' + Number(x.normalPrice) + ')">Revert to ' + money(x.normalPrice) + '</button>' +
         '<button class="btn btn-secondary btn-sm" onclick="removeYolo(\'' + esc(x.itemId) + '\')" title="Stop tracking it (does not change eBay)">Remove</button></div></div>';
     }).join('');
@@ -791,7 +791,7 @@ pageCache.rerun = () => { loadListings(false); loadDaily(false); };   // v380: f
       return '<div class="ebl ll"><span class="ebl-n">' + (() => { const fg = flAll.find(f => f.itemId === x.itemId); return fg ? '<span class="ebl-flag" title="Flagged">\u2691 ' + esc(FLAG_WHY[fg.reason] || 'Flagged') + '</span>' : ''; })() + (ix + 1) + '</span>' + photo(x) + '<div class="ebl-body"><div class="ebl-title"><a href="#" onclick="openListing(\'' + esc(x.itemId) + '\');return false">' + esc(x.title) + '</a>' + (/(^|\s)YOLO$/i.test(x.sku || '') ? '<span class="ebl-tag">YOLO</span>' : '') + '</div>' +
         '<div class="ebl-price">' + money(x.price) + (x.shipping != null ? '<small>' + (x.shipping === 0 ? 'Free shipping' : '+ ' + money(x.shipping) + ' shipping') + '</small>' : '') + (x.qty > 1 ? '<small>' + x.qty + ' available</small>' : '') + '</div>' +
         '<div class="ebl-sub">' + (n != null ? 'Listed <b>' + n + (n === 1 ? ' day' : ' days') + '</b> ago' : '') + (x.watchers ? ' · <b>' + x.watchers + '</b> watching' : '') + '</div>' +
-        (x.sku ? '<div class="ebl-sku-l"><small>SKU</small>' + esc(x.sku) + '</div>' : '') +
+        (x.sku ? '<div class="ebl-sku-l"><small>SKU</small>' + esc(x.sku) + '</div>' : '<div class="ebl-sub" style="opacity:.55">No SKU</div>') +
         '<div class="ebl-chk"><button onclick="llCheck(\'' + esc(x.itemId) + '\',0)">Check Active</button><button onclick="llCheck(\'' + esc(x.itemId) + '\',1)">Check Sold</button><button onclick="location.href=\'/list?relaunch=' + esc(x.itemId) + '\'" title="Recreate this listing in the Listing Tool with its photos; the old one ends once the new one is live">Relaunch</button><button onclick="flagOpen(\'' + esc(x.itemId) + '\')" title="Remind me to do something about this item">Flag</button></div></div></div>';
     }).join('');
     g('ll-more').style.display = a.length > llShown ? 'inline-block' : 'none';
@@ -911,7 +911,7 @@ pageCache.rerun = () => { loadListings(false); loadDaily(false); };   // v380: f
       return '<div class="ebl ll">' + photo(x) + '<div class="ebl-body"><div class="ebl-title"><a href="#" onclick="openListing(\'' + esc(x.itemId) + '\');return false">' + esc(x.title || ('Item ' + x.itemId)) + '</a></div>' +
         '<div class="ebl-price">' + (sold ? '<span class="yo-g">' + money(x.price) + '</span>' : money(x.price)) + (sold && x.shipping != null ? '<small>' + (x.shipping === 0 ? 'Free shipping' : '+ ' + money(x.shipping) + ' shipping') + '</small>' : '') + (sold && x.qty > 1 ? '<small>' + x.qty + ' sold</small>' : '') + '</div>' +
         '<div class="ebl-sub">' + (sold ? 'Sold <b>' + esc(dstr(x.soldAt)) + '</b>' : 'Ended <b>' + esc(dstr(x.endedAt)) + '</b>') + (ran != null ? ' · ran <b>' + ran + (ran === 1 ? ' day' : ' days') + '</b>' : '') + '</div>' +
-        (x.sku ? '<div class="ebl-sku-l"><small>SKU</small>' + esc(x.sku) + '</div>' : '') + chkBtns(x) + '</div></div>';
+        (x.sku ? '<div class="ebl-sku-l"><small>SKU</small>' + esc(x.sku) + '</div>' : '<div class="ebl-sub" style="opacity:.55">No SKU</div>') + chkBtns(x) + '</div></div>';
     }).join('') + (a.length > histShown[kind] ? '<button class="btn btn-secondary btn-sm" style="margin-top:10px" onclick="histMore(\'' + kind + '\')">Show more</button>' : '');
   }
   // v435: FLAGGED — a reminder list (nothing changes on eBay). Reasons are fixed.
@@ -935,7 +935,7 @@ pageCache.rerun = () => { loadListings(false); loadDaily(false); };   // v380: f
       return '<div class="ebl">' + photo(x) + '<div class="ebl-body"><div class="ebl-title"><a href="#" onclick="openListing(\'' + esc(x.itemId) + '\');return false">' + esc(x.title || ('Item ' + x.itemId)) + '</a></div>' +
         '<div class="ebl-price">' + (x.price != null ? money(x.price) : '') + '</div>' +
         '<div class="ebl-sub"><b style="color:#ff6b66">' + esc(FLAG_WHY[x.reason] || 'Other') + '</b>' + (x.note ? ' — ' + esc(x.note) : '') + (when != null ? ' · flagged ' + (when === 0 ? 'today' : when + (when === 1 ? ' day' : ' days') + ' ago') : '') + '</div>' +
-        (x.sku ? '<div class="ebl-sku-l"><small>SKU</small>' + esc(x.sku) + '</div>' : '') + '</div>' +
+        (x.sku ? '<div class="ebl-sku-l"><small>SKU</small>' + esc(x.sku) + '</div>' : '<div class="ebl-sub" style="opacity:.55">No SKU</div>') + '</div>' +
         '<div class="ebl-btns"><button class="btn btn-sm" style="background:var(--accent);color:#000" onclick="flagDone(\'' + esc(x.itemId) + '\')">Done</button>' +
         (x.reason === 'trash' ? '<button class="btn btn-secondary btn-sm" onclick="flagEnd(\'' + esc(x.itemId) + '\')" title="Ends the listing on eBay — only after you have the part in hand">End listing</button>' : '') + '</div></div>';
     }).join('');
