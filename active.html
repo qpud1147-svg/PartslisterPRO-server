@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Active v408</title>
+<title>PartsLister Pro Active v409</title>
 <!-- v387: click a listing → your own eBay-style view (big photos with arrows, price, shipping, condition, item specifics, description); sharper list photos; shipping on the rows when eBay gives it. -->
 <!-- v403: Value chart: calculated-shipping listings use your average shipping from recent orders (30 days, else 90); fee/tax rates also 30 days (else 90); note says so. -->
 <!-- v402: listings-per-day chart gets a Listings | Value switch; in Value mode a 3-way switch: You keep / Listed / Buyer pays (price + shipping per quantity; fee and tax rates from your own last 90 days of orders). -->
@@ -257,7 +257,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v408</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v409</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -919,8 +919,34 @@ pageCache.rerun = () => { loadListings(false); loadDaily(false); };   // v380: f
       const r = await fetch('/api/active/' + kind + (force ? '?refresh=1' : '')); const j = await r.json().catch(() => ({}));
       if (r.status === 404) { hFail(P + '-error', 'The server is out of date — upload the newest server.js to Railway.'); return; }
       if (!r.ok) throw new Error(j.error || ('server ' + r.status));
-      (sold ? (soAll = j.items || []) : (enAll = (j.items || []).map(i => Object.assign(i, { __relaunch: true })))); histRender(kind);
+      (sold ? (soAll = j.items || []) : (enAll = endedMerge(j.items || []).map(i => Object.assign(i, { __relaunch: true })))); histRender(kind);
     } catch (e) { g(P + '-note').textContent = ''; hFail(P + '-error', e.message || 'Could not load from eBay.'); }
+  }
+  // v409: listings you just ended from the tools show on Ended at once (until eBay's own list has them)
+  function endedMerge(items) {
+    let ops = []; try { ops = JSON.parse(localStorage.getItem('plp_ended_ops') || '[]') || []; } catch (e) { ops = []; }
+    const have = new Set(items.map(i => String(i.itemId))), cut = Date.now() - 60 * 86400000;
+    const keep = ops.filter(o => !have.has(String(o.itemId)) && new Date(o.endedAt).getTime() > cut);
+    try { if (keep.length) localStorage.setItem('plp_ended_ops', JSON.stringify(keep)); else localStorage.removeItem('plp_ended_ops'); } catch (e) { /* fine */ }
+    return keep.concat(items);
+  }
+  // v409: eBay's Sold/Ended lists often come without photos or SKUs — fill them in for the rows on screen (same lookup Orders uses)
+  const histTried = {};
+  let histBusy = false;
+  async function histFill(kind) {
+    if (histBusy) return;
+    const a = (kind === 'sold' ? soAll : enAll).slice(0, histShown[kind]).filter(x => (!x.image || !x.sku) && !histTried[x.itemId]);
+    if (!a.length) return;
+    histBusy = true; let changed = false;
+    try {
+      for (let k = 0; k < a.length; k += 40) {
+        const chunk = a.slice(k, k + 40); chunk.forEach(x => { histTried[x.itemId] = 1; });
+        const d = await getJSON('/api/items/thumbs?ids=' + chunk.map(x => x.itemId).join(','));
+        if (!d || !d.thumbs) break;
+        chunk.forEach(x => { const u = d.thumbs[x.itemId], s = d.skus && d.skus[x.itemId]; if (u && !x.image) { x.image = u; changed = true; } if (s && !x.sku) { x.sku = s; changed = true; } });
+      }
+    } finally { histBusy = false; }
+    if (changed) histRender(kind);
   }
   let histShown = { sold: 50, ended: 50 };
   window.histMore = function (kind) { histShown[kind] += 50; histRender(kind); };
@@ -928,13 +954,14 @@ pageCache.rerun = () => { loadListings(false); loadDaily(false); };   // v380: f
     const sold = kind === 'sold', a = sold ? soAll : enAll, P = sold ? 'so' : 'en';
     const total = sold ? a.reduce((s, x) => s + x.price * (x.qty || 1), 0) : 0;
     g(P + '-note').textContent = a.length ? (sold ? a.length + ' sales · ' + money(total) + ' · last 60 days (eBay\'s limit)' : a.length + ' ended listings · last 60 days (eBay\'s limit)') : (sold ? 'No sales in the last 60 days.' : 'No ended listings in the last 60 days.');
-    g(P + '-list').innerHTML = a.slice(0, histShown[kind]).map(x => {
+    g(P + '-list').innerHTML = a.slice(0, histShown[kind]).map((x, ix) => {
       const ran = daysBetween(x.start, sold ? x.soldAt : x.endedAt);
-      return '<div class="ebl ll">' + photo(x) + '<div class="ebl-body"><div class="ebl-title"><a href="#" onclick="openListing(\'' + esc(x.itemId) + '\');return false">' + esc(x.title || ('Item ' + x.itemId)) + '</a></div>' +
+      return '<div class="ebl ll"><span class="ebl-n">' + (ix + 1) + '</span>' + photo(x) + '<div class="ebl-body"><div class="ebl-title"><a href="#" onclick="openListing(\'' + esc(x.itemId) + '\');return false">' + esc(x.title || ('Item ' + x.itemId)) + '</a></div>' +
         '<div class="ebl-price">' + (sold ? '<span class="yo-g">' + money(x.price) + '</span>' : money(x.price)) + (sold && x.shipping != null ? '<small>' + (x.shipping === 0 ? 'Free shipping' : '+ ' + money(x.shipping) + ' shipping') + '</small>' : '') + (sold && x.qty > 1 ? '<small>' + x.qty + ' sold</small>' : '') + '</div>' +
         '<div class="ebl-sub">' + (sold ? 'Sold <b>' + esc(dstr(x.soldAt)) + '</b>' : 'Ended <b>' + esc(dstr(x.endedAt)) + '</b>') + (ran != null ? ' · ran <b>' + ran + (ran === 1 ? ' day' : ' days') + '</b>' : '') + '</div>' +
         (x.sku ? '<div class="ebl-sku-l"><small>SKU</small>' + esc(x.sku) + '</div>' : '<div class="ebl-sub" style="opacity:.55">No SKU</div>') + chkBtns(x) + '</div></div>';
     }).join('') + (a.length > histShown[kind] ? '<button class="btn btn-secondary btn-sm" style="margin-top:10px" onclick="histMore(\'' + kind + '\')">Show more</button>' : '');
+    histFill(kind);
   }
   // v435: FLAGGED — a reminder list (nothing changes on eBay). Reasons are fixed.
   const FLAG_WHY = { trash: 'Trash it', missing_pn: 'Missing part number', defect: 'Defect', other: 'Other' };
@@ -968,7 +995,7 @@ pageCache.rerun = () => { loadListings(false); loadDaily(false); };   // v380: f
   };
   window.flagEnd = async function (id) {
     if (!confirm('End this listing on eBay now? Only do this once you have found the item.')) return;
-    try { const r = await fetch('/api/flags/' + id + '/end', { method: 'POST' }); const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || ('server ' + r.status)); flAll = flAll.filter(x => x.itemId !== id); try { llSimulate({ remove: [id] }); } catch (e) {} flRender(); }
+    try { const r = await fetch('/api/flags/' + id + '/end', { method: 'POST' }); const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || ('server ' + r.status)); { const fx = flAll.find(x => x.itemId === id); if (fx) { try { const eo = JSON.parse(localStorage.getItem('plp_ended_ops') || '[]') || []; eo.push({ itemId: id, title: fx.title, sku: fx.sku, price: fx.price || 0, qty: 1, image: fx.image || null, start: null, endedAt: new Date().toISOString() }); localStorage.setItem('plp_ended_ops', JSON.stringify(eo)); } catch (e) { /* fine */ } } } flAll = flAll.filter(x => x.itemId !== id); try { llSimulate({ remove: [id] }); } catch (e) {} flRender(); }
     catch (e) { fhFail(e.message || 'Could not end the listing.'); }
   };
   window.flagClose = function () { g('fl-ov').hidden = true; };

@@ -9,7 +9,7 @@
   // refresh, overriding anything init does.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 </script>
-<title>PartsLister Pro v442</title>
+<title>PartsLister Pro v443</title>
 <!-- v409: hover the green L to see exactly which listings (price + shipping) were averaged. -->
 <!-- v408: clearing a listing also clears the low-resolution / unreadable / too-many photo warnings. -->
 <!-- v407: a scan that finds no part number opens No Part Number by itself; a cleared listing starts on Has Part Number. -->
@@ -942,7 +942,7 @@
     <!-- v302: logo goes to the dashboard -->
     <a href="/" title="Dashboard" style="text-decoration:none;color:inherit;">
       <div class="logo"><span>PARTS</span>LISTER</div>
-      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v442</span></div>
+      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v443</span></div>
     </a>
     <!-- v303: removed — the logo is the dashboard button
     <a href="/" class="btn btn-secondary btn-sm" title="Back to your dashboard" style="font-size:11px;padding:4px 10px;text-decoration:none;margin-left:6px;">⌂ Dashboard</a>
@@ -9585,6 +9585,7 @@ async function _relaunchEndOld() {
     const j = await x.json().catch(() => ({}));
     if (!x.ok) throw new Error(j.error || ('server ' + x.status));
     _liveOp({ remove: [r.itemId] });   // v438
+    try { const eo = JSON.parse(localStorage.getItem('plp_ended_ops') || '[]') || []; eo.push({ itemId: r.itemId, title: r.title, sku: r.sku || '', price: Number(r.price) || 0, qty: 1, image: r.image || null, start: r.start || null, endedAt: new Date().toISOString() }); localStorage.setItem('plp_ended_ops', JSON.stringify(eo)); } catch (e) { /* Ended just waits for eBay's own list */ }   // v443: it shows on Active > Ended at once
     showNotif('\u2713 Old listing ' + r.itemId + ' ended');
   } catch (e) { showNotif('\u26a0 The new listing is live, but the old one (' + r.itemId + ') did not end: ' + (e.message || 'try again') + ' \u2014 end it on eBay', true); }
 }
@@ -9631,7 +9632,7 @@ async function resumeRelaunchFromUrl() {
       const blob = await pr.blob(); files.push(new File([blob], 'photo' + (i + 1) + '.jpg', { type: blob.type || 'image/jpeg' }));
     }
     resetForm(); uploadedFiles = files; try { renderPhotoStrip(); } catch (e) {}
-    window._relaunch = { itemId: id, title: d.title, ended: _alreadyEnded, price: d.price, sku: d.sku, image: (d.photos || [])[0] || null };
+    window._relaunch = { itemId: id, title: d.title, ended: _alreadyEnded, price: d.price, sku: d.sku, start: d.start || null, image: (d.photos || [])[0] || null };
     // v434: the part number comes ONLY from the photo scan (not from the old title or specifics). The scan opens No Part Number by itself when it finds none;
     // then the vehicle and part name from the old title are filled in for any box the scan left empty.
     const _title = d.title;
