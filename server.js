@@ -1,4 +1,4 @@
-// PartsLister Pro server — v437
+// PartsLister Pro server — v438
 // v409: yard tickets — the whole-ticket text look and the Look checkboxes are gone; every text row and the logo each have the full set of sliders (boldness, thinner, lighter, weathered, gravel, fuzzy, faded gray, spots).
 // v408: yard tickets — each text row has a Look checkbox (row.useLook, default on): the whole-ticket text look only changes the rows that are checked.
 // v406: yard tickets — a whole-ticket Boldness for the text (design.textLook.bold) and a Lighter slider for the logo (less ink).
@@ -5676,9 +5676,19 @@ async function listingStarts(userId) {
       `<StartTimeFrom>${from.toISOString()}</StartTimeFrom><StartTimeTo>${to.toISOString()}</StartTimeTo>`
       + `<DetailLevel>ReturnAll</DetailLevel><Pagination><EntriesPerPage>200</EntriesPerPage><PageNumber>${page}</PageNumber></Pagination>`
       + `<OutputSelector>ItemArray.Item.ItemID</OutputSelector><OutputSelector>ItemArray.Item.ListingDetails.StartTime</OutputSelector>`
+      + `<OutputSelector>ItemArray.Item.StartPrice</OutputSelector><OutputSelector>ItemArray.Item.BuyItNowPrice</OutputSelector><OutputSelector>ItemArray.Item.Quantity</OutputSelector><OutputSelector>ItemArray.Item.ShippingDetails</OutputSelector>`   // v438: price, quantity and shipping for the Value chart
       + `<OutputSelector>PaginationResult</OutputSelector><OutputSelector>HasMoreItems</OutputSelector>`);
     const items = xmlAll(xmlTag(xml, 'ItemArray') || '', 'Item');
-    items.forEach(it => { const st = xmlTag(xmlTag(it, 'ListingDetails') || '', 'StartTime'); if (st) starts.push(st); });
+    items.forEach(it => {
+      const st = xmlTag(xmlTag(it, 'ListingDetails') || '', 'StartTime'); if (!st) return;
+      const price = parseFloat(xmlTag(it, 'StartPrice') || xmlTag(it, 'BuyItNowPrice') || '0') || 0;
+      const qty = Math.max(1, parseInt(xmlTag(it, 'Quantity') || '1', 10) || 1);
+      const sd = xmlTag(it, 'ShippingDetails') || '';
+      let ship = null;   // null = eBay did not give a flat cost (calculated shipping)
+      if (/<FreeShipping>\s*true/i.test(sd)) ship = 0;
+      else { const c = parseFloat(xmlTag(xmlTag(sd, 'ShippingServiceOptions') || '', 'ShippingServiceCost') || ''); if (Number.isFinite(c)) ship = c; }
+      starts.push({ st, price, qty, ship });
+    });
     const pages = parseInt(xmlTag(xmlTag(xml, 'PaginationResult') || '', 'TotalNumberOfPages') || '1', 10) || 1;
     if (!items.length || page >= pages) break;
   }
@@ -5706,20 +5716,30 @@ app.get('/api/listings/daily', requireUser, async (req, res) => {
     const dayKey = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' });
     const hourOf = new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: 'numeric', hourCycle: 'h23' });
     const today = dayKey.format(new Date());
-    const byDay = {}, hours = new Array(24).fill(0);
-    starts.forEach(s => {
-      const d = new Date(s); if (isNaN(d)) return;
-      const k = dayKey.format(d); byDay[k] = (byDay[k] || 0) + 1;
-      if (k === today) hours[parseInt(hourOf.format(d), 10) % 24]++;
+    const byDay = {}, byDayV = {}, hours = new Array(24).fill(0), hoursV = new Array(24).fill(0);
+    let noShip = 0;
+    starts.forEach(s0 => {
+      const s = typeof s0 === 'string' ? { st: s0, price: 0, qty: 1, ship: 0 } : s0;
+      const d = new Date(s.st); if (isNaN(d)) return;
+      const val = (s.price + (s.ship || 0)) * s.qty;   // v438: price + shipping, per quantity
+      if (s.ship === null) noShip++;
+      const k = dayKey.format(d); byDay[k] = (byDay[k] || 0) + 1; byDayV[k] = (byDayV[k] || 0) + val;
+      if (k === today) { const h = parseInt(hourOf.format(d), 10) % 24; hours[h]++; hoursV[h] += val; }
     });
+    // v438: your own average fee and tax rates from your orders of the last 90 days (for the Value chart's "You keep" and "Buyer pays" views)
+    let rates = { fee: null, tax: null, orders: 0 };
+    try {
+      const rr = (await pool.query("SELECT COALESCE(SUM(total),0) AS t, COALESCE(SUM(fees),0) AS f, COALESCE(SUM(tax),0) AS x, COUNT(*) AS n FROM ebay_orders WHERE user_id = $1 AND counted AND fees IS NOT NULL AND created_at > now() - interval '90 days'", [req.user.id])).rows[0];
+      const t = Number(rr.t); if (t > 0 && Number(rr.n) >= 5) rates = { fee: Number(rr.f) / t, tax: Number(rr.x) / t, orders: Number(rr.n) };
+    } catch (e) { /* the chart works without the rates */ }
     const days = [];
     const [y, m, dd] = today.split('-').map(Number);
     for (let i = 89; i >= 0; i--) {
       const t = new Date(Date.UTC(y, m - 1, dd - i));
       const k = t.toISOString().slice(0, 10);
-      days.push({ date: k, n: byDay[k] || 0 });
+      days.push({ date: k, n: byDay[k] || 0, v: Math.round((byDayV[k] || 0) * 100) / 100 });
     }
-    res.json({ connected: true, tz, today, days, hours, checkedAt: new Date(listedCache.get(req.user.id).at || Date.now()).toISOString() });
+    res.json({ connected: true, tz, today, days, hours, hoursV: hoursV.map(x => Math.round(x * 100) / 100), rates, noShip, checkedAt: new Date(listedCache.get(req.user.id).at || Date.now()).toISOString() });
   } catch (e) {
     console.error('[listings daily]', e.message);
     res.json({ connected: true, error: 'eBay didn\u2019t give us your listing dates: ' + e.message });
@@ -5831,5 +5851,5 @@ setupDatabase()
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v426 listening on ' + PORT)))   // v427
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v427 listening on ' + PORT)))   // v428
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v428 listening on ' + PORT)))   // v429
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v437 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v438 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });
