@@ -3,8 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Active v402</title>
+<title>PartsLister Pro Active v403</title>
 <!-- v387: click a listing → your own eBay-style view (big photos with arrows, price, shipping, condition, item specifics, description); sharper list photos; shipping on the rows when eBay gives it. -->
+<!-- v403: Value chart: calculated-shipping listings use your average shipping from recent orders (30 days, else 90); fee/tax rates also 30 days (else 90); note says so. -->
 <!-- v402: listings-per-day chart gets a Listings | Value switch; in Value mode a 3-way switch: You keep / Listed / Buyer pays (price + shipping per quantity; fee and tax rates from your own last 90 days of orders). -->
 <!-- v401: the live list is saved in this browser — Active opens instantly, then quietly checks eBay (newest 200 + recent sales/endings); full pull only first time / Refresh / daily; flag + reason shown by the row number; bigger row number. -->
 <!-- v400: Flagged tab (reminders: Trash it / Missing part number / Defect / Other + note; Done; End listing on Trash flags) and a Flag button on rows. -->
@@ -254,7 +255,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v402</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v403</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -1040,7 +1041,7 @@ function drawDaily() {
     setText('lc-best', best && best.n ? F(best.n) : '—'); setText('lc-best-k', best && best.n && bd ? 'Best day · ' + dLabel(bd.date, { month: 'short', day: 'numeric' }) : 'Best day');
   }
   setText('lc-note', 'Every listing that went up, including ones that since sold or ended · your time zone · checked ' + timeAgo(daily.checkedAt)
-    + (money$ ? ' · ' + (lcVMode === 'keep' ? (rt.fee != null ? 'estimate: price + shipping minus your average eBay fees (' + (rt.fee * 100).toFixed(1) + '% of sales)' : 'not enough sales yet to estimate your fees — showing the listed value') : lcVMode === 'buyer' ? (rt.tax != null ? 'estimate: price + shipping plus your average sales tax (' + (rt.tax * 100).toFixed(1) + '% of sales)' : 'not enough sales yet to estimate tax — showing the listed value') : 'price + shipping per quantity') + (daily.noShip ? ' · ' + daily.noShip + ' listing' + (daily.noShip === 1 ? ' has' : 's have') + ' calculated shipping (counted as $0)' : '') : ''));
+    + (money$ ? ' · ' + (lcVMode === 'keep' ? (rt.fee != null ? 'estimate: price + shipping minus your average eBay fees (' + (rt.fee * 100).toFixed(1) + '% of sales, last ' + (rt.days || 30) + ' days)' : 'not enough sales yet to estimate your fees — showing the listed value') : lcVMode === 'buyer' ? (rt.tax != null ? 'estimate: price + shipping plus your average sales tax (' + (rt.tax * 100).toFixed(1) + '% of sales, last ' + (rt.days || 30) + ' days)' : 'not enough sales yet to estimate tax — showing the listed value') : 'price + shipping per quantity') + (daily.shipEst ? ' · ' + daily.shipEst + ' listing' + (daily.shipEst === 1 ? ' has' : 's have') + ' calculated shipping, estimated at your average of $' + Number(rt.ship).toFixed(2) + ' (from your last ' + (rt.shipDays || 30) + ' days of orders)' : '') + (daily.noShip ? ' · ' + daily.noShip + ' listing' + (daily.noShip === 1 ? ' has' : 's have') + ' calculated shipping and there are not enough recent orders to estimate it (counted as $0)' : '') : ''));
 
   const svg = document.getElementById('lchart'), wrap = document.getElementById('lchart-wrap');
   const W = wrap.clientWidth, H = wrap.clientHeight; if (!W || !H) return;
