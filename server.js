@@ -1,4 +1,4 @@
-// PartsLister Pro server — v445
+// PartsLister Pro server — v446
 // v409: yard tickets — the whole-ticket text look and the Look checkboxes are gone; every text row and the logo each have the full set of sliders (boldness, thinner, lighter, weathered, gravel, fuzzy, faded gray, spots).
 // v408: yard tickets — each text row has a Look checkbox (row.useLook, default on): the whole-ticket text look only changes the rows that are checked.
 // v406: yard tickets — a whole-ticket Boldness for the text (design.textLook.bold) and a Lighter slider for the logo (less ink).
@@ -448,6 +448,20 @@ async function setupDatabase() {
       flagged_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       UNIQUE (user_id, item_id)
     );
+    -- v446: MORE THAN ONE USER — turn an account off, when someone last listed, a per-listing log (for "listed in the last 30 days"), and the shared default settings
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS disabled BOOLEAN NOT NULL DEFAULT FALSE;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS last_listed_at TIMESTAMPTZ;
+    CREATE TABLE IF NOT EXISTS listing_events (
+      id      SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      at      TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    CREATE INDEX IF NOT EXISTS listing_events_user_at ON listing_events (user_id, at DESC);
+    CREATE TABLE IF NOT EXISTS default_settings (
+      id         INTEGER PRIMARY KEY CHECK (id = 1),
+      data       JSONB NOT NULL DEFAULT '{}'::jsonb,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
     -- v443: OFFERS TO WATCHERS — the rules (Manual = you press Send; Automatic = once a day) and a log of every offer sent
     CREATE TABLE IF NOT EXISTS offer_rules (
       user_id       INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
@@ -587,12 +601,13 @@ async function requireUser(req, res, next) {
     const token = readCookie(req, COOKIE);
     if (!token) return res.status(401).json({ error: 'Not signed in' });
     const r = await pool.query(
-      `SELECT u.id, u.email, u.is_admin, u.listing_count, u.dash_range, u.dash_tax
+      `SELECT u.id, u.email, u.is_admin, u.listing_count, u.dash_range, u.dash_tax, u.disabled
          FROM sessions s JOIN users u ON u.id = s.user_id
         WHERE s.token_hash = $1 AND s.expires_at > now()`,
       [sha256(token)]
     );
     if (!r.rows.length) return res.status(401).json({ error: 'Not signed in' });
+    if (r.rows[0].disabled) return res.status(401).json({ error: 'This account is turned off.' });   // v446
     req.user = r.rows[0];
     next();
   } catch (e) {
@@ -665,9 +680,10 @@ app.post('/api/login', express.json(), async (req, res) => {
     if (tooManyAttempts(req.ip)) return res.status(429).json({ error: 'Too many attempts — wait 15 minutes.' });
     const email = cleanEmail(req.body && req.body.email);
     const password = String((req.body && req.body.password) || '');
-    const r = await pool.query('SELECT id, password_hash FROM users WHERE email = $1', [email]);
+    const r = await pool.query('SELECT id, password_hash, disabled FROM users WHERE email = $1', [email]);
     const ok = r.rows.length && await checkPassword(password, r.rows[0].password_hash);
     if (!ok) { recordFailure(req.ip); return res.status(401).json({ error: 'Wrong email or password.' }); }
+    if (r.rows[0].disabled) return res.status(403).json({ error: 'This account is turned off. Ask the person who set it up for you.' });   // v446
     await startSession(req, res, r.rows[0].id);
     res.json({ ok: true });
   } catch (e) {
@@ -830,9 +846,10 @@ app.get('/api/me', requireUser, (req, res) => {
 app.post('/api/listing-count', requireUser, async (req, res) => {
   try {
     const r = await pool.query(
-      'UPDATE users SET listing_count = listing_count + 1 WHERE id = $1 RETURNING listing_count',
+      'UPDATE users SET listing_count = listing_count + 1, last_listed_at = now() WHERE id = $1 RETURNING listing_count',
       [req.user.id]
     );
+    pool.query('INSERT INTO listing_events (user_id) VALUES ($1)', [req.user.id]).catch(() => {});   // v446
     res.json({ count: r.rows[0].listing_count });
   } catch (e) {
     console.error('[count]', e);
@@ -1438,7 +1455,8 @@ setInterval(() => {
   for (const [k, v] of oauthStates) if (v.expires < now) oauthStates.delete(k);
 }, 60000).unref();
 
-app.get('/api/ebay/status', requireUser, requireAdmin, async (req, res) => {
+// v446: every account manages its OWN eBay connection (these only ever read and write the signed-in user's rows)
+app.get('/api/ebay/status', requireUser, async (req, res) => {
   try {
     const conn = await getConnection(req.user.id);
     const keys = await getEbayKeys(req.user.id);
@@ -1472,7 +1490,7 @@ app.get('/api/ebay/status', requireUser, requireAdmin, async (req, res) => {
   }
 });
 
-app.post('/api/ebay/settings', requireUser, requireAdmin, express.json(), async (req, res) => {
+app.post('/api/ebay/settings', requireUser, express.json(), async (req, res) => {
   const ruName = String((req.body && req.body.ruName) || '').trim();
   if (!/^[A-Za-z0-9_\-]{5,200}$/.test(ruName)) {
     return res.status(400).json({ error: 'That doesn’t look like a RuName — it should look like Your_Name-YourApp-PRD-abc123' });
@@ -1486,7 +1504,7 @@ app.post('/api/ebay/settings', requireUser, requireAdmin, express.json(), async 
 });
 
 // The page sends you here; this sends you on to eBay's "allow" screen
-app.get('/api/ebay/connect', requireUser, requireAdmin, async (req, res) => {
+app.get('/api/ebay/connect', requireUser, async (req, res) => {
   try {
     const conn = await getConnection(req.user.id);
     const keys = await getEbayKeys(req.user.id);
@@ -1548,14 +1566,14 @@ app.get(CALLBACK_PATH, async (req, res) => {
   }
 });
 
-app.post('/api/ebay/sync', requireUser, requireAdmin, async (req, res) => {
+app.post('/api/ebay/sync', requireUser, async (req, res) => {
   const conn = await getConnection(req.user.id);
   if (!conn || !conn.refresh_enc) return res.status(400).json({ error: 'eBay is not connected' });
   syncOrders(req.user.id);
   res.json({ ok: true, syncing: true });
 });
 
-app.post('/api/ebay/disconnect', requireUser, requireAdmin, async (req, res) => {
+app.post('/api/ebay/disconnect', requireUser, async (req, res) => {
   accessTokens.delete(req.user.id);
   await pool.query(
     `UPDATE ebay_connections SET refresh_enc = NULL, refresh_expires = NULL, connected_at = NULL,
@@ -3204,8 +3222,9 @@ app.post('/api/threads/:id/translate', requireUser, express.json({ limit: '200kb
     const out = {};
     const todo = [];
     list.forEach(m => {
-      if (translateCache.has(m.id)) { const c = translateCache.get(m.id); if (c) out[m.id] = c; }
-      else if (looksEnglish(m.text)) translateCache.set(m.id, null);
+      const tk = req.user.id + ':' + m.id;   // v446: per account
+      if (translateCache.has(tk)) { const c = translateCache.get(tk); if (c) out[m.id] = c; }
+      else if (looksEnglish(m.text)) translateCache.set(tk, null);
       else todo.push(m);
     });
     if (todo.length) {
@@ -3229,7 +3248,7 @@ app.post('/api/threads/:id/translate', requireUser, express.json({ limit: '200kb
       arr.forEach(x => {
         if (!x || !x.id) return;
         const val = x.english && !/^english$/i.test(x.lang || '') ? { lang: String(x.lang || 'another language'), english: String(x.english) } : null;
-        translateCache.set(String(x.id), val);
+        translateCache.set(req.user.id + ':' + String(x.id), val);
         if (val) out[x.id] = val;
       });
       if (translateCache.size > 5000) translateCache.clear();
@@ -4794,6 +4813,156 @@ app.post('/api/offers/:itemId/send', requireUser, express.json(), async (req, re
 });
 
 
+// ─── v446: MORE THAN ONE USER ──────────────────────────────────────────────
+// Admin: see the users (activity only — never their keys, listings, orders or messages), add / turn off / delete / reset a password,
+// and keep a set of DEFAULT SETTINGS that anyone can choose to copy into their own settings. Nothing here ever calls eBay as another user.
+const DEFAULT_NEVER_KEYS = new Set(ACCOUNT_KEYS.concat(['zipCode', 'paymentPolicyId', 'returnPolicyId', 'shippingPolicyId', 'pigtailShippingPolicyId', 'shippingPresets', 'ebayTokenExpiry']));
+const NEVER_PATTERN = /key|secret|token|password|policy|zip|postal|address|phone|e-?mail|username|runame|cloud/i;
+const MSG_PERSONAL = ['signoff', 'availability'];   // part of Messages settings but about YOU, never copied
+const isNeverKey = (k) => DEFAULT_NEVER_KEYS.has(k) || (k !== 'msgSettings' && NEVER_PATTERN.test(k));
+const prettyKey = (k) => k === 'msgSettings' ? 'Messages settings (AI reply rules; your sign-off and availability are not copied)' : k.replace(/([A-Z])/g, ' $1').replace(/^./, c => c.toUpperCase());
+function previewOf(v) {
+  if (typeof v === 'string') return v.length > 90 ? v.slice(0, 90) + '…' : (v || '(empty)');
+  if (Array.isArray(v)) return v.length + ' item' + (v.length === 1 ? '' : 's');
+  if (v && typeof v === 'object') return Object.keys(v).length + ' setting' + (Object.keys(v).length === 1 ? '' : 's');
+  return String(v);
+}
+app.get('/api/admin/users', requireUser, requireAdmin, async (req, res) => {
+  try {
+    const rows = (await pool.query(`
+      SELECT u.id, u.email, u.is_admin, u.disabled, u.created_at, u.last_login, u.listing_count, u.last_listed_at,
+             (c.refresh_enc IS NOT NULL) AS ebay_connected, c.last_sync, c.last_error,
+             (SELECT COUNT(*)::int FROM ebay_orders o WHERE o.user_id = u.id) AS orders,
+             (SELECT COUNT(*)::int FROM listing_drafts d WHERE d.user_id = u.id) AS drafts,
+             (SELECT COUNT(*)::int FROM listing_events e WHERE e.user_id = u.id AND e.at > now() - interval '30 days') AS listed30
+        FROM users u LEFT JOIN ebay_connections c ON c.user_id = u.id
+       ORDER BY u.created_at`)).rows;
+    const users = [];
+    for (const r of rows) {
+      // only yes/no — the keys themselves are never read out
+      let hasAnthropic = false, hasEbayKeys = false;
+      try { const st = ((await readUserData(r.id)) || {}).settings || {}; hasAnthropic = !!String(st.apiKey || '').trim(); hasEbayKeys = !!(String(st.ebayClientId || '').trim() && String(st.ebayClientSecret || '').trim()); } catch (e) { /* unreadable → no */ }
+      users.push({ id: r.id, email: r.email, isAdmin: r.is_admin, disabled: r.disabled, joined: r.created_at, lastLogin: r.last_login,
+        lifetimeListed: r.listing_count, listed30: r.listed30, lastListed: r.last_listed_at, ebayConnected: r.ebay_connected, lastSync: r.last_sync,
+        syncProblem: r.last_error ? String(r.last_error).slice(0, 160) : null, orders: r.orders, drafts: r.drafts, hasAnthropic, hasEbayKeys, isYou: r.id === req.user.id });
+    }
+    res.json({ users });
+  } catch (e) { console.error('[admin users]', e.message); res.status(500).json({ error: 'Could not load the users' }); }
+});
+app.post('/api/admin/users', requireUser, requireAdmin, express.json(), async (req, res) => {
+  try {
+    const email = cleanEmail(req.body && req.body.email);
+    const password = String((req.body && req.body.password) || '');
+    if (!validEmail(email)) return res.status(400).json({ error: 'Enter a valid email address.' });
+    if (password.length < 8) return res.status(400).json({ error: 'The temporary password needs at least 8 characters.' });
+    let id;
+    try { id = (await pool.query('INSERT INTO users (email, password_hash, is_admin) VALUES ($1, $2, FALSE) RETURNING id', [email, await hashPassword(password)])).rows[0].id; }
+    catch (e) { if (e.code === '23505') return res.status(409).json({ error: 'That email already has an account.' }); throw e; }
+    if (req.body && req.body.useDefaults) { try { await applyDefaultsTo(id); } catch (e) { /* account is made; defaults can be applied by them */ } }
+    res.json({ ok: true, id });
+  } catch (e) { console.error('[admin add user]', e.message); res.status(500).json({ error: 'Could not add the user' }); }
+});
+app.post('/api/admin/users/:id/password', requireUser, requireAdmin, express.json(), async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10), password = String((req.body && req.body.password) || '');
+    if (password.length < 8) return res.status(400).json({ error: 'The new password needs at least 8 characters.' });
+    const r = await pool.query('UPDATE users SET password_hash = $2 WHERE id = $1 RETURNING id', [id, await hashPassword(password)]);
+    if (!r.rows.length) return res.status(404).json({ error: 'No such user.' });
+    await pool.query('DELETE FROM sessions WHERE user_id = $1', [id]);   // signed out everywhere
+    res.json({ ok: true });
+  } catch (e) { console.error('[admin pw]', e.message); res.status(500).json({ error: 'Could not reset the password' }); }
+});
+app.post('/api/admin/users/:id/disable', requireUser, requireAdmin, express.json(), async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10), off = !!(req.body && req.body.disabled);
+    if (id === req.user.id) return res.status(400).json({ error: 'You can’t turn off your own account.' });
+    const r = await pool.query('UPDATE users SET disabled = $2 WHERE id = $1 RETURNING id', [id, off]);
+    if (!r.rows.length) return res.status(404).json({ error: 'No such user.' });
+    if (off) await pool.query('DELETE FROM sessions WHERE user_id = $1', [id]);
+    res.json({ ok: true });
+  } catch (e) { console.error('[admin disable]', e.message); res.status(500).json({ error: 'Could not change that account' }); }
+});
+app.post('/api/admin/users/:id/delete', requireUser, requireAdmin, express.json(), async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (id === req.user.id) return res.status(400).json({ error: 'You can’t delete your own account.' });
+    const u = (await pool.query('SELECT email, is_admin FROM users WHERE id = $1', [id])).rows[0];
+    if (!u) return res.status(404).json({ error: 'No such user.' });
+    if (u.is_admin) return res.status(400).json({ error: 'Turn off admin accounts instead of deleting them.' });
+    if (String((req.body && req.body.confirmEmail) || '').toLowerCase() !== String(u.email).toLowerCase()) return res.status(400).json({ error: 'Type the user’s email to confirm.' });
+    await pool.query('DELETE FROM users WHERE id = $1', [id]);   // everything of theirs goes with it (all their tables cascade)
+    res.json({ ok: true });
+  } catch (e) { console.error('[admin delete]', e.message); res.status(500).json({ error: 'Could not delete the user' }); }
+});
+// Default settings: built from the admin's OWN settings with a checklist; a separate saved set — changing it never touches anyone's settings
+app.get('/api/admin/defaults', requireUser, requireAdmin, async (req, res) => {
+  try {
+    const mine = ((await readUserData(req.user.id)) || {}).settings || {};
+    const saved = (await pool.query('SELECT data, updated_at FROM default_settings WHERE id = 1')).rows[0] || null;
+    const savedKeys = saved ? Object.keys(saved.data || {}) : [];
+    const items = Object.keys(mine).sort().map(k => ({ key: k, label: prettyKey(k), preview: isNeverKey(k) ? '(never shared)' : previewOf(mine[k]), never: isNeverKey(k), inDefaults: savedKeys.includes(k) }));
+    res.json({ items, saved: saved ? { updatedAt: saved.updated_at, count: savedKeys.length } : null });
+  } catch (e) { console.error('[admin defaults]', e.message); res.status(500).json({ error: 'Could not load the settings' }); }
+});
+app.post('/api/admin/defaults', requireUser, requireAdmin, express.json(), async (req, res) => {
+  try {
+    const keys = Array.isArray(req.body && req.body.keys) ? req.body.keys.map(String) : [];
+    const mine = ((await readUserData(req.user.id)) || {}).settings || {};
+    const data = {};
+    keys.forEach(k => {
+      if (!(k in mine) || isNeverKey(k)) return;
+      if (k === 'msgSettings') { const m = JSON.parse(JSON.stringify(mine[k] || {})); MSG_PERSONAL.forEach(x => delete m[x]); data[k] = m; }
+      else data[k] = JSON.parse(JSON.stringify(mine[k]));
+    });
+    await pool.query(`INSERT INTO default_settings (id, data, updated_at) VALUES (1, $1::jsonb, now())
+      ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, updated_at = now()`, [JSON.stringify(data)]);
+    res.json({ ok: true, count: Object.keys(data).length });
+  } catch (e) { console.error('[admin defaults save]', e.message); res.status(500).json({ error: 'Could not save the defaults' }); }
+});
+// Anyone: is there a default set, and copy it into MY settings (only when they press the button)
+async function applyDefaultsTo(userId) {
+  const row = (await pool.query('SELECT data FROM default_settings WHERE id = 1')).rows[0];
+  if (!row) return 0;
+  const d = row.data || {};
+  const data = (await readUserData(userId)) || { settings: {}, history: { pigtail: [], otherside: [] } };
+  data.settings = data.settings || {};
+  let n = 0;
+  Object.keys(d).forEach(k => {
+    if (isNeverKey(k)) return;   // belt and braces: keys/addresses/policies never come from a default
+    if (k === 'msgSettings') { const keep = {}; MSG_PERSONAL.forEach(x => { if (data.settings.msgSettings && data.settings.msgSettings[x] !== undefined) keep[x] = data.settings.msgSettings[x]; }); data.settings.msgSettings = Object.assign({}, JSON.parse(JSON.stringify(d[k])), keep); }
+    else data.settings[k] = JSON.parse(JSON.stringify(d[k]));
+    n++;
+  });
+  await writeUserData(userId, data);
+  return n;
+}
+app.get('/api/defaults', requireUser, async (req, res) => {
+  try {
+    const row = (await pool.query('SELECT data, updated_at FROM default_settings WHERE id = 1')).rows[0];
+    res.json({ exists: !!(row && Object.keys(row.data || {}).length), updatedAt: row ? row.updated_at : null, count: row ? Object.keys(row.data || {}).length : 0 });
+  } catch (e) { res.status(500).json({ error: 'Could not check the defaults' }); }
+});
+app.post('/api/defaults/apply', requireUser, async (req, res) => {
+  try {
+    const n = await applyDefaultsTo(req.user.id);
+    if (!n) return res.status(400).json({ error: 'There are no default settings yet.' });
+    res.json({ ok: true, applied: n });
+  } catch (e) { console.error('[defaults apply]', e.message); res.status(500).json({ error: 'Could not apply the defaults' }); }
+});
+// Anyone: change my own password
+app.post('/api/account/password', requireUser, express.json(), async (req, res) => {
+  try {
+    const cur = String((req.body && req.body.current) || ''), next = String((req.body && req.body.next) || '');
+    if (next.length < 8) return res.status(400).json({ error: 'The new password needs at least 8 characters.' });
+    const u = (await pool.query('SELECT password_hash FROM users WHERE id = $1', [req.user.id])).rows[0];
+    if (!u || !(await checkPassword(cur, u.password_hash))) { recordFailure(req.ip); return res.status(400).json({ error: 'Your current password isn’t right.' }); }
+    await pool.query('UPDATE users SET password_hash = $2 WHERE id = $1', [req.user.id, await hashPassword(next)]);
+    const tok = readCookie(req, COOKIE);
+    await pool.query('DELETE FROM sessions WHERE user_id = $1 AND token_hash <> $2', [req.user.id, tok ? sha256(tok) : '']);   // other devices signed out
+    res.json({ ok: true });
+  } catch (e) { console.error('[change pw]', e.message); res.status(500).json({ error: 'Could not change the password' }); }
+});
+
 // ─── v443: OFFERS TO WATCHERS (Sales page) ──────────────────────────────────
 // Rules → who qualifies → send. Manual: you press Send. Automatic: once a day, using the same rules.
 // Only listings eBay says have interested buyers can get an offer (same check as the Messages Offers panel).
@@ -6048,5 +6217,5 @@ setupDatabase()
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v426 listening on ' + PORT)))   // v427
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v427 listening on ' + PORT)))   // v428
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v428 listening on ' + PORT)))   // v429
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v445 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v446 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });
