@@ -9,7 +9,7 @@
   // refresh, overriding anything init does.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 </script>
-<title>PartsLister Pro v452</title>
+<title>PartsLister Pro v453</title>
 <!-- v409: hover the green L to see exactly which listings (price + shipping) were averaged. -->
 <!-- v408: clearing a listing also clears the low-resolution / unreadable / too-many photo warnings. -->
 <!-- v407: a scan that finds no part number opens No Part Number by itself; a cleared listing starts on Has Part Number. -->
@@ -950,7 +950,7 @@
     <!-- v302: logo goes to the dashboard -->
     <a href="/" title="Dashboard" style="text-decoration:none;color:inherit;">
       <div class="logo"><span>PARTS</span>LISTER</div>
-      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v452</span></div>
+      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v453</span></div>
     </a>
     <!-- v303: removed — the logo is the dashboard button
     <a href="/" class="btn btn-secondary btn-sm" title="Back to your dashboard" style="font-size:11px;padding:4px 10px;text-decoration:none;margin-left:6px;">⌂ Dashboard</a>
@@ -7464,8 +7464,9 @@ function getDetectedColor(desc) {
 // v451: one color for the whole listing. Picking a color swaps every color word in the title, description and part fields for it.
 const COLOR_WORDS = ['Black', 'Gray', 'Grey', 'Silver', 'White', 'Beige', 'Tan', 'Brown', 'Red', 'Blue', 'Green', 'Yellow', 'Orange', 'Purple', 'Gold', 'Chrome', 'Charcoal', 'Cream', 'Ivory', 'Burgundy', 'Maroon', 'Navy', 'Pink', 'Teal'];
 const COLOR_FIELDS = ['listing-title', 'description-box', 'np-desc', 'part-type', 'refinement-notes'];
-function replaceColorWords(text, newColor) {
+function replaceColorWords(text, newColor, strict) {   // strict (interchange numbers): a color word stuck to a number or hyphen/slash is left alone
   const w = '(?:' + COLOR_WORDS.join('|') + ')';
+  if (strict) { const re2 = new RegExp('(?<![\\w\\/-])' + w + '(?![\\w\\/-])', 'gi'); return String(text || '').replace(re2, m => !newColor ? '' : (m === m.toUpperCase() && m.length > 1 ? newColor.toUpperCase() : m === m.toLowerCase() ? newColor.toLowerCase() : newColor)).replace(/  +/g, ' ').trim(); }
   const re = new RegExp('\\b' + w + '(?:\\s*[\\/&,-]\\s*' + w + ')*\\b', 'gi');   // "Black/Tan" counts as one color
   let out = String(text || '').replace(re, m => !newColor ? '' : (m === m.toUpperCase() && m.length > 1 ? newColor.toUpperCase() : m === m.toLowerCase() ? newColor.toLowerCase() : newColor));
   return out.replace(/  +/g, ' ').replace(/\s+([,.;:])/g, '$1').replace(/^[\s,\/-]+|[\s,\/-]+$/g, '').trim();
@@ -7477,6 +7478,11 @@ function applyColorEverywhere(colorName) {   // colorName 'N/A' or '' removes th
     const v = el.value || ''; if (!v) return;
     const nv = replaceColorWords(v, c);
     if (nv !== v) { el.value = nv; try { el.dispatchEvent(new Event('input', { bubbles: true })); } catch (e) {} }
+  });
+  document.querySelectorAll('.interchange-input').forEach(el => {   // v452: the Interchange Part Number boxes too
+    const v = el.value || ''; if (!v) return;
+    const nv = replaceColorWords(v, c, true);
+    if (nv !== v) { el.value = nv; try { updateInterchangeCount(el); } catch (e) {} }
   });
   const ce = document.getElementById('color'); if (ce) ce.value = c;
   try { updateTitleCount(); } catch (e) {}
