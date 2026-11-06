@@ -9,7 +9,7 @@
   // refresh, overriding anything init does.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 </script>
-<title>PartsLister Pro v449</title>
+<title>PartsLister Pro v451</title>
 <!-- v409: hover the green L to see exactly which listings (price + shipping) were averaged. -->
 <!-- v408: clearing a listing also clears the low-resolution / unreadable / too-many photo warnings. -->
 <!-- v407: a scan that finds no part number opens No Part Number by itself; a cleared listing starts on Has Part Number. -->
@@ -950,7 +950,7 @@
     <!-- v302: logo goes to the dashboard -->
     <a href="/" title="Dashboard" style="text-decoration:none;color:inherit;">
       <div class="logo"><span>PARTS</span>LISTER</div>
-      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v449</span></div>
+      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v451</span></div>
     </a>
     <!-- v303: removed — the logo is the dashboard button
     <a href="/" class="btn btn-secondary btn-sm" title="Back to your dashboard" style="font-size:11px;padding:4px 10px;text-decoration:none;margin-left:6px;">⌂ Dashboard</a>
@@ -3336,6 +3336,7 @@ function setMode(mode) {
     updateNoPartSearch();
     // v414: no color reset on a mode switch (it wiped the picked color); the form reset still clears it
     // showColorPicker(null);
+    try { const _d = document.getElementById('np-desc'); showColorPicker(getDetectedColor(_d ? _d.value : '')); } catch (e) { console.warn('color picker', e); }   // v451: the Color and Material rows are always there in No Part Number mode
   }
 }
 
@@ -5838,8 +5839,8 @@ function resetForm(shippingOverride) {
   window._lensPartType = '';
   const npBoxReset = document.getElementById('np-scan-result-box');
   if (npBoxReset) { npBoxReset.innerHTML = ''; npBoxReset.style.display = 'none'; }
-  document.getElementById('color-picker-wrap').style.display = 'none';
-  const _mp = document.getElementById('material-picker-wrap'); if (_mp) _mp.style.display = 'none';
+  if (currentMode === 'nopartnumber') { try { showColorPicker(null); } catch (e) {} }   // v451: a blank No Part Number form still shows Color and Material
+  else { document.getElementById('color-picker-wrap').style.display = 'none'; const _mp = document.getElementById('material-picker-wrap'); if (_mp) _mp.style.display = 'none'; }
   document.querySelectorAll('input[name="nploc"]').forEach(c => c.checked = false);
   const preview = document.getElementById('np-location-preview');
   if (preview) { preview.textContent = 'No location selected'; preview.style.color = 'var(--muted)'; }
@@ -7398,6 +7399,8 @@ function toggleInlineColorPicker(e) {
       wrap.onclick = () => {
         document.getElementById('color').value = c.na ? '' : c.name;
         picker.style.display = 'none';
+        applyColorEverywhere(c.na ? '' : c.name);   // v451: the whole listing uses the new color
+        try { if (currentMode === 'nopartnumber') showColorPicker(c.na ? null : c.name); } catch (e) {}
       };
 
       const sw = document.createElement('div');
@@ -7450,11 +7453,58 @@ const EBAY_COLORS = [
 ];
 
 function getDetectedColor(desc) {
-  const d = desc.toLowerCase();
+  const d = String(desc || '').toLowerCase();
   for (const c of EBAY_COLORS) {
-    if (d.includes(c.name.toLowerCase())) return c.name;
+    if (c.na) continue;   // v451: 'N/A' is not a color word
+    if (new RegExp('\\b' + c.name.toLowerCase() + '\\b').test(d)) return c.name;
   }
-  return null;
+  return /\bgrey\b/.test(d) ? 'Gray' : null;
+}
+
+// v451: one color for the whole listing. Picking a color swaps every color word in the title, description and part fields for it.
+const COLOR_WORDS = ['Black', 'Gray', 'Grey', 'Silver', 'White', 'Beige', 'Tan', 'Brown', 'Red', 'Blue', 'Green', 'Yellow', 'Orange', 'Purple', 'Gold', 'Chrome', 'Charcoal', 'Cream', 'Ivory', 'Burgundy', 'Maroon', 'Navy', 'Pink', 'Teal'];
+const COLOR_FIELDS = ['listing-title', 'description-box', 'np-desc', 'part-type', 'refinement-notes'];
+function replaceColorWords(text, newColor) {
+  const w = '(?:' + COLOR_WORDS.join('|') + ')';
+  const re = new RegExp('\\b' + w + '(?:\\s*[\\/&,-]\\s*' + w + ')*\\b', 'gi');   // "Black/Tan" counts as one color
+  let out = String(text || '').replace(re, m => !newColor ? '' : (m === m.toUpperCase() && m.length > 1 ? newColor.toUpperCase() : m === m.toLowerCase() ? newColor.toLowerCase() : newColor));
+  return out.replace(/  +/g, ' ').replace(/\s+([,.;:])/g, '$1').replace(/^[\s,\/-]+|[\s,\/-]+$/g, '').trim();
+}
+function applyColorEverywhere(colorName) {   // colorName 'N/A' or '' removes the color words
+  const c = (!colorName || colorName === 'N/A') ? '' : colorName;
+  COLOR_FIELDS.forEach(id => {
+    const el = document.getElementById(id); if (!el) return;
+    const v = el.value || ''; if (!v) return;
+    const nv = replaceColorWords(v, c);
+    if (nv !== v) { el.value = nv; try { el.dispatchEvent(new Event('input', { bubbles: true })); } catch (e) {} }
+  });
+  const ce = document.getElementById('color'); if (ce) ce.value = c;
+  try { updateTitleCount(); } catch (e) {}
+}
+// v451: placement words in an old title → the Placement boxes (Driver/Passenger, Front/Rear, Upper/Lower, row)
+function placementFromTitle(title) {
+  const t = ' ' + String(title || '').toLowerCase() + ' ', out = [];
+  if (/\b(driver|lh|l\/h|left(?:[ -]?hand)?)\b/.test(t) && !/\blhd\b/.test(t)) out.push('Driver');
+  if (/\b(passenger|rh|r\/h|right(?:[ -]?hand)?)\b/.test(t)) out.push('Passenger');
+  if (/\bfront\b/.test(t)) out.push('Front');
+  if (/\brear\b/.test(t)) out.push('Rear');
+  if (/\bupper\b/.test(t)) out.push('Upper');
+  if (/\blower\b/.test(t)) out.push('Lower');
+  if (/\b(1st|first)[ -]?row\b/.test(t)) out.push('1st Row');
+  if (/\b(2nd|second)[ -]?row\b/.test(t)) out.push('2nd Row');
+  if (/\b(3rd|third)[ -]?row\b/.test(t)) out.push('3rd Row');
+  return out;
+}
+function applyOldTitleDetails(title) {   // Relaunch: stored in the No Part Number boxes every time, whichever mode is showing
+  try {
+    const found = placementFromTitle(title);
+    document.querySelectorAll('input[name="nploc"]').forEach(cb => { if (found.includes(cb.value)) cb.checked = true; });
+    const col = getDetectedColor(title), de = document.getElementById('np-desc');
+    if (col && de && !getDetectedColor(de.value)) de.value = (col + ' ' + de.value).trim();
+    if (col) { const ce = document.getElementById('color'); if (ce && !ce.value.trim()) ce.value = col; }
+    if (currentMode === 'nopartnumber') showColorPicker(col || getDetectedColor(de ? de.value : ''));
+    updateNoPartSearch();
+  } catch (e) { console.warn('old title details', e); }
 }
 
 const MATERIALS = ['Cloth', 'Leather', 'Plastic', 'Wood'];
@@ -7546,6 +7596,7 @@ function selectColor(colorName) {
     document.getElementById('np-desc').value = (colorName + ' ' + desc).trim();
     showColorPicker(colorName);
   }
+  applyColorEverywhere(colorName);   // v451: title, description and the other fields too
   updateNoPartSearch();
 }
 
@@ -7555,7 +7606,7 @@ function syncColorFromDesc() {
   const descEl = document.getElementById('np-desc');
   if (document.activeElement === descEl) return;
   const desc = descEl ? descEl.value : '';
-  showColorPicker(null);
+  showColorPicker(getDetectedColor(desc));   // v451: was showColorPicker(null), which un-highlighted a color that was in the description
   const detectedMat = getDetectedMaterial(desc);
   showMaterialPicker(detectedMat);
 }
@@ -9709,8 +9760,10 @@ async function resumeRelaunchFromUrl() {
         window._relaunchPart = shortPartDesc(v.part || '');   // v445
       }
     }
+    applyOldTitleDetails(d.title);   // v451: side, front/rear, upper/lower, row and color from the old title
     window._relaunchFill = async () => {   // after the scan: a part description from the old title if the scan gave none
       const de = document.getElementById('np-desc');
+      applyOldTitleDetails(_title);   // v451: again after the scan, in case it cleared the boxes
       if (de && !de.value.trim() && window._relaunchPart) de.value = window._relaunchPart;
       try { if (window._relaunchVeh) { const ve = document.getElementById('np-vehicle'); if (ve && !ve.value.trim()) { ve.value = [window._relaunchVeh.year, window._relaunchVeh.make, window._relaunchVeh.model].filter(Boolean).join(' '); parseVehicleInput(); } } } catch (e) {}
       try { updateNoPartSearch(); } catch (e) {}
