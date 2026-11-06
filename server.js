@@ -1,4 +1,4 @@
-// PartsLister Pro server — v446
+// PartsLister Pro server — v447
 // v409: yard tickets — the whole-ticket text look and the Look checkboxes are gone; every text row and the logo each have the full set of sliders (boldness, thinner, lighter, weathered, gravel, fuzzy, faded gray, spots).
 // v408: yard tickets — each text row has a Look checkbox (row.useLook, default on): the whole-ticket text look only changes the rows that are checked.
 // v406: yard tickets — a whole-ticket Boldness for the text (design.textLook.bold) and a Lighter slider for the logo (less ink).
@@ -4894,26 +4894,30 @@ app.post('/api/admin/users/:id/delete', requireUser, requireAdmin, express.json(
     res.json({ ok: true });
   } catch (e) { console.error('[admin delete]', e.message); res.status(500).json({ error: 'Could not delete the user' }); }
 });
-// Default settings: built from the admin's OWN settings with a checklist; a separate saved set — changing it never touches anyone's settings
+// Default settings: a separate saved set, edited in the Listing Tool's own settings screen in "default mode" (/list?defaults=1).
+// Saving it never touches anyone's own settings. Secrets, addresses and policies are dropped here on the server whatever the page sends.
+const cleanDefaults = (src) => { const out = {}; Object.keys(src || {}).forEach(k => { if (k === 'msgSettings' || isNeverKey(k)) return; out[k] = JSON.parse(JSON.stringify(src[k])); }); return out; };
 app.get('/api/admin/defaults', requireUser, requireAdmin, async (req, res) => {
   try {
-    const mine = ((await readUserData(req.user.id)) || {}).settings || {};
     const saved = (await pool.query('SELECT data, updated_at FROM default_settings WHERE id = 1')).rows[0] || null;
-    const savedKeys = saved ? Object.keys(saved.data || {}) : [];
-    const items = Object.keys(mine).sort().map(k => ({ key: k, label: prettyKey(k), preview: isNeverKey(k) ? '(never shared)' : previewOf(mine[k]), never: isNeverKey(k), inDefaults: savedKeys.includes(k) }));
-    res.json({ items, saved: saved ? { updatedAt: saved.updated_at, count: savedKeys.length } : null });
-  } catch (e) { console.error('[admin defaults]', e.message); res.status(500).json({ error: 'Could not load the settings' }); }
+    res.json({ saved: saved ? { updatedAt: saved.updated_at, count: Object.keys(saved.data || {}).length } : null });
+  } catch (e) { console.error('[admin defaults]', e.message); res.status(500).json({ error: 'Could not load the defaults' }); }
 });
-app.post('/api/admin/defaults', requireUser, requireAdmin, express.json(), async (req, res) => {
+app.get('/api/admin/defaults/settings', requireUser, requireAdmin, async (req, res) => {
   try {
-    const keys = Array.isArray(req.body && req.body.keys) ? req.body.keys.map(String) : [];
-    const mine = ((await readUserData(req.user.id)) || {}).settings || {};
-    const data = {};
-    keys.forEach(k => {
-      if (!(k in mine) || isNeverKey(k)) return;
-      if (k === 'msgSettings') { const m = JSON.parse(JSON.stringify(mine[k] || {})); MSG_PERSONAL.forEach(x => delete m[x]); data[k] = m; }
-      else data[k] = JSON.parse(JSON.stringify(mine[k]));
-    });
+    const row = (await pool.query('SELECT data FROM default_settings WHERE id = 1')).rows[0];
+    res.json({ exists: !!row, settings: cleanDefaults(row && row.data) });
+  } catch (e) { res.status(500).json({ error: 'Could not load the defaults' }); }
+});
+app.get('/api/admin/defaults/mine', requireUser, requireAdmin, async (req, res) => {   // one-time head start: YOUR settings minus anything private
+  try { res.json({ settings: cleanDefaults(((await readUserData(req.user.id)) || {}).settings) }); }
+  catch (e) { res.status(500).json({ error: 'Could not read your settings' }); }
+});
+app.post('/api/admin/defaults', requireUser, requireAdmin, express.json({ limit: '10mb' }), async (req, res) => {
+  try {
+    const data = cleanDefaults(req.body && req.body.settings);
+    const prev = (await pool.query('SELECT data FROM default_settings WHERE id = 1')).rows[0];
+    if (prev && prev.data && prev.data.msgSettings) data.msgSettings = prev.data.msgSettings;   // keep message defaults saved earlier
     await pool.query(`INSERT INTO default_settings (id, data, updated_at) VALUES (1, $1::jsonb, now())
       ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, updated_at = now()`, [JSON.stringify(data)]);
     res.json({ ok: true, count: Object.keys(data).length });
@@ -6217,5 +6221,5 @@ setupDatabase()
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v426 listening on ' + PORT)))   // v427
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v427 listening on ' + PORT)))   // v428
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v428 listening on ' + PORT)))   // v429
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v446 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v447 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });

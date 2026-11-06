@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Sales v410</title>
+<title>PartsLister Pro Sales v411</title>
 <!-- v383: eBay User Token removed from Keys. -->
 <!-- v382: switching views is instant; browser reload / Refresh really reloads. v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
 <style>
@@ -570,7 +570,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v410</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v411</span></div>
   </a>
   <!-- v316: switch pages -->
   <nav class="page-tabs" aria-label="Pages">
@@ -842,6 +842,12 @@
 
       <!-- v326: ACCOUNT KEYS — moved here from the Listing Tool. Saved encrypted to your account. -->
       <hr class="set-divider">
+      <div class="set-section">
+        <h3>How you sign in to eBay</h3>
+        <label style="display:flex;gap:8px;align-items:center;font-size:14px;font-weight:400;text-transform:none;letter-spacing:0;color:var(--text);"><input type="radio" name="signin-method" checked> Use my own eBay developer keys (below)</label>
+        <label style="display:flex;gap:8px;align-items:center;font-size:14px;font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted,#8a8f98);opacity:.6;"><input type="radio" name="signin-method" disabled> Log in with my eBay account — coming soon</label>
+      </div>
+      <hr class="set-divider">
       <div class="set-section" id="keys-section">
         <h3>Anthropic (AI)</h3>
         <p class="set-help">Used for photo scanning, titles, Identify Part and AI message drafts. Sent only to Anthropic.</p>
@@ -992,31 +998,35 @@
     <!-- ADMIN — only the admin account sees this tab -->
     <div class="settings-panel" id="panel-admin" role="tabpanel">
       <!-- v327: one place to see what's working and what to do if something isn't -->
+      <div class="adm-only" style="display:none;gap:4px;margin-bottom:14px;" id="adm-inner">
+        <button class="btn btn-secondary btn-sm" id="ai-general" onclick="admInner('general')">General</button>
+        <button class="btn btn-secondary btn-sm" id="ai-users" onclick="admInner('users')">Users</button>
+        <button class="btn btn-secondary btn-sm" id="ai-defaults" onclick="admInner('defaults')">Default settings</button>
+      </div>
+      <div id="adm-users" style="display:none;">
       <!-- v410: Users + default settings (admin only; the server checks too) -->
-      <div class="set-section adm-only" id="users-section">
+      <div class="set-section " id="users-section">
         <h3>Users</h3>
         <p class="set-help">Activity only. You can’t see anyone’s keys, listings, orders or messages, and this page never talks to eBay as them.</p>
         <div class="usr-wrap"><table class="usr-tbl"><thead><tr><th>User</th><th>Last login</th><th>Listed (30 days / lifetime)</th><th>eBay</th><th>Orders / drafts</th><th></th></tr></thead><tbody id="usr-body"><tr><td colspan="6" class="sub">Loading…</td></tr></tbody></table></div>
         <h3 style="margin-top:18px;">Add a user</h3>
         <div class="set-row"><label for="nu-email">Email</label><input class="set-inp" id="nu-email" type="email" autocomplete="off"></div>
         <div class="set-row"><label for="nu-pass">Temporary password (8 or more characters)</label><input class="set-inp" id="nu-pass" type="text" autocomplete="off"></div>
-        <div style="margin-top:10px;"><div class="sub" style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">Sign-in method</div>
-          <label style="display:flex;gap:8px;align-items:center;font-size:14px;font-weight:400;text-transform:none;letter-spacing:0;color:var(--text);"><input type="radio" name="nu-method" checked> Login with keys (their own eBay developer keys)</label>
-          <label style="display:flex;gap:8px;align-items:center;font-size:14px;font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted,#8a8f98);opacity:.6;"><input type="radio" name="nu-method" disabled> Login with eBay account — coming soon</label>
-        </div>
         <label style="display:flex;gap:8px;align-items:center;font-size:14px;color:var(--text);margin-top:6px;"><input type="checkbox" id="nu-defaults"> Start with the default settings</label>
-        <p class="set-help">Their account starts blank: their own eBay keys, Anthropic key and address. They never use yours.</p>
+        <p class="set-help">Their account starts blank: their own eBay keys, Anthropic key and address. They never use yours. They choose how to connect (own keys, or eBay account later) in their own Settings.</p>
         <div class="set-buttons"><button class="btn btn-primary btn-sm" onclick="addUser()">Add user</button></div>
       </div>
-      <hr class="set-divider adm-only">
-      <div class="set-section adm-only" id="defsave-section">
-        <h3>Default settings</h3>
-        <p class="set-help">Tick what to include, copied from your current settings. Keys, address, policies and sign-off can’t be included. <strong>Save as new default</strong> only replaces this saved set; nobody’s settings change until they press “Use defaults”.</p>
-        <div class="df-list" id="df-list"><span class="sub">Loading…</span></div>
-        <div class="set-buttons"><button class="btn btn-primary btn-sm" onclick="saveDefaults()">Save as new default</button></div>
-        <p class="set-help" id="df-status"></p>
+            </div>
+      <div id="adm-defaults" style="display:none;">
+        <div class="set-section">
+          <h3>Default settings</h3>
+          <p class="set-help">The Listing Tool settings new users can copy. You edit them on the real Listing Tool settings screen, in default mode, so it looks and works exactly like yours. It is a separate saved set: your own settings are never changed by it, and nobody’s settings change until they press “Use defaults”. Keys, address, policies and sign-off are never saved in it.</p>
+          <div class="set-buttons"><a class="btn btn-primary btn-sm" href="/list?defaults=1">Edit default settings</a></div>
+          <p class="set-help" id="df-status"></p>
+        </div>
       </div>
-      <hr class="set-divider adm-only">
+      <div id="adm-general">
+
       <div class="set-section adm-only">
         <h3>Diagnostics</h3>
         <p class="set-help">Checks every connection (eBay, AI, photos), shows which version of each file is live, recent errors in plain English, and what to do if something breaks.</p>
@@ -1113,6 +1123,7 @@
           <button class="btn btn-primary" id="connect-btn" onclick="connectEbay()">Connect eBay</button>
         </div>
       </div>
+      </div><!-- /adm-general -->
     </div>
   </div>
 </div>
@@ -1926,6 +1937,7 @@ function renderPenaltyYear() {
 function openSettings(tab) {
   document.getElementById('set-email').textContent = me ? me.email : '—';
   document.getElementById('set-role').textContent = me && me.isAdmin ? '  · admin' : '';
+  window._admTab = (location.search.indexOf('settings=admin') >= 0 && !window._admOpened) ? 'general' : window._admTab; window._admOpened = true;
   document.body.classList.toggle('is-admin', !!(me && me.isAdmin));
   document.getElementById('tab-admin-l').textContent = me && me.isAdmin ? 'Admin' : 'eBay';
   document.getElementById('settings-overlay').classList.add('open');
@@ -1945,7 +1957,7 @@ function showSettingsTab(tab) {
     document.getElementById('tab-' + t).setAttribute('aria-selected', t === tab ? 'true' : 'false');
     document.getElementById('panel-' + t).classList.toggle('active', t === tab);
   });
-  if (tab === 'admin') { loadEbayStatus(); if (me && me.isAdmin) { loadUsers(); loadDefaultsList(); } }
+  if (tab === 'admin') { loadEbayStatus(); if (me && me.isAdmin) { document.getElementById('adm-inner').style.display = 'flex'; admInner(window._admTab || 'general'); } }
   if (tab === 'account') { loadKeys(); checkDefaults(); }   // v326, v410
   if (tab === 'messages') loadMsgSettings();   // v330
 }
@@ -2000,19 +2012,19 @@ async function deleteUser(id, email) {
   try { await postJson('/api/admin/users/' + id + '/delete', { confirmEmail: t }); showToast('Deleted.'); loadUsers(); } catch (e) { showToast(e.message, true); }
 }
 async function loadDefaultsList() {
-  const box = document.getElementById('df-list');
   try {
-    const r = await fetch('/api/admin/defaults'); if (!r.ok) throw new Error();
-    const d = await r.json();
-    box.innerHTML = d.items.map(i => '<label class="' + (i.never ? 'never' : '') + '"><input type="checkbox" value="' + uesc(i.key) + '" ' + (i.never ? 'disabled' : (i.inDefaults || !d.saved ? 'checked' : '')) + '><span>' + uesc(i.label) + '<div class="pv">' + uesc(i.preview) + '</div></span></label>').join('') || '<span class="sub">Nothing saved in your settings yet.</span>';
-    document.getElementById('df-status').textContent = d.saved ? 'Current default: ' + d.saved.count + ' settings, saved ' + ago(d.saved.updatedAt) + '.' : 'No default saved yet.';
-  } catch (e) { box.innerHTML = '<span class="sub">Could not load your settings.</span>'; }
+    const r = await fetch('/api/admin/defaults'); if (!r.ok) return;
+    const s = (await r.json()).saved;
+    document.getElementById('df-status').textContent = s ? 'Current default: ' + s.count + ' settings, saved ' + ago(s.updatedAt) + '.' : 'No default saved yet.';
+  } catch (e) { /* fine */ }
 }
-async function saveDefaults() {
-  const keys = Array.from(document.querySelectorAll('#df-list input:checked')).map(x => x.value);
-  if (!keys.length) { showToast('Tick at least one setting.', true); return; }
-  if (!confirm('Save these ' + keys.length + ' settings as the new default? Nobody’s own settings change until they press Use defaults.')) return;
-  try { const j = await postJson('/api/admin/defaults', { keys }); showToast('Saved ' + j.count + ' settings as the default.'); loadDefaultsList(); } catch (e) { showToast(e.message, true); }
+function admInner(t) {
+  ['general', 'users', 'defaults'].forEach(x => {
+    document.getElementById('adm-' + x).style.display = x === t ? '' : 'none';
+    const b = document.getElementById('ai-' + x); b.className = 'btn btn-sm ' + (x === t ? 'btn-primary' : 'btn-secondary');
+  });
+  if (t === 'users') loadUsers();
+  if (t === 'defaults') loadDefaultsList();
 }
 async function checkDefaults() {
   try {

@@ -9,7 +9,7 @@
   // refresh, overriding anything init does.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 </script>
-<title>PartsLister Pro v445</title>
+<title>PartsLister Pro v447</title>
 <!-- v409: hover the green L to see exactly which listings (price + shipping) were averaged. -->
 <!-- v408: clearing a listing also clears the low-resolution / unreadable / too-many photo warnings. -->
 <!-- v407: a scan that finds no part number opens No Part Number by itself; a cleared listing starts on Has Part Number. -->
@@ -942,7 +942,7 @@
     <!-- v302: logo goes to the dashboard -->
     <a href="/" title="Dashboard" style="text-decoration:none;color:inherit;">
       <div class="logo"><span>PARTS</span>LISTER</div>
-      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v445</span></div>
+      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v447</span></div>
     </a>
     <!-- v303: removed — the logo is the dashboard button
     <a href="/" class="btn btn-secondary btn-sm" title="Back to your dashboard" style="font-size:11px;padding:4px 10px;text-decoration:none;margin-left:6px;">⌂ Dashboard</a>
@@ -6059,6 +6059,7 @@ function saveSettings() {
   settings.stickerAnswers.sku     = document.getElementById('sku-answer-input').value.trim();
   settings.stickerAnswers.bin     = document.getElementById('bin-answer-input').value.trim();
   settings.stickerAnswers.vehicle = document.getElementById('vehicle-answer-input').value.trim();
+  if (window._defaultsMode) { _saveDefaultSet(); return; }   // v447
   _saveUserData();   // v301: was localStorage.setItem('plp_settings', ...)
   populateShippingDropdown();
   populateDescriptionDropdown();
@@ -9077,12 +9078,13 @@ function _userPayload() {
 }
 
 function _saveUserData() {
-  if (!window._account) return;
+  if (!window._account || window._defaultsMode) return;   // v447: default mode never writes your own settings
   clearTimeout(_saveTimer);
   _saveTimer = setTimeout(_flushUserData, 800);
 }
 
 async function _flushUserData() {
+  if (window._defaultsMode) return false;   // v447
   clearTimeout(_saveTimer);
   _saveTimer = null;
   if (!window._account) return false;
@@ -9098,7 +9100,7 @@ async function _flushUserData() {
 }
 
 window.addEventListener('beforeunload', () => {
-  if (_saveTimer && window._account) {
+  if (_saveTimer && window._account && !window._defaultsMode) {
     navigator.sendBeacon('/api/data', new Blob([_userPayload()], { type: 'application/json' }));
   }
 });
@@ -9190,6 +9192,34 @@ async function _importSettings() {
   }
 }
 
+
+// ─── v447: DEFAULT SETTINGS MODE (/list?defaults=1, admin only) ──────────────
+// The same Settings screen, but it edits the DEFAULT set that new users can copy. Your own settings are never read or written here.
+async function defaultsModeStart() {
+  document.title = 'Default settings · PartsLister Pro';
+  const bar = document.createElement('div');
+  bar.style.cssText = 'position:sticky;top:0;z-index:9999;background:var(--accent);color:#000;padding:8px 14px;font-weight:700;font-size:13px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;';
+  bar.innerHTML = '<span>EDITING THE DEFAULT SETTINGS for new users — not your own. Keys, address, policies and sign-off are never saved here.</span>' +
+    '<button id="dm-open" style="padding:4px 10px;font-weight:700;cursor:pointer;">Open settings</button>' +
+    '<button id="dm-copy" style="padding:4px 10px;font-weight:700;cursor:pointer;">Copy my settings in (one time)</button>' +
+    '<a href="/sales?settings=admin" style="color:#000;margin-left:auto;">← Back to Admin</a>';
+  document.body.prepend(bar);
+  document.getElementById('dm-open').onclick = () => openSettings();
+  document.getElementById('dm-copy').onclick = async () => {
+    if (!confirm('Replace what is below with a copy of your own current settings (private items left out)? Nothing is saved until you press Save.')) return;
+    try { const j = await (await fetch('/api/admin/defaults/mine')).json(); Object.assign(settings, j.settings || {}); openSettings(); showNotif('Copied. Review it, then press Save.'); } catch (e) { showNotif('Could not copy your settings', true); }
+  };
+  try { const j = await (await fetch('/api/admin/defaults/settings')).json(); Object.assign(settings, j.settings || {}); } catch (e) { showNotif('Could not load the saved defaults', true); }
+  openSettings();
+}
+async function _saveDefaultSet() {
+  try {
+    const r = await fetch('/api/admin/defaults', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ settings }) });
+    if (!r.ok) throw new Error();
+    const j = await r.json(); closeSettings(); showNotif('✓ Saved as the default (' + j.count + ' settings). Nobody’s own settings changed.');
+  } catch (e) { showNotif('⚠ Could not save the default', true); }
+}
+
 async function _bootstrap() {
   let r;
   try { r = await fetch('/api/data'); }
@@ -9198,6 +9228,8 @@ async function _bootstrap() {
   if (r.status === 401) { try { sessionStorage.removeItem('plp-signed-in'); } catch (e) { /* fine */ } location.href = '/'; return; }   // v302: sign in on the dashboard (v381: + forget "signed in")
   if (!r.ok) { _showAuth('The server had a problem loading your account.'); return; }
   const d = await r.json();
+  window._defaultsMode = d.account && d.account.isAdmin && /[?&]defaults=1/.test(location.search);   // v447
+  if (window._defaultsMode) { d.settings = null; d.history = {}; }   // start from a blank Listing Tool, not your own settings
   window._serverSettingsJSON = d.settings ? JSON.stringify(d.settings) : null;
   const h = d.history || {};
   (h.pigtail || []).slice(0, 3).forEach(e => pigtailHistory.push(e));
@@ -9210,6 +9242,7 @@ async function _bootstrap() {
   draftsRefreshCount();   // v386
   setTimeout(resumeDraftFromUrl, 300);   // v387: Resume on the Drafts page
   setTimeout(resumeRelaunchFromUrl, 300);   // v432: Relaunch from the Active page
+  if (window._defaultsMode) setTimeout(defaultsModeStart, 400); else
   setTimeout(workRestore, 600);   // v400: bring back the unfinished listing
   document.getElementById('auth-overlay').classList.add('hidden');
   try { sessionStorage.setItem('plp-signed-in', '1'); } catch (e) { /* fine */ }   // v381
