@@ -1,4 +1,4 @@
-// PartsLister Pro server — v447
+// PartsLister Pro server — v448
 // v409: yard tickets — the whole-ticket text look and the Look checkboxes are gone; every text row and the logo each have the full set of sliders (boldness, thinner, lighter, weathered, gravel, fuzzy, faded gray, spots).
 // v408: yard tickets — each text row has a Look checkbox (row.useLook, default on): the whole-ticket text look only changes the rows that are checked.
 // v406: yard tickets — a whole-ticket Boldness for the text (design.textLook.bold) and a Lighter slider for the logo (less ink).
@@ -2835,9 +2835,19 @@ function asksForDiscount(text) {
   // v337: more ways buyers ask
   return /\b(would|will|could|can) you (please )?(consider|do|take|accept|let (it|this) go for|sell (it |this )?for|go) (\w+ )?\$?\d|\b(consider|accept|take) (an |my )?offer|\bmy offer\b|\bmake (you )?an offer|\b(below|under|less than) (your |the )?(asking|list(ed|ing)?) ?price|\bbelow (your |the )?asking\b|\bfor \$\d+(\.\d\d)?\s*\?|\$\d+(\.\d\d)? (shipped|firm|cash)\b.*\?|\bcounter ?offer|\boffer (you )?\$\d|\bbudget is\b|\byou'?d (go|take|do|accept|consider) \$?\d/.test(t);
 }
+// v448: ?scope=defaults (admin only) reads/writes the DEFAULT message settings instead of the caller's own
+function msgScopeDefaults(req, res) {
+  if (req.query.scope !== 'defaults') return false;
+  if (!req.user.is_admin) { res.status(403).json({ error: 'Admin only' }); return null; }
+  return true;
+}
 app.get('/api/msg-settings', requireUser, async (req, res) => {
   try {
-    const ms = msgSettingsOf(await getUserSettings(req.user.id));
+    const sc = msgScopeDefaults(req, res); if (sc === null) return;
+    let base;
+    if (sc) { const row = (await pool.query('SELECT data FROM default_settings WHERE id = 1')).rows[0]; base = { msgSettings: (row && row.data && row.data.msgSettings) || {} }; }
+    else base = await getUserSettings(req.user.id);
+    const ms = msgSettingsOf(base);
     res.json({ ...ms, defaultInstructions: DEFAULT_MSG_INSTRUCTIONS,
       problemPolicies: Object.keys(PROBLEM_POLICIES).map(k => ({ value: k, label: PROBLEM_POLICIES[k].label })),
       problemTypes: PROBLEM_TYPES.map(t => ({ key: t.key, label: t.label, when: t.when, options: Object.keys(t.options).map(k => ({ value: k, label: t.options[k].label })) })),   // v331
@@ -2864,6 +2874,7 @@ app.get('/api/msg-settings', requireUser, async (req, res) => {
 });
 app.post('/api/msg-settings', requireUser, express.json(), async (req, res) => {
   try {
+    const sc = msgScopeDefaults(req, res); if (sc === null) return;
     const b = req.body || {};
     const d = (await readUserData(req.user.id)) || { settings: {}, history: { pigtail: [], otherside: [] } };
     d.settings = d.settings || {};
@@ -2910,6 +2921,16 @@ app.post('/api/msg-settings', requireUser, express.json(), async (req, res) => {
       autoDraft: !!b.autoDraft,   // v365
       honorLate: { enabled: !!(b.honorLate && b.honorLate.enabled), days: [30, 60, 90].includes(parseInt(b.honorLate && b.honorLate.days, 10)) ? parseInt(b.honorLate.days, 10) : 60, address: String((b.honorLate && b.honorLate.address) || '').trim().slice(0, 300) },   // v350
     };
+    if (sc) {   // default set: personal items (sign-off, availability, return address) are never stored in it
+      const m = JSON.parse(JSON.stringify(d.settings.msgSettings));
+      MSG_PERSONAL.forEach(x => delete m[x]);
+      if (m.honorLate) delete m.honorLate.address;
+      const row = (await pool.query('SELECT data FROM default_settings WHERE id = 1')).rows[0];
+      const data = Object.assign({}, (row && row.data) || {}, { msgSettings: m });
+      await pool.query(`INSERT INTO default_settings (id, data, updated_at) VALUES (1, $1::jsonb, now())
+        ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, updated_at = now()`, [JSON.stringify(data)]);
+      return res.json({ ok: true });
+    }
     await writeUserData(req.user.id, d);
     res.json({ ok: true });
   } catch (e) {
@@ -4933,7 +4954,7 @@ async function applyDefaultsTo(userId) {
   let n = 0;
   Object.keys(d).forEach(k => {
     if (isNeverKey(k)) return;   // belt and braces: keys/addresses/policies never come from a default
-    if (k === 'msgSettings') { const keep = {}; MSG_PERSONAL.forEach(x => { if (data.settings.msgSettings && data.settings.msgSettings[x] !== undefined) keep[x] = data.settings.msgSettings[x]; }); data.settings.msgSettings = Object.assign({}, JSON.parse(JSON.stringify(d[k])), keep); }
+    if (k === 'msgSettings') { const keep = {}; MSG_PERSONAL.forEach(x => { if (data.settings.msgSettings && data.settings.msgSettings[x] !== undefined) keep[x] = data.settings.msgSettings[x]; }); const own = (data.settings.msgSettings && data.settings.msgSettings.honorLate && data.settings.msgSettings.honorLate.address) || ''; data.settings.msgSettings = Object.assign({}, JSON.parse(JSON.stringify(d[k])), keep); if (data.settings.msgSettings.honorLate) data.settings.msgSettings.honorLate.address = own; }
     else data.settings[k] = JSON.parse(JSON.stringify(d[k]));
     n++;
   });
@@ -6221,5 +6242,5 @@ setupDatabase()
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v426 listening on ' + PORT)))   // v427
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v427 listening on ' + PORT)))   // v428
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v428 listening on ' + PORT)))   // v429
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v447 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v448 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });

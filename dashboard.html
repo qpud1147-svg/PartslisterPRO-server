@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Sales v411</title>
+<title>PartsLister Pro Sales v412</title>
 <!-- v383: eBay User Token removed from Keys. -->
 <!-- v382: switching views is instant; browser reload / Refresh really reloads. v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
 <style>
@@ -570,7 +570,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v411</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v412</span></div>
   </a>
   <!-- v316: switch pages -->
   <nav class="page-tabs" aria-label="Pages">
@@ -811,6 +811,7 @@
     <div class="settings-tabs" role="tablist">
       <button role="tab" id="tab-account" aria-selected="true" onclick="showSettingsTab('account')">Account</button>
       <button role="tab" id="tab-messages" aria-selected="false" onclick="showSettingsTab('messages')">Messages</button>   <!-- v330 -->
+      <button role="tab" id="tab-listing" aria-selected="false" onclick="showSettingsTab('listing')">Listing</button>
       <button role="tab" id="tab-admin" aria-selected="false" onclick="showSettingsTab('admin')"><span id="tab-admin-l">eBay</span></button>
     </div>
 
@@ -884,7 +885,7 @@
     </div>
 
     <!-- v330: MESSAGES — how the AI drafts replies and translates -->
-    <div class="settings-panel" id="panel-messages" role="tabpanel">
+    <div class="settings-panel" id="panel-messages" role="tabpanel"><div id="ms-body">
       <div class="set-section">
         <h3>AI reply instructions</h3>
         <p class="set-help">What the AI is told when you click <strong>AI draft</strong> on a message. Write it however you like. These rules are always added on top, whatever you write: use only facts from the listing, the order and the conversation; never make up dates, deadlines, fitment or policies; plain text, in English.</p>
@@ -993,6 +994,11 @@
         <p class="set-help" style="margin-top:6px;">Only messages that aren't already in English are translated, each one once. Every translated message has a <strong>See original</strong> link. Uses your Anthropic key.</p>
         <div class="set-buttons"><button class="btn btn-primary btn-sm" id="ms-save-btn" onclick="saveMsgSettings()">Save</button></div>
       </div>
+    </div></div>
+
+    <!-- v448: LISTING SETTINGS — the Listing Tool's own settings screen, shown here (same saved settings) -->
+    <div class="settings-panel" id="panel-listing" role="tabpanel">
+      <iframe id="frame-listing" title="Listing settings" style="width:100%;height:calc(100vh - 230px);min-height:480px;border:1px solid var(--border);border-radius:6px;background:var(--surface);"></iframe>
     </div>
 
     <!-- ADMIN — only the admin account sees this tab -->
@@ -1020,9 +1026,11 @@
       <div id="adm-defaults" style="display:none;">
         <div class="set-section">
           <h3>Default settings</h3>
-          <p class="set-help">The Listing Tool settings new users can copy. You edit them on the real Listing Tool settings screen, in default mode, so it looks and works exactly like yours. It is a separate saved set: your own settings are never changed by it, and nobody’s settings change until they press “Use defaults”. Keys, address, policies and sign-off are never saved in it.</p>
-          <div class="set-buttons"><a class="btn btn-primary btn-sm" href="/list?defaults=1">Edit default settings</a></div>
+          <p class="set-help">What new users get when they press “Use defaults”. A separate saved set: your own settings are never changed by it, and nobody’s settings change until they press the button. Keys, address, policies, sign-off and availability are never saved in it.</p>
           <p class="set-help" id="df-status"></p>
+          <div style="display:flex;gap:4px;margin-bottom:10px;"><button class="btn btn-sm btn-primary" id="dfs-listing" onclick="dfSub('listing')">Listing</button><button class="btn btn-sm btn-secondary" id="dfs-messages" onclick="dfSub('messages')">Messages</button></div>
+          <iframe id="frame-defaults" title="Default listing settings" style="width:100%;height:calc(100vh - 330px);min-height:440px;border:1px solid var(--border);border-radius:6px;background:var(--surface);"></iframe>
+          <div id="df-msg-host" style="display:none;"></div>
         </div>
       </div>
       <div id="adm-general">
@@ -1942,7 +1950,7 @@ function openSettings(tab) {
   document.getElementById('tab-admin-l').textContent = me && me.isAdmin ? 'Admin' : 'eBay';
   document.getElementById('settings-overlay').classList.add('open');
   // showSettingsTab(tab === 'admin' && me && me.isAdmin ? 'admin' : 'account');
-  showSettingsTab(tab === 'admin' ? 'admin' : tab === 'messages' ? 'messages' : 'account');   // v330, v410: everyone has the eBay tab
+  showSettingsTab(tab === 'admin' ? 'admin' : tab === 'messages' ? 'messages' : tab === 'listing' ? 'listing' : 'account');   // v330, v410: everyone has the eBay tab
 }
 
 function closeSettings() {
@@ -1953,13 +1961,14 @@ document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeSetti
 
 function showSettingsTab(tab) {
   // ['account', 'admin'].forEach(t => {
-  ['account', 'messages', 'admin'].forEach(t => {   // v330: + messages
+  ['account', 'messages', 'listing', 'admin'].forEach(t => {   // v330: + messages
     document.getElementById('tab-' + t).setAttribute('aria-selected', t === tab ? 'true' : 'false');
     document.getElementById('panel-' + t).classList.toggle('active', t === tab);
   });
   if (tab === 'admin') { loadEbayStatus(); if (me && me.isAdmin) { document.getElementById('adm-inner').style.display = 'flex'; admInner(window._admTab || 'general'); } }
   if (tab === 'account') { loadKeys(); checkDefaults(); }   // v326, v410
-  if (tab === 'messages') loadMsgSettings();   // v330
+  if (tab === 'messages') { msHome(); loadMsgSettings(); }   // v330
+  if (tab === 'listing') { const f = document.getElementById('frame-listing'); if (!f.getAttribute('src')) f.src = '/list?embed=1'; }   // v448
 }
 
 
@@ -2024,7 +2033,7 @@ function admInner(t) {
     const b = document.getElementById('ai-' + x); b.className = 'btn btn-sm ' + (x === t ? 'btn-primary' : 'btn-secondary');
   });
   if (t === 'users') loadUsers();
-  if (t === 'defaults') loadDefaultsList();
+  if (t === 'defaults') { loadDefaultsList(); dfSub(window._dfSub || 'listing'); } else msHome();
 }
 async function checkDefaults() {
   try {
@@ -2040,6 +2049,24 @@ async function useDefaults() {
 async function changePassword() {
   const cur = document.getElementById('pw-cur').value, nxt = document.getElementById('pw-new').value;
   try { await postJson('/api/account/password', { current: cur, next: nxt }); document.getElementById('pw-cur').value = ''; document.getElementById('pw-new').value = ''; showToast('Password changed. Other devices are signed out.'); } catch (e) { showToast(e.message, true); }
+}
+
+
+// ─── v448: Messages settings are one form; for the default set it is moved into Admin and talks to ?scope=defaults ───
+let msScope = '';
+function msHome() { const b = document.getElementById('ms-body'), p = document.getElementById('panel-messages'); if (b.parentNode !== p) p.appendChild(b); msScope = ''; ['ms-signoff', 'ms-avail', 'ms-honor-addr'].forEach(id => { const e = document.getElementById(id); const w = e && (id === 'ms-honor-addr' ? e : (e.closest('.set-row') || e.parentNode)); if (w) w.style.display = ''; }); }
+function dfSub(t) {
+  window._dfSub = t;
+  document.getElementById('dfs-listing').className = 'btn btn-sm ' + (t === 'listing' ? 'btn-primary' : 'btn-secondary');
+  document.getElementById('dfs-messages').className = 'btn btn-sm ' + (t === 'messages' ? 'btn-primary' : 'btn-secondary');
+  const f = document.getElementById('frame-defaults'), host = document.getElementById('df-msg-host');
+  if (t === 'listing') { msHome(); host.style.display = 'none'; f.style.display = ''; if (!f.getAttribute('src')) f.src = '/list?embed=1&defaults=1'; }
+  else {
+    f.style.display = 'none'; host.style.display = '';
+    host.appendChild(document.getElementById('ms-body')); msScope = '?scope=defaults';
+    ['ms-signoff', 'ms-avail', 'ms-honor-addr'].forEach(id => { const e = document.getElementById(id); const w = e && (id === 'ms-honor-addr' ? e : (e.closest('.set-row') || e.parentNode)); if (w) w.style.display = 'none'; });
+    loadMsgSettings();
+  }
 }
 
 // ─── v326: ACCOUNT KEYS ──────────────────────────────────────────────────────
@@ -2086,7 +2113,7 @@ function toggleKeyView(show) {
 let msDefault = '';
 async function loadMsgSettings() {
   try {
-    const r = await fetch('/api/msg-settings');
+    const r = await fetch('/api/msg-settings' + msScope);
     if (!r.ok) throw new Error();
     const d = await r.json();
     msDefault = d.defaultInstructions || '';
@@ -2173,7 +2200,7 @@ async function saveMsgSettings() {
       honorLate: { enabled: document.getElementById('ms-honor-on').checked, days: parseInt(document.getElementById('ms-honor-days').value, 10), address: document.getElementById('ms-honor-addr').value },   // v350
       // v345
       remorse: document.getElementById('ms-remorse').value, addressChange: document.getElementById('ms-addrchange').value, faster: document.getElementById('ms-faster').value, partial: document.getElementById('ms-partial').value, radioCode: document.getElementById('ms-radiocode').value, pickup: document.getElementById('ms-pickup').value };
-    const r = await fetch('/api/msg-settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const r = await fetch('/api/msg-settings' + msScope, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'Could not save');
     setText('ms-instr-note', body.instructions.trim() === msDefault.trim() || !body.instructions.trim() ? 'Using the default.' : 'Using your own instructions.');
     showToast('Messages settings saved.');
