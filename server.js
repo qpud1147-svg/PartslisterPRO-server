@@ -1,4 +1,4 @@
-// PartsLister Pro server — v443
+// PartsLister Pro server — v445
 // v409: yard tickets — the whole-ticket text look and the Look checkboxes are gone; every text row and the logo each have the full set of sliders (boldness, thinner, lighter, weathered, gravel, fuzzy, faded gray, spots).
 // v408: yard tickets — each text row has a Look checkbox (row.useLook, default on): the whole-ticket text look only changes the rows that are checked.
 // v406: yard tickets — a whole-ticket Boldness for the text (design.textLook.bold) and a Lighter slider for the logo (less ink).
@@ -4351,12 +4351,12 @@ app.post('/api/relaunch/end/:id', requireUser, async (req, res) => {
   } catch (e) { console.error('[relaunch end]', e.message); res.status(502).json({ error: 'eBay did not end the old listing: ' + e.message }); }
 });
 // v433: read a listing title properly — year range, make, model, part name (used by Relaunch and Check Active / Check Sold)
-const parseTitleCache = new Map();
+const parseTitleCache = new Map();   // v445: the cache key now includes a version so older answers (no partNumber) aren't reused
 app.post('/api/parse-title', requireUser, express.json({ limit: '20kb' }), async (req, res) => {
   try {
     const title = String((req.body && req.body.title) || '').replace(/[\u{1F000}-\u{1FFFF}\u{2190}-\u{2BFF}\u{FE00}-\u{FE0F}\u200D]/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, 200);
     if (!title) return res.status(400).json({ error: 'No title' });
-    const key = req.user.id + ':' + title; if (parseTitleCache.has(key)) return res.json(parseTitleCache.get(key));
+    const key = 'v445:' + req.user.id + ':' + title; if (parseTitleCache.has(key)) return res.json(parseTitleCache.get(key));
     const settings = await getUserSettings(req.user.id);
     const apiKey = String(settings.apiKey || '').trim();
     if (!apiKey) return res.status(400).json({ error: 'Add your Anthropic API key in Settings first.' });
@@ -4364,8 +4364,8 @@ app.post('/api/parse-title', requireUser, express.json({ limit: '20kb' }), async
     const r = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({ model, max_tokens: 200, temperature: 0,
-        system: 'You read eBay titles of used car parts. Reply with ONLY a JSON object: {"yearFrom":"4-digit year or empty","yearTo":"4-digit year or empty","make":"vehicle make","model":"the main vehicle model","part":"the part name only"}. Years: expand short years (06-09 -> 2006 and 2009; 12-16 -> 2012 and 2016); a single year goes in both. model: only the vehicle model; when several are listed (RX 330 350 400h) give the first one with its letters (RX330). part: just the part name (e.g. Gear Shift Knob, Tailgate Latch Actuator) - no year, make, model, color, part numbers, side words like OEM/Genuine/Used/Tested. Use empty strings for anything not in the title. Never guess.',
+      body: JSON.stringify({ model, max_tokens: 250, temperature: 0,
+        system: 'You read eBay titles of used car parts. Reply with ONLY a JSON object: {"yearFrom":"4-digit year or empty","yearTo":"4-digit year or empty","make":"vehicle make","model":"the main vehicle model","part":"the part name only","partNumber":"the part number or empty"}. Years: expand short years (06-09 -> 2006 and 2009; 12-16 -> 2012 and 2016); a single year goes in both. model: only the vehicle model; when several are listed (RX 330 350 400h) give the first one with its letters (RX330). part: the MOST DECISIVE 1-3 words a buyer would search for (e.g. Door Mirror, Tail Light, Gear Shift Knob, Tailgate Latch) - as short as possible. Leave out year, make, model, color, part numbers, placement/side words (front, rear, left, right, driver, passenger, upper, lower, LH, RH) and filler (assembly, assy, unit, set, pair, OEM, Genuine, Used, Tested). Keep a word only if the part would be unclear without it (e.g. Control Module, Wiper Motor). partNumber: the manufacturer/OEM part number written in the title, exactly as written; if the same number appears in several forms (with dashes, with spaces, without either) give the form with no spaces or dashes; if there are different numbers give the first; NEVER a year or year range, a model name (RX400h), an engine size or a stock number; empty string if there is none. Use empty strings for anything not in the title. Never guess.',
         messages: [{ role: 'user', content: title }] }),
       signal: AbortSignal.timeout(30000)
     });
@@ -4373,7 +4373,7 @@ app.post('/api/parse-title', requireUser, express.json({ limit: '20kb' }), async
     if (!r.ok) return res.status(502).json({ error: 'Could not read the title: ' + ((d.error && d.error.message) || ('HTTP ' + r.status)) });
     const txt = ((d.content || []).filter(c => c.type === 'text').map(c => c.text).join('') || '');
     let o = {}; try { o = JSON.parse((/\{[\s\S]*\}/.exec(txt) || ['{}'])[0]); } catch (e) { o = {}; }
-    const out = {}; ['yearFrom', 'yearTo', 'make', 'model', 'part'].forEach(k => { out[k] = String(o[k] || '').trim().slice(0, 80); });
+    const out = {}; ['yearFrom', 'yearTo', 'make', 'model', 'part', 'partNumber'].forEach(k => { out[k] = String(o[k] || '').trim().slice(0, 80); });
     if (parseTitleCache.size > 3000) parseTitleCache.clear();
     parseTitleCache.set(key, out);
     res.json(out);
@@ -6048,5 +6048,5 @@ setupDatabase()
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v426 listening on ' + PORT)))   // v427
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v427 listening on ' + PORT)))   // v428
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v428 listening on ' + PORT)))   // v429
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v443 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v445 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });

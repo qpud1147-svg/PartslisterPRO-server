@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Active v410</title>
+<title>PartsLister Pro Active v411</title>
 <!-- v387: click a listing → your own eBay-style view (big photos with arrows, price, shipping, condition, item specifics, description); sharper list photos; shipping on the rows when eBay gives it. -->
 <!-- v403: Value chart: calculated-shipping listings use your average shipping from recent orders (30 days, else 90); fee/tax rates also 30 days (else 90); note says so. -->
 <!-- v402: listings-per-day chart gets a Listings | Value switch; in Value mode a 3-way switch: You keep / Listed / Buyer pays (price + shipping per quantity; fee and tax rates from your own last 90 days of orders). -->
@@ -258,7 +258,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v410</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v411</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -772,33 +772,33 @@ pageCache.rerun = () => { loadListings(false); loadDaily(false); };   // v380: f
   window.llCheck = async function (id, sold) {
     const x = [llAll, soAll, enAll].reduce((f, a) => f || a.find(i => String(i.itemId) === String(id)), null); if (!x) return;
     const mk = q => 'https://www.ebay.com/sch/i.html?_nkw=' + encodeURIComponent(q) + (sold ? '&LH_Sold=1&LH_Complete=1' : '') + '&LH_ItemCondition=3000&_ipg=60';
-    let q = llPN(x.title);
-    if (q) {
-      let w = null; try { w = window.open(mk(q), 'partslister-sold'); } catch (e) {}
-      if (!w) { alert('The eBay tab was blocked — allow pop-ups for this site.'); return; }
-      try { w.focus(); } catch (e) {}
-      return;
-    }
-    // no part number in the title: open the shared tab now (inside the click) then point it at the right search
+    // open the shared tab now (inside the click, so it isn't blocked), then point it at the right search
     let w = null; try { w = window.open('', 'partslister-sold'); } catch (e) {}
     if (!w) { alert('The eBay tab was blocked — allow pop-ups for this site.'); return; }
-    try { w.document.title = 'Looking up part number…'; w.document.body.innerHTML = '<p style="font:16px Arial;margin:30px">Looking up the part number on your listing…</p>'; } catch (e) {}
+    try { w.document.title = 'Reading the title…'; w.document.body.innerHTML = '<p style="font:16px Arial;margin:30px">Reading your listing title…</p>'; } catch (e) {}
+    // v445: Claude reads the title (same reader the Relaunch uses): part number, or year make model + part name
+    let pj = null;
     try {
-      const r = await fetch('/api/active/item/' + encodeURIComponent(id));
-      const j = await r.json().catch(() => ({}));
-      if (r.ok && j.specifics) {
-        const want = ['manufacturer part number', 'interchange part number', 'oe/oem part number', 'part number', 'oem part number'];
-        for (const nm of want) { const f = j.specifics.find(sp => String(sp.name).toLowerCase() === nm && sp.value && !/^(does not apply|n\/a|unknown)$/i.test(String(sp.value).trim())); if (f) { const pv = llPickPN(String(f.value).split(/\s+\/\s+|[,;|\n]/).map(z => z.trim()).filter(z => z.length >= 4 && /\d/.test(z) && !llIsYears(z))); if (pv) { q = pv; break; } } }
-      }
-    } catch (e) {}
-    if (!q) {   // v433: no part number anywhere -> year make model part name, read from the title by the AI; the plain title if that fails
+      const pr = await fetch('/api/parse-title', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: x.title }) });
+      const j = await pr.json().catch(() => ({}));
+      if (pr.ok && (j.partNumber || j.make || j.part)) pj = j;
+    } catch (e) { /* the older reader below */ }
+    let q = '';
+    if (pj && pj.partNumber) { const c = llClean(pj.partNumber).replace(/\s+/g, ' ').trim(); if (c && !llIsYears(c)) q = c; }
+    if (!pj && !q) q = llPN(x.title);   // Claude not available (no key / error): the older title reader
+    if (!q) {
+      try { w.document.title = 'Looking up part number…'; w.document.body.innerHTML = '<p style="font:16px Arial;margin:30px">Looking up the part number on your listing…</p>'; } catch (e) {}
       try {
-        const pr = await fetch('/api/parse-title', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: x.title }) });
-        const pj = await pr.json().catch(() => ({}));
-        if (pr.ok && pj.make && pj.part) q = [pj.yearFrom, pj.make, pj.model, pj.part].filter(Boolean).join(' ');
-      } catch (e) { /* plain title below */ }
+        const r = await fetch('/api/active/item/' + encodeURIComponent(id));
+        const j = await r.json().catch(() => ({}));
+        if (r.ok && j.specifics) {
+          const want = ['manufacturer part number', 'interchange part number', 'oe/oem part number', 'part number', 'oem part number'];
+          for (const nm of want) { const f = j.specifics.find(sp => String(sp.name).toLowerCase() === nm && sp.value && !/^(does not apply|n\/a|unknown)$/i.test(String(sp.value).trim())); if (f) { const pv = llPickPN(String(f.value).split(/\s+\/\s+|[,;|\n]/).map(z => z.trim()).filter(z => z.length >= 4 && /\d/.test(z) && !llIsYears(z))); if (pv) { q = pv; break; } } }
+        }
+      } catch (e) {}
     }
-    if (!q) q = llClean(x.title);   // v393: last resort = the plain title (emoji stripped)
+    if (!q && pj && pj.make && pj.part) q = [pj.yearFrom, pj.make, pj.model, pj.part].filter(Boolean).join(' ');   // no part number anywhere: year make model + part name
+    if (!q) q = llClean(x.title);   // last resort = the plain title (emoji stripped)
     try { w.location.href = mk(q); w.focus(); } catch (e) {}
   };
   window.llRender = function (keep) {

@@ -9,7 +9,7 @@
   // refresh, overriding anything init does.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 </script>
-<title>PartsLister Pro v443</title>
+<title>PartsLister Pro v445</title>
 <!-- v409: hover the green L to see exactly which listings (price + shipping) were averaged. -->
 <!-- v408: clearing a listing also clears the low-resolution / unreadable / too-many photo warnings. -->
 <!-- v407: a scan that finds no part number opens No Part Number by itself; a cleared listing starts on Has Part Number. -->
@@ -942,7 +942,7 @@
     <!-- v302: logo goes to the dashboard -->
     <a href="/" title="Dashboard" style="text-decoration:none;color:inherit;">
       <div class="logo"><span>PARTS</span>LISTER</div>
-      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v443</span></div>
+      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v445</span></div>
     </a>
     <!-- v303: removed — the logo is the dashboard button
     <a href="/" class="btn btn-secondary btn-sm" title="Back to your dashboard" style="font-size:11px;padding:4px 10px;text-decoration:none;margin-left:6px;">⌂ Dashboard</a>
@@ -2116,7 +2116,7 @@ const DEFAULT_PROMPT_PHOTO_SCAN = `You are scanning {PHOTO_COUNT} photo{PHOTO_PL
 
 4. {VEHICLE_DESC}
 
-5. PART DESCRIPTION: Visually identify the part type only — do NOT include color or material (those are selected separately). 1-3 words. Do NOT use the words "assembly", "unit", or "assy". Examples: "Wheel Center Cap", "Armrest Lid", "Tail Light", "Door Panel".
+5. PART DESCRIPTION: Visually identify the part type only — do NOT include color or material (those are selected separately). Use the FEWEST, MOST DECISIVE words an eBay buyer would search for: 1-2 words when that is enough, 3 at most. Do NOT include placement or side words (front, rear, left, right, driver, passenger, upper, lower — placement is selected separately), and do NOT use "assembly", "unit", "assy", "set" or "pair". Examples: "Door Mirror", "Wheel Center Cap", "Armrest Lid", "Tail Light", "Door Panel".
 
 6. PHOTO CLASSIFICATION: Classify exactly {PHOTO_COUNT} PART PHOTO{PHOTO_PLURAL} only — do NOT count any example reference images. Assign one label per photo:
    - {BIN_CLASS_DESC}
@@ -2219,7 +2219,7 @@ KNOWLEDGE GRAPH:
 Based on these real search results, return ONLY this JSON, no markdown:
 {"partType":"", "guesses":[{"vehicle":""}, ...]}
 
-- partType: what the part is, in a few words (e.g. "wheel center cap").
+- partType: what the part is in the fewest, most decisive words a buyer would search for — 1-2 words, 3 at most, no side/placement words and no "assembly" (e.g. "wheel center cap", "door mirror").
 - guesses: 1 to 5 vehicle fitments. Keep each guess SHORT and broad so an eBay search returns plenty of listings. A guess that is too specific returns few or no results.
   - RANKING: do NOT re-rank by your own opinion. Preserve Google's order. The FIRST guess must be the vehicle from the GOOGLE AI OVERVIEW if one is present; otherwise use the order the vehicles appear in the EXACT MATCHES. List the remaining guesses in the order they appear in those sources. Only use your own judgment to order them if the sources give no clear order.
   - Use ONE representative year, NOT a range (e.g. "2003"). Pick a year in the middle of the part's production span.
@@ -3158,8 +3158,9 @@ async function runOCR() {
     }
     if (parsed.partDesc && window._relaunch && window._relaunchPart) {
       // v442: relaunch — the part name read from the old title stays; the scan only finds the part number, SKU and bin
+      showColorPicker(null);   // v444: this is the step that shows the Color and Material pickers — skipping the description must not skip them
     } else if (parsed.partDesc) {
-      const cleanDesc = applyDescStrip(parsed.partDesc);
+      const cleanDesc = shortPartDesc(applyDescStrip(parsed.partDesc));   // v445
       document.getElementById('np-desc').value = cleanDesc;
       // Remember what the photo scan wrote, so Identify Part can tell an
       // untouched auto-guess apart from something typed by hand.
@@ -4894,6 +4895,13 @@ function openDataPool() {
 
 // Strip the user's banned words out of a part description (shared by the photo
 // scan and by the Google Lens part-type answer).
+// v445: a generated part name stays short — placement/filler words out, and never more than 4 words (the end of a name is the part itself)
+function shortPartDesc(text) {
+  let t = String(text || '').replace(/\b(front|rear|back|left|right|driver|passenger|upper|lower|lh|rh|fr|rr|assembly|assy|unit|set|pair|oem|genuine|used|tested|factory)\b/gi, ' ').replace(/[,;]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
+  const w = t.split(' ').filter(Boolean);
+  if (w.length > 4) t = w.slice(-4).join(' ');
+  return t || String(text || '').trim();
+}
 function applyDescStrip(text) {
   const words = settings.descStripWords || [];
   if (!words.length) return (text || '').replace(/\s{2,}/g, ' ').trim();
@@ -7143,7 +7151,7 @@ async function identifyPart() {
     // so adopt it automatically — but only while the field still holds exactly
     // what the scan wrote (or nothing). Anything typed by hand is left alone and
     // can be swapped with the chip instead.
-    const _lensPartType = applyDescStrip(parsed.partType || '');
+    const _lensPartType = shortPartDesc(applyDescStrip(parsed.partType || ''));   // v445
     window._lensPartType = _lensPartType;
     const _descEl = document.getElementById('np-desc');
     if (_lensPartType && _descEl) {
@@ -9651,7 +9659,7 @@ async function resumeRelaunchFromUrl() {
         const ve = document.getElementById('np-vehicle'), de = document.getElementById('np-desc');
         if (ve) { ve.value = [v.year, v.make, v.model].filter(Boolean).join(' '); try { parseVehicleInput(); } catch (e) {} }
         if (de && !de.value.trim() && v.part) de.value = v.part;
-        window._relaunchPart = v.part || '';
+        window._relaunchPart = shortPartDesc(v.part || '');   // v445
       }
     }
     window._relaunchFill = async () => {   // after the scan: a part description from the old title if the scan gave none
