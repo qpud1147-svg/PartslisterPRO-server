@@ -2318,7 +2318,7 @@ async function loadEbayStatus() {
   err.style.display = problems.length ? 'block' : 'none';
   err.textContent = problems.length ? 'Last problem — ' + problems.join(' · ') : '';
   document.getElementById('ebay-connected-buttons').style.display = st.connected ? 'flex' : 'none';
-  document.getElementById('fee-check-section').style.display = st.feesApproved && st.feesSync ? 'block' : 'none';   // v308
+  document.getElementById('fee-check-section').style.display = st.feesApproved && st.feesSync && me && me.isAdmin ? 'block' : 'none';   // v308
   if (st.feesApproved && st.feesSync) initFeeCheckDates();
   document.getElementById('sync-btn').disabled = !!st.syncing;
   document.getElementById('sync-btn').textContent = st.syncing ? 'Syncing…' : 'Sync Now';

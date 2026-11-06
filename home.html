@@ -457,7 +457,7 @@ async function loadHome() {
     setText('h-31-sub', 'Connect eBay to see real sales');   // v317
     setText('h-today-sub', 'Connect eBay to see real sales');
     document.getElementById('home-note').style.display = ''; setText('home-note', 'eBay isn’t connected yet.');
-    if (me.isAdmin) attention.push(['Connect your eBay account', '/sales?settings=admin']);
+    attention.push(['Connect your eBay account', '/sales?settings=admin']);   // v451: every user connects their own eBay
   } else {
     const taxOn = !!me.dashTax && !!sales.taxReady;
     const by = new Map((sales.days || []).map(([k, s, o, t]) => [k, { s: s + (taxOn ? (t || 0) : 0), o }]));
@@ -479,7 +479,7 @@ async function loadHome() {
     setText('h-month', money0.format(monthSales));
     setText('h-month-sub', monthOrders + ' orders · Last month ' + money0.format(lastMonthSales));
     // setText('home-note', 'From eBay · updated ' + timeAgo(sales.lastSync) + (sales.syncing ? ' · updating now…' : ''));   // v402: the box at the top says it
-    if (sales.lastError) attention.push(['eBay sales sync problem', me.isAdmin ? '/sales?settings=admin' : '/sales']);
+    if (sales.lastError) attention.push(['eBay sales sync problem', '/sales?settings=admin']);
 
     // FEES + PENALTY
     if (fees && fees.available) {
@@ -507,7 +507,7 @@ async function loadHome() {
       const why = { not_approved: 'Approve "Fees" in Settings → Admin', importing: 'Importing fees from eBay…', error: 'Fee import problem' }[fees && fees.reason] || ' ';
       setText('h-fees-sub', why);
       setText('h-penalty-sub', why);
-      if (fees && fees.reason === 'error') attention.push(['eBay fee import problem', me.isAdmin ? '/sales?settings=admin' : '/sales']);
+      if (fees && fees.reason === 'error') attention.push(['eBay fee import problem', '/sales?settings=admin']);
     }
   }
 

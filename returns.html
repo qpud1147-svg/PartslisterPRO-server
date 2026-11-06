@@ -697,7 +697,7 @@ async function load() {
   document.getElementById('loading').classList.add('hidden');
   const err = document.getElementById('r-error'); err.style.display = 'none';
   if (!d) { err.textContent = 'Could not reach the server.'; err.style.display = 'block'; return; }
-  if (!d.connected) { document.getElementById('r-note').style.display = ''; setText('r-note', 'eBay isn’t connected yet' + (isAdmin ? ' — connect it in Settings → Admin.' : '.')); items = []; render(); return; }
+  if (!d.connected) { document.getElementById('r-note').style.display = ''; setText('r-note', 'eBay isn’t connected yet' + ' — connect it in Settings → ' + (isAdmin ? 'Admin' : 'eBay') + '.'); items = []; render(); return; }
   if (d.errors && d.errors.length) { err.textContent = 'eBay had a problem with part of this: ' + d.errors.join(' | '); err.style.display = 'block'; }
   items = d.items || [];
   disputesNeedScope = !!d.disputesNeedScope;   // v373

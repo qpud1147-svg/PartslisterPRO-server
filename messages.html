@@ -623,7 +623,7 @@ async function loadList() {
   const err = document.getElementById('t-error'); err.style.display = 'none';
   showScopeBox(false);
   if (!d) { err.textContent = 'Could not reach the server.'; err.style.display = 'block'; return; }
-  if (!d.connected) { document.getElementById('t-note').style.display = ''; setText('t-note', 'eBay isn’t connected yet' + (isAdmin ? ' — connect it in Settings → Admin.' : '.')); threads = []; renderList(); return; }
+  if (!d.connected) { document.getElementById('t-note').style.display = ''; setText('t-note', 'eBay isn’t connected yet' + ' — connect it in Settings → ' + (isAdmin ? 'Admin' : 'eBay') + '.'); threads = []; renderList(); return; }
   if (d.needScope) { setText('t-note', ' '); showScopeBox(true); threads = []; renderList(); return; }
   if (d.error) { err.textContent = d.error; err.style.display = 'block'; }
   me = d.me || me;
@@ -1074,7 +1074,7 @@ async function toggleOffers(t) {
   // 2) Send an offer to everyone interested
   box.append(el('h4', '', 'Send an offer'));
   if (d.sendError === 'needScope') {
-    box.append(el('div', 'help', isAdmin ? 'Needs the "Send offers to buyers" permission — ⚙ Settings → Admin → Reconnect eBay.' : 'Needs a new eBay permission — ask the account admin to reconnect eBay.'));
+    box.append(el('div', 'help', 'Needs the "Send offers to buyers" permission — ⚙ Settings → ' + (isAdmin ? 'Admin' : 'eBay') + ' → Reconnect eBay.'));
     return;
   }
   if (d.sendError) { box.append(el('div', 'help', 'eBay: ' + d.sendError)); return; }

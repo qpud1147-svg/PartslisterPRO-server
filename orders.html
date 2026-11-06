@@ -643,7 +643,7 @@ async function loadOrders() {
   clearTimeout(pollTimer);
   if (!d) { ordInfo = { connected: true, ready: true, lastError: 'Could not reach the server', lastSync: null }; ordBadge(); }   // v402
   if (!d) { err.textContent = 'Could not load your orders.'; err.style.display = 'block'; return; }
-  if (!d.connected) { ordInfo = d; ordBadge(); document.getElementById('o-note').style.display = ''; setText('o-note', 'eBay isn\u2019t connected yet' + (me.isAdmin ? ' — connect it in Settings → Admin.' : '.')); orders = []; render(); return; }
+  if (!d.connected) { ordInfo = d; ordBadge(); document.getElementById('o-note').style.display = ''; setText('o-note', 'eBay isn\u2019t connected yet' + ' — connect it in Settings → ' + (me.isAdmin ? 'Admin' : 'eBay') + '.'); orders = []; render(); return; }
   orders = d.orders || [];
   // setText('o-note', !d.ready ? 'Importing order details from eBay — this takes a minute, once…'
   //   : 'From eBay · updated ' + timeAgo(d.lastSync) + (d.syncing ? ' · updating now…' : ''));

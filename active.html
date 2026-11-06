@@ -504,6 +504,7 @@ async function logout() {
 async function loadMe() {
   const me = await getJSON('/api/me');
   if (!me || me._signedOut) { location.href = '/sales?next=' + encodeURIComponent(location.pathname); return null; }
+  window.__isAdmin = !!me.isAdmin;
   setText('who', me.email + (me.isAdmin ? '  · admin' : ''));
   return me;
 }
@@ -543,7 +544,7 @@ async function loadListings(refresh) {
   if (!d) { err.textContent = 'Could not reach the server.'; err.style.display = 'block'; return; }
   setText('l-lifetime', Number(d.listedLifetime || 0).toLocaleString());
   if (!d.connected) {
-    setText('l-note', 'eBay isn’t connected yet' + (me.isAdmin ? ' — connect it in Settings → Admin.' : '.'));
+    setText('l-note', 'eBay isn’t connected yet' + ' — connect it in Settings → ' + (me.isAdmin ? 'Admin' : 'eBay') + '.');
     document.getElementById('l-badge').textContent = 'eBay isn’t connected';   // v382
     btn.style.display = 'none';
     return;
@@ -872,7 +873,7 @@ pageCache.rerun = () => { loadListings(false); loadDaily(false); };   // v380: f
     if (r.status === 401) { location.href = '/sales?next=' + encodeURIComponent(location.pathname); return; }
     if (r.status === 404) { g('ll-note').textContent = ''; const e = g('ll-error'); e.textContent = 'The server is out of date — upload the newest server.js to Railway.'; e.style.display = 'block'; return; }
     const j = await r.json();
-    if (!r.ok) throw new Error(j.error || ('server ' + r.status));
+    if (!r.ok) throw new Error(notConn(j.error) || ('server ' + r.status));
     writeOps({});   // the real list replaces anything simulated
     llAll = j.items || []; llStatus = 'updated from eBay just now'; window.llRender();
     LIVE_DB.put({ at: Date.now(), fullAt: Date.now(), items: llAll });
@@ -908,11 +909,13 @@ pageCache.rerun = () => { loadListings(false); loadDaily(false); };   // v380: f
         return;
       }
       await llFull(false);
-    } catch (e) { g('ll-note').textContent = ''; const er = g('ll-error'); er.textContent = e.message || 'Could not load your listings.'; er.style.display = 'block'; }
+    } catch (e) { g('ll-note').textContent = ''; const er = g('ll-error'); er.textContent = notConn(e.message) || 'Could not load your listings.'; er.style.display = 'block'; }
   };
   // v434: Sold (all your sales) and Ended (listings that ran out without selling) — whatever eBay still gives us (about 60 days)
   const daysBetween = (a, b) => (a && b) ? Math.max(0, Math.round((new Date(b) - new Date(a)) / 86400000)) : null;
   const chkBtns = x => '<div class="ebl-chk"><button onclick="llCheck(\'' + esc(x.itemId) + '\',0)">Check Active</button><button onclick="llCheck(\'' + esc(x.itemId) + '\',1)">Check Sold</button>' + '<button onclick="flagOpen(\'' + esc(x.itemId) + '\')">Flag</button>' + (x.__relaunch ? '<button onclick="location.href=\'/list?relaunch=' + esc(x.itemId) + '&ended=1\'" title="Recreate this listing in the Listing Tool with its photos">Relaunch</button>' : '') + '</div>';
+  // v451: a brand-new account with no eBay connection gets a plain instruction instead of a red error
+  const notConn = m => /not connected/i.test(String(m || '')) ? 'eBay isn\u2019t connected yet \u2014 connect it in Settings \u2192 ' + (window.__isAdmin ? 'Admin' : 'eBay') + '.' : m;
   const hFail = (id, m) => { const e = g(id); e.textContent = m; e.style.display = 'block'; };
   async function histLoad(kind, force) {
     const sold = kind === 'sold', P = sold ? 'so' : 'en';
@@ -921,7 +924,7 @@ pageCache.rerun = () => { loadListings(false); loadDaily(false); };   // v380: f
     try {
       const r = await fetch('/api/active/' + kind + (force ? '?refresh=1' : '')); const j = await r.json().catch(() => ({}));
       if (r.status === 404) { hFail(P + '-error', 'The server is out of date — upload the newest server.js to Railway.'); return; }
-      if (!r.ok) throw new Error(j.error || ('server ' + r.status));
+      if (!r.ok) throw new Error(notConn(j.error) || ('server ' + r.status));
       (sold ? (soAll = j.items || []) : (enAll = endedMerge(j.items || []).map(i => Object.assign(i, { __relaunch: true })))); histRender(kind);
     } catch (e) { g(P + '-note').textContent = ''; hFail(P + '-error', e.message || 'Could not load from eBay.'); }
   }
