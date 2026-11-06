@@ -823,7 +823,7 @@ pageCache.rerun = () => { loadListings(false); loadDaily(false); };   // v380: f
   };
   // v404: eBay's list doesn't include SKUs, so the ones on screen are looked up (the server remembers them per item)
   const skuTried = {};
-  let skuBusy = false;
+  let skuBusy = false, skuFails = 0;
   async function llSkuFill(rows) {
     if (skuBusy) return;
     const need = rows.filter(x => !x.sku && !skuTried[x.itemId]).map(x => x.itemId);
@@ -832,13 +832,14 @@ pageCache.rerun = () => { loadListings(false); loadDaily(false); };   // v380: f
     try {
       for (let k = 0; k < need.length; k += 40) {
         const chunk = need.slice(k, k + 40);
-        chunk.forEach(id => { skuTried[id] = 1; });
         const d = await getJSON('/api/items/thumbs?ids=' + chunk.join(','));
-        if (!d || !d.skus) { llStatus = 'SKU lookup failed (' + (d ? 'old server.js?' : 'no answer') + ')'; changed = true; break; }
+        if (!d || !d.skus) { llStatus = 'SKU lookup failed (' + (d ? 'old server.js?' : 'no answer') + ') — trying again'; changed = true; skuFails++; break; }   // v450: not marked done
         chunk.forEach(id => { skuTried[id] = 1; if (d.skus[id]) { const it = llAll.find(z => z.itemId === id); if (it) { it.sku = d.skus[id]; changed = true; } } });
       }
     } finally { skuBusy = false; }
     const have = rows.filter(x => x.sku).length;
+    if (/failed/.test(llStatus) && skuFails < 4) setTimeout(() => llSkuFill(rows), 3000 * skuFails);   // v450
+    else if (!/failed/.test(llStatus)) skuFails = 0;
     if (!/failed/.test(llStatus)) llStatus = 'SKUs on screen: ' + have + ' of ' + rows.length + (have < rows.length ? ' (the rest have none on eBay, or the lookup failed)' : '');
     window.llRender(true);
   }
@@ -934,34 +935,44 @@ pageCache.rerun = () => { loadListings(false); loadDaily(false); };   // v380: f
   }
   // v409: eBay's Sold/Ended lists often come without photos or SKUs — fill them in for the rows on screen (same lookup Orders uses)
   const histTried = {};
-  let histBusy = false;
+  const histBusy = { sold: false, ended: false };   // v450: one flag per list (they used to share one, so the other list never filled)
+  const histFails = { sold: 0, ended: 0 };
   async function histFill(kind) {
-    if (histBusy) return;
+    if (histBusy[kind]) return;
     const a = (kind === 'sold' ? soAll : enAll).slice(0, histShown[kind]).filter(x => (!x.image || !x.sku) && !histTried[x.itemId]);
     if (!a.length) return;
-    histBusy = true; let changed = false;
+    histBusy[kind] = true; let changed = false, failed = false;
     try {
       for (let k = 0; k < a.length; k += 40) {
-        const chunk = a.slice(k, k + 40); chunk.forEach(x => { histTried[x.itemId] = 1; });
+        const chunk = a.slice(k, k + 40);
         const d = await getJSON('/api/items/thumbs?ids=' + chunk.map(x => x.itemId).join(','));
-        if (!d || !d.thumbs) break;
+        if (!d || !d.thumbs) { failed = true; continue; }   // v450: a failed lookup is NOT marked done — it is tried again
+        chunk.forEach(x => { histTried[x.itemId] = 1; });
         chunk.forEach(x => { const u = d.thumbs[x.itemId], s = d.skus && d.skus[x.itemId]; if (u && !x.image) { x.image = u; changed = true; } if (s && !x.sku) { x.sku = s; changed = true; } });
       }
-    } finally { histBusy = false; }
+    } finally { histBusy[kind] = false; }
+    if (failed && histFails[kind] < 4) { histFails[kind]++; setTimeout(() => histFill(kind), 3000 * histFails[kind]); }   // v450: try again shortly
+    else if (!failed) histFails[kind] = 0;
     if (changed) histRender(kind);
   }
   // v410: the same photo/SKU lookup for the YOLO and Flagged lists
   const picTried = {};
+  let picFails = 0, picBusy = false;
   async function fillPics(arr, redraw) {
+    if (picBusy) { setTimeout(() => fillPics(arr, redraw), 1500); return; }   // v450: wait for the running lookup instead of skipping
     const a = (arr || []).filter(x => x && x.itemId && (!x.image || !x.sku) && !picTried[x.itemId]).slice(0, 120);
     if (!a.length) return;
-    let changed = false;
-    for (let k = 0; k < a.length; k += 40) {
-      const chunk = a.slice(k, k + 40); chunk.forEach(x => { picTried[x.itemId] = 1; });
-      const d = await getJSON('/api/items/thumbs?ids=' + chunk.map(x => x.itemId).join(','));
-      if (!d || !d.thumbs) break;
-      chunk.forEach(x => { const u = d.thumbs[x.itemId], s = d.skus && d.skus[x.itemId]; if (u && !x.image) { x.image = u; changed = true; } if (s && !x.sku) { x.sku = s; changed = true; } });
-    }
+    picBusy = true; let changed = false, failed = false;
+    try {
+      for (let k = 0; k < a.length; k += 40) {
+        const chunk = a.slice(k, k + 40);
+        const d = await getJSON('/api/items/thumbs?ids=' + chunk.map(x => x.itemId).join(','));
+        if (!d || !d.thumbs) { failed = true; continue; }   // v450: not marked done, tried again
+        chunk.forEach(x => { picTried[x.itemId] = 1; });
+        chunk.forEach(x => { const u = d.thumbs[x.itemId], s = d.skus && d.skus[x.itemId]; if (u && !x.image) { x.image = u; changed = true; } if (s && !x.sku) { x.sku = s; changed = true; } });
+      }
+    } finally { picBusy = false; }
+    if (failed && picFails < 4) { picFails++; setTimeout(() => fillPics(arr, redraw), 3000 * picFails); } else if (!failed) picFails = 0;
     if (changed) redraw();
   }
   let histShown = { sold: 50, ended: 50 };

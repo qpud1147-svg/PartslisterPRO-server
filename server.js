@@ -1,4 +1,4 @@
-// PartsLister Pro server — v448
+// PartsLister Pro server — v450
 // v409: yard tickets — the whole-ticket text look and the Look checkboxes are gone; every text row and the logo each have the full set of sliders (boldness, thinner, lighter, weathered, gravel, fuzzy, faded gray, spots).
 // v408: yard tickets — each text row has a Look checkbox (row.useLook, default on): the whole-ticket text look only changes the rows that are checked.
 // v406: yard tickets — a whole-ticket Boldness for the text (design.textLook.bold) and a Lighter slider for the logo (less ink).
@@ -2053,7 +2053,7 @@ async function getItemData(userId, itemId) {
   const r = await pool.query('SELECT data, error, fetched_at FROM ebay_items WHERE user_id = $1 AND item_id = $2', [userId, itemId]);
   const row = r.rows[0];
   if (row && row.data) return { data: row.data };
-  if (row && row.error && Date.now() - new Date(row.fetched_at).getTime() < 86400000) return { error: row.error };
+  if (row && row.error && Date.now() - new Date(row.fetched_at).getTime() < 10 * 60000) return { error: row.error };   // v450: was 24 h — one eBay hiccup kept a listing photo-less for a day
   return fetchItem(userId, itemId);
 }
 
@@ -6242,5 +6242,5 @@ setupDatabase()
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v426 listening on ' + PORT)))   // v427
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v427 listening on ' + PORT)))   // v428
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v428 listening on ' + PORT)))   // v429
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v448 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v450 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });
