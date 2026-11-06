@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Sales v408</title>
+<title>PartsLister Pro Sales v409</title>
 <!-- v383: eBay User Token removed from Keys. -->
 <!-- v382: switching views is instant; browser reload / Refresh really reloads. v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
 <style>
@@ -241,6 +241,31 @@
   .tile.penalty.bad .status-tag { color: var(--danger); }
 
   /* CHART */
+
+  /* v409: Offers to watchers */
+  .of-card { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 18px; margin-bottom: 12px; }
+  .of-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+  .of-title { font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 20px; letter-spacing: 0.5px; text-transform: uppercase; }
+  .of-note { color: var(--muted); font-size: 12px; margin-top: 3px; max-width: 560px; }
+  .of-seg { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+  .of-seg button { background: var(--surface2); color: var(--text); border: 0; padding: 8px 16px; font-weight: 700; font-size: 13px; cursor: pointer; font-family: inherit; }
+  .of-seg button[aria-pressed="true"] { background: var(--accent); color: #000; }
+  .of-rules { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 12px 0; }
+  .of-rules label { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+  .of-rules input { background: var(--surface2); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 7px 9px; font-size: 14px; font-family: inherit; width: 100%; }
+  .of-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 8px 0; }
+  .of-msg { font-size: 12px; color: var(--muted); }
+  .of-msg.bad { color: #ff6b66; } .of-msg.good { color: #6fd08c; }
+  .of-row { display: flex; gap: 12px; align-items: center; padding: 8px 0; border-top: 1px solid var(--border); }
+  .of-row img { width: 56px; height: 56px; object-fit: cover; border-radius: 4px; background: var(--surface2); flex-shrink: 0; }
+  .of-row .of-t { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; word-break: break-word; }
+  .of-row .of-sku { color: var(--accent); font-weight: 700; font-size: 13px; }
+  .of-row .of-p { text-align: right; white-space: nowrap; font-size: 13px; }
+  .of-row .of-p b { font-size: 16px; color: var(--accent); }
+  .of-row .of-m { color: var(--muted); font-size: 11px; }
+  .of-log { margin-top: 12px; font-size: 12px; color: var(--muted); }
+  .of-log summary { cursor: pointer; }
+  .of-log div { padding: 3px 0; border-top: 1px solid var(--border); }
   .chart-card {
     background: var(--surface);
     border: 1px solid var(--border);
@@ -532,7 +557,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v408</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v409</span></div>
   </a>
   <!-- v316: switch pages -->
   <nav class="page-tabs" aria-label="Pages">
@@ -662,6 +687,40 @@
         </table>
       </div>
     </details>
+  </div>
+
+  <!-- v409: OFFERS TO WATCHERS -->
+  <div class="of-card" id="of-card">
+    <div class="of-head">
+      <div>
+        <div class="of-title">Offers to watchers</div>
+        <div class="of-note" id="of-note">Sends a private discount offer to buyers watching your older listings. Nothing is sent until you press Send (Manual) or switch to Automatic.</div>
+      </div>
+      <div class="of-seg" role="group" aria-label="How offers are sent">
+        <button type="button" id="of-m-manual" aria-pressed="true">Manual</button>
+        <button type="button" id="of-m-auto" aria-pressed="false">Automatic</button>
+      </div>
+    </div>
+    <div class="of-msg" id="of-need" style="display:none"></div>
+    <div class="of-rules">
+      <label>Listed at least (days)<input type="number" id="of-days" min="0" step="1"></label>
+      <label>Offer % off<input type="number" id="of-pct" min="5" max="70" step="1"></label>
+      <label>Watchers at least<input type="number" id="of-w" min="0" step="1"></label>
+      <label>Never offer below ($)<input type="number" id="of-floor" min="0" step="1"></label>
+      <label>Don't re-offer for (days)<input type="number" id="of-rep" min="1" step="1"></label>
+      <label>Max per automatic run<input type="number" id="of-max" min="1" max="100" step="1"></label>
+    </div>
+    <div class="of-actions">
+      <button class="btn btn-secondary btn-sm" type="button" id="of-save">Save rules</button>
+      <button class="btn btn-primary btn-sm" type="button" id="of-check">Check who qualifies</button>
+      <span class="of-msg" id="of-status"></span>
+    </div>
+    <div id="of-list"></div>
+    <div class="of-actions" id="of-sendbar" style="display:none">
+      <button class="btn btn-primary btn-sm" type="button" id="of-send">Send selected offers</button>
+      <label class="of-msg" style="display:flex;gap:6px;align-items:center;cursor:pointer"><input type="checkbox" id="of-all" checked> Select all</label>
+    </div>
+    <details class="of-log" id="of-logbox"><summary>Recent offers sent</summary><div id="of-log"></div></details>
   </div>
 
   <!-- BELOW: lifetime listed (real) + what's coming -->
@@ -2290,6 +2349,92 @@ async function load() {
 // pageCache.rerun = () => refreshSales();
 pageCache.rerun = async () => { const r = await fetch('/api/me').catch(() => null); if (r && r.status === 401) { showAuth(''); return; } refreshSales(); };   // v381   // v380: fresh data from eBay → draw the page again
 load();
+</script>
+
+<script>
+// v409: Offers to watchers — rules, preview, send. The server works out the prices; this page only says which listings.
+(function () {
+  const $ = id => document.getElementById(id);
+  const esc = t => String(t == null ? '' : t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const m2 = n => '$' + Number(n).toFixed(2);
+  let rules = null, cands = [], needScope = false, connected = true;
+  const say = (t, cls) => { const e = $('of-status'); e.textContent = t || ''; e.className = 'of-msg' + (cls ? ' ' + cls : ''); };
+  async function api(url, opt) {
+    const r = await fetch(url, opt); const j = await r.json().catch(() => ({}));
+    if (r.status === 401) throw new Error('Sign in again');
+    if (!r.ok) throw new Error(j.error || ('server ' + r.status));
+    return j;
+  }
+  function fillRules() {
+    if (!rules) return;
+    $('of-days').value = rules.minDays; $('of-pct').value = rules.percent; $('of-w').value = rules.minWatchers;
+    $('of-floor').value = rules.floor; $('of-rep').value = rules.repeatDays; $('of-max').value = rules.maxPerRun;
+    $('of-m-manual').setAttribute('aria-pressed', rules.mode === 'manual' ? 'true' : 'false');
+    $('of-m-auto').setAttribute('aria-pressed', rules.mode === 'auto' ? 'true' : 'false');
+    $('of-note').textContent = rules.mode === 'auto'
+      ? 'Automatic: once a day the server sends offers to everything that qualifies (up to the max per run). ' + (rules.lastAutoRun ? 'Last run ' + new Date(rules.lastAutoRun).toLocaleString() + '.' : '')
+      : 'Manual: nothing is sent until you press Send. Offers go only to buyers watching the listing, last 2 days, and can’t be countered.';
+  }
+  const readRules = () => ({ mode: rules ? rules.mode : 'manual', minDays: $('of-days').value, percent: $('of-pct').value, minWatchers: $('of-w').value, floor: $('of-floor').value, repeatDays: $('of-rep').value, maxPerRun: $('of-max').value });
+  async function save(extra) {
+    const j = await api('/api/offers-auto/rules', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign(readRules(), extra || {})) });
+    rules = j.rules; fillRules(); return j;
+  }
+  function renderLog(log) {
+    const b = $('of-log');
+    b.innerHTML = (log || []).length ? log.map(x => '<div>' + esc(new Date(x.sent_at).toLocaleString()) + ' · ' + (x.status === 'sent' ? '<span style="color:#6fd08c">sent</span>' : '<span style="color:#ff6b66">failed</span>') + ' · ' + esc(x.source) + ' · ' + m2(x.offer_price) + ' (' + Number(x.percent) + '% off ' + m2(x.price) + ') · ' + esc((x.title || x.item_id).slice(0, 70)) + (x.note ? ' — ' + esc(x.note) : '') + '</div>').join('') : '<div>Nothing sent yet.</div>';
+  }
+  async function load() {
+    try {
+      const j = await api('/api/offers-auto/rules');
+      connected = j.connected; needScope = j.needScope; rules = j.rules; fillRules(); renderLog(j.log);
+      const n = $('of-need');
+      if (!connected) { n.style.display = 'block'; n.className = 'of-msg bad'; n.textContent = 'Connect eBay first (⚙ Settings → Admin).'; }
+      else if (needScope) { n.style.display = 'block'; n.className = 'of-msg bad'; n.textContent = 'eBay needs one more permission to send offers: ⚙ Settings → Admin → Reconnect eBay, then allow "Send offers to buyers".'; }
+    } catch (e) { say('Could not load the offer rules: ' + e.message, 'bad'); }
+  }
+  function renderList(c) {
+    const box = $('of-list');
+    cands = c.candidates || [];
+    const sk = c.skipped || {};
+    const why = [['young', 'newer than the minimum age'], ['fewWatchers', 'too few watchers'], ['noBuyers', 'eBay shows no interested buyers'], ['recent', 'already offered recently'], ['yolo', 'YOLO'], ['flagged', 'flagged'], ['belowFloor', 'offer would be under your floor']].filter(([k]) => sk[k]).map(([k, t]) => sk[k] + ' ' + t).join(' · ');
+    if (!cands.length) { box.innerHTML = '<div class="of-msg" style="padding:10px 0">Nobody qualifies right now.' + (why ? ' Skipped: ' + esc(why) + '.' : '') + '</div>'; $('of-sendbar').style.display = 'none'; return; }
+    box.innerHTML = '<div class="of-msg" style="padding:6px 0">' + cands.length + ' listing' + (cands.length === 1 ? '' : 's') + ' qualify' + (why ? ' · skipped: ' + esc(why) : '') + '</div>' + cands.map((x, i) =>
+      '<label class="of-row"><input type="checkbox" class="of-pick" data-id="' + esc(x.itemId) + '" checked>' +
+      (x.image ? '<img loading="lazy" alt="" src="' + esc(x.image) + '">' : '<img alt="">') +
+      '<div class="of-t">' + esc(x.title) + (x.sku ? '<div class="of-sku">' + esc(x.sku) + '</div>' : '') + '<div class="of-m">' + x.days + ' days listed · ' + x.watchers + ' watching</div></div>' +
+      '<div class="of-p"><div class="of-m">' + m2(x.price) + ' →</div><b>' + m2(x.offerPrice) + '</b></div></label>').join('');
+    $('of-sendbar').style.display = 'flex'; $('of-all').checked = true; updSend();
+  }
+  const picked = () => [...document.querySelectorAll('.of-pick:checked')].map(i => i.dataset.id);
+  function updSend() { const n = picked().length; $('of-send').textContent = 'Send ' + n + ' offer' + (n === 1 ? '' : 's'); $('of-send').disabled = !n; }
+  $('of-list').addEventListener('change', e => { if (e.target.classList.contains('of-pick')) updSend(); });
+  $('of-all').addEventListener('change', e => { document.querySelectorAll('.of-pick').forEach(i => { i.checked = e.target.checked; }); updSend(); });
+  $('of-save').addEventListener('click', async () => { say('Saving…'); try { await save(); say('Rules saved.', 'good'); } catch (e) { say(e.message, 'bad'); } });
+  async function setMode(mode) {
+    if (rules && rules.mode === mode) return;
+    if (mode === 'auto' && !confirm('Switch to Automatic?\n\nOnce a day, offers will go out to buyers by themselves using the rules above (up to ' + ($('of-max').value || 25) + ' per run). The first automatic run is about a day from now. You can switch back to Manual any time.')) return;
+    say('Saving…'); try { await save({ mode }); say(mode === 'auto' ? 'Automatic is on.' : 'Manual is on.', 'good'); } catch (e) { say(e.message, 'bad'); }
+  }
+  $('of-m-manual').addEventListener('click', () => setMode('manual'));
+  $('of-m-auto').addEventListener('click', () => setMode('auto'));
+  $('of-check').addEventListener('click', async () => {
+    say('Checking your listings and eBay…'); $('of-check').disabled = true;
+    try { await save(); const c = await api('/api/offers-auto/preview'); if (c.needScope) { say('eBay needs one more permission first — see the red note above.', 'bad'); } else if (!c.connected) { say('Connect eBay first.', 'bad'); } else { say('Checked ' + (c.liveCount || 0) + ' listings; eBay shows interested buyers on ' + (c.eligibleCount || 0) + '.'); renderList(c); } }
+    catch (e) { say(e.message, 'bad'); } finally { $('of-check').disabled = false; }
+  });
+  $('of-send').addEventListener('click', async () => {
+    const ids = picked(); if (!ids.length) return;
+    if (!confirm('Send ' + ids.length + ' offer' + (ids.length === 1 ? '' : 's') + ' to the buyers watching ' + (ids.length === 1 ? 'that listing' : 'those listings') + '?\n\nThis goes to real buyers and can’t be taken back.')) return;
+    $('of-send').disabled = true; say('Sending…');
+    try {
+      const j = await api('/api/offers-auto/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ itemIds: ids }) });
+      say('Sent ' + j.sent + (j.failed ? ', ' + j.failed + ' failed (see the log)' : '') + '.', j.failed ? 'bad' : 'good');
+      await load(); const c = await api('/api/offers-auto/preview'); renderList(c);
+    } catch (e) { say(e.message, 'bad'); updSend(); }
+  });
+  load();
+})();
 </script>
 </body>
 </html>

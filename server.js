@@ -1,4 +1,4 @@
-// PartsLister Pro server — v442
+// PartsLister Pro server — v443
 // v409: yard tickets — the whole-ticket text look and the Look checkboxes are gone; every text row and the logo each have the full set of sliders (boldness, thinner, lighter, weathered, gravel, fuzzy, faded gray, spots).
 // v408: yard tickets — each text row has a Look checkbox (row.useLook, default on): the whole-ticket text look only changes the rows that are checked.
 // v406: yard tickets — a whole-ticket Boldness for the text (design.textLook.bold) and a Lighter slider for the logo (less ink).
@@ -448,6 +448,32 @@ async function setupDatabase() {
       flagged_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       UNIQUE (user_id, item_id)
     );
+    -- v443: OFFERS TO WATCHERS — the rules (Manual = you press Send; Automatic = once a day) and a log of every offer sent
+    CREATE TABLE IF NOT EXISTS offer_rules (
+      user_id       INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      mode          TEXT NOT NULL DEFAULT 'manual',
+      min_days      INTEGER NOT NULL DEFAULT 30,
+      percent       NUMERIC(5,2) NOT NULL DEFAULT 10,
+      min_watchers  INTEGER NOT NULL DEFAULT 1,
+      floor_price   NUMERIC(10,2) NOT NULL DEFAULT 0,
+      repeat_days   INTEGER NOT NULL DEFAULT 14,
+      max_per_run   INTEGER NOT NULL DEFAULT 25,
+      last_auto_run TIMESTAMPTZ
+    );
+    CREATE TABLE IF NOT EXISTS offer_log (
+      id          SERIAL PRIMARY KEY,
+      user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      item_id     TEXT NOT NULL,
+      title       TEXT NOT NULL DEFAULT '',
+      price       NUMERIC(10,2),
+      offer_price NUMERIC(10,2),
+      percent     NUMERIC(5,2),
+      status      TEXT NOT NULL DEFAULT 'sent',
+      note        TEXT NOT NULL DEFAULT '',
+      source      TEXT NOT NULL DEFAULT 'manual',
+      sent_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    CREATE INDEX IF NOT EXISTS offer_log_user_item ON offer_log (user_id, item_id, sent_at DESC);
     -- v422: LISTING DRAFTS — a half-finished listing saved from the Listing Tool (all fields in snap, photos in their own table), up to 50 per account
     CREATE TABLE IF NOT EXISTS listing_drafts (
       id          SERIAL PRIMARY KEY,
@@ -4767,6 +4793,143 @@ app.post('/api/offers/:itemId/send', requireUser, express.json(), async (req, re
   }
 });
 
+
+// ─── v443: OFFERS TO WATCHERS (Sales page) ──────────────────────────────────
+// Rules → who qualifies → send. Manual: you press Send. Automatic: once a day, using the same rules.
+// Only listings eBay says have interested buyers can get an offer (same check as the Messages Offers panel).
+const OFFER_DEFAULTS = { mode: 'manual', minDays: 30, percent: 10, minWatchers: 1, floor: 0, repeatDays: 14, maxPerRun: 25 };
+async function getOfferRules(userId) {
+  const r = (await pool.query('SELECT * FROM offer_rules WHERE user_id = $1', [userId])).rows[0];
+  if (!r) return Object.assign({}, OFFER_DEFAULTS, { lastAutoRun: null });
+  return { mode: r.mode === 'auto' ? 'auto' : 'manual', minDays: r.min_days, percent: Number(r.percent), minWatchers: r.min_watchers, floor: Number(r.floor_price), repeatDays: r.repeat_days, maxPerRun: r.max_per_run, lastAutoRun: r.last_auto_run };
+}
+async function offerCandidates(userId, rules) {
+  const conn = await getConnection(userId);
+  if (!conn || !conn.refresh_enc) return { connected: false };
+  if (!hasScope(conn, INV_SCOPE)) return { connected: true, needScope: true };
+  const live = await fetchLiveList(userId, false);
+  const yolo = new Set((await pool.query("SELECT item_id FROM yolo_listings WHERE user_id = $1 AND status = 'active'", [userId])).rows.map(r => r.item_id));
+  const flagged = new Set((await pool.query('SELECT item_id FROM listing_flags WHERE user_id = $1', [userId])).rows.map(r => r.item_id));
+  const recent = new Set((await pool.query("SELECT DISTINCT item_id FROM offer_log WHERE user_id = $1 AND status = 'sent' AND sent_at > now() - make_interval(days => $2)", [userId, rules.repeatDays])).rows.map(r => r.item_id));
+  // listings eBay says have interested buyers
+  const eligible = new Set();
+  for (let offset = 0; offset < 2000; offset += 200) {
+    const { status, data } = await restCall(userId, 'GET', '/sell/negotiation/v1/find_eligible_items?limit=200&offset=' + offset, null, { 'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US' });
+    const list = (status === 204 || !data) ? [] : (data.eligibleItems || []);
+    list.forEach(x => eligible.add(String(x.listingId)));
+    if (!data || !data.next || list.length < 200) break;
+  }
+  const skipped = { young: 0, fewWatchers: 0, yolo: 0, flagged: 0, recent: 0, belowFloor: 0, noBuyers: 0 };
+  const out = [];
+  const now = Date.now();
+  for (const l of live) {
+    const days = l.start ? Math.floor((now - new Date(l.start).getTime()) / 86400000) : 0;
+    if (days < rules.minDays) { skipped.young++; continue; }
+    if (yolo.has(l.itemId)) { skipped.yolo++; continue; }
+    if (flagged.has(l.itemId)) { skipped.flagged++; continue; }
+    if ((l.watchers || 0) < rules.minWatchers) { skipped.fewWatchers++; continue; }
+    if (recent.has(l.itemId)) { skipped.recent++; continue; }
+    if (!eligible.has(String(l.itemId))) { skipped.noBuyers++; continue; }
+    const offerPrice = offerPriceFor(l.price, rules.percent);
+    if (!(offerPrice > 0) || offerPrice < rules.floor) { skipped.belowFloor++; continue; }
+    out.push({ itemId: l.itemId, title: l.title, sku: l.sku, image: l.image, price: l.price, offerPrice, days, watchers: l.watchers || 0 });
+  }
+  out.sort((a, b) => b.watchers - a.watchers || b.days - a.days);
+  return { connected: true, candidates: out, skipped, liveCount: live.length, eligibleCount: eligible.size };
+}
+async function sendOfferList(userId, rules, list, source) {
+  const results = []; let fails = 0;
+  for (const c of list) {
+    let status = 'sent', note = '';
+    try {
+      await restCall(userId, 'POST', '/sell/negotiation/v1/send_offer_to_interested_buyers', {
+        offeredItems: [{ listingId: String(c.itemId), price: { currency: 'USD', value: c.offerPrice.toFixed(2) }, quantity: 1 }],
+        allowCounterOffer: false,
+        offerDuration: { unit: 'DAY', value: 2 }
+      }, { 'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US' });
+      fails = 0;
+    } catch (e) { status = 'failed'; note = String(e.message || e).slice(0, 300); fails++; }
+    await pool.query('INSERT INTO offer_log (user_id, item_id, title, price, offer_price, percent, status, note, source) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)',
+      [userId, c.itemId, c.title || '', c.price, c.offerPrice, rules.percent, status, note, source]);
+    results.push({ itemId: c.itemId, status, note });
+    if (fails >= 3) { results.push({ itemId: null, status: 'stopped', note: 'Stopped after 3 failures in a row.' }); break; }
+    await new Promise(r => setTimeout(r, 400));
+  }
+  return results;
+}
+app.get('/api/offers-auto/rules', requireUser, async (req, res) => {
+  try {
+    const conn = await getConnection(req.user.id);
+    const rules = await getOfferRules(req.user.id);
+    const log = (await pool.query('SELECT item_id, title, price, offer_price, percent, status, note, source, sent_at FROM offer_log WHERE user_id = $1 ORDER BY sent_at DESC LIMIT 25', [req.user.id])).rows;
+    res.json({ connected: !!(conn && conn.refresh_enc), needScope: !!(conn && conn.refresh_enc) && !hasScope(conn, INV_SCOPE), rules, log });
+  } catch (e) { console.error('[offers rules]', e.message); res.status(500).json({ error: 'Could not load the offer rules' }); }
+});
+app.post('/api/offers-auto/rules', requireUser, express.json(), async (req, res) => {
+  try {
+    const b = req.body || {};
+    const n = (v, lo, hi, d) => { const x = parseFloat(v); return Number.isFinite(x) ? Math.min(hi, Math.max(lo, x)) : d; };
+    const cur = await getOfferRules(req.user.id);
+    const mode = b.mode === 'auto' ? 'auto' : b.mode === 'manual' ? 'manual' : cur.mode;
+    const rules = {
+      mode,
+      minDays: Math.round(n(b.minDays, 0, 3650, cur.minDays)),
+      percent: n(b.percent, 5, 70, cur.percent),          // eBay needs at least 5% off
+      minWatchers: Math.round(n(b.minWatchers, 0, 100, cur.minWatchers)),
+      floor: n(b.floor, 0, 100000, cur.floor),
+      repeatDays: Math.round(n(b.repeatDays, 1, 365, cur.repeatDays)),
+      maxPerRun: Math.round(n(b.maxPerRun, 1, 100, cur.maxPerRun))
+    };
+    // switching to Automatic starts the clock now, so the first automatic run is a day later (never right as you flip it)
+    const startClock = mode === 'auto' && cur.mode !== 'auto';
+    await pool.query(`INSERT INTO offer_rules (user_id, mode, min_days, percent, min_watchers, floor_price, repeat_days, max_per_run, last_auto_run)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8, $9)
+      ON CONFLICT (user_id) DO UPDATE SET mode = $2, min_days = $3, percent = $4, min_watchers = $5, floor_price = $6, repeat_days = $7, max_per_run = $8,
+        last_auto_run = CASE WHEN $10::boolean THEN now() ELSE offer_rules.last_auto_run END`,
+      [req.user.id, rules.mode, rules.minDays, rules.percent, rules.minWatchers, rules.floor, rules.repeatDays, rules.maxPerRun, startClock ? new Date() : null, startClock]);
+    res.json({ ok: true, rules: await getOfferRules(req.user.id) });
+  } catch (e) { console.error('[offers rules save]', e.message); res.status(500).json({ error: 'Could not save the rules' }); }
+});
+app.get('/api/offers-auto/preview', requireUser, async (req, res) => {
+  try {
+    const rules = await getOfferRules(req.user.id);
+    res.json(Object.assign({ rules }, await offerCandidates(req.user.id, rules)));
+  } catch (e) { console.error('[offers preview]', e.message); res.status(502).json({ error: 'Could not check with eBay: ' + e.message }); }
+});
+// Send: the server works out who qualifies again and the prices itself — the page only says which ones
+app.post('/api/offers-auto/send', requireUser, express.json(), async (req, res) => {
+  try {
+    const want = new Set(((req.body || {}).itemIds || []).map(String));
+    if (!want.size) return res.status(400).json({ error: 'Pick at least one listing.' });
+    const rules = await getOfferRules(req.user.id);
+    const c = await offerCandidates(req.user.id, rules);
+    if (!c.connected) return res.status(400).json({ error: 'Connect eBay first.' });
+    if (c.needScope) return res.status(400).json({ error: 'Reconnect eBay to approve "Send offers to buyers" first (⚙ Settings → Admin → Reconnect eBay).' });
+    const list = c.candidates.filter(x => want.has(String(x.itemId))).slice(0, 50);
+    if (!list.length) return res.status(400).json({ error: 'None of those qualify any more — check again.' });
+    const results = await sendOfferList(req.user.id, rules, list, 'manual');
+    res.json({ ok: true, sent: results.filter(r => r.status === 'sent').length, failed: results.filter(r => r.status === 'failed').length, results });
+  } catch (e) { console.error('[offers send]', e.message); res.status(502).json({ error: 'Could not send: ' + e.message }); }
+});
+// Automatic: checked hourly, runs at most once a day per account, only for accounts switched to Automatic
+async function autoOffersTick() {
+  try {
+    const due = (await pool.query("SELECT user_id FROM offer_rules WHERE mode = 'auto' AND (last_auto_run IS NULL OR last_auto_run < now() - interval '23 hours')")).rows;
+    for (const d of due) {
+      const claim = await pool.query("UPDATE offer_rules SET last_auto_run = now() WHERE user_id = $1 AND mode = 'auto' AND (last_auto_run IS NULL OR last_auto_run < now() - interval '23 hours') RETURNING user_id", [d.user_id]);
+      if (!claim.rows.length) continue;
+      try {
+        const rules = await getOfferRules(d.user_id);
+        const c = await offerCandidates(d.user_id, rules);
+        if (!c.candidates || !c.candidates.length) continue;
+        const results = await sendOfferList(d.user_id, rules, c.candidates.slice(0, rules.maxPerRun), 'auto');
+        console.log('[offers auto] user ' + d.user_id + ': ' + results.filter(r => r.status === 'sent').length + ' sent');
+      } catch (e) { console.error('[offers auto]', d.user_id, e.message); }
+    }
+  } catch (e) { console.error('[offers auto tick]', e.message); }
+}
+setTimeout(() => { autoOffersTick(); setInterval(autoOffersTick, 60 * 60000).unref(); }, 5 * 60000).unref();
+
 // ─── v324: RETURNS, "NOT RECEIVED" CLAIMS, CASES (eBay Post-Order API) ──────
 // Read live from eBay — nothing saved here. Uses your normal eBay sign-in.
 async function poCall(userId, method, path, body) {
@@ -5885,5 +6048,5 @@ setupDatabase()
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v426 listening on ' + PORT)))   // v427
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v427 listening on ' + PORT)))   // v428
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v428 listening on ' + PORT)))   // v429
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v439 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v443 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });
