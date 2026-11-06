@@ -9167,6 +9167,8 @@ async function _authSubmit(mode) {
 async function _logout() {
   if (_saveTimer) await _flushUserData();
   try { Object.keys(sessionStorage).filter(k => k.startsWith('plp-')).forEach(k => sessionStorage.removeItem(k)); } catch (e) { /* fine */ }   // v381: forget this tab's saved pages
+  try { Object.keys(localStorage).filter(k => /^(plp[-_]|lc(Range|Kind|VMode))/.test(k)).forEach(k => localStorage.removeItem(k)); } catch (e) { /* fine */ }   // v448: wipe every saved copy on logout
+  try { ['plp-live', 'plp-work'].forEach(n => indexedDB.deleteDatabase(n)); } catch (e) { /* fine */ }
   await fetch('/api/logout', { method: 'POST' }).catch(() => {});
   // location.reload();
   location.href = '/';   // v302: back to the dashboard sign-in

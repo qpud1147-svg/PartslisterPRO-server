@@ -303,7 +303,7 @@ const pageCache = { urls: [], rerun: null, liveUntil: 0, live() { this.liveUntil
   const write = (url, text) => { try { if (!/"(loading|checking)":true/.test(text)) localStorage.setItem(KEY + url, text); } catch (e) { /* full or blocked — fine */ } };
   const asResponse = (text) => new Response(text, { status: 200, headers: { 'Content-Type': 'application/json' } });
   const signedIn = (yes) => { try { if (yes) sessionStorage.setItem('plp-signed-in', '1'); else sessionStorage.removeItem('plp-signed-in'); } catch (e) { /* fine */ } };   // v381
-  const clearAll = () => { try { Object.keys(sessionStorage).filter(k => k.startsWith('plp-')).forEach(k => sessionStorage.removeItem(k)); } catch (e) { /* fine */ } try { Object.keys(localStorage).filter(k => k.startsWith('plp-cache:') || k === 'plp_daily' || k === 'plp_sum').forEach(k => localStorage.removeItem(k)); } catch (e) { /* fine */ } };   // v408: the saved copies live in localStorage
+  const clearAll = () => { try { Object.keys(sessionStorage).filter(k => k.startsWith('plp-')).forEach(k => sessionStorage.removeItem(k)); } catch (e) { /* fine */ } try { Object.keys(localStorage).filter(k => /^(plp[-_]|lc(Range|Kind|VMode))/.test(k)).forEach(k => localStorage.removeItem(k)); } catch (e) { /* fine */ } try { ['plp-live', 'plp-work'].forEach(n => indexedDB.deleteDatabase(n)); } catch (e) { /* fine */ } };   // v408: the saved copies live in localStorage
   const watch = (url, r) => { if (url === '/api/me') { if (r.status === 200) signedIn(true); else if (r.status === 401) clearAll(); } };   // v381
   window.fetch = async function (url, opt) {
     if (typeof url === 'string' && url === '/api/logout') clearAll();
