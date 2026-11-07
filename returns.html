@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Returns v414</title>
+<title>PartsLister Pro Returns v415</title>
 <!-- v382: switching views is instant; browser reload / Refresh really reloads. v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
 <!-- PartsLister Pro — Returns page (v324: new). Returns, "item not received" claims and cases from
      eBay's Post-Order API, read live (nothing saved on the server). Approve / decline / refund from here.
@@ -321,6 +321,16 @@
   .t-note { color: var(--muted); font-size: 12.5px; line-height: 1.5; margin: 12px 0; }
   .t-note b { color: var(--text2); }
   #types-btn { margin-left: 0; }
+  .fu-sw { display: flex; align-items: center; gap: 10px; margin: 8px 0; cursor: pointer; }
+  .fu-sw input { display: none; }
+  .fu-sw i { width: 40px; height: 22px; border-radius: 11px; background: var(--surface2); border: 1px solid var(--border); position: relative; transition: .15s; flex: none; }
+  .fu-sw i::after { content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--text2); transition: .15s; }
+  .fu-sw input:checked + i { background: var(--success); border-color: var(--success); }
+  .fu-sw input:checked + i::after { left: 20px; background: #fff; }
+  .bd { margin: 10px 0; font-size: 14px; }
+  .bd div { display: flex; justify-content: space-between; padding: 3px 0; }
+  .bd .tot { border-top: 1px solid var(--border); margin-top: 4px; padding-top: 6px; font-weight: 700; }
+  .bd .pay { font-size: 16px; color: var(--accent); }
   .fu-bar { height: 6px; background: var(--surface2); border-radius: 3px; overflow: hidden; margin: 14px 0 6px; }
   .fu-bar i { display: block; height: 100%; width: 35%; background: var(--accent); border-radius: 3px; animation: fuSlide 1.1s ease-in-out infinite; }
   @keyframes fuSlide { 0% { margin-left: -35%; } 100% { margin-left: 100%; } }
@@ -338,7 +348,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v414</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v415</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -1060,31 +1070,33 @@ async function showDetail(key) {
     it.append(im, el('span', '', (titles[x.itemId] || 'Item #' + x.itemId) + ' · #' + x.itemId));
     box.append(it);
   }
+  const pgBox = el('div'), histBox = el('div');   // v415: steps right under the item, then reason + comment, then history
+  if (x.kind === 'return') box.append(pgBox);
   if (x.reason) box.append(el('div', 'r-line', 'Reason: ' + nice(x.reason) + (x.qty > 1 ? ' · qty ' + x.qty : '')));
   if (x.comments) box.append(el('div', 'quote', '“' + x.comments + '”'));
+  box.append(histBox);
 
   // history (returns)
   let liveP = null;   // v369: the return as eBay has it right now (stage, actions, refund breakdown)
   if (x.kind === 'return') {
-    const hb = el('div'); box.append(el('div', 'd-h', 'Progress'), hb);
-    hb.append(el('div', 'd-msg', 'Loading from eBay…'));
+    pgBox.append(el('div', 'd-msg', 'Loading from eBay…'));
     // getJSON('/api/returns/return/' + x.id).then(r => {
     liveP = getJSON('/api/returns/return/' + x.id);
     liveP.then(r => {
-      hb.textContent = '';
+      pgBox.textContent = '';
       const pg = r && r.progress;
-      if (pg) hb.append(progressEl(pg));   // v412: eBay-style steps
+      if (pg) pgBox.append(progressEl(pg));   // v412: eBay-style steps
       const hist = (r && r.history) || [];
-      if (!hist.length) { if (!pg) hb.append(el('div', 'd-msg', (r && r.error) || 'No history from eBay.')); return; }
+      if (!hist.length) { if (!pg) pgBox.append(el('div', 'd-msg', (r && r.error) || 'No history from eBay.')); return; }
       const tg = el('a', 'r-line', 'Show history'); tg.href = '#'; tg.style.cssText = 'display:inline-block;color:var(--accent);margin-top:8px;';
-      hb.append(tg);
+      histBox.append(tg);
       const h = el('div', 'hist'); h.style.display = 'none';
       tg.onclick = (ev) => { ev.preventDefault(); const on = h.style.display === 'none'; h.style.display = on ? '' : 'none'; tg.textContent = on ? 'Hide history' : 'Show history'; };
       hist.forEach(e => { const row = el('div'); row.append(el('span', '', dateStr(e.when) + ' · ' + nice(e.who) + ' — '), document.createTextNode(nice(e.what) + (e.note ? ': ' + e.note : ''))); h.append(row); });
-      hb.append(h);
+      histBox.append(h);
     });
     // v370: what the refund costs you, from eBay's Payments records for this order
-    const mb = el('div'); box.append(el('div', 'd-h', 'Why this amount (what it costs you)'), mb);
+    const mb = el('div'); if (view !== 'open') box.append(el('div', 'd-h', 'What it cost you'), mb);   // v415: open returns see this in the refund breakdown
     mb.append(el('div', 'd-msg', 'Loading from eBay…'));
     liveP.then(r => {
       mb.textContent = '';
@@ -1114,10 +1126,11 @@ async function showDetail(key) {
     });
   }
 
-  if (x.itemId && x.kind !== 'cancel' && !fuKeys().has(key)) { box.append(el('div', 'd-h', 'After the return')); box.append(followBtns(x)); }   // v409
-  if (view !== 'open') return;
+  const addFollow = () => { if (x.itemId && x.kind !== 'cancel' && !fuKeys().has(key)) { const fb = el('div', 'acts'); fb.append(el('h4', '', 'After the return'), followBtns(x)); box.append(fb); } };   // v415: at the bottom
+  if (view !== 'open') { addFollow(); return; }
   const acts = el('div', 'acts');
   box.append(acts);
+  setTimeout(addFollow, 0);
   const base = '/api/returns/' + x.kind + '/' + x.id;
 
   if (x.kind === 'return') {
@@ -1164,7 +1177,8 @@ async function showDetail(key) {
       const canPartial = opts ? /PARTIAL/.test(opts) : canDecide;
       const canRefund = opts ? (live.options || []).some(o => /REFUND/i.test(o) && !/PARTIAL/i.test(o)) : /SHIPPED|DELIVERED|RECEIVED/.test(st);
       const note = el('textarea'); note.placeholder = canDecide ? 'Note to the buyer (needed to decline; optional otherwise)' : 'Note to the buyer (optional)'; note.maxLength = 1000;
-      if (canDecide || canPartial || canRefund) holder.append(note);
+      const noteHere = canDecide || canPartial || (canRefund && !(est && est.total !== null));   // v415: with only a refund to do, the note lives in the refund box
+      if (noteHere) holder.append(note);
       if (canDecide) {
         const keep = el('input'); keep.type = 'checkbox';
         const keepL = el('label'); keepL.append(keep, document.createTextNode('Buyer can keep the item'));
@@ -1205,9 +1219,9 @@ async function showDetail(key) {
         if (total !== null) {
           const pn = el('div'); pn.style.cssText = 'border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin:6px 0 10px;';
           est.lines.filter(l => l.type !== 'PURCHASE_PRICE' && (l.amount > 0 || l.max > 0)).forEach(l => {
-            const lab = el('label'); lab.style.cssText = 'display:block;margin:4px 0;';
+            const lab = el('label', 'fu-sw');
             const cb = el('input'); cb.type = 'checkbox'; cb.checked = l.amount > 0; cb.onchange = () => { ctl.lines[l.type] = cb.checked; upd(); };
-            lab.append(cb, document.createTextNode(' Refund ' + (NAMES[l.type] || nice(l.type)).toLowerCase() + ' ' + money2.format(l.amount > 0 ? l.amount : l.max)));
+            lab.append(cb, el('i'), document.createTextNode('Refund ' + (NAMES[l.type] || nice(l.type)).toLowerCase() + ' · ' + money2.format(l.amount > 0 ? l.amount : l.max)));
             pn.append(lab);
           });
           const dd = est.lines.find(l => l.type === 'PURCHASE_PRICE');
@@ -1237,6 +1251,7 @@ async function showDetail(key) {
             ph.append(fi, fs); dl.append(ph); pn.append(dl);
           }
           const upd = () => { const t2 = calc(); rb.textContent = 'Refund ' + money2.format(t2); upd2(); };
+          if (!noteHere) { note.placeholder = 'Note to the buyer (required with a deduction)'; note.style.marginTop = '8px'; pn.append(note); }
           holder.append(pn);
         }
         if (total !== null) {
@@ -1250,18 +1265,26 @@ async function showDetail(key) {
           // r3.append(rb, el('span', 'r-line', 'eBay’s refund: ' + parts));
           // v370: + about what it costs you (eBay credits back the sale's fees, scaled to the refund)
           const f = r && r.fees;
-          // v413: eBay's own page credits the sale's fees in proportion to the ITEM PRICE refunded (shipping/tax don't change it)
+          // v415: breakdown — what the buyer gets, eBay's fee credit (in proportion to the ITEM PRICE refunded), what you pay
           const ppl = est.lines.find(l => l.type === 'PURCHASE_PRICE');
-          const aboutFor = (t2) => {
-            if (!(f && f.saleFees !== null && f.saleFees !== undefined && !(f.refunds || []).length)) return '';
-            const ppNow = ppl ? Math.round(ppl.amount * (100 - ctl.pct)) / 100 : 0;
-            const share = ppl && ppl.amount > 0 ? Math.min(1, ppNow / ppl.amount) : (f.saleBasis > 0 ? Math.min(1, t2 / f.saleBasis) : 1);
-            const cr = Math.round(f.saleFees * share * 100) / 100;
-            return ' · You owe about ' + money2.format(t2 - cr) + ' (eBay credits back about ' + money2.format(cr) + ' in fees)';
+          const bdEl = el('div', 'bd');
+          upd2 = () => {
+            const t2 = calc(); bdEl.textContent = '';
+            const row = (a, b, cls) => { const d2 = el('div', cls || ''); d2.append(el('span', '', a), el('span', '', b)); bdEl.append(d2); };
+            if (ppl) row('Item price', money2.format(ppl.amount));
+            if (ppl && ctl.pct) row('Deduction (' + ctl.pct + '%)', '−' + money2.format(ppl.amount - lineVal(ppl)));
+            est.lines.filter(l => l.type !== 'PURCHASE_PRICE' && lineVal(l) > 0).forEach(l => row((NAMES[l.type] || nice(l.type)), '+' + money2.format(lineVal(l))));
+            row('Buyer gets', money2.format(t2), 'tot');
+            if (f && f.saleFees !== null && f.saleFees !== undefined && !(f.refunds || []).length) {
+              const share = ppl && ppl.amount > 0 ? Math.min(1, lineVal(ppl) / ppl.amount) : (f.saleBasis > 0 ? Math.min(1, t2 / f.saleBasis) : 1);
+              const cr = Math.round(f.saleFees * share * 100) / 100;
+              row('eBay fee credit (of ' + money2.format(f.saleFees) + ' fees charged)', '−' + money2.format(cr));
+              row('You pay', money2.format(Math.round((t2 - cr) * 100) / 100), 'tot pay');
+            } else if (f && f.needScope) row('Fee credit', 'reconnect eBay to see it');
           };
-          const infoSp = el('span', 'r-line', 'eBay’s refund: ' + parts + aboutFor(total));
-          r3.append(rb, infoSp);
-          upd2 = () => { infoSp.textContent = 'eBay’s refund: ' + parts + aboutFor(calc()); };
+          upd2();
+          holder.append(bdEl);
+          r3.append(rb);
         } else {
           rb.disabled = true;
           r3.append(rb, el('span', 'r-line', 'eBay didn’t give a refund amount for this return — use Open on eBay below.'));
