@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Returns v415</title>
+<title>PartsLister Pro Returns v416</title>
 <!-- v382: switching views is instant; browser reload / Refresh really reloads. v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
 <!-- PartsLister Pro — Returns page (v324: new). Returns, "item not received" claims and cases from
      eBay's Post-Order API, read live (nothing saved on the server). Approve / decline / refund from here.
@@ -348,7 +348,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v415</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v416</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -1034,8 +1034,8 @@ function progressEl(pg) {
   const labels = [['Started', dstr(pg.started)], [pg.delivered ? 'Delivered' : 'Shipped', dstr(pg.delivered || pg.shipped)], [pg.refunded || pg.closed ? 'Refunded' : 'Refund', pg.refunded || pg.closed ? dstr(pg.refunded) : (pg.refundBy ? 'by ' + dstr(pg.refundBy) : '')]];
   labels.forEach(([t, d], i) => {
     const col = el('div'); col.style.cssText = 'flex:1;text-align:center;position:relative;';
-    if (i) { const ln = el('div'); ln.style.cssText = 'position:absolute;top:11px;left:-50%;width:100%;height:2px;background:' + (done[i] ? 'var(--success)' : 'var(--border)') + ';'; col.append(ln); }
-    const dot = el('div', '', done[i] ? '✓' : ''); dot.style.cssText = 'position:relative;width:24px;height:24px;border-radius:50%;margin:0 auto;font-size:14px;line-height:24px;color:#fff;background:' + (done[i] ? 'var(--success)' : 'var(--surface2)') + ';border:2px solid ' + (done[i] ? 'var(--success)' : 'var(--border)') + ';';
+    if (i) { const ln = el('div'); ln.style.cssText = 'position:absolute;top:11px;left:calc(-50% + 16px);width:calc(100% - 32px);height:2px;background:' + (done[i] ? '#3b82f6' : 'var(--border)') + ';'; col.append(ln); }
+    const dot = el('div', '', done[i] ? '✓' : ''); dot.style.cssText = 'position:relative;width:24px;height:24px;border-radius:50%;margin:0 auto;font-size:14px;line-height:24px;color:#fff;background:' + (done[i] ? '#3b82f6' : 'var(--surface2)') + ';border:2px solid ' + (done[i] ? '#3b82f6' : 'var(--border)') + ';';
     const tt = el('div', '', t); tt.style.cssText = 'font-weight:600;font-size:13px;margin-top:4px;';
     const dd = el('div', 'r-line', d || ' '); dd.style.fontSize = '12px';
     col.append(dot, tt, dd); wrap.append(col);
@@ -1228,9 +1228,9 @@ async function showDetail(key) {
           if (dd) {
             const dl = el('div'); dl.style.cssText = 'margin:8px 0 4px;';
             dl.append(document.createTextNode('Deduct for a problem with the item: '));
-            const sel = el('select'); [0, 10, 20, 30, 40, 50].forEach(p => { const o = el('option', '', p ? p + '%' : 'None'); o.value = p; sel.append(o); });
+            const sel = el('select'); [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50].forEach(p => { const o = el('option', '', p ? p + '%' : 'None'); o.value = p; sel.append(o); });
             sel.onchange = () => { ctl.pct = +sel.value; ph.style.display = ctl.pct ? '' : 'none'; upd(); };
-            dl.append(sel, el('span', 'r-line', ' up to 50% of the item price'));
+            dl.append(sel);
             const ph = el('div'); ph.style.cssText = 'display:none;margin-top:6px;';
             ph.append(el('div', 'r-line', 'Add a reason in the note above, and a photo of the problem:'));
             const fi = el('input'); fi.type = 'file'; fi.accept = 'image/jpeg,image/png,image/gif,image/bmp';
@@ -1272,8 +1272,8 @@ async function showDetail(key) {
             const t2 = calc(); bdEl.textContent = '';
             const row = (a, b, cls) => { const d2 = el('div', cls || ''); d2.append(el('span', '', a), el('span', '', b)); bdEl.append(d2); };
             if (ppl) row('Item price', money2.format(ppl.amount));
-            if (ppl && ctl.pct) row('Deduction (' + ctl.pct + '%)', '−' + money2.format(ppl.amount - lineVal(ppl)));
-            est.lines.filter(l => l.type !== 'PURCHASE_PRICE' && lineVal(l) > 0).forEach(l => row((NAMES[l.type] || nice(l.type)), '+' + money2.format(lineVal(l))));
+            if (ppl) row('Deduction' + (ctl.pct ? ' (' + ctl.pct + '%)' : ''), (ctl.pct ? '−' : '') + money2.format(ppl.amount - lineVal(ppl)));   // v416: rows never appear or vanish — they just show $0.00
+            est.lines.filter(l => l.type !== 'PURCHASE_PRICE' && (l.amount > 0 || l.max > 0)).forEach(l => row((NAMES[l.type] || nice(l.type)), (lineVal(l) > 0 ? '+' : '') + money2.format(lineVal(l))));
             row('Buyer gets', money2.format(t2), 'tot');
             if (f && f.saleFees !== null && f.saleFees !== undefined && !(f.refunds || []).length) {
               const share = ppl && ppl.amount > 0 ? Math.min(1, lineVal(ppl) / ppl.amount) : (f.saleBasis > 0 ? Math.min(1, t2 / f.saleBasis) : 1);
