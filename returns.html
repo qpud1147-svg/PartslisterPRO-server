@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Returns v413</title>
+<title>PartsLister Pro Returns v414</title>
 <!-- v382: switching views is instant; browser reload / Refresh really reloads. v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
 <!-- PartsLister Pro — Returns page (v324: new). Returns, "item not received" claims and cases from
      eBay's Post-Order API, read live (nothing saved on the server). Approve / decline / refund from here.
@@ -338,7 +338,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v413</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v414</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -1187,22 +1187,27 @@ async function showDetail(key) {
       if (canRefund) {
         const r3 = el('div', 'row');
         const NAMES = { PURCHASE_PRICE: 'Item price', ORIGINAL_SHIPPING: 'Original shipping', RETURN_SHIPPING: 'Return shipping', RESTOCKING_FEE: 'Restocking fee', OTHER_FEES: 'Other fees' };
-        const parts = est ? est.lines.map(l => (NAMES[l.type] || nice(l.type)) + ' ' + money2.format(l.amount)).join(' + ') : '';
+        const parts = est ? est.lines.filter(l => l.amount > 0).map(l => (NAMES[l.type] || nice(l.type)) + ' ' + money2.format(l.amount)).join(' + ') : '';
         const total = est ? est.total : null;
         const rb = el('button', 'btn btn-primary btn-sm', total !== null ? 'Refund ' + money2.format(total) : 'Refund buyer'); rb.type = 'button';
         // v412: shipping keep/refund, deduction up to 50% with a reason, photo of the item's condition
         const ctl = { lines: {}, pct: 0 }; let upd2 = () => {};
+        const lineVal = (l) => {
+          if (l.type === 'PURCHASE_PRICE') return Math.round(l.amount * (100 - ctl.pct)) / 100;
+          const on = ctl.lines[l.type] === undefined ? l.amount > 0 : ctl.lines[l.type];
+          return on ? (l.amount > 0 ? l.amount : (l.max || 0)) : 0;
+        };
         const calc = () => {
           let t = 0;
-          est.lines.forEach(l => { let v = l.amount; if (l.type === 'PURCHASE_PRICE') v = Math.round(l.amount * (100 - ctl.pct)) / 100; else if (ctl.lines[l.type] === false) v = 0; t += v; });
+          est.lines.forEach(l => { t += lineVal(l); });
           return Math.round(t * 100) / 100;
         };
         if (total !== null) {
           const pn = el('div'); pn.style.cssText = 'border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin:6px 0 10px;';
-          est.lines.filter(l => l.type !== 'PURCHASE_PRICE').forEach(l => {
+          est.lines.filter(l => l.type !== 'PURCHASE_PRICE' && (l.amount > 0 || l.max > 0)).forEach(l => {
             const lab = el('label'); lab.style.cssText = 'display:block;margin:4px 0;';
-            const cb = el('input'); cb.type = 'checkbox'; cb.checked = true; cb.onchange = () => { ctl.lines[l.type] = cb.checked; upd(); };
-            lab.append(cb, document.createTextNode(' Refund ' + (NAMES[l.type] || nice(l.type)).toLowerCase() + ' ' + money2.format(l.amount) + (cb.checked ? '' : '')));
+            const cb = el('input'); cb.type = 'checkbox'; cb.checked = l.amount > 0; cb.onchange = () => { ctl.lines[l.type] = cb.checked; upd(); };
+            lab.append(cb, document.createTextNode(' Refund ' + (NAMES[l.type] || nice(l.type)).toLowerCase() + ' ' + money2.format(l.amount > 0 ? l.amount : l.max)));
             pn.append(lab);
           });
           const dd = est.lines.find(l => l.type === 'PURCHASE_PRICE');
@@ -1239,7 +1244,7 @@ async function showDetail(key) {
             const t2 = calc();
             if (ctl.pct && !String(note.value).trim()) { toast('Type the reason for the deduction in the note.', true); return; }
             const body2 = { comment: note.value, lines: {} };
-            est.lines.forEach(l => { body2.lines[l.type] = l.type === 'PURCHASE_PRICE' ? Math.round(l.amount * (100 - ctl.pct)) / 100 : (ctl.lines[l.type] === false ? 0 : l.amount); });
+            est.lines.forEach(l => { body2.lines[l.type] = lineVal(l); });
             act(base + '/refund', body2, 'Refund ' + money2.format(t2) + ' to ' + (x.buyer || 'the buyer') + ' now?\n\n' + (ctl.pct ? 'Includes a ' + ctl.pct + '% deduction from the item price.\n\n' : '') + 'This sends real money.', 'Refund sent.');
           };
           // r3.append(rb, el('span', 'r-line', 'eBay’s refund: ' + parts));

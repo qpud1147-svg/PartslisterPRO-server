@@ -1,4 +1,4 @@
-// PartsLister Pro server — v457
+// PartsLister Pro server — v458
 // v409: yard tickets — the whole-ticket text look and the Look checkboxes are gone; every text row and the logo each have the full set of sliders (boldness, thinner, lighter, weathered, gravel, fuzzy, faded gray, spots).
 // v408: yard tickets — each text row has a Look checkbox (row.useLook, default on): the whole-ticket text look only changes the rows that are checked.
 // v406: yard tickets — a whole-ticket Boldness for the text (design.textLook.bold) and a Lighter slider for the logo (less ink).
@@ -5652,7 +5652,7 @@ function returnEstimate(d) {
   const est = ri.estimatedRefundDetail || {};
   const lines = (est.itemizedRefundDetails || est.itemizedRefundDetail || []).map(x => ({
     type: x.refundFeeType || '', amount: amt(x.estimatedAmount), max: amt(x.maxAmount)
-  })).filter(x => x.type && x.amount !== null);
+  })).filter(x => x.type && (x.amount !== null || x.max !== null)).map(x => ({ type: x.type, amount: x.amount === null ? 0 : x.amount, max: x.max }));   // v458: a line eBay only gives a maximum for (e.g. original shipping) is kept — it starts at 0 and you can switch it on
   const total = Math.round(lines.reduce((s, x) => s + x.amount, 0) * 100) / 100;
   return lines.length ? { lines, total } : null;
 }
@@ -5770,7 +5770,7 @@ app.post('/api/returns/return/:id/refund', requireUser, express.json(), async (r
       if (lo && typeof lo === 'object') {
         const used = est.lines.map(x => {
           const v = lo[x.type] === undefined ? x.amount : parseFloat(lo[x.type]);
-          if (!Number.isFinite(v) || v < 0 || v > x.amount + 0.001) throw Object.assign(new Error('Amount for ' + x.type + ' must be between 0 and ' + x.amount.toFixed(2)), { bad: true });
+          if (!Number.isFinite(v) || v < 0 || v > Math.max(x.amount, x.max || 0) + 0.001) throw Object.assign(new Error('Amount for ' + x.type + ' must be between 0 and ' + Math.max(x.amount, x.max || 0).toFixed(2)), { bad: true });
           return { type: x.type, amount: Math.round(v * 100) / 100, full: x.amount };
         });
         const pp = used.find(x => x.type === 'PURCHASE_PRICE');
@@ -5784,7 +5784,7 @@ app.post('/api/returns/return/:id/refund', requireUser, express.json(), async (r
       if (amount > 0 && Math.abs(amount - est.total) > 0.01) return res.status(400).json({ error: 'eBay\u2019s refund for this return is ' + est.total.toFixed(2) + ' — the app can only send that amount. For a different amount, use Open on eBay.' });
       const money = (v) => ({ value: v.toFixed(2), currency: 'USD' });
       orderFinCache.clear();   // v370: so the page re-reads eBay's money records after the refund
-      if (!body) body = { refundDetail: { itemizedRefundDetail: est.lines.map(x => ({ refundAmount: money(x.amount), refundFeeType: x.type })), totalAmount: money(est.total) } };
+      if (!body) body = { refundDetail: { itemizedRefundDetail: est.lines.filter(x => x.amount > 0).map(x => ({ refundAmount: money(x.amount), refundFeeType: x.type })), totalAmount: money(est.total) } };
     } else {
       if (!(amount > 0)) return res.status(400).json({ error: 'eBay didn\u2019t give a refund estimate for this return — use Open on eBay to refund it.' });
       const money = { value: amount.toFixed(2), currency: 'USD' };
