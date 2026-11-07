@@ -1,4 +1,4 @@
-// PartsLister Pro server — v455
+// PartsLister Pro server — v456
 // v409: yard tickets — the whole-ticket text look and the Look checkboxes are gone; every text row and the logo each have the full set of sliders (boldness, thinner, lighter, weathered, gravel, fuzzy, faded gray, spots).
 // v408: yard tickets — each text row has a Look checkbox (row.useLook, default on): the whole-ticket text look only changes the rows that are checked.
 // v406: yard tickets — a whole-ticket Boldness for the text (design.textLook.bold) and a Lighter slider for the logo (less ink).
@@ -5383,7 +5383,7 @@ app.get('/api/returns/summary', requireUser, async (req, res) => {
     if (c && Date.now() - c.at < 300000) return res.json(c.data);
     const { items, errors } = await loadReturns(req.user.id, 'open');
     // const data = { connected: true, open: items.length, needMe: items.filter(x => x.kind !== 'return' || /SELLER/i.test(x.todo || '') || (x.options || []).length).length, errors };
-    const needs = (x) => x.kind === 'return' ? (/SELLER/i.test(x.todo || '') || (x.options || []).length > 0)
+    const needs = (x) => x.kind === 'return' ? (/SELLER/i.test(x.todo || '') || (/DELIVERED|RECEIVED/i.test(String(x.status || '') + ' ' + String(x.state || '')) && !/CLOSED|BUYER/i.test(String(x.status || '') + ' ' + String(x.state || '') + ' ' + String(x.todo || ''))))   // v456: only when eBay waits on you
       : x.kind === 'cancel' ? !!x.needsMe : x.kind === 'dispute' ? /ACTION_NEEDED/i.test(x.status) : true;   // v373
     const data = { connected: true, open: items.length, needMe: items.filter(needs).length, errors };
     returnCounts.set(req.user.id, { at: Date.now(), data });

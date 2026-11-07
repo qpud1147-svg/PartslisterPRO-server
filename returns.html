@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Returns v409</title>
+<title>PartsLister Pro Returns v410</title>
 <!-- v382: switching views is instant; browser reload / Refresh really reloads. v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
 <!-- PartsLister Pro — Returns page (v324: new). Returns, "item not received" claims and cases from
      eBay's Post-Order API, read live (nothing saved on the server). Approve / decline / refund from here.
@@ -338,7 +338,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v409</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v410</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -377,12 +377,12 @@
     </div>
     <div class="seg" role="group" aria-label="Kind" id="seg-kind">
       <button type="button" data-kind="all">All</button>
-      <button type="button" data-kind="return">Returns</button>
+      <button type="button" data-kind="return">Return requests</button>
       <button type="button" data-kind="late" id="late-btn" style="display:none">Late returns</button>   <!-- v372 -->
-      <button type="button" data-kind="inquiry">Not received</button>
-      <button type="button" data-kind="case">Cases</button>
+      <button type="button" data-kind="inquiry">Item not received</button>
+      <button type="button" data-kind="case">eBay cases</button>
       <button type="button" data-kind="cancel">Cancellations</button>   <!-- v373 -->
-      <button type="button" data-kind="dispute">Disputes</button>       <!-- v373 -->
+      <button type="button" data-kind="dispute">Bank disputes</button>       <!-- v373 -->
     </div>
     <div class="seg" role="group" aria-label="Part types" id="seg-types"><button type="button" id="types-btn" aria-pressed="false">Part types</button></div>   <!-- v401 -->
     <input type="search" class="search" id="r-search" placeholder="Search buyer, item, reason or number" autocomplete="off">
@@ -524,7 +524,7 @@ let toastTimer;
 function toast(msg, bad) { const t = document.getElementById('toast'); t.textContent = msg; t.className = 'show' + (bad ? ' error' : ''); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.className = '', bad ? 8000 : 4000); }
 const nice = (s) => { s = String(s || '').replace(/_/g, ' ').toLowerCase(); return s.charAt(0).toUpperCase() + s.slice(1); };
 // const KIND = { return: 'Return', inquiry: 'Not received', case: 'Case' };
-const KIND = { return: 'Return', inquiry: 'Not received', case: 'Case', cancel: 'Cancellation', dispute: 'Payment dispute' };   // v373
+const KIND = { return: 'Return', inquiry: 'Not received', case: 'eBay case', cancel: 'Cancellation', dispute: 'Bank dispute' };   // v373
 // v373: stages
 function returnStage(x) {
   const s = (String(x.status || '') + ' ' + String(x.state || '')).toUpperCase();
@@ -534,10 +534,10 @@ function returnStage(x) {
   if (/REQUESTED/.test(s) && !/LABEL/.test(s)) return 'requested';
   return 'waiting';
 }
-const needsAttention = (x) => x.kind === 'return' ? (/SELLER/i.test(x.todo || '') || (x.options || []).length > 0)
+const needsAttention = (x) => x.kind === 'return' ? (/SELLER/i.test(x.todo || '') || (returnStage(x) === 'delivered' && !/BUYER/i.test(x.todo || '')))   // v410: only when eBay is waiting on YOU (a new request, or the item arrived)
   : x.kind === 'cancel' ? !!x.needsMe : x.kind === 'dispute' ? /ACTION_NEEDED/i.test(x.status || '') : true;
 const STAGES = {
-  return: [['all', 'All open'], ['needs', 'Needs attention'], ['requested', 'Requested'], ['waiting', 'Waiting for buyer to ship'], ['shipped', 'Shipped'], ['delivered', 'Delivered']],
+  return: [['all', 'All open'], ['needs', 'Waiting on you'], ['requested', 'Requested'], ['waiting', 'Waiting for buyer to ship'], ['shipped', 'Return shipped'], ['delivered', 'Return delivered']],
   dispute: [['all', 'All open'], ['action', 'Needs your response'], ['decision', 'Awaiting decision']]
 };
 function stageOk(x) {
@@ -546,7 +546,7 @@ function stageOk(x) {
   if (kindF === 'dispute') return stageF === 'action' ? /ACTION_NEEDED/i.test(x.status || '') : !/ACTION_NEEDED/i.test(x.status || '');
   return true;
 }
-const STAGE_LABEL = { requested: 'Requested', waiting: 'Waiting for buyer to ship', shipped: 'Shipped', delivered: 'Delivered' };
+const STAGE_LABEL = { requested: 'Requested', waiting: 'Waiting for buyer to ship', shipped: 'Return shipped', delivered: 'Return delivered' };
 let stageF = 'all', disputesNeedScope = false;
 const dateStr = (iso) => iso ? new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
 function dueEl(iso) {
@@ -778,7 +778,7 @@ function render() {
       if (x.kind === 'case') { chipT = 'Case open'; chipC = 'bad'; }
       else if (x.kind === 'dispute') { chipT = /ACTION_NEEDED/i.test(x.status || '') ? 'Respond' : 'Awaiting decision'; chipC = /ACTION_NEEDED/i.test(x.status || '') ? 'bad' : 'ship'; }
       else if (x.kind === 'cancel') { chipT = x.needsMe ? 'Respond' : 'Open'; chipC = x.needsMe ? 'bad' : 'ship'; }
-      else if (x.kind === 'return') { chipT = needsAttention(x) ? 'Needs attention' : (STAGE_LABEL[returnStage(x)] || 'Open'); chipC = needsAttention(x) ? 'bad' : 'ship'; }
+      else if (x.kind === 'return') { chipT = needsAttention(x) ? 'Waiting on you' : (STAGE_LABEL[returnStage(x)] || 'Open'); chipC = needsAttention(x) ? 'bad' : 'ship'; }
       else chipT = 'Open', chipC = 'ship';
     }
     const pc = el('span', 'chip ' + chipC, chipT); pc.style.marginLeft = '8px'; pc.style.verticalAlign = 'middle'; pr.append(pc);
