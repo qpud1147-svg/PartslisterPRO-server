@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Returns v410</title>
+<title>PartsLister Pro Returns v411</title>
 <!-- v382: switching views is instant; browser reload / Refresh really reloads. v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
 <!-- PartsLister Pro — Returns page (v324: new). Returns, "item not received" claims and cases from
      eBay's Post-Order API, read live (nothing saved on the server). Approve / decline / refund from here.
@@ -338,7 +338,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v410</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v411</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -753,7 +753,23 @@ function render() {
   let rowNo = 0;
   const numTo = (row) => { const n = el('span', 'ebl-n', String(++rowNo)); row.prepend(n); };
   lateShown.forEach(x => { const lr = lateRow(x); numTo(lr); box.append(lr); });   // v372
-  list.forEach(x => {
+  // v411: on Open → All, one "Do now" group first, then the rest by stage
+  const groupOf = (x) => needsAttention(x) ? '0Do now — waiting on you'
+    : x.kind === 'return' ? ({ requested: '1Return requested', waiting: '2Approved — waiting for the buyer to ship', shipped: '3Return shipped', delivered: '4Return delivered' }[returnStage(x)] || '5Other open returns')
+    : '6' + ({ inquiry: 'Item not received', case: 'eBay cases', cancel: 'Cancellations', dispute: 'Bank disputes' }[x.kind] || 'Other');
+  const grouped = view === 'open' && kindF === 'all';
+  const ordered = grouped ? list.map((x, i) => [groupOf(x), i, x]).sort((p, q2) => p[0] < q2[0] ? -1 : p[0] > q2[0] ? 1 : p[1] - q2[1]).map(p => p[2]) : list;
+  let curG = null;
+  ordered.forEach(x => {
+    if (grouped) {
+      const g = groupOf(x);
+      if (g !== curG) {
+        curG = g;
+        const n = ordered.filter(z => groupOf(z) === g).length;
+        const h = el('div', 'd-h', g.slice(1) + ' · ' + n); h.style.cssText = 'margin:18px 0 6px;' + (g[0] === '0' ? 'color:var(--danger);' : '');
+        box.append(h);
+      }
+    }
     const row = el('div', 'ebl');
     row.addEventListener('click', (e) => { if (!e.target.closest('a,button')) openDetail(x.kind + ':' + x.id); });
     const imgBox = eblPhoto('o-thumb', x.itemId, x.itemId && pics[x.itemId]);
