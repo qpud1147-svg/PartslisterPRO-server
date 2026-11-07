@@ -1,4 +1,4 @@
-// PartsLister Pro server — v458
+// PartsLister Pro server — v459
 // v409: yard tickets — the whole-ticket text look and the Look checkboxes are gone; every text row and the logo each have the full set of sliders (boldness, thinner, lighter, weathered, gravel, fuzzy, faded gray, spots).
 // v408: yard tickets — each text row has a Look checkbox (row.useLook, default on): the whole-ticket text look only changes the rows that are checked.
 // v406: yard tickets — a whole-ticket Boldness for the text (design.textLook.bold) and a Lighter slider for the logo (less ink).
@@ -5653,6 +5653,11 @@ function returnEstimate(d) {
   const lines = (est.itemizedRefundDetails || est.itemizedRefundDetail || []).map(x => ({
     type: x.refundFeeType || '', amount: amt(x.estimatedAmount), max: amt(x.maxAmount)
   })).filter(x => x.type && (x.amount !== null || x.max !== null)).map(x => ({ type: x.type, amount: x.amount === null ? 0 : x.amount, max: x.max }));   // v458: a line eBay only gives a maximum for (e.g. original shipping) is kept — it starts at 0 and you can switch it on
+  // v459: eBay lists goodwill extras (e.g. original shipping) under optionalRefundLineItems — they start switched off
+  (est.optionalRefundLineItems || []).forEach(x => {
+    const type = x.refundFeeType || '', m = amt(x.maxAmount) !== null ? amt(x.maxAmount) : amt(x.estimatedAmount);
+    if (type && m > 0 && !lines.some(l => l.type === type)) lines.push({ type, amount: 0, max: m });
+  });
   const total = Math.round(lines.reduce((s, x) => s + x.amount, 0) * 100) / 100;
   return lines.length ? { lines, total } : null;
 }
