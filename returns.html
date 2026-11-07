@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Returns v412</title>
+<title>PartsLister Pro Returns v413</title>
 <!-- v382: switching views is instant; browser reload / Refresh really reloads. v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
 <!-- PartsLister Pro — Returns page (v324: new). Returns, "item not received" claims and cases from
      eBay's Post-Order API, read live (nothing saved on the server). Approve / decline / refund from here.
@@ -338,7 +338,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v412</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v413</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -1191,7 +1191,7 @@ async function showDetail(key) {
         const total = est ? est.total : null;
         const rb = el('button', 'btn btn-primary btn-sm', total !== null ? 'Refund ' + money2.format(total) : 'Refund buyer'); rb.type = 'button';
         // v412: shipping keep/refund, deduction up to 50% with a reason, photo of the item's condition
-        const ctl = { lines: {}, pct: 0 };
+        const ctl = { lines: {}, pct: 0 }; let upd2 = () => {};
         const calc = () => {
           let t = 0;
           est.lines.forEach(l => { let v = l.amount; if (l.type === 'PURCHASE_PRICE') v = Math.round(l.amount * (100 - ctl.pct)) / 100; else if (ctl.lines[l.type] === false) v = 0; t += v; });
@@ -1231,7 +1231,7 @@ async function showDetail(key) {
             };
             ph.append(fi, fs); dl.append(ph); pn.append(dl);
           }
-          const upd = () => { const t2 = calc(); rb.textContent = 'Refund ' + money2.format(t2); };
+          const upd = () => { const t2 = calc(); rb.textContent = 'Refund ' + money2.format(t2); upd2(); };
           holder.append(pn);
         }
         if (total !== null) {
@@ -1245,13 +1245,18 @@ async function showDetail(key) {
           // r3.append(rb, el('span', 'r-line', 'eBay’s refund: ' + parts));
           // v370: + about what it costs you (eBay credits back the sale's fees, scaled to the refund)
           const f = r && r.fees;
-          let about = '';
-          if (f && f.saleFees !== null && f.saleFees !== undefined && !(f.refunds || []).length) {
-            const share = f.saleBasis > 0 ? Math.min(1, total / f.saleBasis) : 1;
+          // v413: eBay's own page credits the sale's fees in proportion to the ITEM PRICE refunded (shipping/tax don't change it)
+          const ppl = est.lines.find(l => l.type === 'PURCHASE_PRICE');
+          const aboutFor = (t2) => {
+            if (!(f && f.saleFees !== null && f.saleFees !== undefined && !(f.refunds || []).length)) return '';
+            const ppNow = ppl ? Math.round(ppl.amount * (100 - ctl.pct)) / 100 : 0;
+            const share = ppl && ppl.amount > 0 ? Math.min(1, ppNow / ppl.amount) : (f.saleBasis > 0 ? Math.min(1, t2 / f.saleBasis) : 1);
             const cr = Math.round(f.saleFees * share * 100) / 100;
-            about = ' · Your cost about ' + money2.format(total - cr) + ' (eBay credits back about ' + money2.format(cr) + ' in fees)';
-          }
-          r3.append(rb, el('span', 'r-line', 'eBay’s refund: ' + parts + about));
+            return ' · You owe about ' + money2.format(t2 - cr) + ' (eBay credits back about ' + money2.format(cr) + ' in fees)';
+          };
+          const infoSp = el('span', 'r-line', 'eBay’s refund: ' + parts + aboutFor(total));
+          r3.append(rb, infoSp);
+          upd2 = () => { infoSp.textContent = 'eBay’s refund: ' + parts + aboutFor(calc()); };
         } else {
           rb.disabled = true;
           r3.append(rb, el('span', 'r-line', 'eBay didn’t give a refund amount for this return — use Open on eBay below.'));
