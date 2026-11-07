@@ -1,4 +1,4 @@
-// PartsLister Pro server — v450
+// PartsLister Pro server — v455
 // v409: yard tickets — the whole-ticket text look and the Look checkboxes are gone; every text row and the logo each have the full set of sliders (boldness, thinner, lighter, weathered, gravel, fuzzy, faded gray, spots).
 // v408: yard tickets — each text row has a Look checkbox (row.useLook, default on): the whole-ticket text look only changes the rows that are checked.
 // v406: yard tickets — a whole-ticket Boldness for the text (design.textLook.bold) and a Lighter slider for the logo (less ink).
@@ -447,6 +447,22 @@ async function setupDatabase() {
       note       TEXT NOT NULL DEFAULT '',
       flagged_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       UNIQUE (user_id, item_id)
+    );
+    -- v455: RETURNS follow-ups — "Needs work" list (refunded, but not ready to relist yet)
+    CREATE TABLE IF NOT EXISTS return_followups (
+      id         SERIAL PRIMARY KEY,
+      user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      return_key TEXT NOT NULL DEFAULT '',
+      item_id    TEXT NOT NULL DEFAULT '',
+      order_id   TEXT NOT NULL DEFAULT '',
+      title      TEXT NOT NULL DEFAULT '',
+      sku        TEXT NOT NULL DEFAULT '',
+      image      TEXT,
+      price      NUMERIC(10,2),
+      reason     TEXT NOT NULL DEFAULT 'other',
+      note       TEXT NOT NULL DEFAULT '',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      UNIQUE (user_id, return_key)
     );
     -- v446: MORE THAN ONE USER — turn an account off, when someone last listed, a per-listing log (for "listed in the last 30 days"), and the shared default settings
     ALTER TABLE users ADD COLUMN IF NOT EXISTS disabled BOOLEAN NOT NULL DEFAULT FALSE;
@@ -4577,6 +4593,72 @@ app.post('/api/flags/:itemId/end', requireUser, async (req, res) => {
     liveCache.delete(req.user.id);
     res.json({ ok: true });
   } catch (e) { console.error('[flags end]', e.message); res.status(502).json({ error: 'eBay did not end the listing: ' + e.message }); }
+});
+// v455: RETURNS follow-ups — Needs work list + one-click Relist (stays on the Returns page)
+const NW_REASONS = ['missing_parts', 'new_photos', 'damaged', 'wrong_part', 'needs_testing', 'other'];
+const NW_COLS = 'id, return_key, item_id, order_id, title, sku, image, price, reason, note, created_at';
+const nwMap = r => ({ id: r.id, key: r.return_key, itemId: r.item_id, orderId: r.order_id, title: r.title, sku: r.sku, image: r.image, price: r.price == null ? null : Number(r.price), reason: r.reason, note: r.note, at: r.created_at });
+app.get('/api/returns/followups', requireUser, async (req, res) => {
+  try {
+    const rows = (await pool.query(`SELECT ${NW_COLS} FROM return_followups WHERE user_id = $1 ORDER BY created_at DESC`, [req.user.id])).rows;
+    const st = ((await readUserData(req.user.id)) || {}).settings || {};
+    res.json({ items: rows.map(nwMap), emojis: { relaunch: st.emojiRelaunch || '', yolo: st.emojiYolo || '', reverted: st.emojiReverted || '' } });
+  } catch (e) { console.error('[followups]', e.message); res.status(500).json({ error: 'Could not load the Needs work list' }); }
+});
+app.post('/api/returns/needs-work', requireUser, express.json({ limit: '20kb' }), async (req, res) => {
+  try {
+    const b = req.body || {}, clip = (v, n) => String(v === undefined || v === null ? '' : v).slice(0, n);
+    const key = clip(b.key, 80); if (!key) return res.status(400).json({ error: 'Missing return' });
+    const reason = NW_REASONS.includes(b.reason) ? b.reason : 'other';
+    const price = Number.isFinite(parseFloat(b.price)) ? parseFloat(b.price) : null;
+    const image = /^https:\/\//.test(String(b.image || '')) ? clip(b.image, 500) : null;
+    await pool.query(
+      `INSERT INTO return_followups (user_id, return_key, item_id, order_id, title, sku, image, price, reason, note) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+       ON CONFLICT (user_id, return_key) DO UPDATE SET reason = EXCLUDED.reason, note = EXCLUDED.note, title = EXCLUDED.title, image = COALESCE(EXCLUDED.image, return_followups.image), price = COALESCE(EXCLUDED.price, return_followups.price)`,
+      [req.user.id, key, clip(b.itemId, 30).replace(/\D/g, ''), clip(b.orderId, 40), clip(b.title, 200), clip(b.sku, 60), image, price, reason, clip(b.note, 300)]);
+    res.json({ ok: true });
+  } catch (e) { console.error('[needs-work]', e.message); res.status(500).json({ error: 'Could not save it' }); }
+});
+app.post('/api/returns/needs-work/:id/remove', requireUser, async (req, res) => {
+  try {
+    await pool.query('DELETE FROM return_followups WHERE user_id = $1 AND id = $2', [req.user.id, parseInt(req.params.id, 10) || 0]);
+    res.json({ ok: true });
+  } catch (e) { console.error('[needs-work remove]', e.message); res.status(500).json({ error: 'Could not remove it' }); }
+});
+// Relist the same listing (same price, photos, description) with an emoji at the front of the title.
+app.post('/api/returns/relist', requireUser, express.json({ limit: '10kb' }), async (req, res) => {
+  const uid = req.user.id;
+  try {
+    const b = req.body || {};
+    const itemId = String(b.itemId || '').replace(/\D/g, '');
+    if (!/^\d{6,20}$/.test(itemId)) return res.status(400).json({ error: 'This return has no item number to relist.' });
+    const emoji = String(b.emoji || '').trim().slice(0, 16);
+    const gi = await tradingCall(uid, 'GetItem', `<ItemID>${itemId}</ItemID>`, '100');
+    const item = xmlTag(gi, 'Item') || '';
+    const ss = xmlTag(item, 'SellingStatus') || '';
+    const status = xmlTag(ss, 'ListingStatus') || '';
+    const qty = parseInt(xmlTag(item, 'Quantity') || '0', 10) || 0, sold = parseInt(xmlTag(ss, 'QuantitySold') || '0', 10) || 0;
+    const cur = xmlDecode(xmlTag(item, 'Title') || '');
+    const newTitle = emoji && cur ? (emoji + ' ' + cur.replace(/^[\p{Emoji_Presentation}\p{Extended_Pictographic}️‍\s]+/gu, '').trim()).slice(0, 80) : '';
+    const active = status === 'Active';
+    if (active && qty - sold > 0) return res.status(409).json({ error: 'That listing is still live on eBay, so there is nothing to relist.' });
+    const doCall = async (withTitle) => {
+      const t = withTitle && newTitle ? `<Title>${xmlEsc(newTitle)}</Title>` : '';
+      if (active) return tradingCall(uid, 'ReviseFixedPriceItem', `<Item><ItemID>${itemId}</ItemID><Quantity>${sold + 1}</Quantity>${t}</Item>`, '100');
+      return tradingCall(uid, 'RelistFixedPriceItem', `<Item><ItemID>${itemId}</ItemID><Quantity>1</Quantity>${t}</Item>`, '100');
+    };
+    let xml, titleChanged = !!newTitle;
+    try { xml = await doCall(true); }
+    catch (e) {
+      if (!newTitle) throw e;
+      console.warn('[relist] title not changed:', e.message);
+      titleChanged = false; xml = await doCall(false);
+    }
+    const newId = active ? itemId : (xmlTag(xml, 'ItemID') || itemId);
+    if (b.followupId) await pool.query('DELETE FROM return_followups WHERE user_id = $1 AND id = $2', [uid, parseInt(b.followupId, 10) || 0]);
+    liveCache.delete(uid);
+    res.json({ ok: true, itemId: newId, title: titleChanged ? newTitle : cur, titleChanged });
+  } catch (e) { console.error('[relist]', e.message); res.status(502).json({ error: 'eBay did not relist it: ' + e.message }); }
 });
 app.get('/api/yolo', requireUser, async (req, res) => {
   try {

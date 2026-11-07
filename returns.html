@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Returns v408</title>
+<title>PartsLister Pro Returns v409</title>
 <!-- v382: switching views is instant; browser reload / Refresh really reloads. v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
 <!-- PartsLister Pro — Returns page (v324: new). Returns, "item not received" claims and cases from
      eBay's Post-Order API, read live (nothing saved on the server). Approve / decline / refund from here.
@@ -321,6 +321,16 @@
   .t-note { color: var(--muted); font-size: 12.5px; line-height: 1.5; margin: 12px 0; }
   .t-note b { color: var(--text2); }
   #types-btn { margin-left: 0; }
+  .fu-bar { height: 6px; background: var(--surface2); border-radius: 3px; overflow: hidden; margin: 14px 0 6px; }
+  .fu-bar i { display: block; height: 100%; width: 35%; background: var(--accent); border-radius: 3px; animation: fuSlide 1.1s ease-in-out infinite; }
+  @keyframes fuSlide { 0% { margin-left: -35%; } 100% { margin-left: 100%; } }
+  .fu-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+  .fu-chips button { padding: 6px 12px; font-size: 14px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface2); color: var(--text); cursor: pointer; }
+  .fu-chips button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+  .fu-chips button small { color: var(--text2); font-size: 11px; margin-left: 4px; }
+  .fu-card h3 { margin: 0 0 6px; font-size: 18px; }
+  .fu-card textarea, .fu-card input[type=text] { width: 100%; box-sizing: border-box; }
+  .fu-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
 </style>
 </head>
 <body>
@@ -328,7 +338,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v408</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v409</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -363,6 +373,7 @@
     <div class="seg" role="group" aria-label="Open or closed" id="seg-view">
       <button type="button" data-view="open">Open</button>
       <button type="button" data-view="closed">Closed (90 days)</button>
+      <button type="button" data-view="work" id="work-btn">Needs work</button>
     </div>
     <div class="seg" role="group" aria-label="Kind" id="seg-kind">
       <button type="button" data-kind="all">All</button>
@@ -546,10 +557,144 @@ function dueEl(iso) {
 }
 const norm = (t) => String(t || '').toLowerCase();
 
+// ─── v409: RELIST + NEEDS WORK ───────────────────────────────────────────────
+let followups = [], emojiSet = {};
+const NW_LABEL = { missing_parts: 'Missing parts', new_photos: 'Needs new photos', damaged: 'Item damaged', wrong_part: 'Wrong part / doesn’t fit', needs_testing: 'Needs testing', other: 'Other' };
+const fuKeys = () => new Set(followups.map(f => f.key));
+async function loadFollowups() {
+  const d = await getJSON('/api/returns/followups');
+  if (d) { followups = d.items || []; emojiSet = d.emojis || {}; }
+}
+function fuModal(build) {
+  const bg = el('div'); bg.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:400;display:flex;align-items:center;justify-content:center;padding:16px';
+  const card = el('div', 'fu-card'); card.style.cssText = 'background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:18px;max-width:460px;width:100%;max-height:90vh;overflow:auto';
+  bg.append(card);
+  const close = () => bg.remove();
+  bg.addEventListener('click', (e) => { if (e.target === bg) close(); });
+  document.body.append(bg); build(card, close);
+}
+const itemInfo = (x) => ({ key: x.kind + ':' + x.id, itemId: x.itemId, orderId: x.orderId || '', title: titles[x.itemId] || '', sku: skus[x.itemId] || '', image: pics[x.itemId] || '', price: x.amount });
+// Relist the same listing with an emoji at the front of the title. Stays on this page.
+function relistDialog(info, followupId) {
+  if (!info.itemId) { toast('This one has no item number to relist.', true); return; }
+  let last = ''; try { last = localStorage.getItem('plp_returns_emoji') || ''; } catch (e) { /* fine */ }
+  fuModal((card, close) => {
+    card.append(el('h3', '', 'Relist this item'));
+    card.append(el('div', 'r-line', (info.title || 'Item #' + info.itemId) + ' — same listing, same price, same photos. Only the emoji at the front of the title changes.'));
+    let pick = last;
+    const chips = el('div', 'fu-chips');
+    const opts = [];
+    [['relaunch', 'Relaunch'], ['yolo', 'YOLO'], ['reverted', 'Reverted']].forEach(([k, n]) => { if (emojiSet[k]) opts.push([emojiSet[k], n]); });
+    ['🔁', '♻️', '🔧', '⭐', '🆕'].forEach(e => { if (!opts.some(o => o[0] === e)) opts.push([e, '']); });
+    opts.push(['', 'No emoji']);
+    const custom = el('input'); custom.type = 'text'; custom.placeholder = 'Or type your own emoji'; custom.maxLength = 8; custom.style.maxWidth = '220px';
+    const mark = () => chips.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', b.dataset.e === pick ? 'true' : 'false'));
+    opts.forEach(([e, n]) => { const b = el('button'); b.type = 'button'; b.dataset.e = e; b.append(document.createTextNode(e || '—')); if (n) b.append(el('small', '', n)); b.onclick = () => { pick = e; custom.value = ''; mark(); }; chips.append(b); });
+    custom.oninput = () => { pick = custom.value.trim(); mark(); };
+    if (!opts.some(o => o[0] === pick)) { custom.value = pick; }
+    mark();
+    card.append(chips, custom);
+    const status = el('div', 'r-line'); const row = el('div', 'fu-row');
+    const go = el('button', 'btn btn-primary btn-sm', 'Relist now'); go.type = 'button';
+    const cancel = el('button', 'btn btn-secondary btn-sm', 'Cancel'); cancel.type = 'button'; cancel.onclick = close;
+    row.append(go, cancel); card.append(row, status);
+    go.onclick = async () => {
+      go.disabled = true; cancel.disabled = true; status.textContent = '';
+      try { localStorage.setItem('plp_returns_emoji', pick); } catch (e) { /* fine */ }
+      const bar = el('div', 'fu-bar'); bar.append(el('i')); const msg = el('div', 'r-line', 'Sending to eBay…');
+      card.insertBefore(bar, row); card.insertBefore(msg, row);
+      try {
+        const r = await fetch('/api/returns/relist', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ itemId: info.itemId, emoji: pick, followupId: followupId || undefined }) });
+        const out = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(out.error || 'eBay said no.');
+        bar.remove(); row.remove(); msg.remove();
+        card.append(el('div', 'r-line', '✓ Relisted on eBay' + (out.itemId && out.itemId !== info.itemId ? ' as item #' + out.itemId : '') + '.' + (pick && !out.titleChanged ? ' (eBay wouldn’t take the new emoji, so the title is unchanged.)' : '')));
+        const done = el('button', 'btn btn-primary btn-sm', 'Done'); done.type = 'button'; done.onclick = close; card.append(done);
+        toast('Relisted.');
+        if (followupId) { followups = followups.filter(f => f.id !== followupId); render(); }
+      } catch (e) {
+        bar.remove(); msg.remove(); go.disabled = false; cancel.disabled = false;
+        status.textContent = e.message; status.style.color = 'var(--danger)';
+      }
+    };
+  });
+}
+// "Refunded, but not ready to relist": reason + note, kept in its own list
+function needsWorkDialog(info) {
+  fuModal((card, close) => {
+    card.append(el('h3', '', 'Add to Needs work'));
+    card.append(el('div', 'r-line', 'Keeps this out of Closed returns so you can get back to it later.'));
+    let reason = 'missing_parts';
+    const chips = el('div', 'fu-chips');
+    const mark = () => chips.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', b.dataset.r === reason ? 'true' : 'false'));
+    Object.keys(NW_LABEL).forEach(k => { const b = el('button', '', NW_LABEL[k]); b.type = 'button'; b.dataset.r = k; b.onclick = () => { reason = k; mark(); }; chips.append(b); });
+    mark();
+    const note = el('textarea'); note.placeholder = 'Note (optional) — e.g. missing the pigtails'; note.maxLength = 300; note.rows = 3;
+    const row = el('div', 'fu-row');
+    const save = el('button', 'btn btn-primary btn-sm', 'Save'); save.type = 'button';
+    const cancel = el('button', 'btn btn-secondary btn-sm', 'Cancel'); cancel.type = 'button'; cancel.onclick = close;
+    row.append(save, cancel); card.append(chips, note, row);
+    save.onclick = async () => {
+      save.disabled = true;
+      try {
+        const r = await fetch('/api/returns/needs-work', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({}, info, { reason, note: note.value })) });
+        const out = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(out.error || 'Could not save it.');
+        await loadFollowups(); close(); hideDetail(); if (location.hash.startsWith('#r=')) history.replaceState(null, '', location.pathname + location.search);
+        toast('Added to Needs work.'); render();
+      } catch (e) { save.disabled = false; toast(e.message, true); }
+    };
+  });
+}
+function followBtns(x) {
+  const w = el('div', 'fu-row'); w.style.marginTop = '6px';
+  const rl = el('button', 'btn btn-primary btn-sm', 'Relist'); rl.type = 'button'; rl.onclick = (e) => { e.stopPropagation(); relistDialog(itemInfo(x)); };
+  const nw = el('button', 'btn btn-secondary btn-sm', 'Needs work'); nw.type = 'button'; nw.onclick = (e) => { e.stopPropagation(); needsWorkDialog(itemInfo(x)); };
+  w.append(rl, nw); return w;
+}
+function renderWork(box) {
+  const q = norm(document.getElementById('r-search').value).trim();
+  const list = followups.filter(f => !q || norm([f.title, f.itemId, f.sku, f.note, NW_LABEL[f.reason]].join(' ')).includes(q));
+  setText('r-summary', followups.length + ' item' + (followups.length === 1 ? '' : 's') + ' refunded and waiting on you');
+  if (!list.length) { box.append(el('div', 'empty', followups.length ? 'Nothing matches.' : 'Nothing here. On a closed return, tap “Needs work” when you refunded it but the item isn’t ready to sell again.')); return; }
+  list.forEach((f, i) => {
+    const row = el('div', 'ebl');
+    const imgBox = eblPhoto('o-thumb', f.itemId, f.image || pics[f.itemId]);
+    const mid = el('div', 'ebl-body');
+    const l1 = el('div', 'ebl-title'); l1.append(el('span', 'chip bad', NW_LABEL[f.reason] || 'Other'), document.createTextNode(' '), el('span', 'o-title', f.title || titles[f.itemId] || 'Item #' + f.itemId));
+    l1.querySelector('.o-title').dataset.title = f.itemId || '';
+    mid.append(l1);
+    if (f.price != null) mid.append(el('div', 'ebl-price', money2.format(f.price)));
+    if (f.note) mid.append(el('div', 'ebl-sub', f.note));
+    mid.append(el('div', 'ebl-sub', 'Added ' + dateStr(f.at) + (f.orderId ? ' · order ' + f.orderId : '')));
+    mid.append(eblSku(f.itemId, f.sku));
+    const w = el('div', 'fu-row'); w.style.marginTop = '6px';
+    const rl = el('button', 'btn btn-primary btn-sm', 'Relist'); rl.type = 'button'; rl.onclick = () => relistDialog({ itemId: f.itemId, title: f.title || titles[f.itemId] || '' }, f.id);
+    const rm = el('button', 'btn btn-secondary btn-sm', 'Remove from list'); rm.type = 'button';
+    rm.onclick = async () => {
+      if (!confirm('Remove this from Needs work? (Nothing changes on eBay.)')) return;
+      const r = await fetch('/api/returns/needs-work/' + f.id + '/remove', { method: 'POST' }).catch(() => null);
+      if (!r || !r.ok) { toast('Could not remove it.', true); return; }
+      followups = followups.filter(z => z.id !== f.id); render();
+    };
+    w.append(rl, rm); mid.append(w);
+    row.append(imgBox, mid); const n = el('span', 'ebl-n', String(i + 1)); row.prepend(n);
+    box.append(row);
+  });
+  fillItems();
+}
+
 function render() {
   document.querySelectorAll('#seg-view button').forEach(b => b.setAttribute('aria-pressed', b.dataset.view === view ? 'true' : 'false'));
   document.querySelectorAll('#seg-kind button').forEach(b => b.setAttribute('aria-pressed', b.dataset.kind === kindF ? 'true' : 'false'));
   const q = norm(document.getElementById('r-search').value).trim();
+  document.getElementById('seg-kind').style.display = view === 'work' ? 'none' : '';
+  const wb = document.getElementById('work-btn'); wb.textContent = 'Needs work' + (followups.length ? ' ' + followups.length : '');
+  if (view === 'work') {
+    const sg0 = document.getElementById('seg-stage'); sg0.classList.remove('on'); sg0.textContent = '';
+    const b0 = document.getElementById('r-list'); b0.textContent = ''; document.getElementById('late-btn').style.display = 'none';
+    renderWork(b0); return;
+  }
   // const list = items.filter(x => (kindF === 'all' || x.kind === kindF) &&
   // v373: stage buttons under Returns / Disputes (open only)
   const sg = document.getElementById('seg-stage');
@@ -575,7 +720,8 @@ function render() {
     b.textContent = b.dataset.label + (n ? ' ' + n : '');
   });
   // const list = kindF === 'late' ? [] : items.filter(x => (kindF === 'all' || x.kind === kindF) &&   // v372
-  const list = kindF === 'late' ? [] : items.filter(x => (kindF === 'all' || x.kind === kindF) && stageOk(x) &&   // v373: + stage
+  const fuSet = fuKeys();
+  const list = kindF === 'late' ? [] : items.filter(x => (kindF === 'all' || x.kind === kindF) && stageOk(x) && !fuSet.has(x.kind + ':' + x.id) &&   // v373: + stage; v409: not the Needs work ones
     (!q || norm([x.buyer, x.id, x.orderId, x.itemId, x.reason, x.status, x.comments, titles[x.itemId]].join(' ')).includes(q)));
   // v372: Late returns — open ones under Open, refunded ones under Closed
   const lateView = lateItems.filter(x => view === 'open' ? !x.refunded : !!x.refunded);
@@ -636,6 +782,7 @@ function render() {
       else chipT = 'Open', chipC = 'ship';
     }
     const pc = el('span', 'chip ' + chipC, chipT); pc.style.marginLeft = '8px'; pc.style.verticalAlign = 'middle'; pr.append(pc);
+    if (view === 'closed' && x.itemId && x.kind !== 'cancel') mid.append(followBtns(x));
     row.append(imgBox, mid);
     numTo(row);
     box.append(row);
@@ -689,6 +836,8 @@ async function load() {
   const me = await loadMe();
   if (!me) return;
   isAdmin = !!me.isAdmin;
+  await loadFollowups();   // v409
+  if (view === 'work') { document.getElementById('loading').classList.add('hidden'); render(); return; }
   // setText('r-note', 'Loading from eBay…');
   retBusy = true; updateBadge();   // v402: boxed refresh
   loadLate();   // v371
@@ -898,7 +1047,7 @@ async function showDetail(key) {
       hb.append(h);
     });
     // v370: what the refund costs you, from eBay's Payments records for this order
-    const mb = el('div'); box.append(el('div', 'd-h', 'Money'), mb);
+    const mb = el('div'); box.append(el('div', 'd-h', 'Why this amount (what it costs you)'), mb);
     mb.append(el('div', 'd-msg', 'Loading from eBay…'));
     liveP.then(r => {
       mb.textContent = '';
@@ -928,6 +1077,7 @@ async function showDetail(key) {
     });
   }
 
+  if (x.itemId && x.kind !== 'cancel' && !fuKeys().has(key)) { box.append(el('div', 'd-h', 'After the return')); box.append(followBtns(x)); }   // v409
   if (view !== 'open') return;
   const acts = el('div', 'acts');
   box.append(acts);
