@@ -1,4 +1,4 @@
-// PartsLister Pro server — v456
+// PartsLister Pro server — v457
 // v409: yard tickets — the whole-ticket text look and the Look checkboxes are gone; every text row and the logo each have the full set of sliders (boldness, thinner, lighter, weathered, gravel, fuzzy, faded gray, spots).
 // v408: yard tickets — each text row has a Look checkbox (row.useLook, default on): the whole-ticket text look only changes the rows that are checked.
 // v406: yard tickets — a whole-ticket Boldness for the text (design.textLook.bold) and a Lighter slider for the logo (less ink).
@@ -5709,7 +5709,18 @@ app.get('/api/returns/return/:id', requireUser, async (req, res) => {
       try { fees = await orderFees(req.user.id, summary.orderId); }
       catch (e) { console.warn('[return fees]', e.message); fees = { error: e.message }; }
     }
-    res.json({ summary, history, estimate: returnEstimate(d), fees });
+    // v457: eBay-style progress (started → shipped/delivered → refund) from the history, plus the refund-by date
+    const evDate = (re) => { const h = (det.responseHistory || []).filter(x => re.test(String(x.activity || ''))).map(x => dval(x.creationDate)).filter(Boolean).sort(); return h.length ? h[0] : null; };
+    const ri0 = det.refundInfo || (d && d.refundInfo) || {};
+    const progress = {
+      started: (summary && summary.created) || evDate(/./),
+      shipped: evDate(/SHIPPED|IN_TRANSIT|TRACKING/i),
+      delivered: evDate(/DELIVERED|RECEIVED/i),
+      refunded: evDate(/REFUND(ED)?_?(ISSUED|SENT|SUCCESS)|SELLER_ISSUE_REFUND|REFUND_SENT/i) || (summary && summary.refunded ? (dval(ri0.refundDate) || 'yes') : null),
+      refundBy: dval(ri0.refundDueDate) || dval(det.refundDueDate) || dval((det.sellerRefundDue || {})) || (summary && summary.todo && /REFUND/i.test(summary.todo) ? summary.due : null),
+      closed: !!(summary && /CLOSED/i.test(summary.state))
+    };
+    res.json({ summary, history, estimate: returnEstimate(d), fees, progress });
   } catch (e) {
     console.error('[return]', e.message);
     res.json({ error: 'eBay didn\u2019t give us that return: ' + e.message });
@@ -5755,10 +5766,25 @@ app.post('/api/returns/return/:id/refund', requireUser, express.json(), async (r
     const est = returnEstimate(full);
     let body;
     if (est) {
+      const lo = (req.body || {}).lines;   // v457: seller's own amounts per line (keep/refund shipping, deduction)
+      if (lo && typeof lo === 'object') {
+        const used = est.lines.map(x => {
+          const v = lo[x.type] === undefined ? x.amount : parseFloat(lo[x.type]);
+          if (!Number.isFinite(v) || v < 0 || v > x.amount + 0.001) throw Object.assign(new Error('Amount for ' + x.type + ' must be between 0 and ' + x.amount.toFixed(2)), { bad: true });
+          return { type: x.type, amount: Math.round(v * 100) / 100, full: x.amount };
+        });
+        const pp = used.find(x => x.type === 'PURCHASE_PRICE');
+        if (pp && pp.amount < pp.full * 0.5 - 0.005) throw Object.assign(new Error('You can deduct up to 50% of the item price.'), { bad: true });
+        const tot = Math.round(used.reduce((a, x) => a + x.amount, 0) * 100) / 100;
+        if (!(tot > 0)) throw Object.assign(new Error('The refund total is zero.'), { bad: true });
+        const money = (v) => ({ value: v.toFixed(2), currency: 'USD' });
+        orderFinCache.clear();
+        body = { refundDetail: { itemizedRefundDetail: used.filter(x => x.amount > 0).map(x => ({ refundAmount: money(x.amount), refundFeeType: x.type })), totalAmount: money(tot) } };
+      } else
       if (amount > 0 && Math.abs(amount - est.total) > 0.01) return res.status(400).json({ error: 'eBay\u2019s refund for this return is ' + est.total.toFixed(2) + ' — the app can only send that amount. For a different amount, use Open on eBay.' });
       const money = (v) => ({ value: v.toFixed(2), currency: 'USD' });
       orderFinCache.clear();   // v370: so the page re-reads eBay's money records after the refund
-      body = { refundDetail: { itemizedRefundDetail: est.lines.map(x => ({ refundAmount: money(x.amount), refundFeeType: x.type })), totalAmount: money(est.total) } };
+      if (!body) body = { refundDetail: { itemizedRefundDetail: est.lines.map(x => ({ refundAmount: money(x.amount), refundFeeType: x.type })), totalAmount: money(est.total) } };
     } else {
       if (!(amount > 0)) return res.status(400).json({ error: 'eBay didn\u2019t give a refund estimate for this return — use Open on eBay to refund it.' });
       const money = { value: amount.toFixed(2), currency: 'USD' };
@@ -5770,8 +5796,25 @@ app.post('/api/returns/return/:id/refund', requireUser, express.json(), async (r
     res.json({ ok: true, status: (d && d.refundStatus) || null });
   } catch (e) {
     console.error('[return refund]', e.message);
+    if (e.bad) return res.status(400).json({ error: e.message });
     res.status(502).json({ error: 'eBay didn\u2019t issue the refund: ' + e.message });
   }
+});
+
+// v457: attach a photo of the item's condition to a return (backs up a deduction). { data: base64, name }
+app.post('/api/returns/return/:id/photo', requireUser, express.json({ limit: '9mb' }), async (req, res) => {
+  if (!poId(req.params.id)) return res.status(400).json({ error: 'Bad return number' });
+  const b = req.body || {};
+  const data = String(b.data || '').replace(/^data:[^,]*,/, '');
+  if (!/^[A-Za-z0-9+/=\s]+$/.test(data) || data.length < 100) return res.status(400).json({ error: 'That doesn’t look like a photo.' });
+  const name = String(b.name || 'photo.jpg').replace(/[^\w.-]/g, '_').slice(0, 60);
+  if (!/\.(jpe?g|png|gif|bmp)$/i.test(name)) return res.status(400).json({ error: 'eBay takes JPEG, PNG, GIF or BMP photos.' });
+  try {
+    const up = await poCall(req.user.id, 'POST', '/return/' + req.params.id + '/file/upload', { data: data.replace(/\s/g, ''), fileName: name, filePurpose: 'ITEM_RELATED' });
+    const fileId = up && (up.fileId || (up.file && up.file.fileId));
+    await poCall(req.user.id, 'POST', '/return/' + req.params.id + '/file/submit', { files: [{ fileId, filePurpose: 'ITEM_RELATED' }] });
+    res.json({ ok: true, fileId: fileId || null });
+  } catch (e) { console.error('[return photo]', e.message); res.status(502).json({ error: 'eBay didn’t take the photo: ' + e.message }); }
 });
 
 // "Not received" claim: refund in full { comment? }

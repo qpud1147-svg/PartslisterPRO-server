@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Returns v411</title>
+<title>PartsLister Pro Returns v412</title>
 <!-- v382: switching views is instant; browser reload / Refresh really reloads. v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
 <!-- PartsLister Pro — Returns page (v324: new). Returns, "item not received" claims and cases from
      eBay's Post-Order API, read live (nothing saved on the server). Approve / decline / refund from here.
@@ -338,7 +338,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v411</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v412</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -1016,6 +1016,22 @@ async function act(url, body, confirmText, okText) {
   } catch (e) { toast(e.message, true); return false; }
 }
 
+// v412: three steps like eBay — Started · Shipped/Delivered · Refund (with the refund-by date)
+function progressEl(pg) {
+  const wrap = el('div'); wrap.style.cssText = 'display:flex;align-items:flex-start;margin:8px 0 4px;';
+  const done = [!!pg.started, !!(pg.shipped || pg.delivered), !!pg.refunded || pg.closed];
+  const dstr = (v) => v && /^\d{4}-/.test(v) ? dateStr(v) : '';
+  const labels = [['Started', dstr(pg.started)], [pg.delivered ? 'Delivered' : 'Shipped', dstr(pg.delivered || pg.shipped)], [pg.refunded || pg.closed ? 'Refunded' : 'Refund', pg.refunded || pg.closed ? dstr(pg.refunded) : (pg.refundBy ? 'by ' + dstr(pg.refundBy) : '')]];
+  labels.forEach(([t, d], i) => {
+    const col = el('div'); col.style.cssText = 'flex:1;text-align:center;position:relative;';
+    if (i) { const ln = el('div'); ln.style.cssText = 'position:absolute;top:11px;left:-50%;width:100%;height:2px;background:' + (done[i] ? 'var(--success)' : 'var(--border)') + ';'; col.append(ln); }
+    const dot = el('div', '', done[i] ? '✓' : ''); dot.style.cssText = 'position:relative;width:24px;height:24px;border-radius:50%;margin:0 auto;font-size:14px;line-height:24px;color:#fff;background:' + (done[i] ? 'var(--success)' : 'var(--surface2)') + ';border:2px solid ' + (done[i] ? 'var(--success)' : 'var(--border)') + ';';
+    const tt = el('div', '', t); tt.style.cssText = 'font-weight:600;font-size:13px;margin-top:4px;';
+    const dd = el('div', 'r-line', d || ' '); dd.style.fontSize = '12px';
+    col.append(dot, tt, dd); wrap.append(col);
+  });
+  return wrap;
+}
 async function showDetail(key) {
   const [kind, id] = key.split(':');
   const x = items.find(i => i.kind === kind && i.id === id);
@@ -1050,15 +1066,20 @@ async function showDetail(key) {
   // history (returns)
   let liveP = null;   // v369: the return as eBay has it right now (stage, actions, refund breakdown)
   if (x.kind === 'return') {
-    const hb = el('div'); box.append(el('div', 'd-h', 'History'), hb);
+    const hb = el('div'); box.append(el('div', 'd-h', 'Progress'), hb);
     hb.append(el('div', 'd-msg', 'Loading from eBay…'));
     // getJSON('/api/returns/return/' + x.id).then(r => {
     liveP = getJSON('/api/returns/return/' + x.id);
     liveP.then(r => {
       hb.textContent = '';
+      const pg = r && r.progress;
+      if (pg) hb.append(progressEl(pg));   // v412: eBay-style steps
       const hist = (r && r.history) || [];
-      if (!hist.length) { hb.append(el('div', 'd-msg', (r && r.error) || 'No history from eBay.')); return; }
-      const h = el('div', 'hist');
+      if (!hist.length) { if (!pg) hb.append(el('div', 'd-msg', (r && r.error) || 'No history from eBay.')); return; }
+      const tg = el('a', 'r-line', 'Show history'); tg.href = '#'; tg.style.cssText = 'display:inline-block;color:var(--accent);margin-top:8px;';
+      hb.append(tg);
+      const h = el('div', 'hist'); h.style.display = 'none';
+      tg.onclick = (ev) => { ev.preventDefault(); const on = h.style.display === 'none'; h.style.display = on ? '' : 'none'; tg.textContent = on ? 'Hide history' : 'Show history'; };
       hist.forEach(e => { const row = el('div'); row.append(el('span', '', dateStr(e.when) + ' · ' + nice(e.who) + ' — '), document.createTextNode(nice(e.what) + (e.note ? ': ' + e.note : ''))); h.append(row); });
       hb.append(h);
     });
@@ -1169,8 +1190,58 @@ async function showDetail(key) {
         const parts = est ? est.lines.map(l => (NAMES[l.type] || nice(l.type)) + ' ' + money2.format(l.amount)).join(' + ') : '';
         const total = est ? est.total : null;
         const rb = el('button', 'btn btn-primary btn-sm', total !== null ? 'Refund ' + money2.format(total) : 'Refund buyer'); rb.type = 'button';
+        // v412: shipping keep/refund, deduction up to 50% with a reason, photo of the item's condition
+        const ctl = { lines: {}, pct: 0 };
+        const calc = () => {
+          let t = 0;
+          est.lines.forEach(l => { let v = l.amount; if (l.type === 'PURCHASE_PRICE') v = Math.round(l.amount * (100 - ctl.pct)) / 100; else if (ctl.lines[l.type] === false) v = 0; t += v; });
+          return Math.round(t * 100) / 100;
+        };
         if (total !== null) {
-          rb.onclick = () => act(base + '/refund', { amount: total, comment: note.value }, 'Refund ' + money2.format(total) + ' to ' + (x.buyer || 'the buyer') + ' now?\n\n' + parts + '\n\nThis is eBay’s refund amount for this return. This sends real money.', 'Refund sent.');
+          const pn = el('div'); pn.style.cssText = 'border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin:6px 0 10px;';
+          est.lines.filter(l => l.type !== 'PURCHASE_PRICE').forEach(l => {
+            const lab = el('label'); lab.style.cssText = 'display:block;margin:4px 0;';
+            const cb = el('input'); cb.type = 'checkbox'; cb.checked = true; cb.onchange = () => { ctl.lines[l.type] = cb.checked; upd(); };
+            lab.append(cb, document.createTextNode(' Refund ' + (NAMES[l.type] || nice(l.type)).toLowerCase() + ' ' + money2.format(l.amount) + (cb.checked ? '' : '')));
+            pn.append(lab);
+          });
+          const dd = est.lines.find(l => l.type === 'PURCHASE_PRICE');
+          if (dd) {
+            const dl = el('div'); dl.style.cssText = 'margin:8px 0 4px;';
+            dl.append(document.createTextNode('Deduct for a problem with the item: '));
+            const sel = el('select'); [0, 10, 20, 30, 40, 50].forEach(p => { const o = el('option', '', p ? p + '%' : 'None'); o.value = p; sel.append(o); });
+            sel.onchange = () => { ctl.pct = +sel.value; ph.style.display = ctl.pct ? '' : 'none'; upd(); };
+            dl.append(sel, el('span', 'r-line', ' up to 50% of the item price'));
+            const ph = el('div'); ph.style.cssText = 'display:none;margin-top:6px;';
+            ph.append(el('div', 'r-line', 'Add a reason in the note above, and a photo of the problem:'));
+            const fi = el('input'); fi.type = 'file'; fi.accept = 'image/jpeg,image/png,image/gif,image/bmp';
+            const fs = el('span', 'r-line', ''); fs.style.marginLeft = '8px';
+            fi.onchange = () => {
+              const f = fi.files[0]; if (!f) return;
+              if (f.size > 6e6) { fs.textContent = 'Photo too big (6 MB max).'; return; }
+              fs.textContent = 'Uploading…'; const fr = new FileReader();
+              fr.onload = async () => {
+                try {
+                  const rr = await fetch(base + '/photo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data: fr.result, name: f.name }) });
+                  const out = await rr.json().catch(() => ({})); if (!rr.ok) throw new Error(out.error || 'eBay said no.');
+                  fs.textContent = '✓ Photo sent to eBay';
+                } catch (e) { fs.textContent = e.message; }
+              };
+              fr.readAsDataURL(f);
+            };
+            ph.append(fi, fs); dl.append(ph); pn.append(dl);
+          }
+          const upd = () => { const t2 = calc(); rb.textContent = 'Refund ' + money2.format(t2); };
+          holder.append(pn);
+        }
+        if (total !== null) {
+          rb.onclick = () => {
+            const t2 = calc();
+            if (ctl.pct && !String(note.value).trim()) { toast('Type the reason for the deduction in the note.', true); return; }
+            const body2 = { comment: note.value, lines: {} };
+            est.lines.forEach(l => { body2.lines[l.type] = l.type === 'PURCHASE_PRICE' ? Math.round(l.amount * (100 - ctl.pct)) / 100 : (ctl.lines[l.type] === false ? 0 : l.amount); });
+            act(base + '/refund', body2, 'Refund ' + money2.format(t2) + ' to ' + (x.buyer || 'the buyer') + ' now?\n\n' + (ctl.pct ? 'Includes a ' + ctl.pct + '% deduction from the item price.\n\n' : '') + 'This sends real money.', 'Refund sent.');
+          };
           // r3.append(rb, el('span', 'r-line', 'eBay’s refund: ' + parts));
           // v370: + about what it costs you (eBay credits back the sale's fees, scaled to the refund)
           const f = r && r.fees;
