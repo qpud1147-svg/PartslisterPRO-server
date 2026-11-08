@@ -9,7 +9,7 @@
   // refresh, overriding anything init does.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 </script>
-<title>PartsLister Pro v455</title>
+<title>PartsLister Pro v456</title>
 <!-- v409: hover the green L to see exactly which listings (price + shipping) were averaged. -->
 <!-- v408: clearing a listing also clears the low-resolution / unreadable / too-many photo warnings. -->
 <!-- v407: a scan that finds no part number opens No Part Number by itself; a cleared listing starts on Has Part Number. -->
@@ -950,7 +950,7 @@
     <!-- v302: logo goes to the dashboard -->
     <a href="/" title="Dashboard" style="text-decoration:none;color:inherit;">
       <div class="logo"><span>PARTS</span>LISTER</div>
-      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v455</span></div>
+      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v456</span></div>
     </a>
     <!-- v303: removed — the logo is the dashboard button
     <a href="/" class="btn btn-secondary btn-sm" title="Back to your dashboard" style="font-size:11px;padding:4px 10px;text-decoration:none;margin-left:6px;">⌂ Dashboard</a>
@@ -2134,8 +2134,9 @@ const DEFAULT_PROMPT_PHOTO_SCAN = `You are scanning {PHOTO_COUNT} photo{PHOTO_PL
    Sticker labels always take priority over part.
 
 Return ONLY this JSON (no markdown):
-{"partNumber":"","partNumberAlt":"","partNumberPhotoIndex":-1,"sku":"","bin":"","year":"","make":"","model":"","partDesc":"","photoTypes":["part"],"pkgLength":0,"pkgWidth":0,"pkgHeight":0,"pkgWeight":0}
+{"partNumber":"","partNumberAlt":"","partNumberAlt2":"","partNumberPhotoIndex":-1,"sku":"","bin":"","year":"","make":"","model":"","partDesc":"","photoTypes":["part"],"pkgLength":0,"pkgWidth":0,"pkgHeight":0,"pkgWeight":0}
 
+partNumberAlt2: a THIRD different part number when three distinct numbers are visible (for example a second item in the same photo). Otherwise leave empty. Never repeat the number or the alt.
 partNumberAlt: Always populate when multiple number candidates are visible. For split-font labels, put the separate alphanumeric code here (e.g. "BFF3024XB1"). Also use for a second format of the same number. Leave empty only when there is genuinely one unambiguous part number on the entire part.
 partNumberPhotoIndex: look at the [PHOTO N — index N] label above the photo you found the part number in, and return that N. For example if you found it in [PHOTO 2 — index 2], return 2. Return -1 only if no part number was found at all.
 photoTypes must have exactly {PHOTO_COUNT} entries — one per PART PHOTO, never counting example images.
@@ -3125,13 +3126,12 @@ async function runOCR() {
     const altWrap = document.getElementById('pn-alt-suggestion');
     const altBtn = document.getElementById('pn-alt-btn');
     if (parsed.partNumberAlt && altWrap && altBtn) {
-      const rawAlt = parsed.partNumberAlt.trim();
-      const cleanAlt = (rawAlt.replace(/^(?:P\/N|P\.N\.|P-N|P#|PN|P)[\s\-#:.]*/i, '').trim() || rawAlt)
-        .replace(/-/g, ' ').replace(/\s{2,}/g, ' ').trim();
+      const _cl = (raw) => { const r0 = String(raw || '').trim(); return ((r0.replace(/^(?:P\/N|P\.N\.|P-N|P#|PN|P)[\s\-#:.]*/i, '').trim() || r0)).replace(/-/g, ' ').replace(/\s{2,}/g, ' ').trim(); };
+      const cleanAlt = _cl(parsed.partNumberAlt), cleanAlt2 = parsed.partNumberAlt2 ? _cl(parsed.partNumberAlt2) : '';
       if (cleanAlt) {
         altBtn.textContent = cleanAlt;
         altBtn.dataset.alt = cleanAlt;
-        setPNCandidates(document.getElementById('part-number').value, cleanAlt);
+        setPNCandidates(document.getElementById('part-number').value, cleanAlt, cleanAlt2);   // v456: up to three
       } else {
         clearPNCandidates();
       }
@@ -5256,15 +5256,7 @@ async function launchToEbay() {
 
     // Build item specifics XML — each interchange field is its own NameValueList
     const specifics = [
-      (() => {
-        if (!partNum) return '';
-        const _ws = partNum.replace(/[-]/g, ' ').replace(/\s+/g, ' ').trim();
-        const _ns = partNum.replace(/[\s\-]/g, '');
-        const _wd = partNum.replace(/\s+/g, '-').replace(/-+/g, '-');
-        const _sv = new Set(); const _vr = [];
-        [partNum, _ws, _ns, _wd].forEach(v => { if (v && !_sv.has(v.toLowerCase())) { _sv.add(v.toLowerCase()); _vr.push(v); } });
-        return '<NameValueList><Name>Manufacturer Part Number</Name><Value>' + escXml(_vr.join(' ').slice(0, 65)) + '</Value></NameValueList>';
-      })(),
+      (() => { if (!partNum) return ''; return '<NameValueList><Name>Manufacturer Part Number</Name><Value>' + escXml(mpnValue(partNum)) + '</Value></NameValueList>'; })(),   // v456: + ticked extra numbers
       yr ? `<NameValueList><Name>Year</Name><Value>${escXml(yr)}</Value></NameValueList>` : '',
       mk ? `<NameValueList><Name>Make</Name><Value>${escXml(mk)}</Value></NameValueList>` : '',
       md ? `<NameValueList><Name>Model</Name><Value>${escXml(md)}</Value></NameValueList>` : '',
@@ -5485,15 +5477,7 @@ async function saveToDraft() {
     const interchangeInputs = Array.from(document.querySelectorAll('.interchange-input')).map(i => i.value.trim());
 
     const specifics = [
-      (() => {
-        if (!partNum) return '';
-        const _ws = partNum.replace(/[-]/g, ' ').replace(/\s+/g, ' ').trim();
-        const _ns = partNum.replace(/[\s\-]/g, '');
-        const _wd = partNum.replace(/\s+/g, '-').replace(/-+/g, '-');
-        const _sv = new Set(); const _vr = [];
-        [partNum, _ws, _ns, _wd].forEach(v => { if (v && !_sv.has(v.toLowerCase())) { _sv.add(v.toLowerCase()); _vr.push(v); } });
-        return '<NameValueList><Name>Manufacturer Part Number</Name><Value>' + escXml(_vr.join(' ').slice(0, 65)) + '</Value></NameValueList>';
-      })(),
+      (() => { if (!partNum) return ''; return '<NameValueList><Name>Manufacturer Part Number</Name><Value>' + escXml(mpnValue(partNum)) + '</Value></NameValueList>'; })(),   // v456: + ticked extra numbers
       yr ? `<NameValueList><Name>Year</Name><Value>${escXml(yr)}</Value></NameValueList>` : '',
       mk ? `<NameValueList><Name>Make</Name><Value>${escXml(mk)}</Value></NameValueList>` : '',
       md ? `<NameValueList><Name>Model</Name><Value>${escXml(md)}</Value></NameValueList>` : '',
@@ -6970,9 +6954,10 @@ function stripPNPrefix(val) {
 // move. The one currently in the Part Number field is highlighted. Clicking a
 // chip switches to it. Nothing swaps position, so you always know which guess
 // you are looking at.
-function setPNCandidates(primary, alt) {
+function setPNCandidates(primary, alt, alt2) {
   const list = [];
-  [primary, alt].forEach(v => {
+  window._pnExtra = {};   // v456: ticked extras start over with every new scan
+  [primary, alt, alt2].forEach(v => {
     const t = (v || '').trim();
     if (t && !list.some(x => x.toUpperCase() === t.toUpperCase())) list.push(t);
   });
@@ -6990,6 +6975,15 @@ function renderPNCandidates() {
   listEl.innerHTML = '';
   cands.forEach((val, i) => {
     const active = val.toUpperCase() === cur;   // i still used by the click handler
+    const rowEl = document.createElement('label');
+    rowEl.style.cssText = 'display:flex;align-items:center;gap:6px;cursor:pointer;';
+    if (!active) {   // v456: the number in the box needs no checkbox; the others can ride along on the same listing
+      const cb = document.createElement('input'); cb.type = 'checkbox';
+      cb.checked = !!(window._pnExtra || {})[val.toUpperCase()];
+      cb.title = 'Also list this part number';
+      cb.onchange = () => { window._pnExtra = window._pnExtra || {}; window._pnExtra[val.toUpperCase()] = cb.checked; refreshPNVariants((document.getElementById('part-number').value || '').trim()); };
+      rowEl.appendChild(cb);
+    }
     const b = document.createElement('button');
     b.type = 'button';
     b.textContent = val;
@@ -7000,8 +6994,9 @@ function renderPNCandidates() {
       'color:' + (active ? '#111' : 'var(--muted)') + ';' +
       'cursor:pointer;font-family:monospace;letter-spacing:0.5px;text-align:left;' +
       'transition:all 0.12s;';
-    b.onclick = () => pickPNCandidate(i);
-    listEl.appendChild(b);
+    b.onclick = (ev) => { ev.preventDefault(); pickPNCandidate(i); };
+    rowEl.appendChild(b);
+    listEl.appendChild(rowEl);
   });
   wrap.style.display = 'block';
 }
@@ -7012,11 +7007,13 @@ function pickPNCandidate(i) {
   const input = document.getElementById('part-number');
   if ((input.value || '').trim().toUpperCase() === cands[i].toUpperCase()) return;
   input.value = cands[i];
+  if (window._pnExtra) delete window._pnExtra[cands[i].toUpperCase()];   // v456: the new main number can't also be an extra
   updatePartNumber();
 }
 
 function clearPNCandidates() {
   window._pnCandidates = [];
+  window._pnExtra = {};
   const wrap = document.getElementById('pn-alt-suggestion');
   const listEl = document.getElementById('pn-cand-list');
   if (listEl) listEl.innerHTML = '';
@@ -7298,20 +7295,32 @@ function renderVehicleGuesses(guesses, partType) {
   wrap.style.display = 'block';
 }
 
+// v456: one Part Number box can carry several numbers' variants. Whole variants only (eBay's field holds 65
+// characters): the numbers as typed first, then no-space versions, then spaced, then dashed.
+function pnExtraNumbers(main) {
+  const m = String(main || '').trim().toUpperCase(), ex = window._pnExtra || {};
+  return (window._pnCandidates || []).filter(c => ex[c.toUpperCase()] && c.toUpperCase() !== m);
+}
+function buildMPNList(nums) {
+  const maps = nums.filter(Boolean).map(pn => ({
+    pn, ws: pn.replace(/[-]/g, ' ').replace(/\s+/g, ' ').trim(), ns: pn.replace(/[\s\-]/g, ''), wd: pn.replace(/\s+/g, '-').replace(/-+/g, '-')
+  }));
+  const used = new Set(), pick = maps.map(() => ({})); let len = 0;
+  ['pn', 'ns', 'ws', 'wd'].forEach(t => maps.forEach((m, i) => {
+    const v = m[t]; if (!v || used.has(v.toLowerCase())) return;
+    const add = (len ? 1 : 0) + v.length; if (len + add > 65) return;
+    used.add(v.toLowerCase()); pick[i][t] = v; len += add;
+  }));
+  const out = []; pick.forEach(p => ['pn', 'ws', 'ns', 'wd'].forEach(t => { if (p[t]) out.push(p[t]); }));
+  return out;
+}
+function mpnValue(main) { return main ? buildMPNList([main].concat(pnExtraNumbers(main))).join(' ') : ''; }
 function refreshPNVariants(pn) {
   const el = document.getElementById('pn-variants-display');
   if (!el) return;
   if (!pn) { el.textContent = '—'; return; }
-  const withSpace = pn.replace(/[-]/g, ' ').replace(/\s+/g, ' ').trim();
-  const noSpaces  = pn.replace(/[\s\-]/g, '');
-  const withDash  = pn.replace(/\s+/g, '-').replace(/-+/g, '-');
-  // Show unique variants only
-  const seen = new Set();
-  const variants = [pn, withSpace, noSpaces, withDash].filter(v => {
-    if (!v || seen.has(v)) return false;
-    seen.add(v); return true;
-  });
-  el.textContent = variants.join('  ');
+  const ex = pnExtraNumbers(pn);
+  el.textContent = buildMPNList([pn].concat(ex)).join('  ') + (ex.length ? '' : '');
 }
 
 function copyPartNumber() {
