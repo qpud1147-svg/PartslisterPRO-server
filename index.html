@@ -9,7 +9,7 @@
   // refresh, overriding anything init does.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 </script>
-<title>PartsLister Pro v453</title>
+<title>PartsLister Pro v455</title>
 <!-- v409: hover the green L to see exactly which listings (price + shipping) were averaged. -->
 <!-- v408: clearing a listing also clears the low-resolution / unreadable / too-many photo warnings. -->
 <!-- v407: a scan that finds no part number opens No Part Number by itself; a cleared listing starts on Has Part Number. -->
@@ -950,7 +950,7 @@
     <!-- v302: logo goes to the dashboard -->
     <a href="/" title="Dashboard" style="text-decoration:none;color:inherit;">
       <div class="logo"><span>PARTS</span>LISTER</div>
-      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v453</span></div>
+      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v455</span></div>
     </a>
     <!-- v303: removed — the logo is the dashboard button
     <a href="/" class="btn btn-secondary btn-sm" title="Back to your dashboard" style="font-size:11px;padding:4px 10px;text-decoration:none;margin-left:6px;">⌂ Dashboard</a>
@@ -3416,6 +3416,13 @@ function getSearchVariant() {
   return v === 'Pair' ? '' : v;
 }
 
+// v454: the Part box without any color word, for eBay searches (the color stays in the title, description etc. but never filters a search; material stays)
+function npSearchDesc() {
+  const el = document.getElementById('np-desc');
+  const d = el ? el.value.trim() : '';
+  try { return replaceColorWords(d, ''); } catch (e) { return d; }
+}
+
 function clearSearchCache() {
   Object.keys(partCache).forEach(k => delete partCache[k]);
   showNotif('✓ Search cache cleared');
@@ -3815,7 +3822,7 @@ async function openSellSimilarFromNPVisualMatch() {
   closeLightbox();
   const vehicle = document.getElementById('np-vehicle') ? document.getElementById('np-vehicle').value.trim() : '';
   const variant = getSearchVariant();
-  const desc = document.getElementById('np-desc') ? document.getElementById('np-desc').value.trim() : '';
+  const desc = npSearchDesc();   // v454: no color in the search
   const loc = getSelectedLocations();
   const query = [vehicle, variant, desc, loc].filter(Boolean).join(' ');
   if (!query) { showNotif('⚠ Enter vehicle or description first', true); return; }
@@ -3866,7 +3873,7 @@ async function searchEbay(useZip = false, options = {}) {
   let partNum, searchQuery;
   if (currentMode === 'nopartnumber') {
     const vehicle = (document.getElementById('np-vehicle') ? document.getElementById('np-vehicle').value.trim() : '');
-    const desc    = document.getElementById('np-desc').value.trim();
+    const desc    = npSearchDesc();   // v454: no color in the search
     const loc     = getSelectedLocations();
     partNum = '';
     const variant = getSearchVariant();
@@ -6816,7 +6823,13 @@ function applyOtherSide(historyIndex) {
   setTimeout(() => {
     // v265: carry the source listing's shipping policy through the reset so the
     // forced default doesn't overwrite it.
+    // v455: photos you already loaded for this next listing survive the reset
+    const _keep = { files: uploadedFiles.slice(), sel: [], pnUrl: window._pnPhotoDataUrl, pnIdx: window._pnPhotoIdx, pnFile: window._pnPhotoFile };
     resetForm(src.shippingPolicyId || '');
+    if (_keep.files.length) {
+      uploadedFiles = _keep.files; window._pnPhotoDataUrl = _keep.pnUrl; window._pnPhotoIdx = _keep.pnIdx; window._pnPhotoFile = _keep.pnFile;
+      try { renderPhotoStrip(); } catch (e) { console.error('[other side] photos', e); }
+    }
 
     const flippedTitle = flipSide(src.title);
     const titleEl = document.getElementById('listing-title');
@@ -6867,10 +6880,9 @@ function _getEbayQuery() {
   if (currentMode === 'nopartnumber') {
     const vehicle = document.getElementById('np-vehicle') ? document.getElementById('np-vehicle').value.trim() : '';
     const variant = getSearchVariant();
-    const desc  = document.getElementById('np-desc').value.trim();
+    const desc  = npSearchDesc();   // v454: color is never part of the eBay search (View Active / View Sold / prices) — you want every color's results
     const loc   = getSelectedLocations();
-    const color = getDetectedColor(desc);
-    return [vehicle, variant, desc, loc, (color && color !== 'N/A') ? color : ''].filter(Boolean).join(' ');
+    return [vehicle, variant, desc, loc].filter(Boolean).join(' ');
   } else {
     return document.getElementById('part-number').value.trim();
   }
@@ -7967,7 +7979,7 @@ async function openSellSimilarFromNP() {
   // Build query from No Part Number fields
   const vehicle = document.getElementById('np-vehicle') ? document.getElementById('np-vehicle').value.trim() : '';
   const variant = getSearchVariant();
-  const desc = document.getElementById('np-desc') ? document.getElementById('np-desc').value.trim() : '';
+  const desc = npSearchDesc();   // v454: no color in the search
   const loc = getSelectedLocations();
   const query = [vehicle, variant, desc, loc].filter(Boolean).join(' ');
   if (!query) { showNotif('⚠ Enter vehicle or description first', true); return; }
