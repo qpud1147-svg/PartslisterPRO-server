@@ -9,7 +9,7 @@
   // refresh, overriding anything init does.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 </script>
-<title>PartsLister Pro v460</title>
+<title>PartsLister Pro v461</title>
 <!-- v409: hover the green L to see exactly which listings (price + shipping) were averaged. -->
 <!-- v408: clearing a listing also clears the low-resolution / unreadable / too-many photo warnings. -->
 <!-- v407: a scan that finds no part number opens No Part Number by itself; a cleared listing starts on Has Part Number. -->
@@ -950,7 +950,7 @@
     <!-- v302: logo goes to the dashboard -->
     <a href="/" title="Dashboard" style="text-decoration:none;color:inherit;">
       <div class="logo"><span>PARTS</span>LISTER</div>
-      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v460</span></div>
+      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v461</span></div>
     </a>
     <!-- v303: removed — the logo is the dashboard button
     <a href="/" class="btn btn-secondary btn-sm" title="Back to your dashboard" style="font-size:11px;padding:4px 10px;text-decoration:none;margin-left:6px;">⌂ Dashboard</a>
@@ -1448,11 +1448,15 @@
         <label>Interchange Part Number</label>
         <div class="interchange-fields" id="interchange-fields">
           <div class="interchange-row">
-            <input type="text" class="interchange-input" maxlength="65" oninput="updateInterchangeCount(this)" placeholder="">
+            <input type="text" class="interchange-input" maxlength="65" oninput="updateInterchangeCount(this)" placeholder="Years">
             <span class="char-count">0/65</span>
           </div>
           <div class="interchange-row">
-            <input type="text" class="interchange-input" maxlength="65" oninput="updateInterchangeCount(this)" placeholder="">
+            <input type="text" class="interchange-input" maxlength="65" oninput="updateInterchangeCount(this)" placeholder="Placement (left, LH, driver side…)">
+            <span class="char-count">0/65</span>
+          </div>
+          <div class="interchange-row">
+            <input type="text" class="interchange-input" maxlength="65" oninput="updateInterchangeCount(this)" placeholder="Keywords (fuse box, relay box, module…)">
             <span class="char-count">0/65</span>
           </div>
 
@@ -1871,6 +1875,23 @@
         <div style="font-size:10px;color:var(--muted);margin-top:4px;">Placeholders: <code style="font-size:10px;">{years} {keywords} {make} {model} {partNumber} {location} {title}</code></div>
       </div>
 
+      <div class="field" style="margin-top:14px;">
+        <label>Interchange box 2 — Placement (needs your Anthropic key)</label>
+        <div style="display:flex;gap:6px;align-items:flex-start;">
+          <textarea id="interchange-prompt2-input" rows="6" style="flex:1;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:6px 8px;font-size:11px;resize:vertical;font-family:monospace;line-height:1.4;"></textarea>
+          <button onclick="document.getElementById('interchange-prompt2-input').value=DEFAULT_INTERCHANGE_PROMPT_2" style="white-space:nowrap;padding:5px 10px;font-size:11px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--muted);cursor:pointer;">Default</button>
+        </div>
+        <div style="font-size:10px;color:var(--muted);margin-top:4px;">Fills the second Interchange box with ways buyers write the side/position (left, LH, driver side…). Leave empty to turn this box off. Placeholders: <code style="font-size:10px;">{location} {title} {make} {model} {partNumber} {partType} {years} {keywords}</code></div>
+      </div>
+      <div class="field">
+        <label>Interchange box 3 — Keywords (needs your Anthropic key)</label>
+        <div style="display:flex;gap:6px;align-items:flex-start;">
+          <textarea id="interchange-prompt3-input" rows="6" style="flex:1;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:6px 8px;font-size:11px;resize:vertical;font-family:monospace;line-height:1.4;"></textarea>
+          <button onclick="document.getElementById('interchange-prompt3-input').value=DEFAULT_INTERCHANGE_PROMPT_3" style="white-space:nowrap;padding:5px 10px;font-size:11px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--muted);cursor:pointer;">Default</button>
+        </div>
+        <div style="font-size:10px;color:var(--muted);margin-top:4px;">Fills the third Interchange box with other names buyers search for this part (fuse box → relay box, relays, module…) plus alternate part numbers. Leave empty to turn this box off. Same placeholders as box 2.</div>
+      </div>
+
       <hr>
       </div>
 
@@ -2259,22 +2280,62 @@ Return ONLY a JSON array, one object per listing in order, no markdown:
 [{"listing":1,"match":true,"reason":"short reason"}, ...]
 In each reason, mention the key distinguishing detail (e.g. "analog gauges, yours is digital" or "gold bowtie, yours is silver"). Keep each reason under 12 words.`;
 
-const DEFAULT_INTERCHANGE_PROMPT = `You are building the eBay "Interchange Part Number" field for a used auto part listing. This field must be 65 characters or less.
+const DEFAULT_INTERCHANGE_PROMPT = `You are filling BOX 1 of 3 of the eBay "Interchange Part Number" field for a used auto part listing. Box 1 holds ONLY the years the part fits. The box must be 65 characters or less.
 
 Available data:
 - Year range: {years} (these are ALL applicable years)
-- Keyword terms (may include alternate/superseded part numbers): {keywords}
-- Make: {make}
-- Model: {model}
-- Part number already in the Part Number field: {partNumber} (DO NOT include this)
-- Location/placement: {location}
 - Listing title: {title}
 
 Rules:
-- START with the interior years only — exclude the first and last year of the range since those are already in the title. For example if the part fits 2005-2010, list only 2006 2007 2008 2009
-- After the years, include any alternate, superseded, or cross-reference part numbers found in the keyword terms — these help buyers find the part. Do NOT include {partNumber} or any part number already visible in the title
-- Fill remaining space with other useful search terms from the keyword terms
-- Do NOT repeat any word already in the title
+- List the interior years only: leave out the first and last year of the range, because those are already in the title. For example if the part fits 2005-2010, write: 2006 2007 2008 2009
+- If the range is only one or two years, list those years instead
+- Separate years with single spaces. No words, no part numbers, no punctuation
+- Do NOT exceed 65 characters total. If the years do not fit, stop before the last one that fits
+- Return ONLY the field value as plain text, no explanation, no quotes`;
+
+const DEFAULT_INTERCHANGE_PROMPT_2 = `You are filling BOX 2 of 3 of the eBay "Interchange Part Number" field for a used auto part listing. Box 2 holds ONLY the ways buyers write the PLACEMENT / side of the part. The box must be 65 characters or less.
+
+Available data:
+- Placement: {location}
+- Listing title: {title}
+- Part: {partType}
+
+Rules:
+- If the placement is empty or "If applicable", return nothing at all
+- Write every common way buyers search for that placement. Left side in the US is the driver side, right side is the passenger side. Examples:
+  - Left -> LH Left Hand Driver Driver Side Drivers US Driver
+  - Right -> RH Right Hand Passenger Passenger Side Passengers US Passenger
+  - Front Left -> Front LH Front Left Driver Side Front Driver LF
+  - Rear Right -> Rear RH Rear Passenger Side Rear Passenger RR
+  - Also use Upper, Lower, Inner, Outer, Front, Rear, Row 2 / Second Row, Third Row, Bank 1 / Bank 2 and similar words when the placement mentions them
+- Do NOT repeat any word that is already in the listing title
+- If the title says pair, set or lot, return: Left Right LH RH Driver Passenger
+- Do NOT exceed 65 characters total
+- Return ONLY the field value as plain text, no explanation, no quotes`;
+
+const DEFAULT_INTERCHANGE_PROMPT_3 = `You are filling BOX 3 of 3 of the eBay "Interchange Part Number" field for a used auto part listing. Box 3 holds extra SEARCH KEYWORDS: other names, abbreviations and related terms that buyers type when looking for this part, plus alternate part numbers. The box must be 65 characters or less.
+
+Available data:
+- Part: {partType}
+- Listing title: {title}
+- Make: {make}   Model: {model}
+- Part number already in the Part Number field: {partNumber} (DO NOT include this)
+- Keyword terms from similar listings (may include alternate or superseded part numbers): {keywords}
+
+Rules:
+- Think about every other name this part goes by and write those. Examples:
+  - fuse box -> fuse block relay box relays relay module PDC power distribution center junction block TIPM
+  - side mirror -> door mirror side view mirror power mirror mirror assembly
+  - ECM -> ECU PCM engine computer engine control module brain box
+  - ABS pump -> ABS module anti lock brake pump brake modulator
+  - radio -> stereo head unit receiver audio
+  - instrument cluster -> speedometer gauge cluster dash cluster IPC
+  - headlight -> headlamp head lamp assembly front light
+  - tail light -> tail lamp taillight brake light rear lamp
+  - door lock actuator -> latch lock motor
+- Include alternate, superseded or cross-reference part numbers found in the keyword terms. Do NOT include {partNumber} or any part number already in the title
+- Do NOT repeat any word that is already in the listing title
+- Do NOT write years or left/right/driver/passenger words (other boxes cover those)
 - Do NOT exceed 65 characters total
 - Return ONLY the field value as plain text, no explanation, no quotes`;
 
@@ -4304,6 +4365,7 @@ function populateFields(d) {
     }).catch(() => {}).finally(() => { _ichEnd(); });
   }
   // If mode is set but field is empty, or no mode matches — leave interchange blank
+  fillExtraInterchange({ years: allYears4.join(' '), keywords: cleanKeywordTerms.join(' '), make: _make, model: _model, partNum, loc: _loc });   // v461: boxes 2 and 3
 }
 
 // ─── CATEGORY SUGGESTION FROM TITLE ──────────────────────────────────────────
@@ -4968,13 +5030,47 @@ function _ichEnd() {
   if (window._ichPending === 0 && window._gsHideWanted) _gsHideNow();
 }
 
+// v461: boxes 2 (placement) and 3 (keywords) are filled by Claude from their own prompts in Settings
+async function fillExtraInterchange(ctx) {
+  if (!settings.apiKey) return;
+  const inputs = document.querySelectorAll('.interchange-input');
+  const title = ctx.title || document.getElementById('listing-title').value || '';
+  const partType = ctx.partType || (document.getElementById('part-type') ? document.getElementById('part-type').value.trim() : '');
+  const wordsOf = (t) => String(t || '').toLowerCase().split(/\s+/).map(w => w.replace(/[^a-z0-9]/g, '')).filter(Boolean);
+  const avoid = new Set(wordsOf(title));
+  const defs = [[1, 'interchangePrompt2', DEFAULT_INTERCHANGE_PROMPT_2], [2, 'interchangePrompt3', DEFAULT_INTERCHANGE_PROMPT_3]];
+  for (const [idx, key, def] of defs) {   // one after the other so box 3 can skip words box 2 used
+    const tpl = settings[key] === undefined ? def : settings[key];
+    if (!tpl || !tpl.trim() || !inputs[idx]) continue;
+    const filled = tpl
+      .replace(/\{years\}/g, ctx.years || '').replace(/\{keywords\}/g, ctx.keywords || '')
+      .replace(/\{make\}/g, ctx.make || '').replace(/\{model\}/g, ctx.model || '')
+      .replace(/\{partNumber\}/g, ctx.partNum || '').replace(/\{location\}/g, ctx.loc || '')
+      .replace(/\{partType\}/g, partType).replace(/\{title\}/g, title)
+      + (ctx.notes ? `\n\nHIGH PRIORITY — notes from the user that must be reflected if relevant: "${ctx.notes}"` : '');
+    _ichBegin();
+    await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': settings.apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
+      body: JSON.stringify({ model: settings.claudeModel || 'claude-sonnet-4-5', max_tokens: 120, system: 'Respond with only the field value as plain text. No quotes, no explanation.', messages: [{ role: 'user', content: filled }] })
+    }).then(r => r.json()).then(data => {
+      let val = (data.content && data.content[0] && data.content[0].text || '').trim().replace(/^["']|["']$/g, '');
+      val = applyInterchangeStrip(val);
+      // drop words already in the title (and, for box 3, already in box 2) so nothing repeats
+      const skip = new Set(avoid); if (idx === 2 && inputs[1]) wordsOf(inputs[1].value).forEach(w => skip.add(w));
+      val = val.split(/\s+/).filter(w => { const wc = w.toLowerCase().replace(/[^a-z0-9]/g, ''); return wc && !skip.has(wc); }).join(' ');
+      if (val.length > 65) val = val.slice(0, 65).replace(/\s\S*$/, '').trim();
+      if (val) { inputs[idx].value = val; updateInterchangeCount(inputs[idx]); }
+    }).catch(() => {}).finally(() => { _ichEnd(); });
+  }
+}
+
 // ─── REBUILD INTERCHANGE ──────────────────────────────────────────────────────
 function rebuildInterchange(refinementNotes) {
   const _iMode   = settings.interchangeMode || 'template';
   const _iTpl    = settings.interchangeTemplate || '';
   const _iPrompt = settings.interchangePrompt || '';
-  if (!_iTpl && _iMode === 'template') return;
-  if (!_iPrompt && _iMode === 'claude') return;
+  const _box1Off = (!_iTpl && _iMode === 'template') || (!_iPrompt && _iMode === 'claude');   // v461: boxes 2/3 still refresh
 
   const inputs  = document.querySelectorAll('.interchange-input');
   const title   = document.getElementById('listing-title').value || '';
@@ -5010,6 +5106,8 @@ function rebuildInterchange(refinementNotes) {
   const _pnClean = partNum.toLowerCase().replace(/[^a-z0-9]/g, '');
   if (_pnClean) { _titleWordSet.add(_pnClean); _titleWordSet.add(partNum.toLowerCase()); }
 
+  fillExtraInterchange({ years: allYears4.join(' '), keywords: notes, make, model, partNum, loc: effectiveLoc, title, notes });   // v461
+  if (_box1Off) return;
   // Refinement notes get priority — prepended before existing keywords
   const existingField = inputs[0] ? inputs[0].value.trim() : '';
   // Filter existing field words that are already in title or match part number
@@ -5982,6 +6080,8 @@ function openSettings() {
   setInterchangeMode(settings.interchangeMode || 'template');
   if (document.getElementById('interchange-template-input')) document.getElementById('interchange-template-input').value = settings.interchangeTemplate || '';
   if (document.getElementById('interchange-prompt-input')) document.getElementById('interchange-prompt-input').value = settings.interchangePrompt || '';
+  if (document.getElementById('interchange-prompt2-input')) document.getElementById('interchange-prompt2-input').value = settings.interchangePrompt2 === undefined ? DEFAULT_INTERCHANGE_PROMPT_2 : settings.interchangePrompt2;   // v461
+  if (document.getElementById('interchange-prompt3-input')) document.getElementById('interchange-prompt3-input').value = settings.interchangePrompt3 === undefined ? DEFAULT_INTERCHANGE_PROMPT_3 : settings.interchangePrompt3;
   if (document.getElementById('prompt-photo-scan-input')) document.getElementById('prompt-photo-scan-input').value = settings.promptPhotoScan || '';
   if (document.getElementById('prompt-part-number-input')) document.getElementById('prompt-part-number-input').value = settings.promptPartNumber || '';
   if (document.getElementById('prompt-no-part-number-input')) document.getElementById('prompt-no-part-number-input').value = settings.promptNoPartNumber || '';
@@ -6055,6 +6155,8 @@ function saveSettings() {
   settings.interchangeMode = (document.getElementById('interchange-mode-template') && document.getElementById('interchange-mode-template').dataset.activeMode) || 'template';
   settings.interchangeTemplate = document.getElementById('interchange-template-input') ? document.getElementById('interchange-template-input').value.trim() : '';
   settings.interchangePrompt = document.getElementById('interchange-prompt-input') ? document.getElementById('interchange-prompt-input').value.trim() : '';
+  if (document.getElementById('interchange-prompt2-input')) settings.interchangePrompt2 = document.getElementById('interchange-prompt2-input').value.trim();   // v461
+  if (document.getElementById('interchange-prompt3-input')) settings.interchangePrompt3 = document.getElementById('interchange-prompt3-input').value.trim();
   settings.promptPhotoScan = document.getElementById('prompt-photo-scan-input') ? document.getElementById('prompt-photo-scan-input').value.trim() : '';
   settings.promptPartNumber = document.getElementById('prompt-part-number-input') ? document.getElementById('prompt-part-number-input').value.trim() : '';
   settings.promptNoPartNumber = document.getElementById('prompt-no-part-number-input') ? document.getElementById('prompt-no-part-number-input').value.trim() : '';
@@ -6751,7 +6853,7 @@ function saveOtherSideHistory() {
     model:     document.getElementById('model') ? document.getElementById('model').value.trim() : '',
     color:     document.getElementById('color') ? document.getElementById('color').value.trim() : '',
     location:  document.getElementById('location') ? document.getElementById('location').value.trim() : '',
-    keywords:  Array.from(document.querySelectorAll('.interchange-input')).map(i => i.value.trim()).filter(Boolean),
+    keywords:  Array.from(document.querySelectorAll('.interchange-input')).map(i => i.value.trim()),   // v461: keep each box's slot
     shippingPolicyId: document.getElementById('shipping-policy-select') ? document.getElementById('shipping-policy-select').value : '',
   };
   const idx = othersideHistory.findIndex(e => e.label === entry.label);
@@ -6804,7 +6906,7 @@ function applyOtherSide(historyIndex) {
       model:        document.getElementById('model') ? document.getElementById('model').value.trim() : '',
       color:        document.getElementById('color') ? document.getElementById('color').value.trim() : '',
       location:     document.getElementById('location') ? document.getElementById('location').value.trim() : '',
-      keywords:     Array.from(document.querySelectorAll('.interchange-input')).map(i => i.value.trim()).filter(Boolean),
+      keywords:     Array.from(document.querySelectorAll('.interchange-input')).map(i => i.value.trim()),   // v461
       shippingPolicyId: document.getElementById('shipping-policy-select') ? document.getElementById('shipping-policy-select').value : '',
     };
   }
