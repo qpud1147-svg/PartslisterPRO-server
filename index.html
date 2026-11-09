@@ -9,7 +9,7 @@
   // refresh, overriding anything init does.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 </script>
-<title>PartsLister Pro v461</title>
+<title>PartsLister Pro v463</title>
 <!-- v409: hover the green L to see exactly which listings (price + shipping) were averaged. -->
 <!-- v408: clearing a listing also clears the low-resolution / unreadable / too-many photo warnings. -->
 <!-- v407: a scan that finds no part number opens No Part Number by itself; a cleared listing starts on Has Part Number. -->
@@ -950,7 +950,7 @@
     <!-- v302: logo goes to the dashboard -->
     <a href="/" title="Dashboard" style="text-decoration:none;color:inherit;">
       <div class="logo"><span>PARTS</span>LISTER</div>
-      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v461</span></div>
+      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v463</span></div>
     </a>
     <!-- v303: removed — the logo is the dashboard button
     <a href="/" class="btn btn-secondary btn-sm" title="Back to your dashboard" style="font-size:11px;padding:4px 10px;text-decoration:none;margin-left:6px;">⌂ Dashboard</a>
@@ -1849,8 +1849,8 @@
       </div>
 
       <hr>
-      <div style="font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--accent);margin-bottom:8px;">Interchange Field</div>
-      <p style="font-size:11px;color:var(--muted);margin-bottom:10px;">Controls how the Interchange Part Number field is populated. Leave empty to disable. If empty, the field will not be populated at all.</p>
+      <div style="font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--accent);margin-bottom:8px;">Interchange Field — 3 boxes</div>
+      <p style="font-size:11px;color:var(--muted);margin-bottom:10px;"><b>Box 1 (Years)</b> is set right below: pick Template (free, years only by default) or Claude Prompt. <b>Box 2 (Placement)</b> and <b>Box 3 (Keywords)</b> have their own prompts underneath, one after the other. Leave a box empty to turn it off.</p>
 
       <div style="display:flex;gap:8px;margin-bottom:12px;">
         <button id="interchange-mode-template" onclick="setInterchangeMode('template')" style="flex:1;padding:6px;font-size:11px;font-family:'Barlow Condensed',sans-serif;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;border-radius:4px;border:1px solid var(--border);cursor:pointer;background:var(--accent);color:#000;">Template</button>
@@ -1858,7 +1858,7 @@
       </div>
 
       <div id="interchange-template-wrap" class="field">
-        <label>Template</label>
+        <label>Box 1 — Years · Template</label>
         <div style="display:flex;gap:6px;align-items:flex-start;">
           <input type="text" id="interchange-template-input" placeholder="e.g. {years} {keywords} {make}" style="flex:1;font-family:monospace;font-size:12px;">
           <button onclick="document.getElementById('interchange-template-input').value=DEFAULT_INTERCHANGE_TEMPLATE" style="white-space:nowrap;padding:5px 10px;font-size:11px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--muted);cursor:pointer;">Use Default</button>
@@ -1867,7 +1867,7 @@
       </div>
 
       <div id="interchange-claude-wrap" class="field" style="display:none;">
-        <label>Claude Prompt</label>
+        <label>Box 1 — Years · Claude Prompt</label>
         <div style="display:flex;gap:6px;align-items:flex-start;">
           <textarea id="interchange-prompt-input" rows="6" style="flex:1;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:6px 8px;font-size:11px;resize:vertical;font-family:monospace;line-height:1.4;"></textarea>
           <button onclick="document.getElementById('interchange-prompt-input').value=DEFAULT_INTERCHANGE_PROMPT" style="white-space:nowrap;padding:5px 10px;font-size:11px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--muted);cursor:pointer;">Use Default</button>
@@ -1876,7 +1876,7 @@
       </div>
 
       <div class="field" style="margin-top:14px;">
-        <label>Interchange box 2 — Placement (needs your Anthropic key)</label>
+        <label>Box 2 — Placement · Claude Prompt (needs your Anthropic key)</label>
         <div style="display:flex;gap:6px;align-items:flex-start;">
           <textarea id="interchange-prompt2-input" rows="6" style="flex:1;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:6px 8px;font-size:11px;resize:vertical;font-family:monospace;line-height:1.4;"></textarea>
           <button onclick="document.getElementById('interchange-prompt2-input').value=DEFAULT_INTERCHANGE_PROMPT_2" style="white-space:nowrap;padding:5px 10px;font-size:11px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--muted);cursor:pointer;">Default</button>
@@ -1884,7 +1884,7 @@
         <div style="font-size:10px;color:var(--muted);margin-top:4px;">Fills the second Interchange box with ways buyers write the side/position (left, LH, driver side…). Leave empty to turn this box off. Placeholders: <code style="font-size:10px;">{location} {title} {make} {model} {partNumber} {partType} {years} {keywords}</code></div>
       </div>
       <div class="field">
-        <label>Interchange box 3 — Keywords (needs your Anthropic key)</label>
+        <label>Box 3 — Keywords · Claude Prompt (needs your Anthropic key)</label>
         <div style="display:flex;gap:6px;align-items:flex-start;">
           <textarea id="interchange-prompt3-input" rows="6" style="flex:1;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:6px 8px;font-size:11px;resize:vertical;font-family:monospace;line-height:1.4;"></textarea>
           <button onclick="document.getElementById('interchange-prompt3-input').value=DEFAULT_INTERCHANGE_PROMPT_3" style="white-space:nowrap;padding:5px 10px;font-size:11px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--muted);cursor:pointer;">Default</button>
@@ -2263,7 +2263,17 @@ Based on these real search results, return ONLY this JSON, no markdown:
   - Aim for 3 to 4 words per guess (e.g. "2003 Ford F-250", "2001 Chevy Silverado 1500", "2012 Honda Civic").
   - Give a guess for each distinct generation/vehicle the sources point to. Do not pad with duplicates or unlikely vehicles just to reach 5 — only include genuine candidates.`;
 
-const DEFAULT_INTERCHANGE_TEMPLATE = `{interiorYears} {keywords} {make} {location}`;
+const DEFAULT_INTERCHANGE_TEMPLATE = `{interiorYears}`;   // v462: box 1 is years only
+// the old default also pulled scraped keywords into box 1 ("2016 Side Alert"); anyone still on it moves to the new one
+// v462: boxes 2/3 prompts — unset means "use the built-in default"; a copy saved from the first version moves to the improved default
+function ichPrompt(n) {
+  const v = settings['interchangePrompt' + n], def = n === 2 ? DEFAULT_INTERCHANGE_PROMPT_2 : DEFAULT_INTERCHANGE_PROMPT_3;
+  if (v === undefined) return def;
+  if (n === 2 && (v.includes('Driver Side Drivers US Driver') || v.includes('It is fine to repeat words'))) return def;
+  if (n === 3 && v.includes('Do NOT write years or left/right/driver/passenger') && !v.includes('START with OEM')) return def;
+  return v;
+}
+function ichTemplate() { const t = settings.interchangeTemplate || ''; return t === '{interiorYears} {keywords} {make} {location}' ? DEFAULT_INTERCHANGE_TEMPLATE : t; }
 
 const DEFAULT_VISUAL_MATCH_PROMPT = `You are helping an auto parts seller match listings. The FIRST image below is the seller's actual part (the reference). Study the reference carefully: note how many units are shown (single piece vs set), the exact colors of EVERY element including any logo/emblem/badge, AND the functional TYPE of the part. The remaining images are eBay listing thumbnails, each labeled [LISTING n]. For EACH listing, decide whether it shows the SAME physical variant AND the SAME quantity as the reference part. Treat ANY of these differences as NOT a match:
 - Different part TYPE or technology. This is critical for instrument/gauge clusters: a DIGITAL cluster (with a wide electronic display screen / digital readout) is NOT a match for an ANALOG or MECHANICAL cluster (with physical needle gauges, dials, or a row of small gauge segments), even if they fit the same vehicle and share a part number. Look closely at the gauge face layout.
@@ -2302,13 +2312,14 @@ Available data:
 
 Rules:
 - If the placement is empty or "If applicable", return nothing at all
-- Write every common way buyers search for that placement. Left side in the US is the driver side, right side is the passenger side. Examples:
-  - Left -> LH Left Hand Driver Driver Side Drivers US Driver
-  - Right -> RH Right Hand Passenger Passenger Side Passengers US Passenger
-  - Front Left -> Front LH Front Left Driver Side Front Driver LF
-  - Rear Right -> Rear RH Rear Passenger Side Rear Passenger RR
+- Write the other common ways buyers write the placement. Left side in the US is the driver side, right side is the passenger side. Examples:
+  - Left -> Left LH Left Hand Driver Driver Side Drivers Side
+  - Right -> Right RH Right Hand Passenger Passenger Side Passengers Side
+  - Front Left -> Front Left Front LH Front Driver Driver Side LF
+  - Rear Right -> Rear Right Rear RH Rear Passenger Passenger Side RR
+  (then leave out any of those words that are already in the title)
   - Also use Upper, Lower, Inner, Outer, Front, Rear, Row 2 / Second Row, Third Row, Bank 1 / Bank 2 and similar words when the placement mentions them
-- Do NOT repeat any word that is already in the listing title
+- Do NOT repeat any word that is already in the listing title (for example if the title already says Left or Driver, leave those out). Never write "US" or any country name
 - If the title says pair, set or lot, return: Left Right LH RH Driver Passenger
 - Do NOT exceed 65 characters total
 - Return ONLY the field value as plain text, no explanation, no quotes`;
@@ -2323,6 +2334,8 @@ Available data:
 - Keyword terms from similar listings (may include alternate or superseded part numbers): {keywords}
 
 Rules:
+- START with OEM, then the other terms
+- Industry abbreviations buyers use are fine (BSM, BSW, ECU, ABS, PDC and similar)
 - Think about every other name this part goes by and write those. Examples:
   - fuse box -> fuse block relay box relays relay module PDC power distribution center junction block TIPM
   - side mirror -> door mirror side view mirror power mirror mirror assembly
@@ -4316,7 +4329,7 @@ function populateFields(d) {
 
   // ── Interchange mode: template or Claude ──────────────────────────────────
   const _iMode    = settings.interchangeMode || 'template';
-  const _iTpl     = settings.interchangeTemplate || '';
+  const _iTpl     = ichTemplate();
   const _iPrompt  = settings.interchangePrompt || '';
 
   if (_iMode === 'template' && _iTpl) {
@@ -5040,7 +5053,7 @@ async function fillExtraInterchange(ctx) {
   const avoid = new Set(wordsOf(title));
   const defs = [[1, 'interchangePrompt2', DEFAULT_INTERCHANGE_PROMPT_2], [2, 'interchangePrompt3', DEFAULT_INTERCHANGE_PROMPT_3]];
   for (const [idx, key, def] of defs) {   // one after the other so box 3 can skip words box 2 used
-    const tpl = settings[key] === undefined ? def : settings[key];
+    const tpl = ichPrompt(key === 'interchangePrompt2' ? 2 : 3);
     if (!tpl || !tpl.trim() || !inputs[idx]) continue;
     const filled = tpl
       .replace(/\{years\}/g, ctx.years || '').replace(/\{keywords\}/g, ctx.keywords || '')
@@ -5057,8 +5070,12 @@ async function fillExtraInterchange(ctx) {
       let val = (data.content && data.content[0] && data.content[0].text || '').trim().replace(/^["']|["']$/g, '');
       val = applyInterchangeStrip(val);
       // drop words already in the title (and, for box 3, already in box 2) so nothing repeats
-      const skip = new Set(avoid); if (idx === 2 && inputs[1]) wordsOf(inputs[1].value).forEach(w => skip.add(w));
+      const skip = new Set(avoid);   // nothing that is already in the title
+      if (idx === 2 && inputs[1]) wordsOf(inputs[1].value).forEach(w => skip.add(w));
+      skip.delete('oem');   // OEM always goes in box 3
+      if (idx === 1) val = val.replace(/\b(US|USA)\b/g, '');   // never a country name in the placement box
       val = val.split(/\s+/).filter(w => { const wc = w.toLowerCase().replace(/[^a-z0-9]/g, ''); return wc && !skip.has(wc); }).join(' ');
+      if (idx === 2 && !/\boem\b/i.test(val)) val = ('OEM ' + val).trim();   // OEM is mandatory in box 3
       if (val.length > 65) val = val.slice(0, 65).replace(/\s\S*$/, '').trim();
       if (val) { inputs[idx].value = val; updateInterchangeCount(inputs[idx]); }
     }).catch(() => {}).finally(() => { _ichEnd(); });
@@ -5068,7 +5085,7 @@ async function fillExtraInterchange(ctx) {
 // ─── REBUILD INTERCHANGE ──────────────────────────────────────────────────────
 function rebuildInterchange(refinementNotes) {
   const _iMode   = settings.interchangeMode || 'template';
-  const _iTpl    = settings.interchangeTemplate || '';
+  const _iTpl    = ichTemplate();
   const _iPrompt = settings.interchangePrompt || '';
   const _box1Off = (!_iTpl && _iMode === 'template') || (!_iPrompt && _iMode === 'claude');   // v461: boxes 2/3 still refresh
 
@@ -6078,10 +6095,10 @@ function openSettings() {
   if (document.getElementById('interchange-strip-words-input')) document.getElementById('interchange-strip-words-input').value = (settings.interchangeStripWords || []).join(', ');
   if (document.getElementById('claude-model-input')) document.getElementById('claude-model-input').value = settings.claudeModel || 'claude-sonnet-4-5';
   setInterchangeMode(settings.interchangeMode || 'template');
-  if (document.getElementById('interchange-template-input')) document.getElementById('interchange-template-input').value = settings.interchangeTemplate || '';
+  if (document.getElementById('interchange-template-input')) document.getElementById('interchange-template-input').value = ichTemplate();
   if (document.getElementById('interchange-prompt-input')) document.getElementById('interchange-prompt-input').value = settings.interchangePrompt || '';
-  if (document.getElementById('interchange-prompt2-input')) document.getElementById('interchange-prompt2-input').value = settings.interchangePrompt2 === undefined ? DEFAULT_INTERCHANGE_PROMPT_2 : settings.interchangePrompt2;   // v461
-  if (document.getElementById('interchange-prompt3-input')) document.getElementById('interchange-prompt3-input').value = settings.interchangePrompt3 === undefined ? DEFAULT_INTERCHANGE_PROMPT_3 : settings.interchangePrompt3;
+  if (document.getElementById('interchange-prompt2-input')) document.getElementById('interchange-prompt2-input').value = ichPrompt(2);   // v461
+  if (document.getElementById('interchange-prompt3-input')) document.getElementById('interchange-prompt3-input').value = ichPrompt(3);
   if (document.getElementById('prompt-photo-scan-input')) document.getElementById('prompt-photo-scan-input').value = settings.promptPhotoScan || '';
   if (document.getElementById('prompt-part-number-input')) document.getElementById('prompt-part-number-input').value = settings.promptPartNumber || '';
   if (document.getElementById('prompt-no-part-number-input')) document.getElementById('prompt-no-part-number-input').value = settings.promptNoPartNumber || '';
