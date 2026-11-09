@@ -9,7 +9,7 @@
   // refresh, overriding anything init does.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 </script>
-<title>PartsLister Pro v459</title>
+<title>PartsLister Pro v460</title>
 <!-- v409: hover the green L to see exactly which listings (price + shipping) were averaged. -->
 <!-- v408: clearing a listing also clears the low-resolution / unreadable / too-many photo warnings. -->
 <!-- v407: a scan that finds no part number opens No Part Number by itself; a cleared listing starts on Has Part Number. -->
@@ -950,7 +950,7 @@
     <!-- v302: logo goes to the dashboard -->
     <a href="/" title="Dashboard" style="text-decoration:none;color:inherit;">
       <div class="logo"><span>PARTS</span>LISTER</div>
-      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v459</span></div>
+      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v460</span></div>
     </a>
     <!-- v303: removed — the logo is the dashboard button
     <a href="/" class="btn btn-secondary btn-sm" title="Back to your dashboard" style="font-size:11px;padding:4px 10px;text-decoration:none;margin-left:6px;">⌂ Dashboard</a>
@@ -1447,6 +1447,10 @@
       <div style="margin-bottom:16px;">
         <label>Interchange Part Number</label>
         <div class="interchange-fields" id="interchange-fields">
+          <div class="interchange-row">
+            <input type="text" class="interchange-input" maxlength="65" oninput="updateInterchangeCount(this)" placeholder="">
+            <span class="char-count">0/65</span>
+          </div>
           <div class="interchange-row">
             <input type="text" class="interchange-input" maxlength="65" oninput="updateInterchangeCount(this)" placeholder="">
             <span class="char-count">0/65</span>
@@ -5264,7 +5268,7 @@ async function launchToEbay() {
       pt ? `<NameValueList><Name>Type</Name><Value>${escXml(pt)}</Value></NameValueList>` : '',
       cl ? `<NameValueList><Name>Color</Name><Value>${escXml(cl)}</Value></NameValueList>` : '',
       loc ? `<NameValueList><Name>Part Placement</Name><Value>${escXml(loc)}</Value></NameValueList>` : '',
-      ...interchangeInputs.filter(Boolean).map(val => `<NameValueList><Name>Interchange Part Number</Name><Value>${escXml(val.slice(0, 65))}</Value></NameValueList>`),
+      interchangeSpecificXml(interchangeInputs),   // v460: ONE Interchange Part Number specific carrying every value (that's how eBay's own listing form sends them)
       `<NameValueList><Name>Warranty</Name><Value>30 Day Warranty</Value></NameValueList>`,
       mk ? `<NameValueList><Name>Brand</Name><Value>${escXml(mk)}</Value></NameValueList>` : `<NameValueList><Name>Brand</Name><Value>OEM</Value></NameValueList>`,
     ].filter(Boolean).join('');
@@ -5485,7 +5489,7 @@ async function saveToDraft() {
       pt ? `<NameValueList><Name>Type</Name><Value>${escXml(pt)}</Value></NameValueList>` : '',
       cl ? `<NameValueList><Name>Color</Name><Value>${escXml(cl)}</Value></NameValueList>` : '',
       loc ? `<NameValueList><Name>Part Placement</Name><Value>${escXml(loc)}</Value></NameValueList>` : '',
-      ...interchangeInputs.filter(Boolean).map(val => `<NameValueList><Name>Interchange Part Number</Name><Value>${escXml(val.slice(0, 65))}</Value></NameValueList>`),
+      interchangeSpecificXml(interchangeInputs),   // v460: ONE Interchange Part Number specific carrying every value (that's how eBay's own listing form sends them)
       `<NameValueList><Name>Warranty</Name><Value>30 Day Warranty</Value></NameValueList>`,
       mk ? `<NameValueList><Name>Brand</Name><Value>${escXml(mk)}</Value></NameValueList>` : `<NameValueList><Name>Brand</Name><Value>OEM</Value></NameValueList>`,
     ].filter(Boolean).join('');
@@ -7331,6 +7335,11 @@ function buildMPNList(nums) {
   return out;
 }
 function mpnValue(main) { return main ? buildMPNList([main].concat(pnExtraNumbers(main))).join(' ') : ''; }
+function interchangeSpecificXml(vals) {
+  const v = (vals || []).map(x => String(x || '').trim()).filter(Boolean).filter((x, i, arr) => arr.findIndex(y => y.toLowerCase() === x.toLowerCase()) === i);
+  if (!v.length) return '';
+  return '<NameValueList><Name>Interchange Part Number</Name>' + v.map(x => '<Value>' + escXml(x.slice(0, 65)) + '</Value>').join('') + '</NameValueList>';
+}
 function refreshPNVariants(pn) {
   const el = document.getElementById('pn-variants-display');
   if (!el) return;
