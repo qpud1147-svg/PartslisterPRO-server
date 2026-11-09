@@ -9,7 +9,7 @@
   // refresh, overriding anything init does.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 </script>
-<title>PartsLister Pro v463</title>
+<title>PartsLister Pro v466</title>
 <!-- v409: hover the green L to see exactly which listings (price + shipping) were averaged. -->
 <!-- v408: clearing a listing also clears the low-resolution / unreadable / too-many photo warnings. -->
 <!-- v407: a scan that finds no part number opens No Part Number by itself; a cleared listing starts on Has Part Number. -->
@@ -950,7 +950,7 @@
     <!-- v302: logo goes to the dashboard -->
     <a href="/" title="Dashboard" style="text-decoration:none;color:inherit;">
       <div class="logo"><span>PARTS</span>LISTER</div>
-      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v463</span></div>
+      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v466</span></div>
     </a>
     <!-- v303: removed — the logo is the dashboard button
     <a href="/" class="btn btn-secondary btn-sm" title="Back to your dashboard" style="font-size:11px;padding:4px 10px;text-decoration:none;margin-left:6px;">⌂ Dashboard</a>
@@ -2269,9 +2269,17 @@ const DEFAULT_INTERCHANGE_TEMPLATE = `{interiorYears}`;   // v462: box 1 is year
 function ichPrompt(n) {
   const v = settings['interchangePrompt' + n], def = n === 2 ? DEFAULT_INTERCHANGE_PROMPT_2 : DEFAULT_INTERCHANGE_PROMPT_3;
   if (v === undefined) return def;
-  if (n === 2 && (v.includes('Driver Side Drivers US Driver') || v.includes('It is fine to repeat words'))) return def;
-  if (n === 3 && v.includes('Do NOT write years or left/right/driver/passenger') && !v.includes('START with OEM')) return def;
+  if (n === 2 && (v.includes('Driver Side Drivers US Driver') || v.includes('It is fine to repeat words') || !v.includes('Authentic'))) return def;
+  if (n === 3 && v.includes('Do NOT write years or left/right/driver/passenger') && !v.includes('NEVER make up')) return def;
   return v;
+}
+// v466: a title that is too long loses whole words from the end, never half a word
+function fitTitle(t, max) {
+  t = String(t || '').trim();
+  if (t.length <= max) return t;
+  let c = t.slice(0, max);
+  if (!/\s/.test(t.charAt(max))) { const i = c.lastIndexOf(' '); if (i > 0) c = c.slice(0, i); }
+  return c.replace(/[\s,\-–&\/+]+$/, '').trim();
 }
 function ichTemplate() { const t = settings.interchangeTemplate || ''; return t === '{interiorYears} {keywords} {make} {location}' ? DEFAULT_INTERCHANGE_TEMPLATE : t; }
 
@@ -2303,7 +2311,7 @@ Rules:
 - Do NOT exceed 65 characters total. If the years do not fit, stop before the last one that fits
 - Return ONLY the field value as plain text, no explanation, no quotes`;
 
-const DEFAULT_INTERCHANGE_PROMPT_2 = `You are filling BOX 2 of 3 of the eBay "Interchange Part Number" field for a used auto part listing. Box 2 holds ONLY the ways buyers write the PLACEMENT / side of the part. The box must be 65 characters or less.
+const DEFAULT_INTERCHANGE_PROMPT_2 = `You are filling BOX 2 of 3 of the eBay "Interchange Part Number" field for a used auto part listing. Box 2 holds the ways buyers write the PLACEMENT / side of the part, then OEM / original / genuine words. The box must be 65 characters or less.
 
 Available data:
 - Placement: {location}
@@ -2311,13 +2319,14 @@ Available data:
 - Part: {partType}
 
 Rules:
-- If the placement is empty or "If applicable", return nothing at all
+- If the placement is empty or "If applicable", skip the placement words and just write the OEM / original / genuine words
 - Write the other common ways buyers write the placement. Left side in the US is the driver side, right side is the passenger side. Examples:
   - Left -> Left LH Left Hand Driver Driver Side Drivers Side
   - Right -> Right RH Right Hand Passenger Passenger Side Passengers Side
   - Front Left -> Front Left Front LH Front Driver Driver Side LF
   - Rear Right -> Rear Right Rear RH Rear Passenger Passenger Side RR
   (then leave out any of those words that are already in the title)
+- Then use the rest of the space for words buyers use for original factory parts: OEM Original Genuine Factory OE Stock Authentic Original Equipment. OEM is ALWAYS included, even if the title already says it. Words other than OEM that are already in the title are left out
   - Also use Upper, Lower, Inner, Outer, Front, Rear, Row 2 / Second Row, Third Row, Bank 1 / Bank 2 and similar words when the placement mentions them
 - Do NOT repeat any word that is already in the listing title (for example if the title already says Left or Driver, leave those out). Never write "US" or any country name
 - If the title says pair, set or lot, return: Left Right LH RH Driver Passenger
@@ -2334,7 +2343,7 @@ Available data:
 - Keyword terms from similar listings (may include alternate or superseded part numbers): {keywords}
 
 Rules:
-- START with OEM, then the other terms
+- Do NOT write OEM, original, genuine, factory or stock (box 2 covers those)
 - Industry abbreviations buyers use are fine (BSM, BSW, ECU, ABS, PDC and similar)
 - Think about every other name this part goes by and write those. Examples:
   - fuse box -> fuse block relay box relays relay module PDC power distribution center junction block TIPM
@@ -2346,7 +2355,7 @@ Rules:
   - headlight -> headlamp head lamp assembly front light
   - tail light -> tail lamp taillight brake light rear lamp
   - door lock actuator -> latch lock motor
-- Include alternate, superseded or cross-reference part numbers found in the keyword terms. Do NOT include {partNumber} or any part number already in the title
+- You may include alternate, superseded or cross-reference part numbers, but ONLY ones that appear exactly as written in the keyword terms above. Copy them character for character. NEVER make up, guess or alter a part number. Never include {partNumber} or any part number already in the title
 - Do NOT repeat any word that is already in the listing title
 - Do NOT write years or left/right/driver/passenger words (other boxes cover those)
 - Do NOT exceed 65 characters total
@@ -4124,7 +4133,7 @@ async function searchEbay(useZip = false, options = {}) {
 
     // Never allow "New" in title
     if (infoJson.title) {
-      infoJson.title = infoJson.title.replace(/\bNew\b/gi, 'Used').replace(/\s{2,}/g, ' ').trim().slice(0, 78);
+      infoJson.title = fitTitle(infoJson.title.replace(/\bNew\b/gi, 'Used').replace(/\s{2,}/g, ' ').trim(), 78);   // v466: whole words only
     }
     // Build compact year range string (e.g. "72-75" not "1972-1975")
     const compactYr = (function() {
@@ -4378,6 +4387,7 @@ function populateFields(d) {
     }).catch(() => {}).finally(() => { _ichEnd(); });
   }
   // If mode is set but field is empty, or no mode matches — leave interchange blank
+  window._icKeywordTerms = cleanKeywordTerms.join(' ');   // v466: what box 3 may take part numbers from
   fillExtraInterchange({ years: allYears4.join(' '), keywords: cleanKeywordTerms.join(' '), make: _make, model: _model, partNum, loc: _loc });   // v461: boxes 2 and 3
 }
 
@@ -5073,9 +5083,16 @@ async function fillExtraInterchange(ctx) {
       const skip = new Set(avoid);   // nothing that is already in the title
       if (idx === 2 && inputs[1]) wordsOf(inputs[1].value).forEach(w => skip.add(w));
       skip.delete('oem');   // OEM always goes in box 3
+      if (idx === 2) {   // part numbers are kept only if they appear in the keyword terms taken from the listings you picked — nothing invented
+        const norm = (w) => w.toUpperCase().replace(/[^A-Z0-9]/g, '');
+        const known = new Set(((ctx.keywords || '') + ' ' + (window._icKeywordTerms || '') + ' ' + (ctx.partNum || '')).split(/\s+/).map(norm).filter(Boolean));
+        val = val.split(/\s+/).filter(w => !/^(?=.*\d)[A-Za-z0-9-]{6,}$/.test(w) || known.has(norm(w))).join(' ');
+      }
       if (idx === 1) val = val.replace(/\b(US|USA)\b/g, '');   // never a country name in the placement box
       val = val.split(/\s+/).filter(w => { const wc = w.toLowerCase().replace(/[^a-z0-9]/g, ''); return wc && !skip.has(wc); }).join(' ');
-      if (idx === 2 && !/\boem\b/i.test(val)) val = ('OEM ' + val).trim();   // OEM is mandatory in box 3
+      // OEM is mandatory: box 2 carries it; box 3 only adds it if box 2 doesn't have it
+      if (idx === 1 && !/\boem\b/i.test(val)) val = (val + ' OEM').trim();
+      if (idx === 2 && !/\boem\b/i.test(val) && !/\boem\b/i.test(inputs[1].value)) val = ('OEM ' + val).trim();
       if (val.length > 65) val = val.slice(0, 65).replace(/\s\S*$/, '').trim();
       if (val) { inputs[idx].value = val; updateInterchangeCount(inputs[idx]); }
     }).catch(() => {}).finally(() => { _ichEnd(); });
@@ -6292,7 +6309,7 @@ function refreshListing() {
         break;
       }
     }
-    document.getElementById('listing-title').value = title.slice(0, 80);
+    document.getElementById('listing-title').value = fitTitle(title, 80);
     updateTitleCount();
   }
 
@@ -6308,7 +6325,7 @@ function refreshListing() {
 
   // Re-apply emoji prefix
   if (getActiveEmoji() && title && !title.startsWith(getActiveEmoji())) {
-    const newTitle = (getActiveEmoji() + ' ' + title).slice(0, 78);
+    const newTitle = fitTitle(getActiveEmoji() + ' ' + title, 78);
     document.getElementById('listing-title').value = newTitle;
     updateTitleCount();
   }
@@ -6520,7 +6537,7 @@ function _applyEmojiToTitle() {
   const title = titleEl.value
     .replace(/^[\p{Emoji_Presentation}\p{Extended_Pictographic}]+\s*/gu, '')
     .trim();
-  titleEl.value = (emoji ? (emoji + ' ' + title).slice(0, 78) : title.slice(0, 80));
+  titleEl.value = (emoji ? fitTitle(emoji + ' ' + title, 78) : fitTitle(title, 80));
   updateTitleCount();
 }
 
@@ -6675,7 +6692,7 @@ function applyPigtail(historyIndex) {
     .replace(/^(?:pigtail\s+)?(?:plugs for\s*)?/i, '')
     .replace(/\s{2,}/g, ' ').trim();
   if (maxBody > 0 && body.length > maxBody) body = body.slice(0, maxBody).replace(/\s\S*$/, '').trim();
-  const pigtailTitle = (prefix + body).trim().slice(0, 78);
+  const pigtailTitle = fitTitle((prefix + body).trim(), 78);
 
   // Build pigtail keyword terms:
   // Pigtail keywords get priority — they fill Field 1 (Interchange Part Number) ahead of title keywords
@@ -8364,12 +8381,12 @@ async function pickSellSimilar(item) {
   const _promoPattern = _sellSimilarStripWords.length
     ? new RegExp('\\b(' + _sellSimilarStripWords.map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s*')).join('|') + ')\\b', 'gi')
     : /(?!)/;
-  const cleanTitle = (item.title || '')
+  let cleanTitle = (item.title || '')
     .replace(_promoPattern, '')
     .replace(/[\u{1F000}-\u{1FFFF}]|[\u{2600}-\u{27FF}]|[\u{FE00}-\u{FEFF}]|\p{Emoji_Presentation}/gu, '')
     .replace(/\s{2,}/g, ' ')
-    .trim()
-    .slice(0, 80);
+    .trim();
+  cleanTitle = fitTitle(cleanTitle, 80);
 
   document.getElementById('listing-title').value = cleanTitle;
   updateTitleCount();
