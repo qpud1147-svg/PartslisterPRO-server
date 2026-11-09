@@ -9,7 +9,7 @@
   // refresh, overriding anything init does.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 </script>
-<title>PartsLister Pro v457</title>
+<title>PartsLister Pro v458</title>
 <!-- v409: hover the green L to see exactly which listings (price + shipping) were averaged. -->
 <!-- v408: clearing a listing also clears the low-resolution / unreadable / too-many photo warnings. -->
 <!-- v407: a scan that finds no part number opens No Part Number by itself; a cleared listing starts on Has Part Number. -->
@@ -950,7 +950,7 @@
     <!-- v302: logo goes to the dashboard -->
     <a href="/" title="Dashboard" style="text-decoration:none;color:inherit;">
       <div class="logo"><span>PARTS</span>LISTER</div>
-      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v457</span></div>
+      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v458</span></div>
     </a>
     <!-- v303: removed — the logo is the dashboard button
     <a href="/" class="btn btn-secondary btn-sm" title="Back to your dashboard" style="font-size:11px;padding:4px 10px;text-decoration:none;margin-left:6px;">⌂ Dashboard</a>
@@ -1101,12 +1101,12 @@
             <div id="pn-cand-list" style="display:flex;flex-direction:column;gap:4px;align-items:flex-start;"></div>
             <!-- v267: legacy single-button path kept (hidden) so nothing that calls it breaks -->
             <button id="pn-alt-btn" onclick="applyAltPartNumber()" style="display:none;"></button>
+          </div>
             <!-- v457: type a number the scan missed; it joins the list already ticked -->
-            <div id="pn-add-row" style="display:flex;gap:6px;margin-top:4px;align-items:center;">
+            <div id="pn-add-row" style="display:flex;gap:6px;margin-top:6px;align-items:center;">
               <input type="text" id="pn-add-input" placeholder="Add another part number" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" style="flex:1;max-width:220px;font-size:12px;padding:4px 8px;" onkeydown="if(event.key==='Enter'){event.preventDefault();addPNExtra();}">
               <button type="button" class="btn btn-secondary btn-sm" onclick="addPNExtra()" style="padding:3px 10px;">Add</button>
             </div>
-          </div>
           <p style="font-size:11px;color:var(--muted);margin-top:6px;display:none;">You can always type or correct it manually</p>
         </div>
 
