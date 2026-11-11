@@ -9,7 +9,7 @@
   // refresh, overriding anything init does.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 </script>
-<title>PartsLister Pro v469</title>
+<title>PartsLister Pro v470</title>
 <!-- v409: hover the green L to see exactly which listings (price + shipping) were averaged. -->
 <!-- v408: clearing a listing also clears the low-resolution / unreadable / too-many photo warnings. -->
 <!-- v407: a scan that finds no part number opens No Part Number by itself; a cleared listing starts on Has Part Number. -->
@@ -950,7 +950,7 @@
     <!-- v302: logo goes to the dashboard -->
     <a href="/" title="Dashboard" style="text-decoration:none;color:inherit;">
       <div class="logo"><span>PARTS</span>LISTER</div>
-      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v469</span></div>
+      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v470</span></div>
     </a>
     <!-- v303: removed — the logo is the dashboard button
     <a href="/" class="btn btn-secondary btn-sm" title="Back to your dashboard" style="font-size:11px;padding:4px 10px;text-decoration:none;margin-left:6px;">⌂ Dashboard</a>
@@ -1977,6 +1977,14 @@
           <label>Pigtail filler keywords</label>
           <textarea id="pigtail-keywords-input" rows="2" placeholder="OEM, plug, plugs, pigtail, connector, harness, wire, wires, wiring" style="width:100%;box-sizing:border-box;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:6px 8px;font-size:12px;resize:vertical;"></textarea>
           <div style="font-size:10px;color:var(--muted);margin-top:4px;">Separate with commas. When you click List Pigtail, any free room in the three Interchange boxes is topped up from this list, in order, with as many whole words as fit under 65 characters. Words already in the title or in a box are skipped; whatever doesn't fit is dropped. No AI.</div>
+        </div>
+        <hr>
+        <div style="font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--accent);margin-bottom:10px;">Exact Match — Excluded Words</div>
+        <div class="field" style="margin-bottom:10px;">
+          <label style="display:flex;align-items:center;justify-content:space-between;">Hide listings whose title has any of these words
+            <button type="button" onclick="document.getElementById('exact-exclude-input').value = DEFAULT_EXACT_EXCLUDE" style="background:none;border:1px solid var(--border);border-radius:4px;color:var(--muted);font-size:10px;padding:2px 8px;cursor:pointer;">Default</button></label>
+          <textarea id="exact-exclude-input" rows="3" style="width:100%;box-sizing:border-box;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:6px 8px;font-size:12px;resize:vertical;"></textarea>
+          <div style="font-size:10px;color:var(--muted);margin-top:4px;">Separate with commas. Only applies when Exact match is on (Has Part Number and No Part Number). Checks titles only, whole words, upper or lower case doesn't matter — "flashed" doesn't hide "reflashed". Leave empty to turn it off.</div>
         </div>
         <hr>
         <div style="font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--accent);margin-bottom:10px;">Visual Match Pool</div>
@@ -6093,6 +6101,7 @@ function openSettings() {
   if (document.getElementById('visual-match-res')) document.getElementById('visual-match-res').value = String(settings.visualMatchRes || 600);
   if (document.getElementById('pigtail-price-input')) document.getElementById('pigtail-price-input').value = settings.pigtailPrice || '';
   if (document.getElementById('pigtail-shipping-input')) document.getElementById('pigtail-shipping-input').value = settings.pigtailShippingPolicyId || '';
+  if (document.getElementById('exact-exclude-input')) document.getElementById('exact-exclude-input').value = settings.exactExcludeWords === undefined ? DEFAULT_EXACT_EXCLUDE : settings.exactExcludeWords;   // v470
   if (document.getElementById('pigtail-keywords-input')) document.getElementById('pigtail-keywords-input').value = settings.pigtailKeywords === undefined ? DEFAULT_PIGTAIL_FILLERS : settings.pigtailKeywords;   // v468
   if (document.getElementById('dim-padding-input')) {
     const pad = settings.dimPadding !== undefined ? settings.dimPadding : 20;
@@ -6168,6 +6177,7 @@ function saveSettings() {
   settings.visualMatchRes   = document.getElementById('visual-match-res') ? (parseInt(document.getElementById('visual-match-res').value) || 600) : 600;
   settings.pigtailPrice     = document.getElementById('pigtail-price-input') ? document.getElementById('pigtail-price-input').value.trim() : '';
   settings.pigtailShippingPolicyId = document.getElementById('pigtail-shipping-input') ? document.getElementById('pigtail-shipping-input').value.trim() : '';
+  if (document.getElementById('exact-exclude-input')) settings.exactExcludeWords = document.getElementById('exact-exclude-input').value.trim();   // v470
   if (document.getElementById('pigtail-keywords-input')) settings.pigtailKeywords = document.getElementById('pigtail-keywords-input').value.trim();
   settings.dimPadding       = document.getElementById('dim-padding-input') ? parseInt(document.getElementById('dim-padding-input').value) : 20;
   const _selRound = document.querySelector('input[name="dim-rounding"]:checked');
@@ -9066,9 +9076,22 @@ function _exactTokens(raw) {
     .filter(t => t.length >= 2 && t !== 'OEM');
 }
 
+// v470: with Exact on, titles containing an excluded word (Settings) are hidden too — whole words, titles only
+const DEFAULT_EXACT_EXCLUDE = 'rebuilt, programmed, programming, plug and play, plug & play, reflashed, flashed, remanufactured, reman, refurbished, repaired, cloned';
+let _exclCache = { src: null, re: null };
+function _excludeRe() {
+  const src = settings.exactExcludeWords === undefined ? DEFAULT_EXACT_EXCLUDE : String(settings.exactExcludeWords || '');
+  if (_exclCache.src === src) return _exclCache.re;
+  const words = src.split(/[,\n]+/).map(w => w.trim()).filter(Boolean)
+    .map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '[\\s-]+'));
+  _exclCache = { src, re: words.length ? new RegExp('(^|[^A-Za-z0-9])(' + words.join('|') + ')(?=$|[^A-Za-z0-9])', 'i') : null };
+  return _exclCache.re;
+}
 function _exactMatches(title, tokens) {
   const t = _alNorm(title);
-  return tokens.every(tok => t.indexOf(tok) !== -1);
+  if (!tokens.every(tok => t.indexOf(tok) !== -1)) return false;
+  const re = _excludeRe();
+  return !(re && re.test(String(title || '')));
 }
 
 function _exactInputEl(which) {
