@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Returns v417</title>
+<title>PartsLister Pro Returns v419</title>
 <!-- v382: switching views is instant; browser reload / Refresh really reloads. v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
 <!-- PartsLister Pro — Returns page (v324: new). Returns, "item not received" claims and cases from
      eBay's Post-Order API, read live (nothing saved on the server). Approve / decline / refund from here.
@@ -348,7 +348,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v417</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v419</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -526,7 +526,7 @@ async function loadMe() {
 // ─── RETURNS ─────────────────────────────────────────────────────────────────
 // v324: returns, "item not received" claims and cases, read live from eBay.
 // Every action asks you to confirm before it goes to eBay.
-let items = [], view = 'open', kindF = 'all', isAdmin = false;
+let items = [], view = new URLSearchParams(location.search).get('view') === 'closed' ? 'closed' : 'open', kindF = 'all', isAdmin = false;
 const titles = {}, pics = {};   // itemId → title / photo
 
 function el(tag, cls, text) { const n = document.createElement(tag); if (cls) n.className = cls; if (text !== undefined) n.textContent = text; return n; }
@@ -1072,7 +1072,7 @@ async function act(url, body, confirmText, okText) {
     const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     const out = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(out.error || 'eBay said no.');
-    toast(okText + (out.status ? ' (eBay: ' + nice(out.status) + ')' : ''));
+    toast(out.alreadyRefunded ? 'eBay shows this return as refunded.' : okText + (out.status ? ' (eBay: ' + nice(out.status) + ')' : ''));   // v418
     const pm = /^\/api\/returns\/(\w+)\/([^/]+)\/refund$/.exec(url); if (pm) await applyPlanAfterRefund(pm[1] + ':' + pm[2]);   // v417
     closeDetail(); setTimeout(load, 600);
     return true;
@@ -1082,9 +1082,12 @@ async function act(url, body, confirmText, okText) {
 // v412: three steps like eBay — Started · Shipped/Delivered · Refund (with the refund-by date)
 function progressEl(pg) {
   const wrap = el('div'); wrap.style.cssText = 'display:flex;align-items:flex-start;margin:8px 0 4px;';
-  const done = [!!pg.started, !!(pg.shipped || pg.delivered), !!pg.refunded || pg.closed];
+  // v419: four steps — Requested · Approved · Shipped/Delivered · Refunded
+  const moved = !!(pg.shipped || pg.delivered || pg.refunded);
+  const appr = pg.approved !== undefined ? (!!pg.approved || moved) : true;
+  const done = [!!pg.started, appr, !!(pg.shipped || pg.delivered), !!pg.refunded || pg.closed];
   const dstr = (v) => v && /^\d{4}-/.test(v) ? dateStr(v) : '';
-  const labels = [['Started', dstr(pg.started)], [pg.delivered ? 'Delivered' : 'Shipped', dstr(pg.delivered || pg.shipped)], [pg.refunded || pg.closed ? 'Refunded' : 'Refund', pg.refunded || pg.closed ? dstr(pg.refunded) : (pg.refundBy ? 'by ' + dstr(pg.refundBy) : '')]];
+  const labels = [['Requested', dstr(pg.started)], [pg.declined ? 'Declined' : appr ? 'Approved' : 'Approve', appr ? dstr(pg.approved) : (pg.declined ? '' : 'waiting on you')], [pg.delivered ? 'Delivered' : 'Shipped', dstr(pg.delivered || pg.shipped)], [pg.refunded || pg.closed ? 'Refunded' : 'Refund', pg.refunded || pg.closed ? dstr(pg.refunded) : (pg.refundBy ? 'by ' + dstr(pg.refundBy) : '')]];
   labels.forEach(([t, d], i) => {
     const col = el('div'); col.style.cssText = 'flex:1;text-align:center;position:relative;';
     if (i) { const ln = el('div'); ln.style.cssText = 'position:absolute;top:11px;left:calc(-50% + 16px);width:calc(100% - 32px);height:2px;background:' + (done[i] ? '#3b82f6' : 'var(--border)') + ';'; col.append(ln); }
@@ -1127,6 +1130,11 @@ async function showDetail(key) {
   if (x.kind === 'return') box.append(pgBox);
   if (x.reason) box.append(el('div', 'r-line', 'Reason: ' + nice(x.reason) + (x.qty > 1 ? ' · qty ' + x.qty : '')));
   if (x.comments) box.append(el('div', 'quote', '“' + x.comments + '”'));
+  if (x.buyer && x.itemId) {   // v419: ask the buyer a question — opens Messages on this buyer + item (with a way back here)
+    const mb = el('a', 'btn btn-secondary btn-sm', '✉ Message ' + x.buyer);
+    mb.href = '/messages?buyer=' + encodeURIComponent(x.buyer) + '&item=' + encodeURIComponent(x.itemId) + '&ret=' + encodeURIComponent(key) + '&rv=' + view;
+    mb.style.margin = '6px 0'; box.append(mb);
+  }
   box.append(histBox);
 
   // history (returns)

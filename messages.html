@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Messages v409</title>
+<title>PartsLister Pro Messages v410</title>
 <!-- v382: switching views is instant; browser reload / Refresh really reloads. v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
 <!-- PartsLister Pro — Messages page (v321: new; v322: conversation threads — the whole back-and-forth
      with each buyer, chat style, from eBay's Message API. Offers from a conversation. The v321
@@ -309,7 +309,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v409</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v410</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -633,6 +633,7 @@ async function loadList() {
   // document.getElementById('t-note').append(r);
   msgSt.at = new Date().toISOString(); msgBadge();   // v402: the box says how long ago
   renderList();
+  if (fromRet && !fromRet.done && type === 'members') { openFromReturn(); return; }   // v472
   const hm = /^#c=(.+)$/.exec(location.hash);
   if (hm && current !== decodeURIComponent(hm[1])) showThread(decodeURIComponent(hm[1]));
 }
@@ -659,6 +660,61 @@ function bubble(m) {
   return b;
 }
 
+// v472: opened from a return (?buyer=&item=&ret=) — open that buyer's conversation, or start one; "View return" goes back
+const fromRet = (() => { const q = new URLSearchParams(location.search); const b = q.get('buyer'), i = q.get('item'); return b && i ? { buyer: b, itemId: i, key: q.get('ret') || '', view: q.get('rv') === 'closed' ? 'closed' : 'open', done: false } : null; })();
+let retIndex = null;   // itemId|buyer → return link, from the Returns lists
+async function loadRetIndex() {
+  const m = {};
+  for (const v of ['open', 'closed']) {
+    const d = await getJSON('/api/returns?view=' + v);
+    ((d && d.items) || []).forEach(x => { if (x.itemId && x.kind !== 'cancel') { const k = x.itemId + '|' + String(x.buyer || '').toLowerCase(); if (!m[k]) m[k] = { key: x.kind + ':' + x.id, view: v }; } });
+  }
+  retIndex = m;
+  if (current) { const t = threads.find(x => x.id === current); const h = document.querySelector('#t-view .th-head'); if (t && h && !h.querySelector('.th-ret')) { const b = retBtn(t); if (b) h.append(b); } }
+}
+function retLink(t) {
+  if (fromRet && fromRet.key && t && String(t.itemId) === fromRet.itemId && String(t.other || '').toLowerCase() === fromRet.buyer.toLowerCase()) return { key: fromRet.key, view: fromRet.view };
+  return retIndex && t && t.itemId ? retIndex[t.itemId + '|' + String(t.other || '').toLowerCase()] || null : null;
+}
+function retBtn(t) {
+  const r = retLink(t); if (!r) return null;
+  const a = el('a', 'btn btn-secondary btn-sm th-ret', '↩ View return'); a.href = '/returns' + (r.view === 'closed' ? '?view=closed' : '') + '#r=' + encodeURIComponent(r.key);
+  return a;
+}
+function openFromReturn() {
+  if (!fromRet || fromRet.done) return; fromRet.done = true;
+  const b = fromRet.buyer.toLowerCase();
+  const t = threads.find(x => String(x.other || '').toLowerCase() === b && String(x.itemId) === fromRet.itemId) || threads.find(x => String(x.other || '').toLowerCase() === b);
+  if (t) { openThread(t.id); return; }
+  // no conversation yet — a new message box
+  current = null;
+  const v = document.getElementById('t-view');
+  if (phone()) { v.classList.add('open'); document.body.style.overflow = 'hidden'; }
+  v.textContent = '';
+  const head = el('div', 'th-head');
+  const close = el('button', 'btn btn-secondary btn-sm th-close', '← Back'); close.type = 'button'; close.onclick = hideThread;
+  head.append(close, el('div', 'th-who', fromRet.buyer));
+  const a = el('a', 'th-item', 'Item #' + fromRet.itemId); a.href = 'https://www.ebay.com/itm/' + encodeURIComponent(fromRet.itemId); a.target = '_blank'; a.rel = 'noopener'; head.append(a);
+  const rb = retBtn({ itemId: fromRet.itemId, other: fromRet.buyer }); if (rb) head.append(rb);
+  v.append(head, el('div', 'th-note', 'No messages with ' + fromRet.buyer + ' yet. Your message starts a conversation about this item.'));
+  const comp = el('div', 'th-compose');
+  const ta = el('textarea'); ta.placeholder = 'Message ' + fromRet.buyer + '…'; ta.maxLength = 2000;
+  const send = el('button', 'btn btn-primary btn-sm', 'Send'); send.type = 'button';
+  send.onclick = async () => {
+    const text = ta.value.trim(); if (!text) return;
+    send.disabled = true; send.textContent = 'Sending…';
+    try {
+      const r = await fetch('/api/threads/new', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ buyer: fromRet.buyer, itemId: fromRet.itemId, text }) });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(out.error || 'eBay didn\u2019t send it.');
+      toast('Sent to ' + fromRet.buyer + '.'); ta.value = '';
+      fromRet.done = false; pageCache.live(); setTimeout(loadList, 1500);
+    } catch (e) { toast(e.message, true); }
+    send.disabled = false; send.textContent = 'Send';
+  };
+  comp.append(ta, send); v.append(comp); ta.focus();
+}
+
 async function showThread(id) {
   current = id;
   // const t = threads.find(x => x.id === id) || { id, other: '', title: '', itemId: null, unread: 0, last: {} };
@@ -683,6 +739,7 @@ async function showThread(id) {
       head.append(ob);
     }
   } else if (t.title) head.append(el('div', 'th-item', t.title));
+  { const rb = retBtn(t); if (rb) head.append(rb); }   // v472
   // v323: delete (to the Trash) or, in the Trash, restore
   const inTrash = show === 'trash';
   const del = el('button', 'btn btn-sm ' + (inTrash ? 'btn-secondary' : 'btn-danger'), inTrash ? 'Restore' : '🗑 Delete'); del.type = 'button';
@@ -1113,6 +1170,7 @@ document.querySelectorAll('#seg-show button').forEach(b => b.addEventListener('c
 }));
 let st; document.getElementById('t-search').addEventListener('input', () => { clearTimeout(st); st = setTimeout(renderList, 120); });
 loadList();
+loadRetIndex();   // v472: "View return" on conversations about a returned item
 setInterval(() => { if (!document.hidden && !document.querySelector('.th-compose textarea:focus') && !document.querySelector('.offers.open')) { pageCache.live(); loadList(); } }, 3 * 60000);   // v382: live
 pageCache.rerun = () => loadList();   // v380: fresh data from eBay → draw the page again
 </script>

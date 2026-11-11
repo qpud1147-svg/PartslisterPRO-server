@@ -1,4 +1,6 @@
-// PartsLister Pro server — v470
+// PartsLister Pro server — v472
+// v472: Returns progress has an Approved step (and Requested/Declined); POST /api/threads/new starts a conversation with a buyer about an item (Message API, Trading AAQ as fallback).
+// v471: Returns refund — when eBay answers with an error, ask eBay again; if the return now shows refunded, report success instead of "not refunded".
 // v470: Returns — Relist / Needs work on a return that is still open is only a plan (return_followups.pending); it applies once the return is refunded or closed.
 // v409: yard tickets — the whole-ticket text look and the Look checkboxes are gone; every text row and the logo each have the full set of sliders (boldness, thinner, lighter, weathered, gravel, fuzzy, faded gray, spots).
 // v408: yard tickets — each text row has a Look checkbox (row.useLook, default on): the whole-ticket text look only changes the rows that are checked.
@@ -2374,6 +2376,31 @@ app.get('/api/threads/:id', requireUser, async (req, res) => {
     console.error('[thread]', e.message);
     if (scopeError(e)) return res.json({ needScope: true, error: e.message });
     res.json({ error: 'eBay didn\u2019t give us that conversation: ' + e.message });
+  }
+});
+
+// v472: first message to a buyer about an item (no conversation yet) — e.g. a question about their return
+app.post('/api/threads/new', requireUser, express.json(), async (req, res) => {
+  const b = req.body || {};
+  const text = String(b.text || '').trim(), buyer = String(b.buyer || '').trim(), itemId = String(b.itemId || '').replace(/\D/g, '');
+  if (!text) return res.status(400).json({ error: 'Type a message first.' });
+  if (text.length > 2000) return res.status(400).json({ error: 'eBay allows up to 2,000 characters.' });
+  if (!/^[^<>&\s]{1,64}$/.test(buyer) || !/^\d{6,20}$/.test(itemId)) return res.status(400).json({ error: 'Missing the buyer or the item.' });
+  try {
+    try {
+      await restCall(req.user.id, 'POST', '/commerce/message/v1/send_message',
+        { otherPartyUsername: buyer, messageText: text, reference: { referenceId: itemId, referenceType: 'LISTING' }, emailCopyToSender: true });
+    } catch (e1) {
+      console.warn('[thread new] message API:', e1.message, '— trying AAQ');
+      await tradingCall(req.user.id, 'AddMemberMessageAAQToPartner',
+        `<ItemID>${itemId}</ItemID><MemberMessage><Body>${xmlEsc(text)}</Body><EmailCopyToSender>true</EmailCopyToSender>` +
+        `<QuestionType>General</QuestionType><RecipientID>${xmlEsc(buyer)}</RecipientID><Subject>About your return</Subject></MemberMessage>`);
+    }
+    msgCounts.delete(req.user.id);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('[thread new]', e.message);
+    res.status(502).json({ error: 'eBay didn\u2019t send it: ' + e.message });
   }
 });
 
@@ -5727,6 +5754,9 @@ app.get('/api/returns/return/:id', requireUser, async (req, res) => {
     const ri0 = det.refundInfo || (d && d.refundInfo) || {};
     const progress = {
       started: (summary && summary.created) || evDate(/./),
+      requested: !!(summary && /REQUEST/i.test(String(summary.state) + ' ' + String(summary.status)) || evDate(/REQUEST/i)),
+      approved: evDate(/APPROV|ACCEPT|LABEL|RMA/i) || (summary && !/REQUEST|DECLIN/i.test(String(summary.state) + ' ' + String(summary.status)) ? (summary.created || 'yes') : null),
+      declined: !!(summary && /DECLIN/i.test(String(summary.state) + ' ' + String(summary.status))),
       shipped: evDate(/SHIPPED|IN_TRANSIT|TRACKING/i),
       delivered: evDate(/DELIVERED|RECEIVED/i),
       refunded: evDate(/REFUND(ED)?_?(ISSUED|SENT|SUCCESS)|SELLER_ISSUE_REFUND|REFUND_SENT/i) || (summary && summary.refunded ? (dval(ri0.refundDate) || 'yes') : null),
@@ -5810,7 +5840,18 @@ app.post('/api/returns/return/:id/refund', requireUser, express.json(), async (r
   } catch (e) {
     console.error('[return refund]', e.message);
     if (e.bad) return res.status(400).json({ error: e.message });
-    res.status(502).json({ error: 'eBay didn\u2019t issue the refund: ' + e.message });
+    // v471: eBay sometimes refunds and still answers with an error (e.g. "illegal state" when it's already refunded) — check before saying it failed
+    for (const wait of [0, 3000]) {
+      try {
+        if (wait) await new Promise(r => setTimeout(r, wait));
+        const now = await poCall(req.user.id, 'GET', '/return/' + req.params.id + '?fieldgroups=FULL');
+        const sm = now && now.summary ? mapReturn(now.summary) : null;
+        const det = (now && now.detail) || {}, ri = det.refundInfo || (now && now.refundInfo) || {};
+        const done = (sm && (sm.refunded > 0 || /CLOSED/i.test(sm.state || '') || /REFUND/i.test(String(sm.status || '')) && !/SELLER_ISSUE|PENDING|DUE/i.test(String(sm.status || '')))) || !!(ri.actualRefundDetail || ri.actualRefund);
+        if (done) { clearReturnCount(req.user.id); orderFinCache.clear(); console.warn('[return refund] eBay error but the return shows refunded'); return res.json({ ok: true, alreadyRefunded: true, status: (sm && sm.status) || null }); }
+      } catch (e2) { console.warn('[return refund recheck]', e2.message); }
+    }
+    res.status(502).json({ error: 'eBay didn\u2019t issue the refund: ' + e.message + ' — check the order on eBay before trying again.' });
   }
 });
 

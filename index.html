@@ -9,7 +9,7 @@
   // refresh, overriding anything init does.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 </script>
-<title>PartsLister Pro v466</title>
+<title>PartsLister Pro v468</title>
 <!-- v409: hover the green L to see exactly which listings (price + shipping) were averaged. -->
 <!-- v408: clearing a listing also clears the low-resolution / unreadable / too-many photo warnings. -->
 <!-- v407: a scan that finds no part number opens No Part Number by itself; a cleared listing starts on Has Part Number. -->
@@ -950,7 +950,7 @@
     <!-- v302: logo goes to the dashboard -->
     <a href="/" title="Dashboard" style="text-decoration:none;color:inherit;">
       <div class="logo"><span>PARTS</span>LISTER</div>
-      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v466</span></div>
+      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v468</span></div>
     </a>
     <!-- v303: removed — the logo is the dashboard button
     <a href="/" class="btn btn-secondary btn-sm" title="Back to your dashboard" style="font-size:11px;padding:4px 10px;text-decoration:none;margin-left:6px;">⌂ Dashboard</a>
@@ -1852,6 +1852,8 @@
       <div style="font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--accent);margin-bottom:8px;">Interchange Field — 3 boxes</div>
       <p style="font-size:11px;color:var(--muted);margin-bottom:10px;"><b>Box 1 (Years)</b> is set right below: pick Template (free, years only by default) or Claude Prompt. <b>Box 2 (Placement)</b> and <b>Box 3 (Keywords)</b> have their own prompts underneath, one after the other. Leave a box empty to turn it off.</p>
 
+      <div style="font-size:11px;color:var(--muted);margin-bottom:6px;">Box 1 mode <span class="info-i" onclick="toggleInfoTip(this)" title="Template or Claude Prompt?" style="cursor:pointer;color:var(--accent);font-weight:700;">ⓘ</span></div>
+      <div class="info-tip" style="display:none;font-size:11px;line-height:1.5;color:var(--text);background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:8px 10px;margin-bottom:8px;"><b>Template</b> is a fill-in-the-blanks pattern with no AI, like <code>{interiorYears}</code>. It is free, instant and always does the same thing, so it is best for years.<br><b>Claude Prompt</b> sends instructions to Claude through your Anthropic key and Claude writes the box. It costs a tiny bit per listing and takes a moment, but can handle fuzzy things like choosing terms.<br>This switch is for box 1 only. Boxes 2 and 3 always use Claude.</div>
       <div style="display:flex;gap:8px;margin-bottom:12px;">
         <button id="interchange-mode-template" onclick="setInterchangeMode('template')" style="flex:1;padding:6px;font-size:11px;font-family:'Barlow Condensed',sans-serif;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;border-radius:4px;border:1px solid var(--border);cursor:pointer;background:var(--accent);color:#000;">Template</button>
         <button id="interchange-mode-claude" onclick="setInterchangeMode('claude')" style="flex:1;padding:6px;font-size:11px;font-family:'Barlow Condensed',sans-serif;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;border-radius:4px;border:1px solid var(--border);cursor:pointer;background:var(--surface);color:var(--muted);">Claude</button>
@@ -1861,7 +1863,7 @@
         <label>Box 1 — Years · Template</label>
         <div style="display:flex;gap:6px;align-items:flex-start;">
           <input type="text" id="interchange-template-input" placeholder="e.g. {years} {keywords} {make}" style="flex:1;font-family:monospace;font-size:12px;">
-          <button onclick="document.getElementById('interchange-template-input').value=DEFAULT_INTERCHANGE_TEMPLATE" style="white-space:nowrap;padding:5px 10px;font-size:11px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--muted);cursor:pointer;">Use Default</button>
+          <button onclick="document.getElementById('interchange-template-input').value=DEFAULT_INTERCHANGE_TEMPLATE" style="white-space:nowrap;padding:5px 10px;font-size:11px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--muted);cursor:pointer;">Default</button>
         </div>
         <div style="font-size:10px;color:var(--muted);margin-top:4px;">Tokens: <code style="font-size:10px;">{interiorYears} {years} {keywords} {make} {model} {partNumber} {location}</code> — filled left to right up to 65 chars. Use <code style="font-size:10px;">{interiorYears}</code> to exclude the first and last year (already in the title).</div>
       </div>
@@ -1876,7 +1878,8 @@
       </div>
 
       <div class="field" style="margin-top:14px;">
-        <label>Box 2 — Placement · Claude Prompt (needs your Anthropic key)</label>
+        <label>Box 2 — Placement · Claude Prompt (needs your Anthropic key) <span class="info-i" onclick="toggleInfoTip(this)" title="Always uses Claude" style="cursor:pointer;color:var(--accent);font-weight:700;">ⓘ</span></label>
+        <div class="info-tip" style="display:none;font-size:11px;line-height:1.5;color:var(--text);background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:8px 10px;margin-bottom:6px;">Boxes 2 and 3 always use Claude (through your Anthropic key), because choosing placement words and keyword names needs it. There is no Template option for them.</div>
         <div style="display:flex;gap:6px;align-items:flex-start;">
           <textarea id="interchange-prompt2-input" rows="6" style="flex:1;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:6px 8px;font-size:11px;resize:vertical;font-family:monospace;line-height:1.4;"></textarea>
           <button onclick="document.getElementById('interchange-prompt2-input').value=DEFAULT_INTERCHANGE_PROMPT_2" style="white-space:nowrap;padding:5px 10px;font-size:11px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--muted);cursor:pointer;">Default</button>
@@ -1884,7 +1887,8 @@
         <div style="font-size:10px;color:var(--muted);margin-top:4px;">Fills the second Interchange box with ways buyers write the side/position (left, LH, driver side…). Leave empty to turn this box off. Placeholders: <code style="font-size:10px;">{location} {title} {make} {model} {partNumber} {partType} {years} {keywords}</code></div>
       </div>
       <div class="field">
-        <label>Box 3 — Keywords · Claude Prompt (needs your Anthropic key)</label>
+        <label>Box 3 — Keywords · Claude Prompt (needs your Anthropic key) <span class="info-i" onclick="toggleInfoTip(this)" title="Always uses Claude" style="cursor:pointer;color:var(--accent);font-weight:700;">ⓘ</span></label>
+        <div class="info-tip" style="display:none;font-size:11px;line-height:1.5;color:var(--text);background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:8px 10px;margin-bottom:6px;">Boxes 2 and 3 always use Claude (through your Anthropic key), because choosing placement words and keyword names needs it. There is no Template option for them.</div>
         <div style="display:flex;gap:6px;align-items:flex-start;">
           <textarea id="interchange-prompt3-input" rows="6" style="flex:1;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:6px 8px;font-size:11px;resize:vertical;font-family:monospace;line-height:1.4;"></textarea>
           <button onclick="document.getElementById('interchange-prompt3-input').value=DEFAULT_INTERCHANGE_PROMPT_3" style="white-space:nowrap;padding:5px 10px;font-size:11px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--muted);cursor:pointer;">Default</button>
@@ -1964,6 +1968,11 @@
             <label>Pigtail Shipping Policy ID</label>
             <input type="text" id="pigtail-shipping-input" placeholder="Policy ID from eBay">
           </div>
+        </div>
+        <div class="field" style="margin-top:8px;">
+          <label>Pigtail filler keywords</label>
+          <textarea id="pigtail-keywords-input" rows="2" placeholder="OEM, plug, plugs, pigtail, connector, harness, wire, wires, wiring" style="width:100%;box-sizing:border-box;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:6px 8px;font-size:12px;resize:vertical;"></textarea>
+          <div style="font-size:10px;color:var(--muted);margin-top:4px;">Separate with commas. When you click List Pigtail, any free room in the three Interchange boxes is topped up from this list, in order, with as many whole words as fit under 65 characters. Words already in the title or in a box are skipped; whatever doesn't fit is dropped. No AI.</div>
         </div>
         <hr>
         <div style="font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--accent);margin-bottom:10px;">Visual Match Pool</div>
@@ -2280,6 +2289,11 @@ function fitTitle(t, max) {
   let c = t.slice(0, max);
   if (!/\s/.test(t.charAt(max))) { const i = c.lastIndexOf(' '); if (i > 0) c = c.slice(0, i); }
   return c.replace(/[\s,\-–&\/+]+$/, '').trim();
+}
+function toggleInfoTip(icon) {   // v467: little ⓘ next to a setting shows/hides the explanation that follows it
+  let n = icon.parentElement; let tip = null;
+  while (n && !tip) { tip = (n.nextElementSibling && n.nextElementSibling.classList.contains('info-tip')) ? n.nextElementSibling : (n.querySelector && n.querySelector('.info-tip')); if (!tip) n = n.parentElement; if (n && n.id === 'spanel-prompts') break; }
+  if (tip) tip.style.display = tip.style.display === 'none' ? 'block' : 'none';
 }
 function ichTemplate() { const t = settings.interchangeTemplate || ''; return t === '{interiorYears} {keywords} {make} {location}' ? DEFAULT_INTERCHANGE_TEMPLATE : t; }
 
@@ -6075,6 +6089,7 @@ function openSettings() {
   if (document.getElementById('visual-match-res')) document.getElementById('visual-match-res').value = String(settings.visualMatchRes || 600);
   if (document.getElementById('pigtail-price-input')) document.getElementById('pigtail-price-input').value = settings.pigtailPrice || '';
   if (document.getElementById('pigtail-shipping-input')) document.getElementById('pigtail-shipping-input').value = settings.pigtailShippingPolicyId || '';
+  if (document.getElementById('pigtail-keywords-input')) document.getElementById('pigtail-keywords-input').value = settings.pigtailKeywords === undefined ? DEFAULT_PIGTAIL_FILLERS : settings.pigtailKeywords;   // v468
   if (document.getElementById('dim-padding-input')) {
     const pad = settings.dimPadding !== undefined ? settings.dimPadding : 20;
     document.getElementById('dim-padding-input').value = pad;
@@ -6149,6 +6164,7 @@ function saveSettings() {
   settings.visualMatchRes   = document.getElementById('visual-match-res') ? (parseInt(document.getElementById('visual-match-res').value) || 600) : 600;
   settings.pigtailPrice     = document.getElementById('pigtail-price-input') ? document.getElementById('pigtail-price-input').value.trim() : '';
   settings.pigtailShippingPolicyId = document.getElementById('pigtail-shipping-input') ? document.getElementById('pigtail-shipping-input').value.trim() : '';
+  if (document.getElementById('pigtail-keywords-input')) settings.pigtailKeywords = document.getElementById('pigtail-keywords-input').value.trim();
   settings.dimPadding       = document.getElementById('dim-padding-input') ? parseInt(document.getElementById('dim-padding-input').value) : 20;
   const _selRound = document.querySelector('input[name="dim-rounding"]:checked');
   settings.dimRounding = _selRound ? _selRound.value : 'none';
@@ -6582,6 +6598,25 @@ document.addEventListener('click', e => {
 // ─── PIGTAIL LISTING ─────────────────────────────────────────────────────────
 const pigtailHistory = []; // max 3 — v301: saved to your account
 
+const DEFAULT_PIGTAIL_FILLERS = 'OEM, plug, plugs, pigtail, connector, harness, wire, wires, wiring';
+// v468: tops up the three Interchange boxes from the pigtail keyword list — in order, whole words only, 65 characters per box,
+// skipping any word already in the title or in a box; whatever does not fit is dropped
+function topUpInterchangeFromList(listText, title) {
+  const inputs = Array.from(document.querySelectorAll('.interchange-input'));
+  const nz = (w) => w.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const used = new Set();
+  String(title || '').split(/\s+/).forEach(w => { const k = nz(w); if (k) used.add(k); });
+  inputs.forEach(i => i.value.split(/\s+/).forEach(w => { const k = nz(w); if (k) used.add(k); }));
+  const words = String(listText || '').split(/[,\n]+/).map(w => w.trim()).filter(Boolean);
+  let bi = 0;
+  for (const w of words) {
+    const k = nz(w); if (!k || used.has(k)) continue;
+    while (bi < inputs.length && ((inputs[bi].value.trim() + ' ' + w).trim().length > 65)) bi++;
+    if (bi >= inputs.length) break;
+    inputs[bi].value = (inputs[bi].value.trim() + ' ' + w).trim(); used.add(k);
+  }
+  inputs.forEach(i => updateInterchangeCount(i));
+}
 const PIGTAIL_KEYWORDS = ['pigtail','connector','plug','harness','wiring'];
 
 // v401: a small square thumbnail of the listing's first photo (about 96 px, a few KB) kept with each recent-listing entry
@@ -6612,7 +6647,7 @@ function savePigtailHistory() {
   const price = document.getElementById('your-price') ? document.getElementById('your-price').value.trim() : '';
   const categoryId = document.getElementById('ebay-category-id') ? document.getElementById('ebay-category-id').value.trim() : '';
   const categoryName = document.getElementById('ebay-category') ? document.getElementById('ebay-category').value.trim() : '';
-  const inputs = Array.from(document.querySelectorAll('.interchange-input')).map(i => i.value.trim()).filter(Boolean);
+  const inputs = Array.from(document.querySelectorAll('.interchange-input')).map(i => i.value.trim());   // v468: keep each box's slot
   if (!title && !pn) return; // nothing worth saving
   const label = pn || title.slice(0, 40);
   const entry = { label, title, yearRange, make, model, pn, pnDisplay, price, categoryId, categoryName, keywords: inputs };
@@ -6784,7 +6819,9 @@ function applyPigtail(historyIndex) {
     // [2] Other Part Number       = overflow keyword terms
     // [3] Superseded Part Number  = overflow keyword terms
     const kInputs = document.querySelectorAll('.interchange-input');
-    if (kInputs[0]) { kInputs[0].value = pigField1; updateInterchangeCount(kInputs[0]); }
+    // v468: the boxes keep what the saved listing had; free room is topped up from the pigtail keyword list in Settings
+    (src.keywords || []).forEach((val, i) => { if (kInputs[i] && val) { kInputs[i].value = val; updateInterchangeCount(kInputs[i]); } });
+    topUpInterchangeFromList(settings.pigtailKeywords === undefined ? DEFAULT_PIGTAIL_FILLERS : settings.pigtailKeywords, pigtailTitle);
 
     showNotif('✓ Pigtail listing ready — add photos and launch');
 
@@ -6972,6 +7009,7 @@ function applyOtherSide(historyIndex) {
     (src.keywords || []).forEach((val, i) => {
       if (kInputs[i]) { kInputs[i].value = flipSide(val); updateInterchangeCount(kInputs[i]); }
     });
+    // v468: boxes 2 and 3 above were flipped (Left↔Right, LH↔RH, Driver↔Passenger) / copied — no AI call
 
     if (src.categoryId) {
       const catDisplay = src.categoryName || src.categoryId;
