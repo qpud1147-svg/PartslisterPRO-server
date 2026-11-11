@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Messages v410</title>
+<title>PartsLister Pro Messages v411</title>
 <!-- v382: switching views is instant; browser reload / Refresh really reloads. v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
 <!-- PartsLister Pro — Messages page (v321: new; v322: conversation threads — the whole back-and-forth
      with each buyer, chat style, from eBay's Message API. Offers from a conversation. The v321
@@ -309,7 +309,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v410</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v411</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -661,7 +661,7 @@ function bubble(m) {
 }
 
 // v472: opened from a return (?buyer=&item=&ret=) — open that buyer's conversation, or start one; "View return" goes back
-const fromRet = (() => { const q = new URLSearchParams(location.search); const b = q.get('buyer'), i = q.get('item'); return b && i ? { buyer: b, itemId: i, key: q.get('ret') || '', view: q.get('rv') === 'closed' ? 'closed' : 'open', done: false } : null; })();
+const fromRet = (() => { const q = new URLSearchParams(location.search); const b = q.get('buyer'), i = q.get('item'); return b && i ? { buyer: b, itemId: i, why: (q.get('why') || '').slice(0, 400), key: q.get('ret') || '', view: q.get('rv') === 'closed' ? 'closed' : 'open', done: false } : null; })();
 let retIndex = null;   // itemId|buyer → return link, from the Returns lists
 async function loadRetIndex() {
   const m = {};
@@ -686,40 +686,25 @@ function openFromReturn() {
   const b = fromRet.buyer.toLowerCase();
   const t = threads.find(x => String(x.other || '').toLowerCase() === b && String(x.itemId) === fromRet.itemId) || threads.find(x => String(x.other || '').toLowerCase() === b);
   if (t) { openThread(t.id); return; }
-  // no conversation yet — a new message box
-  current = null;
-  const v = document.getElementById('t-view');
-  if (phone()) { v.classList.add('open'); document.body.style.overflow = 'hidden'; }
-  v.textContent = '';
-  const head = el('div', 'th-head');
-  const close = el('button', 'btn btn-secondary btn-sm th-close', '← Back'); close.type = 'button'; close.onclick = hideThread;
-  head.append(close, el('div', 'th-who', fromRet.buyer));
-  const a = el('a', 'th-item', 'Item #' + fromRet.itemId); a.href = 'https://www.ebay.com/itm/' + encodeURIComponent(fromRet.itemId); a.target = '_blank'; a.rel = 'noopener'; head.append(a);
-  const rb = retBtn({ itemId: fromRet.itemId, other: fromRet.buyer }); if (rb) head.append(rb);
-  v.append(head, el('div', 'th-note', 'No messages with ' + fromRet.buyer + ' yet. Your message starts a conversation about this item.'));
-  const comp = el('div', 'th-compose');
-  const ta = el('textarea'); ta.placeholder = 'Message ' + fromRet.buyer + '…'; ta.maxLength = 2000;
-  const send = el('button', 'btn btn-primary btn-sm', 'Send'); send.type = 'button';
-  send.onclick = async () => {
-    const text = ta.value.trim(); if (!text) return;
-    send.disabled = true; send.textContent = 'Sending…';
-    try {
-      const r = await fetch('/api/threads/new', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ buyer: fromRet.buyer, itemId: fromRet.itemId, text }) });
-      const out = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(out.error || 'eBay didn\u2019t send it.');
-      toast('Sent to ' + fromRet.buyer + '.'); ta.value = '';
-      fromRet.done = false; pageCache.live(); setTimeout(loadList, 1500);
-    } catch (e) { toast(e.message, true); }
-    send.disabled = false; send.textContent = 'Send';
-  };
-  comp.append(ta, send); v.append(comp); ta.focus();
+  showThread('new', { id: 'new', isNew: true, other: fromRet.buyer, itemId: fromRet.itemId, title: '', context: fromRet.why, unread: 0, last: {} });   // v473: the normal chat window, empty until you send
+}
+// v473: after the first message, wait for eBay to list the new conversation, then switch to it
+async function waitForNew(t) {
+  for (const wait of [2000, 4000, 8000]) {
+    await new Promise(r => setTimeout(r, wait));
+    if (current !== 'new') return;
+    pageCache.live(); await loadList();
+    const b = String(t.other).toLowerCase();
+    const f = threads.find(x => String(x.other || '').toLowerCase() === b && String(x.itemId) === String(t.itemId));
+    if (f) { if (current === 'new') showThread(f.id); return; }
+  }
 }
 
-async function showThread(id) {
+async function showThread(id, fresh) {   // v473: fresh = a conversation that doesn't exist yet (first message to a buyer)
   current = id;
   // const t = threads.find(x => x.id === id) || { id, other: '', title: '', itemId: null, unread: 0, last: {} };
   const f0 = openFollowup(id);   // v336: a Waiting-on-me conversation that isn't in the loaded list
-  const t = threads.find(x => x.id === id) || { id, other: '', title: (f0 && f0.title) || '', itemId: (f0 && f0.itemId) || null, unread: 0, last: {} };
+  const t = fresh || threads.find(x => x.id === id) || { id, other: '', title: (f0 && f0.title) || '', itemId: (f0 && f0.itemId) || null, unread: 0, last: {} };
   const v = document.getElementById('t-view');
   if (phone()) { v.classList.add('open'); document.body.style.overflow = 'hidden'; }
   v.textContent = '';
@@ -745,7 +730,7 @@ async function showThread(id) {
   const del = el('button', 'btn btn-sm ' + (inTrash ? 'btn-secondary' : 'btn-danger'), inTrash ? 'Restore' : '🗑 Delete'); del.type = 'button';
   del.title = inTrash ? 'Put it back with your other conversations' : 'Move to the Trash (you can restore it)';
   del.onclick = () => setStatus(t, inTrash ? 'restore' : 'delete');
-  head.append(del);
+  if (!t.isNew) head.append(del);
   const offers = el('div', 'offers'); offers.id = 't-offers';
   const body = el('div', 'th-body'); body.append(el('div', 'empty', 'Loading the conversation from eBay…'));
   // v336: Waiting on me bar — your to-do for this conversation + Mark complete
@@ -776,7 +761,7 @@ async function showThread(id) {
   if (t.itemId && type === 'members') { info.style.display = 'block'; info.textContent = 'Loading the listing and order…'; loadInfo(t, id, info, typeof headTitle !== 'undefined' ? headTitle : null); }
   v.append(head, info, fuBar, offers, body);
   renderList();
-  const d = await getJSON('/api/threads/' + encodeURIComponent(id) + '?type=' + type + (t.unread ? '&markRead=1' : ''));
+  const d = t.isNew ? { messages: [] } : await getJSON('/api/threads/' + encodeURIComponent(id) + '?type=' + type + (t.unread ? '&markRead=1' : ''));
   if (current !== id) return;
   body.textContent = '';
   if (!d || d.error || d.needScope) { body.append(el('div', 'empty', (d && d.error) || 'Could not load that conversation.')); return; }
@@ -790,7 +775,7 @@ async function showThread(id) {
     if (day !== lastDay) { body.append(el('div', 'day', day)); lastDay = day; }
     body.append(bubble(m));
   });
-  if (!(d.messages || []).length) body.append(el('div', 'empty', 'No messages in this conversation.'));
+  if (!(d.messages || []).length) body.append(el('div', 'empty', t.isNew ? 'No messages with ' + t.other + ' yet. Your message starts a conversation about this item.' : 'No messages in this conversation.'));
   body.scrollTop = body.scrollHeight;
   translateThread(id, body, d.messages || []);   // v330: only if Auto-translate is on (Settings → Messages)
   // compose — buyers only (eBay's own messages can't be answered)
@@ -815,7 +800,8 @@ async function showThread(id) {
         pendingOffer = null; discRow.classList.remove('on');
       }
       // const r = await fetch('/api/threads/' + encodeURIComponent(id) + '/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) });
-      const r = await fetch('/api/threads/' + encodeURIComponent(id) + '/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, itemId: t.itemId || null, buyer: t.other || '' }) });   // v371: + item / buyer for Late returns
+      const r = t.isNew ? await fetch('/api/threads/new', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, itemId: t.itemId, buyer: t.other }) })   // v473: first message
+        : await fetch('/api/threads/' + encodeURIComponent(id) + '/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, itemId: t.itemId || null, buyer: t.other || '' }) });   // v371: + item / buyer for Late returns
       const out = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(out.error || 'Not sent');
       ta.value = ''; syncDiscard();   // v365
@@ -824,6 +810,7 @@ async function showThread(id) {
       if (body.querySelector('.empty')) body.textContent = '';
       body.append(bubble(m)); body.scrollTop = body.scrollHeight;
       t.last = { text: m.text, date: m.date, mine: true }; renderList();
+      if (t.isNew) { fuRow.classList.remove('on'); waitForNew(t); return; }   // v473
       if (out.lateReturn === 'added') toast('Sent — added to Late returns.');   // v371
       // v336: the reply promised a follow-up → Waiting on me (unless you unticked it)
       if (fuRow.classList.contains('on') && fuBox.checked) {
@@ -860,7 +847,7 @@ async function showThread(id) {
     aiBtn.disabled = true; aiBtn.textContent = 'Drafting…'; aiMsg.textContent = t.itemId ? 'Reading the conversation and the listing…' : 'Reading the conversation…';
     try {
       const r = await fetch('/api/threads/' + encodeURIComponent(id) + '/draft', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ itemId: t.itemId, hint: hint.value, country: shipSel.value || undefined }) });   // v329: + country
+        body: JSON.stringify({ itemId: t.itemId, hint: hint.value, country: shipSel.value || undefined, context: t.isNew ? (t.context || '') : undefined, buyer: t.isNew ? t.other : undefined }) });   // v329: + country; v473: + return context for a first message
       const out = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(out.error || 'No draft');
       if (current !== id) return;

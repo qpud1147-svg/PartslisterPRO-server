@@ -1,4 +1,5 @@
-// PartsLister Pro server — v472
+// PartsLister Pro server — v473
+// v473: AI draft for a first message (conversation 'new') — uses the return's reason/comment instead of a conversation.
 // v472: Returns progress has an Approved step (and Requested/Declined); POST /api/threads/new starts a conversation with a buyer about an item (Message API, Trading AAQ as fallback).
 // v471: Returns refund — when eBay answers with an error, ask eBay again; if the return now shows refunded, report success instead of "not refunded".
 // v470: Returns — Relist / Needs work on a return that is still open is only a plan (return_followups.pending); it applies once the return is refunded or closed.
@@ -3347,7 +3348,8 @@ const draftHandler = async (req, res) => {   // v347: named, so the sandbox down
     // the conversation (last 30 messages)
     const me = await myEbayUser(req.user.id);
     const msgs = [];
-    for (let offset = 0; offset < 300; offset += 50) {
+    const isNewConv = id === 'new';   // v473: no conversation yet
+    for (let offset = 0; offset < 300 && !isNewConv; offset += 50) {
       const q = new URLSearchParams({ conversation_type: 'FROM_MEMBERS', limit: '50', offset: String(offset) });
       const { data } = await restCall(req.user.id, 'GET', '/commerce/message/v1/conversation/' + encodeURIComponent(id) + '?' + q);
       // ((data && data.messages) || []).forEach(m => msgs.push({ from: m.senderUsername || '', date: m.createdDate || '', text: m.messageBody || '', mine: !!(me && m.senderUsername === me) }));
@@ -3359,7 +3361,7 @@ const draftHandler = async (req, res) => {   // v347: named, so the sandbox down
     if (req._sandbox && req._sandbox.before) { const keep = msgs.filter(m => String(m.date) < req._sandbox.before); msgs.length = 0; keep.forEach(m => msgs.push(m)); }
     if (req._sandbox) req._sandbox.msgs = msgs;
     // const convo = msgs.slice(-30).map(m => (m.mine ? 'SELLER (me)' : 'BUYER (' + m.from + ')') + ' [' + String(m.date).slice(0, 10) + ']: ' + m.text).join('\n');
-    const convo = msgs.slice(-30).map(m => (m.mine ? 'SELLER (me)' : 'BUYER (' + m.from + ')') + ' [' + String(m.date).slice(0, 10) + ']: ' + m.text + (m.media ? ' [' + m.media + ' photo(s) attached]' : '')).join('\n');   // v349, v353: whether you can see them is said below
+    const convo = isNewConv ? 'NO MESSAGES YET — write the FIRST message from the seller (me) to buyer ' + String(b.buyer || '').slice(0, 64) + ' about their return. ' + String(b.context || '').slice(0, 400) + (hint ? '' : ' Ask a short, friendly question to understand the problem with the part.') : msgs.slice(-30).map(m => (m.mine ? 'SELLER (me)' : 'BUYER (' + m.from + ')') + ' [' + String(m.date).slice(0, 10) + ']: ' + m.text + (m.media ? ' [' + m.media + ' photo(s) attached]' : '')).join('\n');   // v349, v353: whether you can see them is said below
     if (!convo) return res.status(400).json({ error: 'There\u2019s no message to answer yet.' });
     // v341: nothing to answer → say so instead of drafting (a note in the box still writes a follow-up)
     const lastMsg = msgs[msgs.length - 1];

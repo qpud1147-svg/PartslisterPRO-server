@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Returns v419</title>
+<title>PartsLister Pro Returns v420</title>
 <!-- v382: switching views is instant; browser reload / Refresh really reloads. v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
 <!-- PartsLister Pro — Returns page (v324: new). Returns, "item not received" claims and cases from
      eBay's Post-Order API, read live (nothing saved on the server). Approve / decline / refund from here.
@@ -348,7 +348,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v419</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v420</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -1132,7 +1132,7 @@ async function showDetail(key) {
   if (x.comments) box.append(el('div', 'quote', '“' + x.comments + '”'));
   if (x.buyer && x.itemId) {   // v419: ask the buyer a question — opens Messages on this buyer + item (with a way back here)
     const mb = el('a', 'btn btn-secondary btn-sm', '✉ Message ' + x.buyer);
-    mb.href = '/messages?buyer=' + encodeURIComponent(x.buyer) + '&item=' + encodeURIComponent(x.itemId) + '&ret=' + encodeURIComponent(key) + '&rv=' + view;
+    mb.href = '/messages?buyer=' + encodeURIComponent(x.buyer) + '&item=' + encodeURIComponent(x.itemId) + '&ret=' + encodeURIComponent(key) + '&rv=' + view + '&why=' + encodeURIComponent(('Return reason: ' + nice(x.reason || '') + (x.comments ? '. Buyer wrote: ' + x.comments : '')).slice(0, 400));
     mb.style.margin = '6px 0'; box.append(mb);
   }
   box.append(histBox);
