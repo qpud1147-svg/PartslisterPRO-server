@@ -1,4 +1,7 @@
-// PartsLister Pro server — v475
+// PartsLister Pro server — v476
+// v476: Messages — (1) the list also asks eBay for every conversation active in the last 10 days, so a new one can't fall outside the 200 loaded;
+//       (2) "you" is matched without caring about upper/lower case; (3) a first message keeps eBay's reply (conversation id) and the page opens it;
+//       (4) /api/threads/find also scans the last 10 days; (5) GET /api/threads/debug?buyer=… shows exactly what eBay returns for that buyer.
 // v475: first message to a buyer goes through the Message API only (no AAQ fallback), so it lands in the Messages page; eBay's real error is shown if it refuses.
 // v474: GET /api/threads/find?buyer=&item= — asks eBay directly for the conversation with that buyer (not limited to the newest 200 in the list).
 // v473: AI draft for a first message (conversation 'new') — uses the return's reason/comment instead of a conversation.
@@ -2301,6 +2304,21 @@ function threadsBlocked(conn) {
   return null;
 }
 const convType = (t) => (t === 'ebay' ? 'FROM_EBAY' : 'FROM_MEMBERS');
+const sameUser = (a, b) => !!a && !!b && String(a).toLowerCase() === String(b).toLowerCase();   // v476
+const lastNewSends = new Map();   // v476: userId → the last few first-message replies from eBay (for /api/threads/debug)
+// v476: every conversation eBay has with activity since `days` ago (up to 300)
+async function recentConversations(userId, type, days) {
+  const out = [];
+  const start = new Date(Date.now() - days * 86400000).toISOString(), end = new Date(Date.now() + 3600000).toISOString();
+  for (let offset = 0; offset < 300; offset += 50) {
+    const q = new URLSearchParams({ conversation_type: type, limit: '50', offset: String(offset), start_time: start, end_time: end });
+    const { data } = await restCall(userId, 'GET', '/commerce/message/v1/conversation?' + q);
+    const list = (data && data.conversations) || [];
+    out.push(...list);
+    if (!data || !data.next || list.length < 50) break;
+  }
+  return out;
+}
 const scopeError = (e) => e.status === 403 || /scope|access denied|insufficient permissions/i.test(e.message || '');
 
 // Conversations: ?type=members|ebay&unread=1
@@ -2310,7 +2328,7 @@ app.get('/api/threads', requireUser, async (req, res) => {
     const blocked = threadsBlocked(conn); if (blocked) return res.json(blocked);
     const type = convType(req.query.type);
     const me = await myEbayUser(req.user.id);
-    const out = [];
+    const out = [], raw = [];
     for (let offset = 0; offset < 200; offset += 50) {
       const q = new URLSearchParams({ conversation_type: type, limit: '50', offset: String(offset) });
       if (req.query.unread === '1') q.set('conversation_status', 'UNREAD');
@@ -2324,18 +2342,26 @@ app.get('/api/threads', requireUser, async (req, res) => {
         ({ data } = await restCall(req.user.id, 'GET', '/commerce/message/v1/conversation?' + q));
       }
       const list = (data && data.conversations) || [];
-      list.forEach(c => {
+      raw.push(...list);
+      if (!data || !data.next || list.length < 50) break;
+    }
+    // v476: plus everything active in the last 10 days — eBay's paging order isn't guaranteed newest-first
+    if (type === 'FROM_MEMBERS' && req.query.unread !== '1' && req.query.trash !== '1') {
+      try { const seen = new Set(raw.map(c => c.conversationId)); (await recentConversations(req.user.id, type, 10)).forEach(c => { if (!seen.has(c.conversationId)) { seen.add(c.conversationId); raw.push(c); } }); }
+      catch (e) { console.warn('[threads recent]', e.message); }
+    }
+    {
+      raw.forEach(c => {
         const lm = c.latestMessage || {};
-        const other = me ? (lm.senderUsername && lm.senderUsername !== me ? lm.senderUsername : lm.recipientUsername) : (lm.senderUsername || lm.recipientUsername);
+        const other = me ? (lm.senderUsername && !sameUser(lm.senderUsername, me) ? lm.senderUsername : lm.recipientUsername) : (lm.senderUsername || lm.recipientUsername);
         out.push({
           id: c.conversationId, title: c.conversationTitle || '', status: c.conversationStatus || '', unread: c.unreadCount || 0,
           itemId: c.referenceType === 'LISTING' ? (c.referenceId || null) : null,
           other: type === 'FROM_EBAY' ? 'eBay' : (other || ''),
-          last: { text: lm.messageBody || '', from: lm.senderUsername || '', date: lm.createdDate || c.createdDate || null, mine: !!(me && lm.senderUsername === me) },
-          needsReply: type !== 'FROM_EBAY' && !(me && lm.senderUsername === me) && !isCloser(lm.messageBody)   // v341
+          last: { text: lm.messageBody || '', from: lm.senderUsername || '', date: lm.createdDate || c.createdDate || null, mine: sameUser(lm.senderUsername, me) },
+          needsReply: type !== 'FROM_EBAY' && !sameUser(lm.senderUsername, me) && !isCloser(lm.messageBody)   // v341
         });
       });
-      if (!data || !data.next || list.length < 50) break;
     }
     out.sort((a, b) => String(b.last.date).localeCompare(String(a.last.date)));
     res.json({ connected: true, me, threads: out });
@@ -2369,8 +2395,46 @@ app.get('/api/threads/find', requireUser, async (req, res) => {
         if (pick) return res.json({ found: pick });
       } catch (e) { console.warn('[thread find]', e.message); }
     }
+    // v476: the filters above didn't find it — look through everything from the last 10 days
+    try {
+      const rec = await recentConversations(req.user.id, 'FROM_MEMBERS', 10);
+      const hit = rec.filter(c => { const lm = c.latestMessage || {}; return sameUser(lm.senderUsername, buyer) || sameUser(lm.recipientUsername, buyer); });
+      const pick = hit.find(c => itemId && c.referenceId === itemId) || hit[0];
+      if (pick) return res.json({ found: map(pick) });
+    } catch (e) { console.warn('[thread find recent]', e.message); }
     res.json({ found: null });
   } catch (e) { console.error('[thread find]', e.message); res.json({ found: null, error: e.message }); }
+});
+
+// v476: what eBay actually returns for one buyer — open /api/threads/debug?buyer=NAME&item=ITEM in the browser
+app.get('/api/threads/debug', requireUser, async (req, res) => {
+  const buyer = String(req.query.buyer || '').trim(), itemId = String(req.query.item || '').replace(/\D/g, '');
+  const out = { me: null, buyer, itemId, lastFirstMessages: lastNewSends.get(req.user.id) || [], checks: [] };
+  const row = (c) => { const lm = c.latestMessage || {}; return { id: c.conversationId, status: c.conversationStatus, ref: (c.referenceType || '') + ':' + (c.referenceId || ''), created: c.createdDate, lastDate: lm.createdDate, from: lm.senderUsername, to: lm.recipientUsername, text: String(lm.messageBody || '').slice(0, 60) }; };
+  try {
+    out.me = await myEbayUser(req.user.id);
+    const run = async (label, params, pages) => {
+      const all = []; let total = null, err = null;
+      try {
+        for (let p = 0; p < (pages || 1); p++) {
+          const q = new URLSearchParams(Object.assign({ conversation_type: 'FROM_MEMBERS', limit: '50', offset: String(p * 50) }, params));
+          const { data } = await restCall(req.user.id, 'GET', '/commerce/message/v1/conversation?' + q);
+          if (total === null) total = data && data.total;
+          const l = (data && data.conversations) || []; all.push(...l); if (!data || !data.next || l.length < 50) break;
+        }
+      } catch (e) { err = e.message; }
+      const hits = all.filter(c => { const lm = c.latestMessage || {}; return sameUser(lm.senderUsername, buyer) || sameUser(lm.recipientUsername, buyer) || (itemId && c.referenceId === itemId); });
+      out.checks.push({ label, error: err, totalFromEbay: total, loaded: all.length, newest: all.slice(0, 3).map(row), oldestLoaded: all.slice(-2).map(row), matchesForBuyerOrItem: hits.map(row) });
+    };
+    await run('Normal list (what the Messages page loads)', {}, 4);
+    if (buyer) await run('Filter: other_party_username', { other_party_username: buyer });
+    if (itemId) await run('Filter: this listing', { reference_type: 'LISTING', reference_id: itemId });
+    const start = new Date(Date.now() - 10 * 86400000).toISOString(), end = new Date(Date.now() + 3600000).toISOString();
+    await run('Last 10 days', { start_time: start, end_time: end }, 6);
+    await run('Unread only', { conversation_status: 'UNREAD' });
+    await run('Archived', { conversation_status: 'ARCHIVED' });
+    res.json(out);
+  } catch (e) { out.error = e.message; res.json(out); }
 });
 
 // One conversation, oldest message first. ?type=…&markRead=1 also marks it read on eBay.
@@ -2390,7 +2454,7 @@ app.get('/api/threads/:id', requireUser, async (req, res) => {
       const list = (data && data.messages) || [];
       list.forEach(m => msgs.push({
         id: m.messageId, from: m.senderUsername || '', to: m.recipientUsername || '', date: m.createdDate || null,
-        text: m.messageBody || '', subject: m.subject || '', mine: !!(me && m.senderUsername === me),
+        text: m.messageBody || '', subject: m.subject || '', mine: sameUser(m.senderUsername, me),
         media: (m.messageMedia || []).filter(x => x && /^https:\/\//.test(x.mediaUrl || '')).map(x => ({ name: x.mediaName || '', type: x.mediaType || '', url: x.mediaUrl }))
       }));
       if (!data || !data.next || list.length < 50) break;
@@ -2418,10 +2482,13 @@ app.post('/api/threads/new', requireUser, express.json(), async (req, res) => {
   if (!/^[^<>&\s]{1,64}$/.test(buyer) || !/^\d{6,20}$/.test(itemId)) return res.status(400).json({ error: 'Missing the buyer or the item.' });
   try {
     // v475: newer Message API only — the older Trading fallback delivered messages that never show up in the Messages page
-    await restCall(req.user.id, 'POST', '/commerce/message/v1/send_message',
+    const { status, data } = await restCall(req.user.id, 'POST', '/commerce/message/v1/send_message',
       { otherPartyUsername: buyer, messageText: text, reference: { referenceId: itemId, referenceType: 'LISTING' }, emailCopyToSender: true });
+    console.log('[thread new] eBay replied', status, JSON.stringify(data || null).slice(0, 600));
+    const ls = lastNewSends.get(req.user.id) || []; ls.unshift({ at: new Date().toISOString(), buyer, itemId, status, reply: data || null }); lastNewSends.set(req.user.id, ls.slice(0, 5));
     msgCounts.delete(req.user.id);
-    res.json({ ok: true });
+    res.json({ ok: true, conversationId: (data && (data.conversationId || (data.conversation && data.conversation.conversationId))) || null,
+      message: data && data.messageId ? { id: data.messageId, text: data.messageBody || text, date: data.createdDate || new Date().toISOString(), mine: true } : null });
   } catch (e) {
     console.error('[thread new]', e.message);
     res.status(502).json({ error: 'eBay didn\u2019t send it: ' + e.message });
