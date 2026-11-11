@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Returns v416</title>
+<title>PartsLister Pro Returns v417</title>
 <!-- v382: switching views is instant; browser reload / Refresh really reloads. v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
 <!-- PartsLister Pro — Returns page (v324: new). Returns, "item not received" claims and cases from
      eBay's Post-Order API, read live (nothing saved on the server). Approve / decline / refund from here.
@@ -348,7 +348,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v416</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v417</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -570,7 +570,33 @@ const norm = (t) => String(t || '').toLowerCase();
 // ─── v409: RELIST + NEEDS WORK ───────────────────────────────────────────────
 let followups = [], emojiSet = {};
 const NW_LABEL = { missing_parts: 'Missing parts', new_photos: 'Needs new photos', damaged: 'Item damaged', wrong_part: 'Wrong part / doesn’t fit', needs_testing: 'Needs testing', other: 'Other' };
-const fuKeys = () => new Set(followups.map(f => f.key));
+// v417: a choice made while the return is still open is only a plan (f.pending) — it hides nothing until the return is refunded or closed
+const fuKeys = () => new Set(followups.filter(f => f.reason !== 'relist' && !f.pending).map(f => f.key));
+const planFor = (key) => followups.find(f => f.key === key);
+const workList = () => followups.filter(f => f.reason !== 'relist');
+const planText = (f, open) => (open ? 'After the refund: ' : 'Planned: ') + (f.reason === 'relist' ? 'Relist' + (f.note ? ' ' + f.note : '') : 'Needs work · ' + (NW_LABEL[f.reason] || 'Other'));
+const refreshFollow = () => document.querySelectorAll('.fu-host').forEach(h => { if (h._x) h.replaceWith(followBtns(h._x)); });
+async function removePlan(f) {
+  const r = await fetch('/api/returns/needs-work/' + f.id + '/remove', { method: 'POST' }).catch(() => null);
+  if (!r || !r.ok) { toast('Could not clear it.', true); return; }
+  followups = followups.filter(z => z.id !== f.id); render(); refreshFollow();
+}
+// After a refund sent from this page: do what was chosen for this return
+async function applyPlanAfterRefund(key) {
+  const f = planFor(key); if (!f) return;
+  try {
+    if (f.reason === 'relist') {
+      if (!f.itemId) return;
+      const r = await fetch('/api/returns/relist', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ itemId: f.itemId, emoji: f.note || '', followupId: f.id }) });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(out.error || 'eBay did not relist it.');
+      followups = followups.filter(z => z.id !== f.id); toast('Refunded and relisted.');
+    } else if (f.pending) {
+      const r = await fetch('/api/returns/needs-work/' + f.id + '/activate', { method: 'POST' });
+      if (r.ok) { f.pending = false; toast('Refunded — moved to Needs work.'); }
+    }
+  } catch (e) { toast('Refund sent, but the relist did not go through: ' + e.message + ' Use Relist on the closed return.', true); }
+}
 async function loadFollowups() {
   const d = await getJSON('/api/returns/followups');
   if (d) { followups = d.items || []; emojiSet = d.emojis || {}; }
@@ -585,11 +611,13 @@ function fuModal(build) {
 }
 const itemInfo = (x) => ({ key: x.kind + ':' + x.id, itemId: x.itemId, orderId: x.orderId || '', title: titles[x.itemId] || '', sku: skus[x.itemId] || '', image: pics[x.itemId] || '', price: x.amount });
 // Relist the same listing with an emoji at the front of the title. Stays on this page.
-function relistDialog(info, followupId) {
+function relistDialog(info, followupId, plan) {   // v417: plan = { open, emoji } — on an open return it only saves the choice
   if (!info.itemId) { toast('This one has no item number to relist.', true); return; }
   let last = ''; try { last = localStorage.getItem('plp_returns_emoji') || ''; } catch (e) { /* fine */ }
+  const planOpen = !!(plan && plan.open); if (plan && plan.emoji !== undefined && plan.emoji !== null) last = plan.emoji;
   fuModal((card, close) => {
-    card.append(el('h3', '', 'Relist this item'));
+    card.append(el('h3', '', planOpen ? 'Relist after the refund' : 'Relist this item'));
+    if (planOpen) card.append(el('div', 'r-line', 'Nothing happens on eBay now. This is saved on the return and the item is relisted when you send the refund from this page.'));
     card.append(el('div', 'r-line', (info.title || 'Item #' + info.itemId) + ' — same listing, same price, same photos. Only the emoji at the front of the title changes.'));
     let pick = last;
     const chips = el('div', 'fu-chips');
@@ -605,12 +633,21 @@ function relistDialog(info, followupId) {
     mark();
     card.append(chips, custom);
     const status = el('div', 'r-line'); const row = el('div', 'fu-row');
-    const go = el('button', 'btn btn-primary btn-sm', 'Relist now'); go.type = 'button';
+    const go = el('button', 'btn btn-primary btn-sm', planOpen ? 'Save' : 'Relist now'); go.type = 'button';
     const cancel = el('button', 'btn btn-secondary btn-sm', 'Cancel'); cancel.type = 'button'; cancel.onclick = close;
     row.append(go, cancel); card.append(row, status);
     go.onclick = async () => {
       go.disabled = true; cancel.disabled = true; status.textContent = '';
       try { localStorage.setItem('plp_returns_emoji', pick); } catch (e) { /* fine */ }
+      if (planOpen) {
+        try {
+          const r = await fetch('/api/returns/needs-work', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({}, info, { reason: 'relist', note: pick, pending: true })) });
+          const out = await r.json().catch(() => ({}));
+          if (!r.ok) throw new Error(out.error || 'Could not save it.');
+          await loadFollowups(); close(); toast('Saved. It relists when you refund.'); render(); refreshFollow();
+        } catch (e) { go.disabled = false; cancel.disabled = false; status.textContent = e.message; status.style.color = 'var(--danger)'; }
+        return;
+      }
       const bar = el('div', 'fu-bar'); bar.append(el('i')); const msg = el('div', 'r-line', 'Sending to eBay…');
       card.insertBefore(bar, row); card.insertBefore(msg, row);
       try {
@@ -621,7 +658,7 @@ function relistDialog(info, followupId) {
         card.append(el('div', 'r-line', '✓ Relisted on eBay' + (out.itemId && out.itemId !== info.itemId ? ' as item #' + out.itemId : '') + '.' + (pick && !out.titleChanged ? ' (eBay wouldn’t take the new emoji, so the title is unchanged.)' : '')));
         const done = el('button', 'btn btn-primary btn-sm', 'Done'); done.type = 'button'; done.onclick = close; card.append(done);
         toast('Relisted.');
-        if (followupId) { followups = followups.filter(f => f.id !== followupId); render(); }
+        if (followupId) { followups = followups.filter(f => f.id !== followupId); render(); refreshFollow(); }
       } catch (e) {
         bar.remove(); msg.remove(); go.disabled = false; cancel.disabled = false;
         status.textContent = e.message; status.style.color = 'var(--danger)';
@@ -630,16 +667,16 @@ function relistDialog(info, followupId) {
   });
 }
 // "Refunded, but not ready to relist": reason + note, kept in its own list
-function needsWorkDialog(info) {
+function needsWorkDialog(info, open, cur) {
   fuModal((card, close) => {
-    card.append(el('h3', '', 'Add to Needs work'));
-    card.append(el('div', 'r-line', 'Keeps this out of Closed returns so you can get back to it later.'));
-    let reason = 'missing_parts';
+    card.append(el('h3', '', open ? 'Needs work after the refund' : 'Add to Needs work'));
+    card.append(el('div', 'r-line', open ? 'Only saves the reason. The return stays open here and nothing is refunded. It moves to Needs work once it is refunded or closed.' : 'Keeps this out of Closed returns so you can get back to it later.'));
+    let reason = (cur && NW_LABEL[cur.reason]) ? cur.reason : 'missing_parts';
     const chips = el('div', 'fu-chips');
     const mark = () => chips.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', b.dataset.r === reason ? 'true' : 'false'));
     Object.keys(NW_LABEL).forEach(k => { const b = el('button', '', NW_LABEL[k]); b.type = 'button'; b.dataset.r = k; b.onclick = () => { reason = k; mark(); }; chips.append(b); });
     mark();
-    const note = el('textarea'); note.placeholder = 'Note (optional) — e.g. missing the pigtails'; note.maxLength = 300; note.rows = 3;
+    const note = el('textarea'); note.placeholder = 'Note (optional) — e.g. missing the pigtails'; note.maxLength = 300; note.rows = 3; if (cur && cur.reason !== 'relist') note.value = cur.note || '';
     const row = el('div', 'fu-row');
     const save = el('button', 'btn btn-primary btn-sm', 'Save'); save.type = 'button';
     const cancel = el('button', 'btn btn-secondary btn-sm', 'Cancel'); cancel.type = 'button'; cancel.onclick = close;
@@ -647,31 +684,40 @@ function needsWorkDialog(info) {
     save.onclick = async () => {
       save.disabled = true;
       try {
-        const r = await fetch('/api/returns/needs-work', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({}, info, { reason, note: note.value })) });
+        const r = await fetch('/api/returns/needs-work', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({}, info, { reason, note: note.value, pending: !!open })) });
         const out = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(out.error || 'Could not save it.');
-        await loadFollowups(); close(); hideDetail(); if (location.hash.startsWith('#r=')) history.replaceState(null, '', location.pathname + location.search);
+        await loadFollowups(); close();
+        if (open) { toast('Saved. The return stays open.'); render(); refreshFollow(); return; }
+        hideDetail(); if (location.hash.startsWith('#r=')) history.replaceState(null, '', location.pathname + location.search);
         toast('Added to Needs work.'); render();
       } catch (e) { save.disabled = false; toast(e.message, true); }
     };
   });
 }
 function followBtns(x) {
+  const host = el('div', 'fu-host'); host._x = x;
+  const open = view === 'open', f = planFor(x.kind + ':' + x.id), isRl = !!(f && f.reason === 'relist');
+  if (f) { const pl = el('div', 'r-line', planText(f, open)); pl.style.fontWeight = '600'; host.append(pl); }
   const w = el('div', 'fu-row'); w.style.marginTop = '6px';
-  const rl = el('button', 'btn btn-primary btn-sm', 'Relist'); rl.type = 'button'; rl.onclick = (e) => { e.stopPropagation(); relistDialog(itemInfo(x)); };
-  const nw = el('button', 'btn btn-secondary btn-sm', 'Needs work'); nw.type = 'button'; nw.onclick = (e) => { e.stopPropagation(); needsWorkDialog(itemInfo(x)); };
-  w.append(rl, nw); return w;
+  const rl = el('button', 'btn btn-sm ' + (!f || isRl ? 'btn-primary' : 'btn-secondary'), 'Relist'); rl.type = 'button';
+  rl.onclick = (e) => { e.stopPropagation(); relistDialog(itemInfo(x), !open && f ? f.id : undefined, { open, emoji: isRl ? f.note : undefined }); };
+  const nw = el('button', 'btn btn-sm ' + (f && !isRl ? 'btn-primary' : 'btn-secondary'), 'Needs work'); nw.type = 'button'; nw.onclick = (e) => { e.stopPropagation(); needsWorkDialog(itemInfo(x), open, f); };
+  w.append(rl, nw);
+  if (f) { const cl = el('button', 'btn btn-secondary btn-sm', 'Clear'); cl.type = 'button'; cl.onclick = (e) => { e.stopPropagation(); removePlan(f); }; w.append(cl); }
+  host.append(w); return host;
 }
 function renderWork(box) {
   const q = norm(document.getElementById('r-search').value).trim();
-  const list = followups.filter(f => !q || norm([f.title, f.itemId, f.sku, f.note, NW_LABEL[f.reason]].join(' ')).includes(q));
-  setText('r-summary', followups.length + ' item' + (followups.length === 1 ? '' : 's') + ' refunded and waiting on you');
-  if (!list.length) { box.append(el('div', 'empty', followups.length ? 'Nothing matches.' : 'Nothing here. On a closed return, tap “Needs work” when you refunded it but the item isn’t ready to sell again.')); return; }
+  const all = workList(), ready = all.filter(f => !f.pending).length;
+  const list = all.filter(f => !q || norm([f.title, f.itemId, f.sku, f.note, NW_LABEL[f.reason]].join(' ')).includes(q)).sort((a, b) => (a.pending ? 1 : 0) - (b.pending ? 1 : 0));
+  setText('r-summary', ready + ' item' + (ready === 1 ? '' : 's') + ' refunded and waiting on you' + (all.length > ready ? ' · ' + (all.length - ready) + ' with the return still open' : ''));
+  if (!list.length) { box.append(el('div', 'empty', all.length ? 'Nothing matches.' : 'Nothing here. On a closed return, tap “Needs work” when you refunded it but the item isn’t ready to sell again.')); return; }
   list.forEach((f, i) => {
     const row = el('div', 'ebl');
     const imgBox = eblPhoto('o-thumb', f.itemId, f.image || pics[f.itemId]);
     const mid = el('div', 'ebl-body');
-    const l1 = el('div', 'ebl-title'); l1.append(el('span', 'chip bad', NW_LABEL[f.reason] || 'Other'), document.createTextNode(' '), el('span', 'o-title', f.title || titles[f.itemId] || 'Item #' + f.itemId));
+    const l1 = el('div', 'ebl-title'); l1.append(el('span', 'chip bad', NW_LABEL[f.reason] || 'Other'), document.createTextNode(' '), ...(f.pending ? [el('span', 'chip ship', 'Return still open — not refunded'), document.createTextNode(' ')] : []), el('span', 'o-title', f.title || titles[f.itemId] || 'Item #' + f.itemId));
     l1.querySelector('.o-title').dataset.title = f.itemId || '';
     mid.append(l1);
     if (f.price != null) mid.append(el('div', 'ebl-price', money2.format(f.price)));
@@ -687,7 +733,8 @@ function renderWork(box) {
       if (!r || !r.ok) { toast('Could not remove it.', true); return; }
       followups = followups.filter(z => z.id !== f.id); render();
     };
-    w.append(rl, rm); mid.append(w);
+    if (f.pending) w.append(rm); else w.append(rl, rm);
+    mid.append(w);
     row.append(imgBox, mid); const n = el('span', 'ebl-n', String(i + 1)); row.prepend(n);
     box.append(row);
   });
@@ -699,7 +746,7 @@ function render() {
   document.querySelectorAll('#seg-kind button').forEach(b => b.setAttribute('aria-pressed', b.dataset.kind === kindF ? 'true' : 'false'));
   const q = norm(document.getElementById('r-search').value).trim();
   document.getElementById('seg-kind').style.display = view === 'work' ? 'none' : '';
-  const wb = document.getElementById('work-btn'); wb.textContent = 'Needs work' + (followups.length ? ' ' + followups.length : '');
+  const wb = document.getElementById('work-btn'); const nReady = workList().filter(f => !f.pending).length; wb.textContent = 'Needs work' + (nReady ? ' ' + nReady : '');
   if (view === 'work') {
     const sg0 = document.getElementById('seg-stage'); sg0.classList.remove('on'); sg0.textContent = '';
     const b0 = document.getElementById('r-list'); b0.textContent = ''; document.getElementById('late-btn').style.display = 'none';
@@ -809,6 +856,7 @@ function render() {
     }
     const pc = el('span', 'chip ' + chipC, chipT); pc.style.marginLeft = '8px'; pc.style.verticalAlign = 'middle'; pr.append(pc);
     if (view === 'closed' && x.itemId && x.kind !== 'cancel') mid.append(followBtns(x));
+    else if (view === 'open' && planFor(x.kind + ':' + x.id)) { const pl = el('div', 'ebl-sub', planText(planFor(x.kind + ':' + x.id), true)); pl.style.fontWeight = '600'; mid.append(pl); }   // v417
     row.append(imgBox, mid);
     numTo(row);
     box.append(row);
@@ -875,6 +923,10 @@ async function load() {
   if (!d.connected) { document.getElementById('r-note').style.display = ''; setText('r-note', 'eBay isn’t connected yet' + ' — connect it in Settings → ' + (isAdmin ? 'Admin' : 'eBay') + '.'); items = []; render(); return; }
   if (d.errors && d.errors.length) { err.textContent = 'eBay had a problem with part of this: ' + d.errors.join(' | '); err.style.display = 'block'; }
   items = d.items || [];
+  if (view === 'closed') {   // v417: a Needs work choice saved while the return was open applies now that it is closed
+    const closedKeys = new Set(items.map(x => x.kind + ':' + x.id));
+    for (const f of followups) if (f.pending && f.reason !== 'relist' && closedKeys.has(f.key)) { f.pending = false; fetch('/api/returns/needs-work/' + f.id + '/activate', { method: 'POST' }).catch(() => {}); }
+  }
   disputesNeedScope = !!d.disputesNeedScope;   // v373
   // setText('r-note', 'From eBay · checked ' + new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) + ' · ');
   // const r = el('button', '', 'Refresh'); r.type = 'button'; r.onclick = () => { pageCache.live(); load(); };   // v382: Refresh really asks eBay
@@ -1021,6 +1073,7 @@ async function act(url, body, confirmText, okText) {
     const out = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(out.error || 'eBay said no.');
     toast(okText + (out.status ? ' (eBay: ' + nice(out.status) + ')' : ''));
+    const pm = /^\/api\/returns\/(\w+)\/([^/]+)\/refund$/.exec(url); if (pm) await applyPlanAfterRefund(pm[1] + ':' + pm[2]);   // v417
     closeDetail(); setTimeout(load, 600);
     return true;
   } catch (e) { toast(e.message, true); return false; }

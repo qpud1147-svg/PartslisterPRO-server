@@ -1,4 +1,5 @@
-// PartsLister Pro server — v459
+// PartsLister Pro server — v470
+// v470: Returns — Relist / Needs work on a return that is still open is only a plan (return_followups.pending); it applies once the return is refunded or closed.
 // v409: yard tickets — the whole-ticket text look and the Look checkboxes are gone; every text row and the logo each have the full set of sliders (boldness, thinner, lighter, weathered, gravel, fuzzy, faded gray, spots).
 // v408: yard tickets — each text row has a Look checkbox (row.useLook, default on): the whole-ticket text look only changes the rows that are checked.
 // v406: yard tickets — a whole-ticket Boldness for the text (design.textLook.bold) and a Lighter slider for the logo (less ink).
@@ -464,6 +465,7 @@ async function setupDatabase() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       UNIQUE (user_id, return_key)
     );
+    ALTER TABLE return_followups ADD COLUMN IF NOT EXISTS pending BOOLEAN NOT NULL DEFAULT FALSE;   -- v470: saved while the return is still open
     -- v446: MORE THAN ONE USER — turn an account off, when someone last listed, a per-listing log (for "listed in the last 30 days"), and the shared default settings
     ALTER TABLE users ADD COLUMN IF NOT EXISTS disabled BOOLEAN NOT NULL DEFAULT FALSE;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS last_listed_at TIMESTAMPTZ;
@@ -4595,9 +4597,9 @@ app.post('/api/flags/:itemId/end', requireUser, async (req, res) => {
   } catch (e) { console.error('[flags end]', e.message); res.status(502).json({ error: 'eBay did not end the listing: ' + e.message }); }
 });
 // v455: RETURNS follow-ups — Needs work list + one-click Relist (stays on the Returns page)
-const NW_REASONS = ['missing_parts', 'new_photos', 'damaged', 'wrong_part', 'needs_testing', 'other'];
-const NW_COLS = 'id, return_key, item_id, order_id, title, sku, image, price, reason, note, created_at';
-const nwMap = r => ({ id: r.id, key: r.return_key, itemId: r.item_id, orderId: r.order_id, title: r.title, sku: r.sku, image: r.image, price: r.price == null ? null : Number(r.price), reason: r.reason, note: r.note, at: r.created_at });
+const NW_REASONS = ['missing_parts', 'new_photos', 'damaged', 'wrong_part', 'needs_testing', 'other', 'relist'];   // v470: 'relist' = planned relist (note holds the emoji)
+const NW_COLS = 'id, return_key, item_id, order_id, title, sku, image, price, reason, note, created_at, pending';
+const nwMap = r => ({ id: r.id, key: r.return_key, itemId: r.item_id, orderId: r.order_id, title: r.title, sku: r.sku, image: r.image, price: r.price == null ? null : Number(r.price), reason: r.reason, note: r.note, at: r.created_at, pending: !!r.pending });
 app.get('/api/returns/followups', requireUser, async (req, res) => {
   try {
     const rows = (await pool.query(`SELECT ${NW_COLS} FROM return_followups WHERE user_id = $1 ORDER BY created_at DESC`, [req.user.id])).rows;
@@ -4613,11 +4615,17 @@ app.post('/api/returns/needs-work', requireUser, express.json({ limit: '20kb' })
     const price = Number.isFinite(parseFloat(b.price)) ? parseFloat(b.price) : null;
     const image = /^https:\/\//.test(String(b.image || '')) ? clip(b.image, 500) : null;
     await pool.query(
-      `INSERT INTO return_followups (user_id, return_key, item_id, order_id, title, sku, image, price, reason, note) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-       ON CONFLICT (user_id, return_key) DO UPDATE SET reason = EXCLUDED.reason, note = EXCLUDED.note, title = EXCLUDED.title, image = COALESCE(EXCLUDED.image, return_followups.image), price = COALESCE(EXCLUDED.price, return_followups.price)`,
-      [req.user.id, key, clip(b.itemId, 30).replace(/\D/g, ''), clip(b.orderId, 40), clip(b.title, 200), clip(b.sku, 60), image, price, reason, clip(b.note, 300)]);
+      `INSERT INTO return_followups (user_id, return_key, item_id, order_id, title, sku, image, price, reason, note, pending) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+       ON CONFLICT (user_id, return_key) DO UPDATE SET pending = EXCLUDED.pending, reason = EXCLUDED.reason, note = EXCLUDED.note, title = EXCLUDED.title, image = COALESCE(EXCLUDED.image, return_followups.image), price = COALESCE(EXCLUDED.price, return_followups.price)`,
+      [req.user.id, key, clip(b.itemId, 30).replace(/\D/g, ''), clip(b.orderId, 40), clip(b.title, 200), clip(b.sku, 60), image, price, reason, clip(b.note, 300), b.pending === true]);
     res.json({ ok: true });
   } catch (e) { console.error('[needs-work]', e.message); res.status(500).json({ error: 'Could not save it' }); }
+});
+app.post('/api/returns/needs-work/:id/activate', requireUser, async (req, res) => {   // v470: the return is refunded/closed — the plan now applies
+  try {
+    await pool.query('UPDATE return_followups SET pending = FALSE, created_at = now() WHERE user_id = $1 AND id = $2 AND pending', [req.user.id, parseInt(req.params.id, 10) || 0]);
+    res.json({ ok: true });
+  } catch (e) { console.error('[needs-work activate]', e.message); res.status(500).json({ error: 'Could not update it' }); }
 });
 app.post('/api/returns/needs-work/:id/remove', requireUser, async (req, res) => {
   try {
