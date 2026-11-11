@@ -1,4 +1,5 @@
-// PartsLister Pro server — v474
+// PartsLister Pro server — v475
+// v475: first message to a buyer goes through the Message API only (no AAQ fallback), so it lands in the Messages page; eBay's real error is shown if it refuses.
 // v474: GET /api/threads/find?buyer=&item= — asks eBay directly for the conversation with that buyer (not limited to the newest 200 in the list).
 // v473: AI draft for a first message (conversation 'new') — uses the return's reason/comment instead of a conversation.
 // v472: Returns progress has an Approved step (and Requested/Declined); POST /api/threads/new starts a conversation with a buyer about an item (Message API, Trading AAQ as fallback).
@@ -2416,15 +2417,9 @@ app.post('/api/threads/new', requireUser, express.json(), async (req, res) => {
   if (text.length > 2000) return res.status(400).json({ error: 'eBay allows up to 2,000 characters.' });
   if (!/^[^<>&\s]{1,64}$/.test(buyer) || !/^\d{6,20}$/.test(itemId)) return res.status(400).json({ error: 'Missing the buyer or the item.' });
   try {
-    try {
-      await restCall(req.user.id, 'POST', '/commerce/message/v1/send_message',
-        { otherPartyUsername: buyer, messageText: text, reference: { referenceId: itemId, referenceType: 'LISTING' }, emailCopyToSender: true });
-    } catch (e1) {
-      console.warn('[thread new] message API:', e1.message, '— trying AAQ');
-      await tradingCall(req.user.id, 'AddMemberMessageAAQToPartner',
-        `<ItemID>${itemId}</ItemID><MemberMessage><Body>${xmlEsc(text)}</Body><EmailCopyToSender>true</EmailCopyToSender>` +
-        `<QuestionType>General</QuestionType><RecipientID>${xmlEsc(buyer)}</RecipientID><Subject>About your return</Subject></MemberMessage>`);
-    }
+    // v475: newer Message API only — the older Trading fallback delivered messages that never show up in the Messages page
+    await restCall(req.user.id, 'POST', '/commerce/message/v1/send_message',
+      { otherPartyUsername: buyer, messageText: text, reference: { referenceId: itemId, referenceType: 'LISTING' }, emailCopyToSender: true });
     msgCounts.delete(req.user.id);
     res.json({ ok: true });
   } catch (e) {
