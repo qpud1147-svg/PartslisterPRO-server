@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Messages v412</title>
+<title>PartsLister Pro Messages v413</title>
 <!-- v382: switching views is instant; browser reload / Refresh really reloads. v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
 <!-- PartsLister Pro — Messages page (v321: new; v322: conversation threads — the whole back-and-forth
      with each buyer, chat style, from eBay's Message API. Offers from a conversation. The v321
@@ -309,7 +309,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v412</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v413</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -683,20 +683,15 @@ function retBtn(t) {
   return a;
 }
 const matchRet = (buyer, itemId) => { const b = String(buyer).toLowerCase(); return threads.find(x => String(x.other || '').toLowerCase() === b && String(x.itemId) === String(itemId)) || threads.find(x => String(x.other || '').toLowerCase() === b); };
-// v474: ask eBay for this buyer's conversation (the list on screen can be an older saved copy)
-async function findConv(buyer, itemId) {
-  const d = await getJSON('/api/threads/find?buyer=' + encodeURIComponent(buyer) + '&item=' + encodeURIComponent(itemId || ''));
-  const f = d && d.found; if (!f) return null;
-  const have = threads.find(x => x.id === f.id); if (have) return have;
-  threads.unshift(f); renderList(); return f;
-}
+// v475: get the normal conversation list fresh from eBay (not the saved copy), then look for the buyer in it
+async function freshMatch(buyer, itemId) { pageCache.live(); await loadList(); return matchRet(buyer, itemId); }
 async function openFromReturn() {
   if (!fromRet || fromRet.done) return; fromRet.done = true;
   let t = matchRet(fromRet.buyer, fromRet.itemId);
   if (t) { openThread(t.id); return; }
   const v = document.getElementById('t-view'); v.textContent = ''; v.append(el('div', 'empty', 'Looking for your messages with ' + fromRet.buyer + '…'));
   if (phone()) { v.classList.add('open'); document.body.style.overflow = 'hidden'; }
-  t = matchRet(fromRet.buyer, fromRet.itemId) || await findConv(fromRet.buyer, fromRet.itemId);
+  t = await freshMatch(fromRet.buyer, fromRet.itemId);
   if (t) { openThread(t.id); return; }
   showThread('new', { id: 'new', isNew: true, other: fromRet.buyer, itemId: fromRet.itemId, title: '', context: fromRet.why, unread: 0, last: {} });   // v473: the normal chat window, empty until you send
 }
@@ -705,7 +700,7 @@ async function waitForNew(t) {
   for (const wait of [2000, 4000, 8000]) {
     await new Promise(r => setTimeout(r, wait));
     if (current !== 'new') return;
-    const f = await findConv(t.other, t.itemId);
+    const f = await freshMatch(t.other, t.itemId);
     if (current !== 'new') return;
     if (f) { showThread(f.id); return; }
   }
