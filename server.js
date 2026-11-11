@@ -1,4 +1,5 @@
-// PartsLister Pro server — v473
+// PartsLister Pro server — v474
+// v474: GET /api/threads/find?buyer=&item= — asks eBay directly for the conversation with that buyer (not limited to the newest 200 in the list).
 // v473: AI draft for a first message (conversation 'new') — uses the return's reason/comment instead of a conversation.
 // v472: Returns progress has an Approved step (and Requested/Declined); POST /api/threads/new starts a conversation with a buyer about an item (Message API, Trading AAQ as fallback).
 // v471: Returns refund — when eBay answers with an error, ask eBay again; if the return now shows refunded, report success instead of "not refunded".
@@ -2342,6 +2343,33 @@ app.get('/api/threads', requireUser, async (req, res) => {
     if (scopeError(e)) return res.json({ connected: true, needScope: true, error: e.message });
     res.json({ connected: true, error: 'eBay didn\u2019t give us your conversations: ' + e.message, threads: [] });
   }
+});
+
+// v474: the conversation with one buyer (about one item if there is one) — straight from eBay, so it's found even if the list is cached or long
+app.get('/api/threads/find', requireUser, async (req, res) => {
+  const buyer = String(req.query.buyer || '').trim(), itemId = String(req.query.item || '').replace(/\D/g, '');
+  if (!/^[^<>&\s]{1,64}$/.test(buyer)) return res.status(400).json({ error: 'Bad buyer' });
+  try {
+    const conn = await getConnection(req.user.id);
+    const blocked = threadsBlocked(conn); if (blocked) return res.json({ found: null });
+    const me = await myEbayUser(req.user.id);
+    const map = (c) => { const lm = c.latestMessage || {}; return { id: c.conversationId, title: c.conversationTitle || '', status: c.conversationStatus || '', unread: c.unreadCount || 0,
+      itemId: c.referenceType === 'LISTING' ? (c.referenceId || null) : null, other: buyer,
+      last: { text: lm.messageBody || '', from: lm.senderUsername || '', date: lm.createdDate || c.createdDate || null, mine: !!(me && lm.senderUsername === me) }, needsReply: !(me && lm.senderUsername === me) && !isCloser(lm.messageBody) }; };
+    const tries = [];
+    if (itemId) tries.push({ other_party_username: buyer, reference_id: itemId, reference_type: 'LISTING' });
+    tries.push({ other_party_username: buyer });
+    for (const f of tries) {
+      try {
+        const q = new URLSearchParams(Object.assign({ conversation_type: 'FROM_MEMBERS', limit: '25' }, f));
+        const { data } = await restCall(req.user.id, 'GET', '/commerce/message/v1/conversation?' + q);
+        const list = ((data && data.conversations) || []).map(map);
+        const pick = list.find(x => itemId && String(x.itemId) === itemId) || list[0];
+        if (pick) return res.json({ found: pick });
+      } catch (e) { console.warn('[thread find]', e.message); }
+    }
+    res.json({ found: null });
+  } catch (e) { console.error('[thread find]', e.message); res.json({ found: null, error: e.message }); }
 });
 
 // One conversation, oldest message first. ?type=…&markRead=1 also marks it read on eBay.
