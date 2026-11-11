@@ -9,7 +9,7 @@
   // refresh, overriding anything init does.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 </script>
-<title>PartsLister Pro v468</title>
+<title>PartsLister Pro v469</title>
 <!-- v409: hover the green L to see exactly which listings (price + shipping) were averaged. -->
 <!-- v408: clearing a listing also clears the low-resolution / unreadable / too-many photo warnings. -->
 <!-- v407: a scan that finds no part number opens No Part Number by itself; a cleared listing starts on Has Part Number. -->
@@ -950,7 +950,7 @@
     <!-- v302: logo goes to the dashboard -->
     <a href="/" title="Dashboard" style="text-decoration:none;color:inherit;">
       <div class="logo"><span>PARTS</span>LISTER</div>
-      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v468</span></div>
+      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v469</span></div>
     </a>
     <!-- v303: removed — the logo is the dashboard button
     <a href="/" class="btn btn-secondary btn-sm" title="Back to your dashboard" style="font-size:11px;padding:4px 10px;text-decoration:none;margin-left:6px;">⌂ Dashboard</a>
@@ -974,12 +974,16 @@
       </div>
     </div>
     <div style="position:relative;">
-      <button id="otherside-header-btn" onclick="toggleOtherSideMenu()" title="List Other Side" style="font-size:11px;padding:4px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;font-family:Barlow Condensed,sans-serif;font-weight:700;letter-spacing:0.06em;color:var(--text);cursor:pointer;display:flex;align-items:center;gap:5px;white-space:nowrap;">↔ Other Side <span style="opacity:0.5;font-size:10px;">▾</span></button>
+      <button id="otherside-header-btn" onclick="toggleOtherSideMenu()" title="List Another" style="font-size:11px;padding:4px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;font-family:Barlow Condensed,sans-serif;font-weight:700;letter-spacing:0.06em;color:var(--text);cursor:pointer;display:flex;align-items:center;gap:5px;white-space:nowrap;">↔ List Another <span style="opacity:0.5;font-size:10px;">▾</span></button>
       <div id="otherside-menu" style="display:none;position:absolute;top:calc(100% + 4px);right:0;min-width:220px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;z-index:1000;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,0.4);">
+        <div style="display:flex;gap:6px;padding:8px;border-bottom:1px solid var(--border);">
+          <button type="button" id="la-mode-flip" onclick="setListAnotherMode('flip')" style="flex:1;border-radius:4px;padding:6px;font-family:Barlow Condensed,sans-serif;font-weight:700;font-size:12px;letter-spacing:0.05em;cursor:pointer;">↔ Other Side</button>
+          <button type="button" id="la-mode-dup" onclick="setListAnotherMode('dup')" style="flex:1;border-radius:4px;padding:6px;font-family:Barlow Condensed,sans-serif;font-weight:700;font-size:12px;letter-spacing:0.05em;cursor:pointer;">⧉ Duplicate</button>
+        </div>
         <div style="padding:6px 10px;font-size:10px;color:var(--muted);font-family:Barlow Condensed,sans-serif;letter-spacing:0.1em;text-transform:uppercase;border-bottom:1px solid var(--border);">Recent Listings</div>
         <div id="otherside-history-list"><div style="padding:10px;font-size:12px;color:var(--muted);text-align:center;">No recent listings yet</div></div>
         <div style="border-top:1px solid var(--border);padding:6px 8px;">
-          <button onclick="applyOtherSide(null)" style="width:100%;background:var(--accent);color:#000;border:none;border-radius:4px;padding:6px;font-family:Barlow Condensed,sans-serif;font-weight:700;font-size:12px;letter-spacing:0.05em;cursor:pointer;">Use Current Listing</button>
+          <button onclick="applyOtherSide(null, window._laMode !== 'dup')" style="width:100%;background:var(--accent);color:#000;border:none;border-radius:4px;padding:6px;font-family:Barlow Condensed,sans-serif;font-weight:700;font-size:12px;letter-spacing:0.05em;cursor:pointer;">Use Current Listing</button>
         </div>
       </div>
     </div>
@@ -6943,10 +6947,17 @@ function renderOtherSideHistory() {
     return;
   }
   list.innerHTML = othersideHistory.map((e, i) =>
-    `<div onclick="applyOtherSide(${i})" style="padding:8px 12px;font-size:12px;cursor:pointer;border-bottom:1px solid var(--border);color:var(--text);" onmouseover="this.style.background='var(--surface)'" onmouseout="this.style.background=''"><div style="display:flex;align-items:center;gap:8px;">${_histThumbHtml(e)}<div style="min-width:0;">${e.label}</div></div></div>`
+    `<div onclick="applyOtherSide(${i}, window._laMode !== 'dup')" style="padding:8px 12px;font-size:12px;cursor:pointer;border-bottom:1px solid var(--border);color:var(--text);" onmouseover="this.style.background='var(--surface)'" onmouseout="this.style.background=''"><div style="display:flex;align-items:center;gap:8px;">${_histThumbHtml(e)}<div style="min-width:0;">${e.label}</div></div></div>`
   ).join('');
 }
 
+// v469: List Another — Other Side flips the listing; Duplicate brings it back exactly as it was. Photos stay either way.
+function setListAnotherMode(m) {
+  window._laMode = m === 'dup' ? 'dup' : 'flip';
+  const f = document.getElementById('la-mode-flip'), d = document.getElementById('la-mode-dup');
+  [[f, 'flip'], [d, 'dup']].forEach(([b, k]) => { if (!b) return; const on = window._laMode === k; b.style.background = on ? 'var(--accent)' : 'var(--surface)'; b.style.color = on ? '#000' : 'var(--muted)'; b.style.border = '1px solid ' + (on ? 'var(--accent)' : 'var(--border)'); });
+  renderOtherSideHistory();
+}
 function toggleOtherSideMenu() {
   const menu = document.getElementById('otherside-menu');
   const pigtailMenu = document.getElementById('pigtail-menu');
@@ -6954,10 +6965,11 @@ function toggleOtherSideMenu() {
   if (!menu) return;
   const isOpen = menu.style.display === 'block';
   menu.style.display = isOpen ? 'none' : 'block';
-  if (!isOpen) renderOtherSideHistory();
+  if (!isOpen) setListAnotherMode(window._laMode || 'flip');
 }
 
-function applyOtherSide(historyIndex) {
+function applyOtherSide(historyIndex, flip) {
+  const _flip = flip === false ? (x => x) : flipSide;   // v469: Duplicate = same steps, no flipping
   const menu = document.getElementById('otherside-menu');
   if (menu) menu.style.display = 'none';
 
@@ -6993,7 +7005,7 @@ function applyOtherSide(historyIndex) {
       try { renderPhotoStrip(); } catch (e) { console.error('[other side] photos', e); }
     }
 
-    const flippedTitle = flipSide(src.title);
+    const flippedTitle = _flip(src.title);
     const titleEl = document.getElementById('listing-title');
     if (titleEl) { titleEl.value = flippedTitle; updateTitleCount(); }
 
@@ -7002,12 +7014,12 @@ function applyOtherSide(historyIndex) {
     if (src.make)      { const el = document.getElementById('make');       if (el) el.value = src.make; }
     if (src.model)     { const el = document.getElementById('model');      if (el) el.value = src.model; }
     if (src.color)     { const el = document.getElementById('color');      if (el) el.value = src.color; }
-    if (src.location)  { const el = document.getElementById('location');   if (el) el.value = flipSide(src.location); }
+    if (src.location)  { const el = document.getElementById('location');   if (el) el.value = _flip(src.location); }
 
     // Restore interchange keywords
     const kInputs = document.querySelectorAll('.interchange-input');
     (src.keywords || []).forEach((val, i) => {
-      if (kInputs[i]) { kInputs[i].value = flipSide(val); updateInterchangeCount(kInputs[i]); }
+      if (kInputs[i]) { kInputs[i].value = _flip(val); updateInterchangeCount(kInputs[i]); }
     });
     // v468: boxes 2 and 3 above were flipped (Left↔Right, LH↔RH, Driver↔Passenger) / copied — no AI call
 
@@ -7019,7 +7031,7 @@ function applyOtherSide(historyIndex) {
       applyShippingPolicy(src.shippingPolicyId);
     }
 
-    showNotif('↔ Other side listing ready — add photos and launch');
+    showNotif(flip === false ? '⧉ Duplicate listing ready — add photos and launch' : '↔ Other side listing ready — add photos and launch');
     window.scrollTo({ top: 0, behavior: 'instant' });
   }, 50);
 }
