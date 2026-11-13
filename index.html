@@ -9,7 +9,7 @@
   // refresh, overriding anything init does.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 </script>
-<title>PartsLister Pro v470</title>
+<title>PartsLister Pro v471</title>
 <!-- v409: hover the green L to see exactly which listings (price + shipping) were averaged. -->
 <!-- v408: clearing a listing also clears the low-resolution / unreadable / too-many photo warnings. -->
 <!-- v407: a scan that finds no part number opens No Part Number by itself; a cleared listing starts on Has Part Number. -->
@@ -950,7 +950,7 @@
     <!-- v302: logo goes to the dashboard -->
     <a href="/" title="Dashboard" style="text-decoration:none;color:inherit;">
       <div class="logo"><span>PARTS</span>LISTER</div>
-      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v470</span></div>
+      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v471</span></div>
     </a>
     <!-- v303: removed — the logo is the dashboard button
     <a href="/" class="btn btn-secondary btn-sm" title="Back to your dashboard" style="font-size:11px;padding:4px 10px;text-decoration:none;margin-left:6px;">⌂ Dashboard</a>
@@ -4937,12 +4937,12 @@ function connectEbay() {
   settings.ebayClientId     = clientId;
   settings.ebayClientSecret = document.getElementById('ebay-client-secret').value.trim();
   _saveUserData();   // v301: was localStorage.setItem('plp_settings', ...)
-  // RuName must be set in eBay developer console — user configures this
-  const ruName = settings.ebayRuName;
-  if (!ruName) { showNotif('⚠ Enter your RuName in settings first', true); return; }
-  const authUrl = 'https://auth.ebay.com/oauth2/authorize?client_id=' + encodeURIComponent(clientId) + '&redirect_uri=' + encodeURIComponent(ruName) + '&response_type=code&scope=' + encodeURIComponent(EBAY_SCOPES);
-  window.open(authUrl, 'ebay_auth', 'width=600,height=700');
-  showNotif('eBay login opened — sign in and approve access');
+  // v471: use the app's real eBay connection (the RuName saved under Dashboard → Settings → eBay). The old popup here
+  // needed a RuName setting that had no box anywhere, so it always said "Enter your RuName in settings first".
+  if (!document.getElementById('ebay-client-secret').value.trim()) { showNotif('⚠ Enter your eBay Client Secret too, then save', true); return; }
+  showNotif('Opening eBay sign-in…');
+  const go = () => { try { (window.top || window).location.href = '/api/ebay/connect'; } catch (e) { location.href = '/api/ebay/connect'; } };
+  clearTimeout(_saveTimer); Promise.resolve(_flushUserData()).catch(() => {}).then(go);   // save the keys first, then go
 }
 
 function disconnectEbay() {
