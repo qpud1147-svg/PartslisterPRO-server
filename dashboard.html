@@ -570,7 +570,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v412</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v413</span></div>
   </a>
   <!-- v316: switch pages -->
   <nav class="page-tabs" aria-label="Pages">
@@ -866,6 +866,45 @@
           <div class="set-help" id="k-token-status" style="margin-top:4px;"></div></div>
         -->
       </div>
+      <!-- v413: eBay connection steps moved here from the eBay/Admin tab, next to the keys -->
+      <div id="ebay-steps" style="margin-bottom:22px;">
+      <div class="set-section">
+        <div class="set-step">Step 1</div>
+        <h3>Register these addresses with eBay</h3>
+        <p class="set-help">In your eBay developer account → <strong>User Tokens</strong> → <strong>Add eBay Redirect URL</strong>, choose <strong>OAuth</strong>, and paste these in. They fill in automatically from wherever this app is running — if your web address ever changes, these change too, and you paste the new ones into eBay.</p>
+        <div class="set-row">
+          <label for="url-accepted">Your auth accepted URL</label>
+          <div class="set-input-row"><input id="url-accepted" readonly><button class="btn btn-secondary btn-sm" onclick="copyField('url-accepted')">Copy</button></div>
+        </div>
+        <div class="set-row">
+          <label for="url-declined">Your auth declined URL</label>
+          <div class="set-input-row"><input id="url-declined" readonly><button class="btn btn-secondary btn-sm" onclick="copyField('url-declined')">Copy</button></div>
+        </div>
+        <div class="set-row">
+          <label for="url-privacy">Your privacy policy URL</label>
+          <div class="set-input-row"><input id="url-privacy" readonly><button class="btn btn-secondary btn-sm" onclick="copyField('url-privacy')">Copy</button></div>
+        </div>
+      </div>
+
+      <div class="set-section">
+        <div class="set-step">Step 2</div>
+        <h3>Save the RuName eBay gives you</h3>
+        <p class="set-help">After you save on eBay, it shows a name for that entry, like <strong>Peter_Hoffmann-PeterHof-Lister-abcde</strong>. Copy it here.</p>
+        <div class="set-row">
+          <label for="ru-name">RuName</label>
+          <div class="set-input-row"><input id="ru-name" placeholder="Your_Name-YourApp-Lister-abcde" autocomplete="off" spellcheck="false"><button class="btn btn-primary btn-sm" onclick="saveRuName()" id="ru-save">Save</button></div>
+        </div>
+      </div>
+
+      <div class="set-section">
+        <div class="set-step">Step 3</div>
+        <h3>Connect</h3>
+        <p class="set-help" id="connect-help">Opens eBay's sign-in. Approve access once and you're done — your sales import automatically after that.</p>
+        <div class="set-buttons">
+          <button class="btn btn-primary" id="connect-btn" onclick="connectEbay()">Connect eBay</button>
+        </div>
+      </div>
+      </div>
       <div class="set-section">
         <h3>Photo hosting (Cloudinary)</h3>
         <div class="set-row"><label for="k-cloudinaryCloudName">Cloud name</label><div class="set-input-row"><input id="k-cloudinaryCloudName" type="text" autocomplete="off"></div></div>
@@ -1071,7 +1110,7 @@
       <div class="set-section">
         <h3>eBay Sales Connection</h3>
         <!-- <p class="set-help">Connects your eBay seller account so the dashboard shows your real sold orders. It uses the eBay Client ID and Client Secret already saved in your Listing Tool settings.</p> -->
-        <p class="set-help">Connects your eBay seller account so the dashboard shows your real sold orders. It uses the eBay Client ID and Client Secret saved in Settings → Account.</p>   <!-- v326 -->
+        <p class="set-help">Connects your eBay seller account so the dashboard shows your real sold orders. It uses the eBay Client ID, Client Secret and RuName saved in Settings → Account.</p>   <!-- v326 -->
         <div id="ebay-status-box" class="set-info">Loading…</div>
         <div id="ebay-error" class="set-error" style="display:none;"></div>
         <div class="set-buttons" id="ebay-connected-buttons" style="display:none;">
@@ -1093,44 +1132,6 @@
         <div id="fc-result"></div>
       </div>
 
-      <hr class="set-divider">
-
-      <div class="set-section">
-        <div class="set-step">Step 1</div>
-        <h3>Register these addresses with eBay</h3>
-        <p class="set-help">In your eBay developer account → <strong>User Tokens</strong> → <strong>Add eBay Redirect URL</strong>, choose <strong>OAuth</strong>, and paste these in. They fill in automatically from wherever this app is running — if your web address ever changes, these change too, and you paste the new ones into eBay.</p>
-        <div class="set-row">
-          <label for="url-accepted">Your auth accepted URL</label>
-          <div class="set-input-row"><input id="url-accepted" readonly><button class="btn btn-secondary btn-sm" onclick="copyField('url-accepted')">Copy</button></div>
-        </div>
-        <div class="set-row">
-          <label for="url-declined">Your auth declined URL</label>
-          <div class="set-input-row"><input id="url-declined" readonly><button class="btn btn-secondary btn-sm" onclick="copyField('url-declined')">Copy</button></div>
-        </div>
-        <div class="set-row">
-          <label for="url-privacy">Your privacy policy URL</label>
-          <div class="set-input-row"><input id="url-privacy" readonly><button class="btn btn-secondary btn-sm" onclick="copyField('url-privacy')">Copy</button></div>
-        </div>
-      </div>
-
-      <div class="set-section">
-        <div class="set-step">Step 2</div>
-        <h3>Save the RuName eBay gives you</h3>
-        <p class="set-help">After you save on eBay, it shows a name for that entry, like <strong>Peter_Hoffmann-PeterHof-Lister-abcde</strong>. Copy it here.</p>
-        <div class="set-row">
-          <label for="ru-name">RuName</label>
-          <div class="set-input-row"><input id="ru-name" placeholder="Your_Name-YourApp-Lister-abcde" autocomplete="off" spellcheck="false"><button class="btn btn-primary btn-sm" onclick="saveRuName()" id="ru-save">Save</button></div>
-        </div>
-      </div>
-
-      <div class="set-section">
-        <div class="set-step">Step 3</div>
-        <h3>Connect</h3>
-        <p class="set-help" id="connect-help">Opens eBay's sign-in. Approve access once and you're done — your sales import automatically after that.</p>
-        <div class="set-buttons">
-          <button class="btn btn-primary" id="connect-btn" onclick="connectEbay()">Connect eBay</button>
-        </div>
-      </div>
       </div><!-- /adm-general -->
     </div>
   </div>
@@ -1832,7 +1833,7 @@ function handleEbayReturn() {
   history.replaceState(null, '', '/sales');   // v316: this page is /sales now
   if (result === 'connected') showToast('eBay connected — importing your sales. This can take a minute.');
   else if (result === 'declined') showToast('eBay connection was cancelled.', true);
-  else if (result === 'error') { showToast(q.get('msg') || 'eBay connection failed.', true); openSettings('admin'); }
+  else if (result === 'error') { const m = q.get('msg') || 'eBay connection failed.'; showToast(m, true); if (/RuName|Client/i.test(m)) { openSettings('account'); setTimeout(() => { const e = document.getElementById('ebay-steps'); if (e) e.scrollIntoView({ block: 'start' }); }, 300); } else openSettings('admin'); }
 }
 
 let toastTimer;
@@ -1966,7 +1967,7 @@ function showSettingsTab(tab) {
     document.getElementById('panel-' + t).classList.toggle('active', t === tab);
   });
   if (tab === 'admin') { loadEbayStatus(); if (me && me.isAdmin) { document.getElementById('adm-inner').style.display = 'flex'; admInner(window._admTab || 'general'); } }
-  if (tab === 'account') { loadKeys(); checkDefaults(); }   // v326, v410
+  if (tab === 'account') { loadKeys(); checkDefaults(); loadEbayStatus(); }   // v326, v410; RuName steps live here now
   if (tab === 'messages') { msHome(); loadMsgSettings(); }   // v330
   if (tab === 'listing') { const f = document.getElementById('frame-listing'); if (!f.getAttribute('src')) f.src = '/list?embed=1'; }   // v448
 }
