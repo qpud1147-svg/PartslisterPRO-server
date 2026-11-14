@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Orders v409</title>
+<title>PartsLister Pro Orders v411</title>
 <!-- v382: switching views is instant; browser reload / Refresh really reloads. v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
 <!-- PartsLister Pro — Orders page (v319: new). Your sold items from eBay, newest first.
      v320: item photos, and click an order to see the listing (photos, description, item specifics).
@@ -230,7 +230,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v409</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v411</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -276,6 +276,7 @@
     <input type="search" class="search" id="o-search" placeholder="Search title, SKU, bin or order #" autocomplete="off">
   </div>
   <div class="summary" id="o-summary">&nbsp;</div>
+  <div class="ebl-sub" id="o-swapnote" style="margin:-4px 0 8px;"></div>   <!-- v410: what the Swap check found -->
   <div class="orders" id="o-list"></div>
   <button type="button" class="btn btn-secondary btn-sm more" id="o-more" style="display:none;" onclick="showMore()">Show more</button>
 </main>
@@ -514,7 +515,7 @@ function swapBox(o, i) {
     }
     return b;
   }
-  const k = kind(o); if (k !== 'toship' && k !== 'partial') return null;
+  const k = kind(o); const canSwap = k === 'toship' || k === 'partial'; if (!canSwap && k !== 'shipped') return null;
   const c = (swapCands[i.itemId] || [])[0]; if (!c) return null;
   const b = mk('');
   const t = document.createElement('span');
@@ -522,6 +523,7 @@ function swapBox(o, i) {
   const v = document.createElement('a'); v.className = 'btn btn-secondary btn-sm'; v.textContent = 'View'; v.href = c.url || ('https://www.ebay.com/itm/' + c.itemId); v.target = '_blank'; v.rel = 'noopener';
   const sw = document.createElement('button'); sw.type = 'button'; sw.className = 'btn btn-primary btn-sm'; sw.textContent = 'Swap';
   sw.onclick = () => doSwap(o, i, c, sw, b);
+  if (!canSwap) { const x = document.createElement('small'); x.style.color = 'var(--muted)'; x.textContent = '(already shipped \u2014 look only)'; b.append(t, v, x); return b; }   // v411
   b.append(t, v, sw);
   return b;
 }
@@ -546,16 +548,24 @@ async function loadSwaps() {   // in the background: to-ship orders only, each i
   if (swapBusy) return; swapBusy = true;
   try {
     const lines = [];
-    orders.forEach(o => { const k = kind(o); if (k !== 'toship' && k !== 'partial') return; o.items.forEach(i => { if (i.itemId && !i.swap && !swapAsked.has(i.itemId)) lines.push({ orderId: o.id, itemId: i.itemId, title: i.title, sku: i.sku }); }); });
+    const SWAP_KINDS = ['toship', 'partial', 'shipped'];   // v411: shipped too, look only (testing the matching)
+    orders.forEach(o => { const k = kind(o); if (!SWAP_KINDS.includes(k)) return; o.items.forEach(i => { if (i.itemId && !i.swap && !swapAsked.has(i.itemId)) lines.push({ orderId: o.id, itemId: i.itemId, title: i.title, sku: i.sku }); }); });
+    const note = (t) => setText('o-swapnote', t);
+    const toShip = orders.reduce((n, o) => n + (SWAP_KINDS.includes(kind(o)) ? o.items.filter(i => i.itemId).length : 0), 0);
+    if (!toShip) { note('Swap check: no orders to check in these dates.'); return; }
+    if (lines.length) note('Swap check: looking for older listings of ' + toShip + ' sold item' + (toShip === 1 ? '' : 's') + '\u2026 (' + (toShip - lines.length) + ' done)');
     for (let k = 0; k < lines.length; k += 30) {
       const part = lines.slice(k, k + 30);
       const r = await fetch('/api/orders/swap-candidates', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lines: part }) }).catch(() => null);
       const j = r && r.ok ? await r.json().catch(() => null) : null;
-      if (!j) break;
+      if (!j) { const e = r ? await r.json().catch(() => ({})) : {}; note('Swap check didn\u2019t finish: ' + (e.error || (r ? 'server ' + r.status : 'no connection')) + ' \u2014 reload to try again.'); return; }
       part.forEach(l => swapAsked.add(l.itemId));
       Object.assign(swapCands, j.candidates || {});
+      note('Swap check: ' + Math.min(toShip, toShip - lines.length + k + part.length) + ' of ' + toShip + ' sold items checked\u2026');
       if (Object.keys(j.candidates || {}).length) render();
     }
+    const found = Object.keys(swapCands).length;
+    note('Swap check: ' + toShip + ' sold item' + (toShip === 1 ? '' : 's') + ' checked (to ship + shipped) \u00b7 ' + (found ? found + ' with an older listing live \u2014 see the yellow lines' : 'no older listings of the same part found'));
   } finally { swapBusy = false; }
 }
 
