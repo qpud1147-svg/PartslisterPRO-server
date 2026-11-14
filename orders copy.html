@@ -1,0 +1,760 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PartsLister Pro Orders v410</title>
+<!-- v382: switching views is instant; browser reload / Refresh really reloads. v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
+<!-- PartsLister Pro — Orders page (v319: new). Your sold items from eBay, newest first.
+     v320: item photos, and click an order to see the listing (photos, description, item specifics).
+     Shares the sign-in, account and eBay connection with the other pages. -->
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@400;500;600&display=swap');
+
+  /* Same palette as the Sales page and the listing tool */
+  :root {
+    --bg: #0f0f0f;
+    --surface: #1a1a1a;
+    --surface2: #222222;
+    --border: #2e2e2e;
+    --accent: #f5a623;
+    --accent2: #e8912a;
+    --text: #e8e8e8;
+    --text2: #b8b8b8;
+    --muted: #888;
+    --success: #4caf82;
+    --danger: #e05252;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'Barlow', sans-serif; font-size: 14px; min-height: 100vh; }
+
+  /* HEADER — same as the Sales page */
+  header {
+    background: var(--surface); border-bottom: 2px solid var(--accent); padding: 0 24px;
+    display: flex; align-items: center; gap: 16px; height: 56px; position: sticky; top: 0; z-index: 10;
+  }
+  .logo-link { text-decoration: none; color: inherit; }
+  .logo { font-family: 'Barlow Condensed', sans-serif; font-size: 26px; font-weight: 900; letter-spacing: -0.5px; line-height: 1; }
+  .logo span { color: var(--accent); }
+  .logo-sub { font-family: 'Barlow Condensed', sans-serif; font-size: 12px; font-weight: 600; letter-spacing: 3px; color: var(--accent); text-transform: uppercase; margin-top: -2px; }
+  .page-tabs { display: flex; gap: 2px; margin-left: 12px; }
+  .page-tabs a {
+    font-family: 'Barlow Condensed', sans-serif; font-size: 15px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;
+    color: var(--muted); text-decoration: none; padding: 6px 12px; border-radius: 4px;
+  }
+  .page-tabs a:hover { color: var(--text); background: var(--surface2); }
+  .page-tabs a[aria-current="page"] { color: #000; background: var(--accent); }
+  .header-right { margin-left: auto; display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .who { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 260px; }
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 9px 18px; border-radius: 4px;
+    border: 1px solid transparent; cursor: pointer; font-family: 'Barlow Condensed', sans-serif; font-size: 14px; font-weight: 700;
+    letter-spacing: 1px; text-transform: uppercase; text-decoration: none; white-space: nowrap;
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
+  }
+  .btn-secondary { background: var(--surface2); color: var(--text); border-color: var(--border); }
+  .btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
+  .btn-sm { padding: 5px 12px; font-size: 12px; }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  main { max-width: 1200px; margin: 0 auto; padding: 24px 24px 48px; }
+  .page-title { font-family: 'Barlow Condensed', sans-serif; font-size: 30px; font-weight: 700; letter-spacing: 0.5px; margin-bottom: 4px; }
+  .page-note { color: var(--muted); font-size: 13px; margin-bottom: 18px; }
+  .page-note button { background: none; border: none; color: var(--accent); cursor: pointer; font: inherit; padding: 0; }
+  .page-note button:hover { text-decoration: underline; }
+  .page-note button:disabled { color: var(--muted); cursor: default; text-decoration: none; }
+
+  /* TILES — click a tile to open its page */
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 12px; }
+  .tile {
+    display: block; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 16px 18px;
+    min-width: 0; color: inherit; text-decoration: none; position: relative;
+  }
+  a.tile { transition: border-color 0.15s; }
+  a.tile:hover { border-color: var(--accent); }
+  a.tile::after { content: '→'; position: absolute; top: 14px; right: 16px; color: var(--muted); font-size: 14px; }
+  a.tile:hover::after { color: var(--accent); }
+  .tile-label { font-size: 12px; color: var(--muted); margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 18px; }
+  .tile-value { font-family: 'Barlow Condensed', sans-serif; font-size: 40px; font-weight: 700; line-height: 1.05; color: var(--text); white-space: nowrap; }
+  .tile-value.accent { color: var(--accent); }
+  .tile-sub { font-size: 12px; color: var(--muted); margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tile.status { border-left-width: 3px; }
+  .tile.status.ok { border-left-color: var(--success); }
+  .tile.status.bad { border-left-color: var(--danger); background: rgba(224,82,82,0.06); }
+  .tile.status.bad .tile-value { color: var(--danger); }
+  .status-tag { display: inline-block; font-family: 'Barlow Condensed', sans-serif; font-size: 12px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; margin-left: 8px; vertical-align: 10px; }
+  .tile.status.ok .status-tag { color: var(--success); }
+  .tile.status.bad .status-tag { color: var(--danger); }
+
+  .section-title {
+    font-family: 'Barlow Condensed', sans-serif; font-size: 12px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase;
+    color: var(--muted); padding-bottom: 8px; border-bottom: 1px solid var(--border); margin: 24px 0 12px;
+  }
+  .soon-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+  .soon { background: var(--surface); border: 1px dashed var(--border); border-radius: 6px; padding: 14px 16px; }
+  .soon h3 { font-family: 'Barlow Condensed', sans-serif; font-size: 17px; font-weight: 700; letter-spacing: 0.5px; margin-bottom: 4px; }
+  .soon p { color: var(--muted); font-size: 12px; line-height: 1.45; }
+  .error-box { background: rgba(224,82,82,0.08); border: 1px solid rgba(224,82,82,0.4); color: #f0a0a0; border-radius: 6px; padding: 10px 12px; font-size: 13px; line-height: 1.5; margin-bottom: 12px; display: none; }
+
+  #loading { position: fixed; inset: 0; background: var(--bg); z-index: 100; display: flex; align-items: center; justify-content: center; color: var(--muted); font-family: 'Barlow Condensed', sans-serif; letter-spacing: 2px; text-transform: uppercase; }
+  #loading.hidden { display: none; }
+
+  @media (max-width: 1000px) { .grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 700px) {
+    header { padding: 0 12px; gap: 8px; }
+    .who, .header-wide { display: none !important; }
+    .header-right { gap: 6px; }
+    .header-right .btn-sm { padding: 5px 8px; font-size: 11px; letter-spacing: 0.5px; }
+    .page-tabs { margin-left: 4px; }
+    .page-tabs a { padding: 5px 7px; font-size: 13px; letter-spacing: 0.5px; }
+    .page-tabs { overflow-x: auto; scrollbar-width: none; flex-shrink: 1; min-width: 0; }   /* v319: 5 tabs — slide sideways if needed */
+    .page-tabs a { padding: 5px 6px; font-size: 12px; flex-shrink: 0; }
+    .logo { font-size: 20px; }
+    main { padding: 16px 16px 40px; }
+    .grid { grid-template-columns: 1fr; }
+    .tile-value { font-size: 34px; }
+  }
+
+  /* v319: ORDERS */
+  .controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 14px; }
+  .seg { display: inline-flex; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 3px; gap: 2px; }
+  .seg button {
+    background: none; border: none; color: var(--muted); font-family: 'Barlow Condensed', sans-serif; font-size: 14px; font-weight: 700;
+    letter-spacing: 0.5px; text-transform: uppercase; padding: 6px 12px; border-radius: 4px; cursor: pointer;
+  }
+  .seg button:hover { color: var(--text); }
+  .seg button[aria-pressed="true"] { background: var(--accent); color: #000; }
+  .search {
+    flex: 1; min-width: 220px; background: var(--surface); border: 1px solid var(--border); color: var(--text); border-radius: 6px;
+    padding: 9px 12px; font-family: 'Barlow', sans-serif; font-size: 14px; outline: none;
+  }
+  .search:focus { border-color: var(--accent); }
+  .summary { color: var(--muted); font-size: 13px; margin-bottom: 10px; }
+  .orders { display: flex; flex-direction: column; gap: 10px; }
+  /* v404: listing row layout — same as the Active page */
+  .ebl { position: relative; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 12px; display: flex; gap: 14px; align-items: stretch; cursor: pointer; }
+  .ebl:hover { border-color: #444; }
+  .ebl.off { opacity: 0.55; }
+  .ebl-img { flex: 0 0 132px; width: 132px; height: 132px; background: var(--surface2); border-radius: 4px; overflow: hidden; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 11px; }
+  .ebl-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .ebl-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+  .ebl-title { font-size: 15px; font-weight: 600; line-height: 1.3; word-break: break-word; }
+  .ebl-title a { color: inherit; text-decoration: none; }
+  .ebl-title a:hover { text-decoration: underline; }
+  .ebl-price { font-size: 20px; font-weight: 700; }
+  .ebl-price small { font-size: 12px; font-weight: 400; color: var(--muted); margin-left: 6px; }
+  .ebl-sub { color: var(--muted); font-size: 12px; }
+  /* v409: Swap */
+  .swap { margin-top: 6px; padding: 6px 8px; border: 1px solid var(--accent); border-radius: 6px; font-size: 12px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; background: rgba(245,166,35,0.07); }
+  .swap b { color: var(--accent); }
+  .swap .btn-sm { padding: 3px 10px; font-size: 11px; }
+  .swap.done { border-color: var(--success, #3c9); background: rgba(60,200,140,0.08); }
+  .swap.done b { color: var(--success, #3c9); }
+  .swap.bad { border-color: var(--danger, #e55); background: rgba(230,80,80,0.08); }
+  .ebl { position: relative; }
+  .ebl-n { position: absolute; right: 12px; top: 8px; font-size: 17px; font-weight: 700; color: var(--muted, #888); }
+  .ebl-sku-l { font-size: 17px; font-weight: 700; color: var(--accent); letter-spacing: 0.3px; line-height: 1.2; word-break: break-word; }
+  .ebl-sku-l small { font-size: 11px; font-weight: 600; color: var(--muted); letter-spacing: 1px; margin-right: 6px; text-transform: uppercase; }
+  .ebl-sub b { color: var(--text); font-weight: 600; }
+  .ebl-sub .chip { margin-top: 0; }
+  @media (max-width: 700px) { .ebl { gap: 10px; } .ebl-img { flex-basis: 96px; width: 96px; height: 96px; } }
+  .o-thumb { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+  /* v320: ORDER DETAIL — looks like the eBay listing */
+  #detail { position: fixed; inset: 0; background: rgba(0,0,0,0.75); z-index: 60; display: none; overflow-y: auto; padding: 24px 16px; }
+  #detail.open { display: block; }
+  .d-box { max-width: 1100px; margin: 0 auto; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 20px; position: relative; }
+  .d-close { position: absolute; top: 12px; right: 12px; }
+  .d-order { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: baseline; color: var(--text2); font-size: 13px; padding-bottom: 14px; border-bottom: 1px solid var(--border); margin-bottom: 18px; padding-right: 90px; }
+  .d-order .o-total { font-size: 26px; color: var(--text); }
+  .d-item + .d-item { margin-top: 28px; padding-top: 22px; border-top: 1px solid var(--border); }
+  .d-top { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 24px; }
+  .d-main { width: 100%; aspect-ratio: 1 / 1; object-fit: contain; background: #fff; border-radius: 6px; border: 1px solid var(--border); }
+  .d-strip { display: flex; gap: 6px; margin-top: 8px; overflow-x: auto; padding-bottom: 4px; }
+  .d-strip img { width: 60px; height: 60px; object-fit: cover; border-radius: 4px; border: 2px solid transparent; cursor: pointer; flex-shrink: 0; background: var(--surface2); }
+  .d-strip img.on { border-color: var(--accent); }
+  .d-title { font-size: 20px; font-weight: 600; line-height: 1.35; margin-bottom: 10px; }
+  .d-price { font-family: 'Barlow Condensed', sans-serif; font-size: 32px; font-weight: 700; margin-bottom: 6px; }
+  .d-facts { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-size: 13px; margin: 12px 0; }
+  .d-facts dt { color: var(--muted); }
+  .d-facts dd { color: var(--text); }
+  .d-h { font-family: 'Barlow Condensed', sans-serif; font-size: 13px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); margin: 22px 0 8px; }
+  .d-specs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 24px; font-size: 13px; }
+  .d-specs div { display: grid; grid-template-columns: 45% 55%; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--border); }
+  .d-specs span:first-child { color: var(--muted); }
+  .d-desc { width: 100%; border: 1px solid var(--border); border-radius: 6px; background: #fff; min-height: 200px; }
+  .d-msg { color: var(--muted); padding: 20px 0; }
+  @media (max-width: 800px) {
+    .d-top { grid-template-columns: 1fr; }
+    .d-specs { grid-template-columns: 1fr; }
+    #detail { padding: 0; }
+    .d-box { border-radius: 0; border: none; min-height: 100vh; padding: 16px; }
+  }
+  .order.off { opacity: 0.55; }
+  .o-when { color: var(--text2); font-size: 13px; line-height: 1.4; }
+  .o-when .o-id { color: var(--muted); font-size: 11px; font-family: ui-monospace, Menlo, monospace; }
+  .o-item { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; line-height: 1.4; }
+  .o-item + .o-item { margin-top: 6px; }
+  .o-title { color: var(--text); text-decoration: none; font-size: 14px; }
+  a.o-title:hover { color: var(--accent); text-decoration: underline; }
+  .o-sku { font-family: ui-monospace, Menlo, monospace; font-size: 12.5px; color: var(--text2); background: var(--surface2); border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; white-space: nowrap; }
+  .o-sku b { color: var(--accent); font-weight: 700; }
+  .o-qty { color: var(--accent); font-weight: 600; font-size: 13px; }
+  .o-right { text-align: right; white-space: nowrap; }
+  .o-total { font-family: 'Barlow Condensed', sans-serif; font-size: 22px; font-weight: 700; }
+  .chip { display: inline-block; margin-top: 4px; font-family: 'Barlow Condensed', sans-serif; font-size: 12px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; padding: 2px 8px; border-radius: 3px; border: 1px solid; }
+  .chip.ship { color: var(--accent); border-color: var(--accent); }
+  .chip.done { color: var(--success); border-color: rgba(76,175,130,0.5); }
+  .chip.bad { color: var(--danger); border-color: rgba(224,82,82,0.5); }
+  .chip.part { color: var(--text2); border-color: var(--border); }
+  .empty { color: var(--muted); padding: 30px 0; text-align: center; }
+  .more { margin: 14px auto 0; display: block; }
+  @media (max-width: 700px) {
+    .seg button { padding: 6px 9px; font-size: 13px; }
+    .search { min-width: 0; width: 100%; flex-basis: 100%; }
+  }
+  /* v402: the boxed refresh control — same as Sales and Active */
+  .title-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
+  .title-row .page-title { margin-bottom: 0; }
+  .sample-badge { font-family: 'Barlow Condensed', sans-serif; font-size: 11px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--text); border: 1px solid var(--border); background: var(--surface2); border-radius: 3px; padding: 3px 8px; cursor: pointer; }
+  .sample-badge:hover { border-color: var(--accent); }
+  .sample-badge:disabled { cursor: default; }
+  .sample-badge .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--success); margin-right: 6px; vertical-align: 1px; }
+  .sample-badge.warn .dot { background: var(--danger); }
+  .sample-badge.busy .dot { background: var(--accent); animation: pulse 1s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: 0.3; } }
+</style>
+</head>
+<body>
+<div id="loading">Loading…</div>
+<header>
+  <a href="/" class="logo-link" title="Home">
+    <div class="logo"><span>PARTS</span>LISTER</div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v410</span></div>
+  </a>
+  <nav class="page-tabs" aria-label="Pages">
+    <!-- v318: was Home / Sales / Listings (the active page)
+    <a href="/">Home</a>
+    <a href="/sales">Sales</a>
+    <a href="/listings" aria-current="page">Listings</a>
+    -->
+    <a href="/">Home</a>
+    <a href="/sales">Sales</a>
+    <a href="/orders" aria-current="page">Orders</a>   <!-- v319 -->
+    <a href="/messages">Messages</a>   <!-- v321 -->
+    <a href="/returns">Returns</a>   <!-- v324 -->
+    <a href="/active">Active</a>
+    <a href="/list" title="Open the Listing Tool">Listings</a>   <!-- v318: the Listing Tool -->
+  </nav>
+  <div class="header-right">
+    <span class="who" id="who"></span>
+    <!-- <a href="/list" class="btn btn-secondary btn-sm header-wide">Listing Tool →</a>   v318: now the Listings tab -->
+    <a href="/sales?settings=1" class="btn btn-secondary btn-sm" title="Settings" aria-label="Settings">⚙</a>
+    <button class="btn btn-secondary btn-sm header-wide" onclick="logout()">Log Out</button>
+  </div>
+</header>
+
+<main>
+  <div class="title-row"><div class="page-title">Orders</div>
+    <button type="button" class="sample-badge" id="o-badge" onclick="ordBadgeClick()">eBay</button></div>   <!-- v402: boxed refresh, same as Sales -->
+  <div class="page-note" id="o-note" style="display:none">&nbsp;</div>
+  <div class="error-box" id="o-error"></div>
+
+  <div class="controls">
+    <div class="seg" role="group" aria-label="Dates" id="seg-days">
+      <button type="button" data-days="7">7 days</button>
+      <button type="button" data-days="31">31 days</button>
+      <button type="button" data-days="90">90 days</button>
+      <button type="button" data-days="365">Year</button>
+    </div>
+    <div class="seg" role="group" aria-label="Show" id="seg-show">
+      <button type="button" data-show="all">All</button>
+      <button type="button" data-show="toship">To ship</button>
+      <button type="button" data-show="shipped">Shipped</button>
+      <button type="button" data-show="refunded">Refunded</button>
+    </div>
+    <input type="search" class="search" id="o-search" placeholder="Search title, SKU, bin or order #" autocomplete="off">
+  </div>
+  <div class="summary" id="o-summary">&nbsp;</div>
+  <div class="ebl-sub" id="o-swapnote" style="margin:-4px 0 8px;"></div>   <!-- v410: what the Swap check found -->
+  <div class="orders" id="o-list"></div>
+  <button type="button" class="btn btn-secondary btn-sm more" id="o-more" style="display:none;" onclick="showMore()">Show more</button>
+</main>
+
+<!-- v320: order detail -->
+<div id="detail" onclick="if (event.target === this) closeDetail()">
+  <div class="d-box" role="dialog" aria-modal="true" aria-label="Order details">
+    <button type="button" class="btn btn-secondary btn-sm d-close" onclick="closeDetail()">✕ Close</button>
+    <div id="d-content"></div>
+  </div>
+</div>
+
+<script>
+// ─── v380: SAVED COPY ────────────────────────────────────────────────────────
+// Coming back to this page shows what it loaded last time right away, then quietly checks eBay and
+// updates the page if anything changed. Kept in this browser tab only (sessionStorage): gone when
+// you close the tab or log out — never saved on the server or on disk.
+// v381: + remembers you're signed in (no sign-in screen flash) and, a few seconds after a page
+//       loads, quietly loads the other pages' data so their first open is instant too.
+// v382: switching views on a page (Open/Closed, Buyers/From eBay, 7/31/90 days…) uses the saved copy too.
+//       Reloading the browser page, or pressing a Refresh button, really reloads from eBay.
+const pageCache = { urls: [], rerun: null, liveUntil: 0, live() { this.liveUntil = Date.now() + 3000; } };
+// v408: reloading the browser page keeps using the saved copy too (the check for new data starts at once); Refresh buttons still force a real pull
+(function () {
+  const realFetch = window.fetch.bind(window);
+  const KEY = 'plp-cache:';
+  const first = new Set(), fresh = new Map();
+  let pending = 0, changed = false;
+  const isGet = (opt) => !opt || !opt.method || String(opt.method).toUpperCase() === 'GET';
+  const want = (url, opt) => typeof url === 'string' && isGet(opt) && pageCache.urls.some(r => r.test(url));
+  const read = (url) => { try { return localStorage.getItem(KEY + url); } catch (e) { return null; } };
+  const write = (url, text) => { try { if (!/"(loading|checking)":true/.test(text)) localStorage.setItem(KEY + url, text); } catch (e) { /* full or blocked — fine */ } };
+  const asResponse = (text) => new Response(text, { status: 200, headers: { 'Content-Type': 'application/json' } });
+  const signedIn = (yes) => { try { if (yes) sessionStorage.setItem('plp-signed-in', '1'); else sessionStorage.removeItem('plp-signed-in'); } catch (e) { /* fine */ } };   // v381
+  const clearAll = () => { try { Object.keys(sessionStorage).filter(k => k.startsWith('plp-')).forEach(k => sessionStorage.removeItem(k)); } catch (e) { /* fine */ } try { Object.keys(localStorage).filter(k => /^(plp[-_]|lc(Range|Kind|VMode))/.test(k)).forEach(k => localStorage.removeItem(k)); } catch (e) { /* fine */ } try { ['plp-live', 'plp-work'].forEach(n => indexedDB.deleteDatabase(n)); } catch (e) { /* fine */ } };   // v408: the saved copies live in localStorage
+  const watch = (url, r) => { if (url === '/api/me') { if (r.status === 200) signedIn(true); else if (r.status === 401) clearAll(); } };   // v381
+  window.fetch = async function (url, opt) {
+    if (typeof url === 'string' && url === '/api/logout') clearAll();
+    if (!want(url, opt)) { const r = await realFetch(url, opt); watch(url, r); return r; }
+    const f = fresh.get(url);
+    if (f && Date.now() - f.at < 60000) { fresh.delete(url); if (f.status === 200) return asResponse(f.text); }
+    // if (!first.has(url)) {   (v381: only the first time on this page)
+    first.add(url);
+    if (Date.now() >= pageCache.liveUntil) {   // v382: every time, unless you just reloaded or pressed Refresh
+      const saved = read(url);
+      if (saved !== null) {
+        pending++;
+        realFetch(url, opt).then(async r => {
+          watch(url, r);
+          const text = await r.text();
+          if (r.status === 200) write(url, text);
+          else { try { localStorage.removeItem(KEY + url); } catch (e) { /* fine */ } }
+          fresh.set(url, { at: Date.now(), status: r.status, text });
+          if (r.status !== 200 || text !== saved) changed = true;
+        }).catch(() => {}).finally(() => {
+          if (--pending === 0 && changed) { changed = false; if (pageCache.rerun) pageCache.rerun(); }
+        });
+        return asResponse(saved);
+      }
+    }
+    const r = await realFetch(url, opt);
+    watch(url, r);
+    if (r.status === 200) r.clone().text().then(t => write(url, t)).catch(() => {});
+    return r;
+  };
+  // v381: load the other pages' data in the background (only what this tab doesn't have yet), one at a time
+  const LA = encodeURIComponent('America/Los_Angeles');
+  let ordersDays = 31; try { ordersDays = parseInt(localStorage.getItem('plp_orders_days'), 10) || 31; } catch (e) { /* default */ }
+  const ALL = ['/api/me', '/api/sales?tz=' + LA, '/api/fees?tz=' + LA, '/api/listings/summary', '/api/messages/summary', '/api/returns/summary',
+    '/api/orders/list?days=' + ordersDays + '&tz=' + LA, '/api/threads?type=members', '/api/followups', '/api/msg-settings',
+    '/api/returns?view=open', '/api/late-returns', '/api/listings/daily',
+    // v382: the other views, so switching is instant
+    '/api/threads?type=ebay', '/api/returns?view=closed'].concat([7, 31, 90, 365].filter(d => d !== ordersDays).map(d => '/api/orders/list?days=' + d + '&tz=' + LA));
+  setTimeout(async () => {
+    try { if (!sessionStorage.getItem('plp-signed-in')) return; } catch (e) { return; }
+    for (const url of ALL) {
+      if (read(url) !== null || first.has(url)) continue;
+      try { const r = await realFetch(url); if (r.status === 401) { clearAll(); return; } if (r.status === 200) write(url, await r.text()); } catch (e) { /* skip */ }
+    }
+  }, 3000);
+})();
+pageCache.urls = [/^\/api\/me$/, /^\/api\/orders\/list\?/, /^\/api\/items\/thumbs\?/];   // v380
+// ─── SHARED (same on Home and Listings) ─────────────────────────────────────
+const EBAY_TZ = 'America/Los_Angeles';   // eBay counts days in Pacific time
+const money0 = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+const money2 = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 });
+function setText(id, text) { document.getElementById(id).textContent = text; }
+function ebayTodayKey() { return new Intl.DateTimeFormat('en-CA', { timeZone: EBAY_TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()); }
+function keyPlus(key, n) { const [y, m, d] = key.split('-').map(Number); const t = new Date(y, m - 1, d + n); return t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0') + '-' + String(t.getDate()).padStart(2, '0'); }
+function timeAgo(iso) {
+  if (!iso) return 'never';
+  const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return mins + ' min ago';
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return hrs + ' hr ago';
+  return Math.round(hrs / 24) + ' days ago';
+}
+async function getJSON(url) {
+  try { const r = await fetch(url); if (r.status === 401) return { _signedOut: true }; return r.ok ? await r.json() : null; }
+  catch (e) { return null; }
+}
+async function logout() {
+  await fetch('/api/logout', { method: 'POST' }).catch(() => {});
+  location.href = '/sales';
+}
+// Not signed in → the sign-in screen on the Sales page, then back here
+async function loadMe() {
+  const me = await getJSON('/api/me');
+  if (!me || me._signedOut) { location.href = '/sales?next=' + encodeURIComponent(location.pathname); return null; }
+  setText('who', me.email + (me.isAdmin ? '  · admin' : ''));
+  return me;
+}
+
+// ─── ORDERS ──────────────────────────────────────────────────────────────────
+// v319: your sold orders, newest first, with what was in each one.
+// Search ignores spaces and capitals, so "4551be9" finds SKU "4551 BE9".
+let orders = [];
+let days = 31, show = 'all', shown = 100, pollTimer = null;
+try { days = parseInt(localStorage.getItem('plp_orders_days'), 10) || 31; show = localStorage.getItem('plp_orders_show') || 'all'; } catch (e) { /* defaults */ }
+
+const norm = (t) => String(t || '').toLowerCase().replace(/[\s\-_.\/]+/g, '');
+function kind(o) {
+  if (!o.counted) return /CANCEL/i.test(o.status) ? 'cancelled' : 'refunded';
+  if (o.ship === 'FULFILLED') return 'shipped';
+  if (o.ship === 'IN_PROGRESS') return 'partial';
+  return 'toship';
+}
+const CHIP = {
+  toship: ['To ship', 'ship'], partial: ['Partly shipped', 'ship'], shipped: ['Shipped', 'done'],
+  refunded: ['Refunded', 'bad'], cancelled: ['Cancelled', 'bad']
+};
+
+// "4551 BE9" → 4551 <b>BE9</b> (the bin stands out)
+function skuEl(sku) {
+  const span = document.createElement('span');
+  span.className = 'o-sku';
+  const parts = String(sku).trim().split(/\s+/);
+  if (parts.length > 1) {
+    span.append(document.createTextNode(parts.slice(0, -1).join(' ') + ' '));
+    const b = document.createElement('b'); b.textContent = parts[parts.length - 1]; span.append(b);
+  } else span.textContent = sku;
+  return span;
+}
+
+function render() {
+  document.querySelectorAll('#seg-days button').forEach(b => b.setAttribute('aria-pressed', +b.dataset.days === days ? 'true' : 'false'));
+  document.querySelectorAll('#seg-show button').forEach(b => b.setAttribute('aria-pressed', b.dataset.show === show ? 'true' : 'false'));
+  const terms = document.getElementById('o-search').value.toLowerCase().split(/\s+/).filter(Boolean).map(norm);
+  const list = orders.filter(o => {
+    const k = kind(o);
+    if (show === 'toship' && !(k === 'toship' || k === 'partial')) return false;
+    if (show === 'shipped' && k !== 'shipped') return false;
+    if (show === 'refunded' && !(k === 'refunded' || k === 'cancelled' || o.refunded > 0)) return false;
+    if (!terms.length) return true;
+    const hay = norm(o.id + ' ' + o.items.map(i => (i.title || '') + ' ' + (i.sku || '') + ' ' + (i.itemId || '')).join(' '));
+    return terms.every(t => hay.includes(t));
+  });
+  const items = list.reduce((s, o) => s + o.items.reduce((a, i) => a + (i.qty || 1), 0), 0);
+  const total = list.reduce((s, o) => s + o.total, 0);
+  setText('o-summary', list.length.toLocaleString() + ' order' + (list.length === 1 ? '' : 's') + ' · ' + items.toLocaleString() + ' item' + (items === 1 ? '' : 's') + ' · ' + money0.format(total) + (terms.length ? ' (search)' : ''));
+
+  const box = document.getElementById('o-list');
+  box.textContent = '';
+  if (!list.length) {
+    const e = document.createElement('div'); e.className = 'empty';
+    e.textContent = orders.length ? 'No orders match.' : 'No orders in these dates.';
+    box.append(e);
+  }
+  list.slice(0, shown).forEach((o, ix) => {
+    const k = kind(o);
+    const row = document.createElement('div'); row.className = 'ebl' + (k === 'refunded' || k === 'cancelled' ? ' off' : '');
+    row.addEventListener('click', (e) => { if (!e.target.closest('a')) openOrder(o.id); });
+    const first = o.items.find(i => i.itemId) || o.items[0];
+    const imgBox = document.createElement('div'); imgBox.className = 'ebl-img';
+    const img = document.createElement('img'); img.alt = ''; img.loading = 'lazy'; img.className = 'o-thumb';
+    if (first && first.itemId) { img.dataset.item = first.itemId; if (thumbs[first.itemId]) setPhoto(img, thumbs[first.itemId]); } else img.style.visibility = 'hidden';
+    imgBox.append(img);
+    const body = document.createElement('div'); body.className = 'ebl-body';
+    const titleEl = (i) => {
+      const t = document.createElement('div'); t.className = 'ebl-title';
+      const a = document.createElement(i.itemId ? 'a' : 'span'); a.textContent = (i.qty > 1 ? i.qty + '× ' : '') + (i.title || '(no title)');
+      if (i.itemId) { a.href = 'https://www.ebay.com/itm/' + encodeURIComponent(i.itemId); a.target = '_blank'; a.rel = 'noopener'; }
+      t.append(a); return t;
+    };
+    if (!o.items.length) { const p = document.createElement('div'); p.className = 'ebl-title'; p.style.color = 'var(--muted)'; p.textContent = 'Items still importing…'; body.append(p); }
+    else body.append(titleEl(o.items[0]));
+    const price = document.createElement('div'); price.className = 'ebl-price'; price.textContent = money2.format(o.total);
+    const sm = document.createElement('small'); sm.textContent = CHIP[k][0] + (k !== 'refunded' && o.refunded > 0 ? ' · part refund' : ''); price.append(sm);
+    body.append(price);
+    const [d, t] = o.sold.split(' ');
+    const dt = new Date(d + 'T12:00:00');
+    const sub = document.createElement('div'); sub.className = 'ebl-sub';
+    sub.textContent = 'Sold ' + dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' · ' + t + ' · order ' + o.id;
+    body.append(sub);
+    // SKU: same spot as the Active page (right under the date line)
+    const skuLine = (i) => { const s2 = document.createElement('div'); s2.className = 'ebl-sku-l'; const sm = document.createElement('small'); sm.textContent = 'SKU'; s2.append(sm, document.createTextNode(i.sku)); return s2; };
+    if (o.items[0] && o.items[0].sku) body.append(skuLine(o.items[0]));
+    else if (o.items[0]) { const ns = document.createElement('div'); ns.className = 'ebl-sub'; ns.style.opacity = '.55'; ns.textContent = 'No SKU'; body.append(ns); }
+    o.items.forEach(i => { const sb = swapBox(o, i); if (sb) body.append(sb); });   // v409
+    o.items.slice(1).forEach(i => {
+      const x = document.createElement('div'); x.className = 'ebl-sub'; x.style.marginTop = '4px';
+      x.append(document.createTextNode('+ ' + (i.qty > 1 ? i.qty + '× ' : '') + (i.title || '(no title)') + (i.sku ? ' · SKU ' + i.sku : '')));
+      body.append(x);
+    });
+    const num = document.createElement('span'); num.className = 'ebl-n'; num.textContent = ix + 1; row.append(num);
+    row.append(imgBox, body);
+    box.append(row);
+  });
+  document.getElementById('o-more').style.display = list.length > shown ? '' : 'none';
+  loadThumbs();   // v320
+}
+
+// ─── v409: SWAP — a newer listing sold while an older one of the same part is still live ────────────
+// Ship the buyer the OLDER item, end the older listing, and relist the one they bought (it's still on the shelf).
+let swapCands = {}, swapAsked = new Set(), swapBusy = false;
+const ageOf = (iso) => { const d = Math.floor((Date.now() - Date.parse(iso)) / 86400000); return d >= 365 ? (d / 365).toFixed(1).replace(/\.0$/, '') + ' yr' : d >= 60 ? Math.round(d / 30) + ' mo' : d + ' days'; };
+function swapBox(o, i) {
+  if (!i.itemId) return null;
+  const mk = (cls) => { const b = document.createElement('div'); b.className = 'swap' + (cls ? ' ' + cls : ''); b.addEventListener('click', e => e.stopPropagation()); return b; };
+  if (i.swap) {   // already swapped: say which item to ship
+    const b = mk(i.swap.endOk ? 'done' : 'bad');
+    const t = document.createElement('span'); t.innerHTML = '<b>\u2194 Swapped</b> \u2014 ship from SKU <b>' + esc(i.swap.oldSku || '(none)') + '</b>';
+    const a = document.createElement('a'); a.href = 'https://www.ebay.com/itm/' + encodeURIComponent(i.swap.oldItem); a.target = '_blank'; a.rel = 'noopener'; a.textContent = 'older listing ' + i.swap.oldItem;
+    b.append(t, a);
+    if (!i.swap.endOk) {
+      const w = document.createElement('span'); w.textContent = '\u26a0 the older listing may still be live';
+      const end = document.createElement('button'); end.type = 'button'; end.className = 'btn btn-secondary btn-sm'; end.textContent = 'End it now';
+      end.onclick = async () => {
+        end.disabled = true; end.textContent = 'Ending\u2026';
+        const r = await fetch('/api/relaunch/end/' + encodeURIComponent(i.swap.oldItem), { method: 'POST' }).catch(() => null);
+        if (r && r.ok) { await fetch('/api/orders/swap/end-ok', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ oldItem: i.swap.oldItem }) }).catch(() => {}); i.swap.endOk = true; render(); }
+        else { const j = r ? await r.json().catch(() => ({})) : {}; alert('It did not end: ' + (j.error || 'try again, or end it on eBay')); end.disabled = false; end.textContent = 'End it now'; }
+      };
+      b.append(w, end);
+    }
+    return b;
+  }
+  const k = kind(o); if (k !== 'toship' && k !== 'partial') return null;
+  const c = (swapCands[i.itemId] || [])[0]; if (!c) return null;
+  const b = mk('');
+  const t = document.createElement('span');
+  t.innerHTML = '<b>\u2194 Older one live</b> \u2014 ' + money2.format(c.price || 0) + ' \u00b7 listed ' + esc(ageOf(c.start)) + ' ago' + (c.sku ? ' \u00b7 SKU ' + esc(c.sku) : '') + (c.match === 'title' ? ' \u00b7 similar title' : '');
+  const v = document.createElement('a'); v.className = 'btn btn-secondary btn-sm'; v.textContent = 'View'; v.href = c.url || ('https://www.ebay.com/itm/' + c.itemId); v.target = '_blank'; v.rel = 'noopener';
+  const sw = document.createElement('button'); sw.type = 'button'; sw.className = 'btn btn-primary btn-sm'; sw.textContent = 'Swap';
+  sw.onclick = () => doSwap(o, i, c, sw, b);
+  b.append(t, v, sw);
+  return b;
+}
+function esc(t) { return String(t == null ? '' : t).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch])); }
+async function doSwap(o, i, c, btn, box) {
+  const msg = 'Swap?\n\nShip the buyer the OLDER item' + (c.sku ? ' (SKU ' + c.sku + ')' : '') + '.\n\n\u2022 Ends the older listing ' + c.itemId + ' (' + money2.format(c.price || 0) + ')\n\u2022 Relists the one they bought (' + i.itemId + ') at its own price' + (i.sku ? ', SKU ' + i.sku : '');
+  if (!confirm(msg)) return;
+  btn.disabled = true; btn.textContent = 'Swapping\u2026';
+  try {
+    const r = await fetch('/api/orders/swap', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ orderId: o.id, soldItemId: i.itemId, oldItemId: c.itemId, oldSku: c.sku, oldTitle: c.title }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || 'Swap failed');
+    i.swap = { oldItem: c.itemId, oldSku: c.sku, oldTitle: c.title, oldPrice: c.price, newItem: j.newItem, endOk: !!j.endOk };
+    delete swapCands[i.itemId];
+    Object.keys(swapCands).forEach(k2 => { swapCands[k2] = swapCands[k2].filter(z => z.itemId !== c.itemId); });   // that older one is gone now
+    render();
+    if (!j.endOk) alert('The one they bought is relisted, but eBay did not confirm the older listing ended: ' + (j.endError || '') + '\nUse End it now on the order.');
+  } catch (e) { alert(e.message); btn.disabled = false; btn.textContent = 'Swap'; }
+}
+async function loadSwaps() {   // in the background: to-ship orders only, each item asked once
+  if (swapBusy) return; swapBusy = true;
+  try {
+    const lines = [];
+    orders.forEach(o => { const k = kind(o); if (k !== 'toship' && k !== 'partial') return; o.items.forEach(i => { if (i.itemId && !i.swap && !swapAsked.has(i.itemId)) lines.push({ orderId: o.id, itemId: i.itemId, title: i.title, sku: i.sku }); }); });
+    const note = (t) => setText('o-swapnote', t);
+    const toShip = orders.reduce((n, o) => n + ((kind(o) === 'toship' || kind(o) === 'partial') ? o.items.filter(i => i.itemId).length : 0), 0);
+    if (!toShip) { note('Swap check: no to-ship orders right now (Swap only shows on orders that haven\u2019t shipped).'); return; }
+    if (lines.length) note('Swap check: looking for older listings of ' + toShip + ' to-ship item' + (toShip === 1 ? '' : 's') + '\u2026');
+    for (let k = 0; k < lines.length; k += 30) {
+      const part = lines.slice(k, k + 30);
+      const r = await fetch('/api/orders/swap-candidates', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lines: part }) }).catch(() => null);
+      const j = r && r.ok ? await r.json().catch(() => null) : null;
+      if (!j) { const e = r ? await r.json().catch(() => ({})) : {}; note('Swap check didn\u2019t finish: ' + (e.error || (r ? 'server ' + r.status : 'no connection')) + ' \u2014 reload to try again.'); return; }
+      part.forEach(l => swapAsked.add(l.itemId));
+      Object.assign(swapCands, j.candidates || {});
+      if (Object.keys(j.candidates || {}).length) render();
+    }
+    const found = Object.keys(swapCands).length;
+    note('Swap check: ' + toShip + ' to-ship item' + (toShip === 1 ? '' : 's') + ' checked \u00b7 ' + (found ? found + ' with an older listing live \u2014 see the yellow lines' : 'no older listings of the same part found'));
+  } finally { swapBusy = false; }
+}
+
+// ─── v320: PHOTOS ────────────────────────────────────────────────────────────
+// Asks the server for the photos it doesn't have yet, 40 at a time. The server
+// asks eBay once per item and remembers it.
+function setPhoto(im, u) {   // bigger picture when eBay has one, else the one we have
+  im.dataset.set = '1';
+  const big = String(u).replace(/\/s-l\d+\./i, '/s-l500.');
+  if (big !== u) im.onerror = () => { im.onerror = null; im.src = u; };
+  im.src = big;
+}
+const thumbs = {};          // itemId → photo URL (or null if eBay had none)
+let thumbsBusy = false, thumbsAgain = false;
+async function loadThumbs() {
+  if (thumbsBusy) { thumbsAgain = true; return; }   // v405: a search/filter that happens mid-load is picked up when this round ends
+  thumbsBusy = true;
+  try {
+    do {
+      thumbsAgain = false; let failed = false;
+      const need = [...new Set([...document.querySelectorAll('img.o-thumb[data-item]')].filter(i => !i.dataset.set).map(i => i.dataset.item).filter(id => !(id in thumbs)))];
+      for (let k = 0; k < need.length; k += 40) {
+        const d = await getJSON('/api/items/thumbs?ids=' + need.slice(k, k + 40).join(','));
+        if (!d || !d.thumbs) { failed = true; break; }
+        Object.assign(thumbs, d.thumbs);
+        document.querySelectorAll('img.o-thumb[data-item]').forEach(im => { const u = thumbs[im.dataset.item]; if (u && !im.dataset.set) setPhoto(im, u); });
+      }
+      // rows drawn since (a new search) that already have a known photo
+      document.querySelectorAll('img.o-thumb[data-item]').forEach(im => { const u = thumbs[im.dataset.item]; if (u && !im.dataset.set) setPhoto(im, u); });
+      if (!failed && !thumbsAgain && [...document.querySelectorAll('img.o-thumb[data-item]')].some(i => !i.dataset.set && !(i.dataset.item in thumbs))) thumbsAgain = true;
+    } while (thumbsAgain);
+  } finally { thumbsBusy = false; }
+}
+
+// ─── v320: ORDER DETAIL ──────────────────────────────────────────────────────
+// Opens over the list (the phone's Back button closes it). Shows each item like
+// its eBay listing: photos, title, price, condition, item specifics, description.
+function openOrder(id) { if (location.hash !== '#order=' + id) location.hash = 'order=' + id; else showDetail(id); }
+function closeDetail() { if (location.hash.startsWith('#order=')) history.back(); else hideDetail(); }
+function hideDetail() { document.getElementById('detail').classList.remove('open'); document.body.style.overflow = ''; }
+window.addEventListener('hashchange', () => { const m = /^#order=(.+)$/.exec(location.hash); if (m) showDetail(decodeURIComponent(m[1])); else hideDetail(); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && document.getElementById('detail').classList.contains('open')) closeDetail(); });
+
+function el(tag, cls, text) { const n = document.createElement(tag); if (cls) n.className = cls; if (text !== undefined) n.textContent = text; return n; }
+
+async function showDetail(id) {
+  const o = orders.find(x => x.id === id);
+  const box = document.getElementById('d-content');
+  document.getElementById('detail').classList.add('open');
+  document.body.style.overflow = 'hidden';
+  box.textContent = '';
+  if (!o) { box.append(el('div', 'd-msg', 'That order isn\u2019t in the dates you\u2019re looking at.')); return; }
+  const k = kind(o);
+  const head = el('div', 'd-order');
+  const [d, t] = o.sold.split(' ');
+  head.append(el('div', 'o-total', money2.format(o.total)));
+  const chip = el('span', 'chip ' + CHIP[k][1], CHIP[k][0] + (k !== 'refunded' && o.refunded > 0 ? ' · part refund' : '')); head.append(chip);
+  head.append(el('span', '', 'Sold ' + new Date(d + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }) + ' · ' + t + ' (eBay time)'));
+  head.append(el('span', '', 'Order ' + o.id));
+  if (o.refunded > 0) head.append(el('span', '', 'Refunded ' + money2.format(o.refunded)));
+  box.append(head);
+  if (!o.items.length) { box.append(el('div', 'd-msg', 'The items in this order are still importing.')); return; }
+  for (const it of o.items) {
+    const wrap = el('div', 'd-item');
+    box.append(wrap);
+    if (!it.itemId) { wrap.append(el('div', 'd-title', it.title || '(no title)')); continue; }
+    wrap.append(el('div', 'd-msg', 'Loading the listing from eBay…'));
+    const r = await getJSON('/api/items/' + encodeURIComponent(it.itemId));
+    if (!document.getElementById('detail').classList.contains('open')) return;
+    wrap.textContent = '';
+    const item = r && r.item;
+    if (!item) {
+      wrap.append(el('div', 'd-title', it.title || '(no title)'));
+      if (it.sku) wrap.append(skuEl(it.sku));
+      wrap.append(el('div', 'd-msg', 'eBay didn\u2019t give us this listing' + (r && r.error ? ': ' + r.error : '.')));
+      const a = el('a', 'btn btn-secondary btn-sm', 'Open on eBay'); a.href = 'https://www.ebay.com/itm/' + encodeURIComponent(it.itemId); a.target = '_blank'; a.rel = 'noopener'; wrap.append(a);
+      continue;
+    }
+    const top = el('div', 'd-top');
+    // photos
+    const gal = el('div');
+    const main = el('img', 'd-main'); main.alt = item.title || '';
+    if (item.pictures.length) main.src = item.pictures[0];
+    gal.append(main);
+    if (item.pictures.length > 1) {
+      const strip = el('div', 'd-strip');
+      item.pictures.forEach((u, n) => {
+        const th = el('img', n === 0 ? 'on' : ''); th.src = smallPicUrl(u); th.alt = 'Photo ' + (n + 1); th.loading = 'lazy';
+        th.addEventListener('click', () => { main.src = u; strip.querySelectorAll('img').forEach(x => x.classList.remove('on')); th.classList.add('on'); });
+        strip.append(th);
+      });
+      gal.append(strip);
+    }
+    // facts
+    const info = el('div');
+    info.append(el('div', 'd-title', item.title || it.title || ''));
+    info.append(el('div', 'd-price', money2.format(it.price || item.price || 0) + (it.qty > 1 ? ' × ' + it.qty : '')));
+    const facts = el('dl', 'd-facts');
+    const fact = (k2, v) => { if (v === null || v === undefined || v === '') return; facts.append(el('dt', '', k2)); const dd = el('dd'); if (v instanceof Node) dd.append(v); else dd.textContent = v; facts.append(dd); };
+    fact('SKU', (it.sku || item.sku) ? skuEl(it.sku || item.sku) : null);
+    fact('Condition', item.condition);
+    fact('Condition note', item.conditionNote);
+    fact('Category', item.category ? item.category.split(':').slice(-2).join(' › ') : null);
+    fact('Item number', item.itemId);
+    if (item.started) fact('Listed', new Date(item.started).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) + (item.started && d ? ' · sold after ' + Math.max(0, Math.round((new Date(d + 'T12:00:00') - new Date(item.started)) / 86400000)) + ' days' : ''));
+    info.append(facts);
+    const a = el('a', 'btn btn-secondary btn-sm', 'Open on eBay'); a.href = item.url; a.target = '_blank'; a.rel = 'noopener'; info.append(a);
+    top.append(gal, info);
+    wrap.append(top);
+    // item specifics
+    if (item.specifics && item.specifics.length) {
+      wrap.append(el('div', 'd-h', 'Item specifics'));
+      const sp = el('div', 'd-specs');
+      item.specifics.forEach(x => { const row = el('div'); row.append(el('span', '', x.name), el('span', '', x.value)); sp.append(row); });
+      wrap.append(sp);
+    }
+    // description — shown as on eBay, in a box where no scripts can run
+    if (item.description) {
+      wrap.append(el('div', 'd-h', 'Description'));
+      const f = el('iframe', 'd-desc');
+      f.setAttribute('sandbox', 'allow-same-origin allow-popups');
+      f.setAttribute('title', 'Item description');
+      f.srcdoc = '<!doctype html><html><head><meta charset="utf-8"><base target="_blank"><style>body{margin:12px;font-family:Arial,sans-serif;color:#111;background:#fff}img{max-width:100%;height:auto}</style></head><body>' + item.description + '</body></html>';
+      f.addEventListener('load', () => { try { f.style.height = (f.contentDocument.documentElement.scrollHeight + 4) + 'px'; } catch (e) { f.style.height = '600px'; } });
+      wrap.append(f);
+    }
+  }
+}
+function smallPicUrl(u) { return String(u).replace(/\/s-l\d+\.(jpg|jpeg|png|webp)/i, '/s-l140.$1'); }
+function showMore() { shown += 200; render(); }
+
+
+// v402: the boxed refresh control (same look as Sales and Active). st: { busy, warn, text, title, disabled }
+function setBadge(id, st) {
+  const b = document.getElementById(id); if (!b) return;
+  b.className = 'sample-badge' + (st.busy ? ' busy' : '') + (st.warn ? ' warn' : '');
+  b.textContent = ''; const dot = document.createElement('span'); dot.className = 'dot';
+  b.append(dot, document.createTextNode(st.text)); b.title = st.title || ''; b.disabled = !!st.disabled;
+}
+let ordInfo = null, ordAdmin = false;
+function ordBadge() {
+  const d = ordInfo; if (!d) { setBadge('o-badge', { busy: true, text: 'eBay · checking…', disabled: true }); return; }
+  if (!d.connected) setBadge('o-badge', { warn: true, text: 'eBay · not connected', disabled: true });
+  else if (!d.ready) setBadge('o-badge', { busy: true, text: 'eBay · importing…', title: 'Importing your order details from eBay — this takes a minute, once', disabled: true });
+  else if (d.syncing) setBadge('o-badge', { busy: true, text: 'eBay · updating…', title: 'Updating your orders from eBay', disabled: true });
+  else if (d.lastError) setBadge('o-badge', { warn: true, text: 'eBay · sync problem' + (ordAdmin ? ' · ↻' : ''), title: d.lastError + (ordAdmin ? ' — click to try again' : ''), disabled: !ordAdmin });
+  else setBadge('o-badge', { text: 'eBay · updated ' + timeAgo(d.lastSync) + (ordAdmin ? ' · ↻' : ''), title: ordAdmin ? 'Click to refresh from eBay now. It also refreshes on its own.' : 'Updates on its own', disabled: !ordAdmin });
+}
+async function ordBadgeClick() {
+  if (!ordAdmin || !ordInfo || ordInfo.syncing || !ordInfo.ready) return;
+  ordInfo.syncing = true; ordBadge();
+  try { await fetch('/api/ebay/sync', { method: 'POST' }); } catch (e) { /* the next check shows the state */ }
+  clearTimeout(pollTimer); pollTimer = setTimeout(() => { pageCache.live(); loadOrders(); }, 1500);
+}
+setInterval(ordBadge, 30000);
+async function loadOrders() {
+  const me = await loadMe();
+  if (!me) return;
+  ordAdmin = !!me.isAdmin;
+  const d = await getJSON('/api/orders/list?days=' + days + '&tz=' + encodeURIComponent(EBAY_TZ));
+  document.getElementById('loading').classList.add('hidden');
+  const err = document.getElementById('o-error'); err.style.display = 'none';
+  clearTimeout(pollTimer);
+  if (!d) { ordInfo = { connected: true, ready: true, lastError: 'Could not reach the server', lastSync: null }; ordBadge(); }   // v402
+  if (!d) { err.textContent = 'Could not load your orders.'; err.style.display = 'block'; return; }
+  if (!d.connected) { ordInfo = d; ordBadge(); document.getElementById('o-note').style.display = ''; setText('o-note', 'eBay isn\u2019t connected yet' + ' — connect it in Settings → ' + (me.isAdmin ? 'Admin' : 'eBay') + '.'); orders = []; render(); return; }
+  orders = d.orders || [];
+  // setText('o-note', !d.ready ? 'Importing order details from eBay — this takes a minute, once…'
+  //   : 'From eBay · updated ' + timeAgo(d.lastSync) + (d.syncing ? ' · updating now…' : ''));
+  ordInfo = d; ordBadge();   // v402: the box says it
+  if (d.lastError) { err.textContent = 'eBay sync problem: ' + d.lastError; err.style.display = 'block'; }
+  render();
+  loadSwaps();   // v409
+  const hm = /^#order=(.+)$/.exec(location.hash);                                  // v320: link straight to an order
+  if (hm && !document.getElementById('detail').classList.contains('open')) showDetail(decodeURIComponent(hm[1]));
+  pollTimer = setTimeout(() => { pageCache.live(); loadOrders(); }, !d.ready || d.syncing ? 4000 : 5 * 60000);   // v382: live
+}
+
+document.querySelectorAll('#seg-days button').forEach(b => b.addEventListener('click', () => {
+  days = +b.dataset.days; shown = 100;
+  try { localStorage.setItem('plp_orders_days', days); } catch (e) { /* not critical */ }
+  loadOrders();
+}));
+document.querySelectorAll('#seg-show button').forEach(b => b.addEventListener('click', () => {
+  show = b.dataset.show; shown = 100;
+  try { localStorage.setItem('plp_orders_show', show); } catch (e) { /* not critical */ }
+  render();
+}));
+let searchTimer;
+document.getElementById('o-search').addEventListener('input', () => { clearTimeout(searchTimer); searchTimer = setTimeout(() => { shown = 100; render(); }, 120); });
+pageCache.rerun = () => loadOrders();   // v380: fresh data from eBay → draw the page again
+loadOrders();
+</script>
+</body>
+</html>
