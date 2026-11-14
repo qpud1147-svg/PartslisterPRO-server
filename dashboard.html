@@ -570,7 +570,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v416</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v417</span></div>
   </a>
   <!-- v316: switch pages -->
   <nav class="page-tabs" aria-label="Pages">
@@ -1048,6 +1048,8 @@
             <option value="180">6 months</option><option value="365">1 year</option><option value="730">2 years</option>
           </select></div>
         <div class="set-row"><label style="display:flex;gap:8px;align-items:center;cursor:pointer;"><input type="checkbox" id="os-cond"> Show the condition in View</label></div>
+        <div class="set-row"><label style="display:flex;gap:8px;align-items:center;cursor:pointer;"><input type="checkbox" id="os-pig"> Match pigtails</label>
+          <p class="set-help" style="margin:2px 0 0 24px;">Off: listings whose title has your pigtail words (Settings → Listing → List Pigtail Defaults) are left out of Swap.</p></div>
       </div>
       <div class="set-section">
         <h3>Ship button</h3>
@@ -2212,13 +2214,14 @@ async function loadOrderSettings() {
   const sel = document.getElementById('os-min'); sel.value = String(d.swapMinDays);
   if (sel.value !== String(d.swapMinDays)) { sel.append(new Option(d.swapMinDays + ' days', String(d.swapMinDays))); sel.value = String(d.swapMinDays); }
   document.getElementById('os-cond').checked = !!d.showCondition;
+  document.getElementById('os-pig').checked = !!d.matchPigtails;   // v417
   document.getElementById(d.shipTab === 'same' ? 'os-tab-same' : 'os-tab-new').checked = true;   // v416
   setText('os-note', '');
 }
 async function saveOrderSettings() {
   const btn = document.getElementById('os-save'); btn.disabled = true;
   const r = await fetch('/api/order-settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
-    swapOn: document.getElementById('os-swap-on').checked, swapMinDays: parseInt(document.getElementById('os-min').value, 10) || 0, showCondition: document.getElementById('os-cond').checked, shipTab: document.getElementById('os-tab-same').checked ? 'same' : 'new' }) }).catch(() => null);
+    swapOn: document.getElementById('os-swap-on').checked, swapMinDays: parseInt(document.getElementById('os-min').value, 10) || 0, showCondition: document.getElementById('os-cond').checked, shipTab: document.getElementById('os-tab-same').checked ? 'same' : 'new', matchPigtails: document.getElementById('os-pig').checked }) }).catch(() => null);
   btn.disabled = false;
   setText('os-note', r && r.ok ? 'Saved.' : r && r.status === 404 ? 'Could not save \u2014 the server on Railway is older than v481. Check the deploy.' : 'Could not save (' + (r ? 'server ' + r.status : 'no connection') + ') \u2014 try again.');
   try { localStorage.removeItem('plp_swap_cands'); } catch (e) { /* fine */ }

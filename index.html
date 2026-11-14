@@ -9,7 +9,7 @@
   // refresh, overriding anything init does.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 </script>
-<title>PartsLister Pro v471</title>
+<title>PartsLister Pro v473</title>
 <!-- v409: hover the green L to see exactly which listings (price + shipping) were averaged. -->
 <!-- v408: clearing a listing also clears the low-resolution / unreadable / too-many photo warnings. -->
 <!-- v407: a scan that finds no part number opens No Part Number by itself; a cleared listing starts on Has Part Number. -->
@@ -950,7 +950,7 @@
     <!-- v302: logo goes to the dashboard -->
     <a href="/" title="Dashboard" style="text-decoration:none;color:inherit;">
       <div class="logo"><span>PARTS</span>LISTER</div>
-      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v471</span></div>
+      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v473</span></div>
     </a>
     <!-- v303: removed — the logo is the dashboard button
     <a href="/" class="btn btn-secondary btn-sm" title="Back to your dashboard" style="font-size:11px;padding:4px 10px;text-decoration:none;margin-left:6px;">⌂ Dashboard</a>
@@ -1972,6 +1972,17 @@
             <label>Pigtail Shipping Policy ID</label>
             <input type="text" id="pigtail-shipping-input" placeholder="Policy ID from eBay">
           </div>
+        </div>
+        <div class="field" style="margin-top:8px;">
+          <label>Pigtail title words</label>
+          <input type="text" id="pigtail-title-input" placeholder="Plugs for" maxlength="40">
+          <div style="font-size:10px;color:var(--muted);margin-top:4px;">List Pigtail starts the title with these words. They also mark a listing as a pigtail, so Orders → Swap can leave pigtails out.</div>
+        </div>
+        <div class="field" style="margin-top:8px;">
+          <label>Other words that mean a pigtail</label>
+          <div id="pigtail-spot-list" style="display:flex;flex-direction:column;gap:4px;"></div>
+          <button type="button" onclick="pigSpotAdd('')" style="margin-top:4px;background:none;border:1px solid var(--border);border-radius:4px;color:var(--muted);font-size:11px;padding:3px 10px;cursor:pointer;">+ Add</button>
+          <div style="font-size:10px;color:var(--muted);margin-top:4px;">For old listings titled differently. Each one is an exact phrase — whole words, upper or lower case doesn't matter. "Pigtail" doesn't catch "Pigtails"; add both if you want both.</div>
         </div>
         <div class="field" style="margin-top:8px;">
           <label>Pigtail filler keywords</label>
@@ -6100,6 +6111,8 @@ function openSettings() {
   if (document.getElementById('visual-match-limit')) document.getElementById('visual-match-limit').value = settings.visualMatchLimit || 15;
   if (document.getElementById('visual-match-res')) document.getElementById('visual-match-res').value = String(settings.visualMatchRes || 600);
   if (document.getElementById('pigtail-price-input')) document.getElementById('pigtail-price-input').value = settings.pigtailPrice || '';
+  if (document.getElementById('pigtail-title-input')) document.getElementById('pigtail-title-input').value = settings.pigtailTitleWords || 'Plugs for';   // v473
+  if (document.getElementById('pigtail-spot-list')) { document.getElementById('pigtail-spot-list').textContent = ''; (settings.pigtailSpotWords || []).forEach(w => pigSpotAdd(w)); }
   if (document.getElementById('pigtail-shipping-input')) document.getElementById('pigtail-shipping-input').value = settings.pigtailShippingPolicyId || '';
   if (document.getElementById('exact-exclude-input')) document.getElementById('exact-exclude-input').value = settings.exactExcludeWords === undefined ? DEFAULT_EXACT_EXCLUDE : settings.exactExcludeWords;   // v470
   if (document.getElementById('pigtail-keywords-input')) document.getElementById('pigtail-keywords-input').value = settings.pigtailKeywords === undefined ? DEFAULT_PIGTAIL_FILLERS : settings.pigtailKeywords;   // v468
@@ -6176,6 +6189,8 @@ function saveSettings() {
   settings.visualMatchLimit = document.getElementById('visual-match-limit') ? (parseInt(document.getElementById('visual-match-limit').value) || 15) : 15;
   settings.visualMatchRes   = document.getElementById('visual-match-res') ? (parseInt(document.getElementById('visual-match-res').value) || 600) : 600;
   settings.pigtailPrice     = document.getElementById('pigtail-price-input') ? document.getElementById('pigtail-price-input').value.trim() : '';
+  if (document.getElementById('pigtail-title-input')) settings.pigtailTitleWords = document.getElementById('pigtail-title-input').value.replace(/\s+/g, ' ').trim() || 'Plugs for';   // v473
+  if (document.getElementById('pigtail-spot-list')) settings.pigtailSpotWords = [...document.querySelectorAll('#pigtail-spot-list input')].map(i => i.value.replace(/\s+/g, ' ').trim()).filter(Boolean).filter((w, k, a) => a.findIndex(z => z.toLowerCase() === w.toLowerCase()) === k).slice(0, 40);
   settings.pigtailShippingPolicyId = document.getElementById('pigtail-shipping-input') ? document.getElementById('pigtail-shipping-input').value.trim() : '';
   if (document.getElementById('exact-exclude-input')) settings.exactExcludeWords = document.getElementById('exact-exclude-input').value.trim();   // v470
   if (document.getElementById('pigtail-keywords-input')) settings.pigtailKeywords = document.getElementById('pigtail-keywords-input').value.trim();
@@ -6727,7 +6742,8 @@ function applyPigtail(historyIndex) {
         : ' ' + pigYrRangeForTitle[1])
     : '';
   const pigEmojiPfx = getActiveEmoji() ? getActiveEmoji() + ' ' : '';
-  const prefix = pigEmojiPfx + 'Plugs for ' + (pigYearPfx ? pigYearPfx.trim() + ' ' : '');
+  const pigWords = String(settings.pigtailTitleWords || 'Plugs for').trim() || 'Plugs for';   // v473: from Settings → List Pigtail Defaults
+  const prefix = pigEmojiPfx + pigWords + ' ' + (pigYearPfx ? pigYearPfx.trim() + ' ' : '');
   const maxBody = 78 - prefix.length;
   let body = src.title || src.label || src.pn || '';
   // Strip leading emoji if present
@@ -6739,6 +6755,7 @@ function applyPigtail(historyIndex) {
     .replace(/\b(19|20)\d{2}\b/g, '')
     .replace(/\b\d{2}\b(?=\s|$)/g, '')
     .replace(/^(?:pigtail\s+)?(?:plugs for\s*)?/i, '')
+    .replace(new RegExp('^' + pigWords.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*', 'i'), '')
     .replace(/\s{2,}/g, ' ').trim();
   if (maxBody > 0 && body.length > maxBody) body = body.slice(0, maxBody).replace(/\s\S*$/, '').trim();
   const pigtailTitle = fitTitle((prefix + body).trim(), 78);
@@ -6967,6 +6984,16 @@ function setListAnotherMode(m) {
   const f = document.getElementById('la-mode-flip'), d = document.getElementById('la-mode-dup');
   [[f, 'flip'], [d, 'dup']].forEach(([b, k]) => { if (!b) return; const on = window._laMode === k; b.style.background = on ? 'var(--accent)' : 'var(--surface)'; b.style.color = on ? '#000' : 'var(--muted)'; b.style.border = '1px solid ' + (on ? 'var(--accent)' : 'var(--border)'); });
   renderOtherSideHistory();
+}
+// v473: Settings → "Other words that mean a pigtail" rows
+function pigSpotAdd(w) {
+  const box = document.getElementById('pigtail-spot-list'); if (!box) return;
+  const row = document.createElement('div'); row.style.cssText = 'display:flex;gap:6px;align-items:center;';
+  const inp = document.createElement('input'); inp.type = 'text'; inp.value = w || ''; inp.placeholder = 'e.g. Pigtail'; inp.maxLength = 40; inp.style.flex = '1';
+  const x = document.createElement('button'); x.type = 'button'; x.textContent = '\u00d7'; x.title = 'Remove';
+  x.style.cssText = 'background:none;border:1px solid var(--border);border-radius:4px;color:var(--muted);padding:2px 9px;cursor:pointer;';
+  x.onclick = () => row.remove();
+  row.append(inp, x); box.append(row); if (!w) inp.focus();
 }
 function toggleOtherSideMenu() {
   const menu = document.getElementById('otherside-menu');
@@ -9943,19 +9970,65 @@ function _liveOp(op) {
     localStorage.setItem('plp_live_ops', JSON.stringify(o));
   } catch (e) { /* fine — the Active page just shows the old list until it checks eBay */ }
 }
+// v472: the old listing must really end — the server checks with eBay (and retries). Until it's confirmed, the item is kept
+// in a "still to end" list, so a closed tab or a missed request can't leave it live without you knowing.
+const _rlPendKey = 'plp_relaunch_pending';
+function _rlPend() { try { return JSON.parse(localStorage.getItem(_rlPendKey) || '[]') || []; } catch (e) { return []; } }
+function _rlPendSet(a) { try { localStorage.setItem(_rlPendKey, JSON.stringify(a)); } catch (e) { /* fine */ } _rlWarn(); }
 async function _relaunchEndOld() {
   const r = window._relaunch; if (!r) return;
   window._relaunch = null;
   if (r.ended) return;   // v435: it had already ended
+  _rlPendSet(_rlPend().filter(p => p.itemId !== r.itemId).concat([{ itemId: r.itemId, title: r.title, sku: r.sku || '', price: Number(r.price) || 0, image: r.image || null, start: r.start || null, at: Date.now() }]));
+  await _rlEndOne(r, false);
+}
+async function _rlEndOne(r, manual) {
   try {
-    const x = await fetch('/api/relaunch/end/' + encodeURIComponent(r.itemId), { method: 'POST' });
+    const x = await fetch('/api/relaunch/end/' + encodeURIComponent(r.itemId), { method: 'POST', keepalive: true });
     const j = await x.json().catch(() => ({}));
     if (!x.ok) throw new Error(j.error || ('server ' + x.status));
+    _rlPendSet(_rlPend().filter(p => p.itemId !== r.itemId));
     _liveOp({ remove: [r.itemId] });   // v438
     try { const eo = JSON.parse(localStorage.getItem('plp_ended_ops') || '[]') || []; eo.push({ itemId: r.itemId, title: r.title, sku: r.sku || '', price: Number(r.price) || 0, qty: 1, image: r.image || null, start: r.start || null, endedAt: new Date().toISOString() }); localStorage.setItem('plp_ended_ops', JSON.stringify(eo)); } catch (e) { /* Ended just waits for eBay's own list */ }   // v443: it shows on Active > Ended at once
-    showNotif('\u2713 Old listing ' + r.itemId + ' ended');
-  } catch (e) { showNotif('\u26a0 The new listing is live, but the old one (' + r.itemId + ') did not end: ' + (e.message || 'try again') + ' \u2014 end it on eBay', true); }
+    showNotif('\u2713 Old listing ' + r.itemId + ' ended (checked with eBay)');
+    return true;
+  } catch (e) {
+    _rlPendSet(_rlPend().map(p => p.itemId === r.itemId ? Object.assign({}, p, { err: e.message || 'not confirmed' }) : p));
+    showNotif('\u26a0 The old listing ' + r.itemId + ' did NOT end: ' + (e.message || 'try again') + ' \u2014 use End it now at the top', true);
+    return false;
+  }
 }
+// a warning bar that stays until every relaunched-from listing is confirmed ended
+function _rlWarn() {
+  let w = document.getElementById('relaunch-warn');
+  const list = _rlPend().filter(p => p.err || Date.now() - p.at > 60000);   // failed, or never confirmed within a minute
+  if (!list.length) { if (w) w.remove(); return; }
+  if (!w) {
+    w = document.createElement('div'); w.id = 'relaunch-warn';
+    w.style.cssText = 'background:rgba(220,60,60,0.12);border-bottom:2px solid var(--danger,#e55);padding:8px 16px;font-size:13px;display:flex;flex-direction:column;gap:6px;';
+    const anchor = document.getElementById('relaunch-banner'); if (anchor && anchor.parentNode) anchor.parentNode.insertBefore(w, anchor); else document.body.prepend(w);
+  }
+  w.textContent = '';
+  list.forEach(p => {
+    const row = document.createElement('div'); row.style.cssText = 'display:flex;align-items:center;gap:10px;flex-wrap:wrap;';
+    const t = document.createElement('span'); t.innerHTML = '<b>\u26a0 Still live after relaunch:</b> ';
+    const a = document.createElement('a'); a.href = 'https://www.ebay.com/itm/' + encodeURIComponent(p.itemId); a.target = '_blank'; a.rel = 'noopener'; a.textContent = p.itemId + ' \u2014 ' + String(p.title || '').slice(0, 60);
+    t.append(a); if (p.err) { const e = document.createElement('small'); e.style.color = 'var(--muted)'; e.textContent = ' (' + p.err + ')'; t.append(e); }
+    const end = document.createElement('button'); end.type = 'button'; end.className = 'btn-secondary'; end.textContent = 'End it now';
+    end.style.cssText = 'background:var(--accent);color:#000;border:none;border-radius:4px;padding:4px 10px;font-weight:700;cursor:pointer;';
+    end.onclick = async () => { end.disabled = true; end.textContent = 'Ending\u2026'; const ok = await _rlEndOne(p, true); if (!ok) { end.disabled = false; end.textContent = 'End it now'; } };
+    const dis = document.createElement('button'); dis.type = 'button'; dis.textContent = 'I ended it'; dis.title = 'Hide this warning (only if you ended it on eBay yourself)';
+    dis.style.cssText = 'background:none;border:1px solid var(--border);color:var(--muted);border-radius:4px;padding:4px 10px;cursor:pointer;';
+    dis.onclick = () => _rlPendSet(_rlPend().filter(z => z.itemId !== p.itemId));
+    row.append(t, end, dis); w.append(row);
+  });
+}
+// on load: anything still waiting from before (tab closed mid-way, etc.) gets ended now, or shows the warning
+setTimeout(async () => {
+  const pend = _rlPend(); _rlWarn();
+  for (const p of pend) if (!p.err) await _rlEndOne(p, false);
+  setInterval(_rlWarn, 30000);
+}, 2500);
 function _rlClean(t) { return String(t || '').replace(/[\u{1F000}-\u{1FFFF}\u{2190}-\u{2BFF}\u{FE00}-\u{FE0F}\u200D]/gu, ' ').replace(/\s+/g, ' ').trim(); }
 function _rlIsYears(v) { v = String(v).trim(); return /^(19|20)\d\d(\s*[-\u2013\u2014\/]\s*((19|20)?\d\d))?$/.test(v) || /^\d\d\s*[-\u2013\u2014\/]\s*\d\d$/.test(v); }
 function _rlPickPN(c) { const plain = c.filter(v => !/[\s\-]/.test(v)); if (plain.length) return plain.reduce((a, b) => b.length > a.length ? b : a); return c[0] || ''; }

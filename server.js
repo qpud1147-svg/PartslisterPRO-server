@@ -1,4 +1,5 @@
-// PartsLister Pro server — v483
+// PartsLister Pro server — v484
+// v484: Swap leaves pigtails out (titles with the Listing Tool's pigtail words) unless Settings → Orders → Match pigtails is on.
 // v483: Swap matches whole part numbers only (read like the photo-scan prompt), never a piece in the middle of a longer number.
 // v482: Orders settings — shipTab: 'new' (a new tab every time) or 'same' (one eBay tab, reused).
 // v481: Orders settings (Settings → Orders): Swap on/off, how much older the other listing must be, show condition in View.
@@ -2057,7 +2058,7 @@ function swapPartNumbers(title, specifics) {   // the sold listing's numbers: ti
 }
 function swapWords(title) { return new Set(String(title || '').toUpperCase().replace(/[^A-Z0-9 ]/g, ' ').split(/\s+/).filter(w => w.length >= 3 && !/^(OEM|USED|GENUINE|ORIGINAL|NEW|THE|AND|FOR|WITH)$/.test(w))); }
 // v481: Settings → Orders
-const ORDER_SETTINGS_DEFAULT = { swapOn: true, swapMinDays: 30, showCondition: false, shipTab: 'new' };
+const ORDER_SETTINGS_DEFAULT = { swapOn: true, swapMinDays: 30, showCondition: false, shipTab: 'new', matchPigtails: false };
 const orderSettingsOf = (st) => Object.assign({}, ORDER_SETTINGS_DEFAULT, (st && st.orderSettings) || {});
 app.get('/api/order-settings', requireUser, async (req, res) => {
   try { res.json(orderSettingsOf(await getUserSettings(req.user.id))); } catch (e) { res.status(500).json({ error: 'Could not load Orders settings' }); }
@@ -2067,15 +2068,21 @@ app.post('/api/order-settings', requireUser, express.json({ limit: '5kb' }), asy
     const b = req.body || {};
     const d = (await readUserData(req.user.id)) || { settings: {}, history: { pigtail: [], otherside: [] } };
     d.settings = d.settings || {};
-    d.settings.orderSettings = { swapOn: b.swapOn !== false, swapMinDays: Math.max(0, Math.min(3650, parseInt(b.swapMinDays, 10) || 0)), showCondition: b.showCondition === true, shipTab: b.shipTab === 'same' ? 'same' : 'new' };
+    d.settings.orderSettings = { swapOn: b.swapOn !== false, swapMinDays: Math.max(0, Math.min(3650, parseInt(b.swapMinDays, 10) || 0)), showCondition: b.showCondition === true, shipTab: b.shipTab === 'same' ? 'same' : 'new', matchPigtails: b.matchPigtails === true };
     await writeUserData(req.user.id, d);
     res.json(Object.assign({ ok: true }, d.settings.orderSettings));
   } catch (e) { console.error('[order settings]', e.message); res.status(500).json({ error: 'Could not save' }); }
 });
 app.post('/api/orders/swap-candidates', requireUser, express.json({ limit: '100kb' }), async (req, res) => {
   try {
-    const os = orderSettingsOf(await getUserSettings(req.user.id));   // v481
+    const ust = await getUserSettings(req.user.id);
+    const os = orderSettingsOf(ust);   // v481
     if (!os.swapOn) return res.json({ candidates: {}, off: true });
+    // v484: pigtail titles — the List Pigtail title words + the extra words, each an exact whole-word phrase
+    const pigPhrases = [ust.pigtailTitleWords || 'Plugs for'].concat(Array.isArray(ust.pigtailSpotWords) ? ust.pigtailSpotWords : []).map(w => String(w || '').trim()).filter(Boolean);
+    const pigRe = os.matchPigtails || !pigPhrases.length ? null
+      : new RegExp('(^|[^A-Za-z0-9])(' + pigPhrases.map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+')).join('|') + ')(?=$|[^A-Za-z0-9])', 'i');
+    const isPig = (t) => !!(pigRe && pigRe.test(String(t || '')));
     const minGap = (os.swapMinDays || 0) * 86400000;
     const lines = ((req.body || {}).lines || []).slice(0, 60).filter(l => /^\d{6,20}$/.test(String(l.itemId || '')));
     if (!lines.length) return res.json({ candidates: {} });
@@ -2086,12 +2093,13 @@ app.post('/api/orders/swap-candidates', requireUser, express.json({ limit: '100k
       const id = String(line.itemId);
       const d = (await getItemData(req.user.id, id)).data || null;
       const title = (d && d.title) || line.title || '';
+      if (isPig(title)) continue;   // v484: a pigtail sold — no swap
       const started = d && d.started ? Date.parse(d.started) : null;
       const pns = swapPartNumbers(title, d && d.specifics);
       const sw = swapWords(title);
       const found = [];
       for (const x of liveNorm) {
-        if (x.l.itemId === id || !(x.l.qty > 0)) continue;
+        if (x.l.itemId === id || !(x.l.qty > 0) || isPig(x.l.title)) continue;   // v484: never offer a pigtail
         const ls = x.l.start ? Date.parse(x.l.start) : null;
         if (started && ls && ls >= started) continue;   // only listings that are OLDER than the one that sold
         if (started && ls && started - ls < minGap) continue;   // v481: …by at least the amount set in Settings → Orders
