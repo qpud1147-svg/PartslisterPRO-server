@@ -570,7 +570,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v413</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v414</span></div>
   </a>
   <!-- v316: switch pages -->
   <nav class="page-tabs" aria-label="Pages">
@@ -812,6 +812,7 @@
       <button role="tab" id="tab-account" aria-selected="true" onclick="showSettingsTab('account')">Account</button>
       <button role="tab" id="tab-messages" aria-selected="false" onclick="showSettingsTab('messages')">Messages</button>   <!-- v330 -->
       <button role="tab" id="tab-listing" aria-selected="false" onclick="showSettingsTab('listing')">Listing</button>
+      <button role="tab" id="tab-orders" aria-selected="false" onclick="showSettingsTab('orders')">Orders</button>   <!-- v414 -->
       <button role="tab" id="tab-admin" aria-selected="false" onclick="showSettingsTab('admin')"><span id="tab-admin-l">eBay</span></button>
     </div>
 
@@ -1034,6 +1035,22 @@
         <div class="set-buttons"><button class="btn btn-primary btn-sm" id="ms-save-btn" onclick="saveMsgSettings()">Save</button></div>
       </div>
     </div></div>
+
+    <!-- v414: ORDERS SETTINGS -->
+    <div class="settings-panel" id="panel-orders" role="tabpanel">
+      <div class="set-section">
+        <h3>Swap</h3>
+        <p class="set-help">When a newer listing sells and an older listing of the same part is still live, the Orders page offers to swap them: ship the buyer the older one, end it, and relist the one they bought.</p>
+        <div class="set-row"><label style="display:flex;gap:8px;align-items:center;cursor:pointer;"><input type="checkbox" id="os-swap-on"> Look for older listings to swap</label></div>
+        <div class="set-row"><label style="display:block;margin-bottom:4px;">Only when the other listing is older by at least</label>
+          <select id="os-min" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:7px 10px;border-radius:4px;">
+            <option value="0">Any amount</option><option value="7">1 week</option><option value="14">2 weeks</option><option value="30">1 month</option><option value="90">3 months</option>
+            <option value="180">6 months</option><option value="365">1 year</option><option value="730">2 years</option>
+          </select></div>
+        <div class="set-row"><label style="display:flex;gap:8px;align-items:center;cursor:pointer;"><input type="checkbox" id="os-cond"> Show the condition in View</label></div>
+        <div class="set-buttons"><button class="btn btn-primary btn-sm" id="os-save" onclick="saveOrderSettings()">Save</button> <span class="set-help" id="os-note" style="margin:0;"></span></div>
+      </div>
+    </div>
 
     <!-- v448: LISTING SETTINGS — the Listing Tool's own settings screen, shown here (same saved settings) -->
     <div class="settings-panel" id="panel-listing" role="tabpanel">
@@ -1951,7 +1968,7 @@ function openSettings(tab) {
   document.getElementById('tab-admin-l').textContent = me && me.isAdmin ? 'Admin' : 'eBay';
   document.getElementById('settings-overlay').classList.add('open');
   // showSettingsTab(tab === 'admin' && me && me.isAdmin ? 'admin' : 'account');
-  showSettingsTab(tab === 'admin' ? 'admin' : tab === 'messages' ? 'messages' : tab === 'listing' ? 'listing' : 'account');   // v330, v410: everyone has the eBay tab
+  showSettingsTab(tab === 'admin' ? 'admin' : tab === 'messages' ? 'messages' : tab === 'listing' ? 'listing' : tab === 'orders' ? 'orders' : 'account');   // v330, v410: everyone has the eBay tab
 }
 
 function closeSettings() {
@@ -1962,13 +1979,14 @@ document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeSetti
 
 function showSettingsTab(tab) {
   // ['account', 'admin'].forEach(t => {
-  ['account', 'messages', 'listing', 'admin'].forEach(t => {   // v330: + messages
+  ['account', 'messages', 'listing', 'orders', 'admin'].forEach(t => {   // v330: + messages; v414: + orders
     document.getElementById('tab-' + t).setAttribute('aria-selected', t === tab ? 'true' : 'false');
     document.getElementById('panel-' + t).classList.toggle('active', t === tab);
   });
   if (tab === 'admin') { loadEbayStatus(); if (me && me.isAdmin) { document.getElementById('adm-inner').style.display = 'flex'; admInner(window._admTab || 'general'); } }
   if (tab === 'account') { loadKeys(); checkDefaults(); loadEbayStatus(); }   // v326, v410; RuName steps live here now
   if (tab === 'messages') { msHome(); loadMsgSettings(); }   // v330
+  if (tab === 'orders') loadOrderSettings();   // v414
   if (tab === 'listing') { const f = document.getElementById('frame-listing'); if (!f.getAttribute('src')) f.src = '/list?embed=1'; }   // v448
 }
 
@@ -2178,6 +2196,25 @@ async function loadMsgSettings() {
 function useDefaultInstructions() {
   document.getElementById('ms-instructions').value = msDefault;
   setText('ms-instr-note', 'Default filled in — click Save to keep it.');
+}
+// v414: Settings → Orders
+async function loadOrderSettings() {
+  const r = await fetch('/api/order-settings').catch(() => null);
+  const d = r && r.ok ? await r.json().catch(() => null) : null;
+  if (!d) { setText('os-note', 'Could not load — upload the newest server.js'); return; }
+  document.getElementById('os-swap-on').checked = d.swapOn !== false;
+  const sel = document.getElementById('os-min'); sel.value = String(d.swapMinDays);
+  if (sel.value !== String(d.swapMinDays)) { sel.append(new Option(d.swapMinDays + ' days', String(d.swapMinDays))); sel.value = String(d.swapMinDays); }
+  document.getElementById('os-cond').checked = !!d.showCondition;
+  setText('os-note', '');
+}
+async function saveOrderSettings() {
+  const btn = document.getElementById('os-save'); btn.disabled = true;
+  const r = await fetch('/api/order-settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+    swapOn: document.getElementById('os-swap-on').checked, swapMinDays: parseInt(document.getElementById('os-min').value, 10) || 0, showCondition: document.getElementById('os-cond').checked }) }).catch(() => null);
+  btn.disabled = false;
+  setText('os-note', r && r.ok ? 'Saved.' : 'Could not save — try again.');
+  try { localStorage.removeItem('plp_swap_cands'); } catch (e) { /* fine */ }
 }
 async function saveMsgSettings() {
   const btn = document.getElementById('ms-save-btn'); btn.disabled = true;
