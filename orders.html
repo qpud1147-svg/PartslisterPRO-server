@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Orders v408</title>
+<title>PartsLister Pro Orders v409</title>
 <!-- v382: switching views is instant; browser reload / Refresh really reloads. v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
 <!-- PartsLister Pro — Orders page (v319: new). Your sold items from eBay, newest first.
      v320: item photos, and click an order to see the listing (photos, description, item specifics).
@@ -144,6 +144,13 @@
   .ebl-price { font-size: 20px; font-weight: 700; }
   .ebl-price small { font-size: 12px; font-weight: 400; color: var(--muted); margin-left: 6px; }
   .ebl-sub { color: var(--muted); font-size: 12px; }
+  /* v409: Swap */
+  .swap { margin-top: 6px; padding: 6px 8px; border: 1px solid var(--accent); border-radius: 6px; font-size: 12px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; background: rgba(245,166,35,0.07); }
+  .swap b { color: var(--accent); }
+  .swap .btn-sm { padding: 3px 10px; font-size: 11px; }
+  .swap.done { border-color: var(--success, #3c9); background: rgba(60,200,140,0.08); }
+  .swap.done b { color: var(--success, #3c9); }
+  .swap.bad { border-color: var(--danger, #e55); background: rgba(230,80,80,0.08); }
   .ebl { position: relative; }
   .ebl-n { position: absolute; right: 12px; top: 8px; font-size: 17px; font-weight: 700; color: var(--muted, #888); }
   .ebl-sku-l { font-size: 17px; font-weight: 700; color: var(--accent); letter-spacing: 0.3px; line-height: 1.2; word-break: break-word; }
@@ -223,7 +230,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v408</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v409</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -468,6 +475,7 @@ function render() {
     const skuLine = (i) => { const s2 = document.createElement('div'); s2.className = 'ebl-sku-l'; const sm = document.createElement('small'); sm.textContent = 'SKU'; s2.append(sm, document.createTextNode(i.sku)); return s2; };
     if (o.items[0] && o.items[0].sku) body.append(skuLine(o.items[0]));
     else if (o.items[0]) { const ns = document.createElement('div'); ns.className = 'ebl-sub'; ns.style.opacity = '.55'; ns.textContent = 'No SKU'; body.append(ns); }
+    o.items.forEach(i => { const sb = swapBox(o, i); if (sb) body.append(sb); });   // v409
     o.items.slice(1).forEach(i => {
       const x = document.createElement('div'); x.className = 'ebl-sub'; x.style.marginTop = '4px';
       x.append(document.createTextNode('+ ' + (i.qty > 1 ? i.qty + '× ' : '') + (i.title || '(no title)') + (i.sku ? ' · SKU ' + i.sku : '')));
@@ -479,6 +487,76 @@ function render() {
   });
   document.getElementById('o-more').style.display = list.length > shown ? '' : 'none';
   loadThumbs();   // v320
+}
+
+// ─── v409: SWAP — a newer listing sold while an older one of the same part is still live ────────────
+// Ship the buyer the OLDER item, end the older listing, and relist the one they bought (it's still on the shelf).
+let swapCands = {}, swapAsked = new Set(), swapBusy = false;
+const ageOf = (iso) => { const d = Math.floor((Date.now() - Date.parse(iso)) / 86400000); return d >= 365 ? (d / 365).toFixed(1).replace(/\.0$/, '') + ' yr' : d >= 60 ? Math.round(d / 30) + ' mo' : d + ' days'; };
+function swapBox(o, i) {
+  if (!i.itemId) return null;
+  const mk = (cls) => { const b = document.createElement('div'); b.className = 'swap' + (cls ? ' ' + cls : ''); b.addEventListener('click', e => e.stopPropagation()); return b; };
+  if (i.swap) {   // already swapped: say which item to ship
+    const b = mk(i.swap.endOk ? 'done' : 'bad');
+    const t = document.createElement('span'); t.innerHTML = '<b>\u2194 Swapped</b> \u2014 ship from SKU <b>' + esc(i.swap.oldSku || '(none)') + '</b>';
+    const a = document.createElement('a'); a.href = 'https://www.ebay.com/itm/' + encodeURIComponent(i.swap.oldItem); a.target = '_blank'; a.rel = 'noopener'; a.textContent = 'older listing ' + i.swap.oldItem;
+    b.append(t, a);
+    if (!i.swap.endOk) {
+      const w = document.createElement('span'); w.textContent = '\u26a0 the older listing may still be live';
+      const end = document.createElement('button'); end.type = 'button'; end.className = 'btn btn-secondary btn-sm'; end.textContent = 'End it now';
+      end.onclick = async () => {
+        end.disabled = true; end.textContent = 'Ending\u2026';
+        const r = await fetch('/api/relaunch/end/' + encodeURIComponent(i.swap.oldItem), { method: 'POST' }).catch(() => null);
+        if (r && r.ok) { await fetch('/api/orders/swap/end-ok', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ oldItem: i.swap.oldItem }) }).catch(() => {}); i.swap.endOk = true; render(); }
+        else { const j = r ? await r.json().catch(() => ({})) : {}; alert('It did not end: ' + (j.error || 'try again, or end it on eBay')); end.disabled = false; end.textContent = 'End it now'; }
+      };
+      b.append(w, end);
+    }
+    return b;
+  }
+  const k = kind(o); if (k !== 'toship' && k !== 'partial') return null;
+  const c = (swapCands[i.itemId] || [])[0]; if (!c) return null;
+  const b = mk('');
+  const t = document.createElement('span');
+  t.innerHTML = '<b>\u2194 Older one live</b> \u2014 ' + money2.format(c.price || 0) + ' \u00b7 listed ' + esc(ageOf(c.start)) + ' ago' + (c.sku ? ' \u00b7 SKU ' + esc(c.sku) : '') + (c.match === 'title' ? ' \u00b7 similar title' : '');
+  const v = document.createElement('a'); v.className = 'btn btn-secondary btn-sm'; v.textContent = 'View'; v.href = c.url || ('https://www.ebay.com/itm/' + c.itemId); v.target = '_blank'; v.rel = 'noopener';
+  const sw = document.createElement('button'); sw.type = 'button'; sw.className = 'btn btn-primary btn-sm'; sw.textContent = 'Swap';
+  sw.onclick = () => doSwap(o, i, c, sw, b);
+  b.append(t, v, sw);
+  return b;
+}
+function esc(t) { return String(t == null ? '' : t).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch])); }
+async function doSwap(o, i, c, btn, box) {
+  const msg = 'Swap?\n\nShip the buyer the OLDER item' + (c.sku ? ' (SKU ' + c.sku + ')' : '') + '.\n\n\u2022 Ends the older listing ' + c.itemId + ' (' + money2.format(c.price || 0) + ')\n\u2022 Relists the one they bought (' + i.itemId + ') at its own price' + (i.sku ? ', SKU ' + i.sku : '');
+  if (!confirm(msg)) return;
+  btn.disabled = true; btn.textContent = 'Swapping\u2026';
+  try {
+    const r = await fetch('/api/orders/swap', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ orderId: o.id, soldItemId: i.itemId, oldItemId: c.itemId, oldSku: c.sku, oldTitle: c.title }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || 'Swap failed');
+    i.swap = { oldItem: c.itemId, oldSku: c.sku, oldTitle: c.title, oldPrice: c.price, newItem: j.newItem, endOk: !!j.endOk };
+    delete swapCands[i.itemId];
+    Object.keys(swapCands).forEach(k2 => { swapCands[k2] = swapCands[k2].filter(z => z.itemId !== c.itemId); });   // that older one is gone now
+    render();
+    if (!j.endOk) alert('The one they bought is relisted, but eBay did not confirm the older listing ended: ' + (j.endError || '') + '\nUse End it now on the order.');
+  } catch (e) { alert(e.message); btn.disabled = false; btn.textContent = 'Swap'; }
+}
+async function loadSwaps() {   // in the background: to-ship orders only, each item asked once
+  if (swapBusy) return; swapBusy = true;
+  try {
+    const lines = [];
+    orders.forEach(o => { const k = kind(o); if (k !== 'toship' && k !== 'partial') return; o.items.forEach(i => { if (i.itemId && !i.swap && !swapAsked.has(i.itemId)) lines.push({ orderId: o.id, itemId: i.itemId, title: i.title, sku: i.sku }); }); });
+    for (let k = 0; k < lines.length; k += 30) {
+      const part = lines.slice(k, k + 30);
+      const r = await fetch('/api/orders/swap-candidates', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lines: part }) }).catch(() => null);
+      const j = r && r.ok ? await r.json().catch(() => null) : null;
+      if (!j) break;
+      part.forEach(l => swapAsked.add(l.itemId));
+      Object.assign(swapCands, j.candidates || {});
+      if (Object.keys(j.candidates || {}).length) render();
+    }
+  } finally { swapBusy = false; }
 }
 
 // ─── v320: PHOTOS ────────────────────────────────────────────────────────────
@@ -650,6 +728,7 @@ async function loadOrders() {
   ordInfo = d; ordBadge();   // v402: the box says it
   if (d.lastError) { err.textContent = 'eBay sync problem: ' + d.lastError; err.style.display = 'block'; }
   render();
+  loadSwaps();   // v409
   const hm = /^#order=(.+)$/.exec(location.hash);                                  // v320: link straight to an order
   if (hm && !document.getElementById('detail').classList.contains('open')) showDetail(decodeURIComponent(hm[1]));
   pollTimer = setTimeout(() => { pageCache.live(); loadOrders(); }, !d.ready || d.syncing ? 4000 : 5 * 60000);   // v382: live

@@ -1,4 +1,8 @@
-// PartsLister Pro server — v476
+// PartsLister Pro server — v479
+// v479: Orders — Swap. When a newer listing sells and an older listing of the same part is still live, Swap relists the one
+//       that sold and ends the older one (checked with eBay); the order then says which SKU to ship from (order_swaps table).
+// v478: Relaunch end — checks with eBay that the old listing really ended, retries up to 3 times, and reports if it's still live.
+// v477: the 10-day extra lookup (list and find) is removed again — not needed.
 // v476: Messages — (1) the list also asks eBay for every conversation active in the last 10 days, so a new one can't fall outside the 200 loaded;
 //       (2) "you" is matched without caring about upper/lower case; (3) a first message keeps eBay's reply (conversation id) and the page opens it;
 //       (4) /api/threads/find also scans the last 10 days; (5) GET /api/threads/debug?buyer=… shows exactly what eBay returns for that buyer.
@@ -458,6 +462,19 @@ async function setupDatabase() {
       UNIQUE (user_id, item_id)
     );
     -- v455: RETURNS follow-ups — "Needs work" list (refunded, but not ready to relist yet)
+    CREATE TABLE IF NOT EXISTS order_swaps (                                              -- v479: ship the older item, relist the one that sold
+      user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      order_id   TEXT NOT NULL,
+      sold_item  TEXT NOT NULL,
+      old_item   TEXT NOT NULL,
+      old_sku    TEXT NOT NULL DEFAULT '',
+      old_title  TEXT NOT NULL DEFAULT '',
+      old_price  NUMERIC(10,2),
+      new_item   TEXT,
+      end_ok     BOOLEAN NOT NULL DEFAULT TRUE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY (user_id, order_id, sold_item)
+    );
     CREATE TABLE IF NOT EXISTS return_followups (
       id         SERIAL PRIMARY KEY,
       user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -1979,6 +1996,9 @@ app.get('/api/orders/list', requireUser, async (req, res) => {
         LIMIT 3000`,
       [req.user.id, tz, days]
     );
+    const sw = new Map();   // v479
+    try { (await pool.query('SELECT order_id, sold_item, old_item, old_sku, old_title, old_price::float, new_item, end_ok, created_at FROM order_swaps WHERE user_id = $1', [req.user.id])).rows.forEach(z => sw.set(z.order_id + '|' + z.sold_item, z)); } catch (e) { /* table not there yet */ }
+    r.rows.forEach(x => (x.items || []).forEach(i => { const z = sw.get(x.order_id + '|' + i.itemId); if (z) i.swap = { oldItem: z.old_item, oldSku: z.old_sku, oldTitle: z.old_title, oldPrice: z.old_price, newItem: z.new_item, endOk: z.end_ok, at: z.created_at }; }));
     res.json({
       connected: true,
       ready: (conn.orders_v || 0) >= 6,
@@ -1996,6 +2016,76 @@ app.get('/api/orders/list', requireUser, async (req, res) => {
     console.error('[orders list]', e);
     res.status(500).json({ error: 'Could not load orders' });
   }
+});
+
+// ─── v479: SWAP — sold a newer listing while an older one of the same part is still live ─────────
+const swapNorm = (t) => String(t || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+function swapPartNumbers(title, specifics) {   // part-number-looking codes from the title and the part number fields
+  const out = new Set();
+  const add = (v) => String(v || '').split(/[\s,;|/()]+/).forEach(tok => {
+    const n = swapNorm(tok);
+    if (n.length >= 6 && (n.match(/\d/g) || []).length >= 3 && /[A-Z]|\d{7,}/.test(n) && !/^(19|20)\d\d(19|20)?\d\d$/.test(n)) out.add(n);
+  });
+  add(title);
+  (specifics || []).forEach(sp => { if (/part number|mpn|oe\/oem/i.test(sp.name) && !/does not apply|n\/a/i.test(sp.value || '')) add(sp.value); });
+  return [...out];
+}
+function swapWords(title) { return new Set(String(title || '').toUpperCase().replace(/[^A-Z0-9 ]/g, ' ').split(/\s+/).filter(w => w.length >= 3 && !/^(OEM|USED|GENUINE|ORIGINAL|NEW|THE|AND|FOR|WITH)$/.test(w))); }
+app.post('/api/orders/swap-candidates', requireUser, express.json({ limit: '100kb' }), async (req, res) => {
+  try {
+    const lines = ((req.body || {}).lines || []).slice(0, 60).filter(l => /^\d{6,20}$/.test(String(l.itemId || '')));
+    if (!lines.length) return res.json({ candidates: {} });
+    const live = await fetchLiveList(req.user.id, false);
+    const liveNorm = live.map(l => ({ l, n: swapNorm(l.title), w: swapWords(l.title), words: new Set(String(l.title).toUpperCase().split(/[^A-Z0-9]+/).map(swapNorm)) }));
+    const out = {};
+    for (const line of lines) {
+      const id = String(line.itemId);
+      const d = (await getItemData(req.user.id, id)).data || null;
+      const title = (d && d.title) || line.title || '';
+      const started = d && d.started ? Date.parse(d.started) : null;
+      const pns = swapPartNumbers(title, d && d.specifics);
+      const sw = swapWords(title);
+      const found = [];
+      for (const x of liveNorm) {
+        if (x.l.itemId === id || !(x.l.qty > 0)) continue;
+        const ls = x.l.start ? Date.parse(x.l.start) : null;
+        if (started && ls && ls >= started) continue;   // only listings that are OLDER than the one that sold
+        let how = '';
+        if (pns.some(p => x.words.has(p) || (p.length >= 8 && x.n.includes(p)))) how = 'part number';
+        else if (sw.size >= 4) {
+          let common = 0; sw.forEach(w => { if (x.w.has(w)) common++; });
+          if (common / (sw.size + x.w.size - common) >= 0.85) how = 'title';
+        }
+        if (how) found.push({ itemId: x.l.itemId, title: x.l.title, sku: x.l.sku || '', price: x.l.price, start: x.l.start, image: x.l.image, url: x.l.url, match: how });
+      }
+      if (found.length) out[id] = found.sort((a, b) => (a.match === 'part number' ? 0 : 1) - (b.match === 'part number' ? 0 : 1) || String(a.start).localeCompare(String(b.start))).slice(0, 3);
+    }
+    res.json({ candidates: out });
+  } catch (e) { console.error('[swap candidates]', e.message); res.status(502).json({ error: e.message }); }
+});
+app.post('/api/orders/swap', requireUser, express.json({ limit: '10kb' }), async (req, res) => {
+  const uid = req.user.id, b = req.body || {};
+  const soldId = String(b.soldItemId || '').replace(/\D/g, ''), oldId = String(b.oldItemId || '').replace(/\D/g, ''), orderId = String(b.orderId || '').slice(0, 80);
+  if (!soldId || !oldId || !orderId || soldId === oldId) return res.status(400).json({ error: 'Missing the order or the listings.' });
+  try {
+    const st = await listingStatusOf(uid, oldId).catch(() => '');
+    if (st && st !== 'Active') return res.status(409).json({ error: 'The older listing (' + oldId + ') is no longer live, so there is nothing to swap.' });
+    const live = (await fetchLiveList(uid, false)).find(l => l.itemId === oldId) || {};
+    let rel;
+    try { rel = await relistSoldItem(uid, soldId, ''); }
+    catch (e) { return res.status(e.code === 409 ? 409 : 502).json({ error: e.code === 409 ? e.message : 'eBay did not relist the one that sold, so nothing was changed: ' + e.message }); }
+    const end = await endAndVerify(uid, oldId);
+    await pool.query(
+      `INSERT INTO order_swaps (user_id, order_id, sold_item, old_item, old_sku, old_title, old_price, new_item, end_ok) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+       ON CONFLICT (user_id, order_id, sold_item) DO UPDATE SET old_item = EXCLUDED.old_item, old_sku = EXCLUDED.old_sku, old_title = EXCLUDED.old_title, old_price = EXCLUDED.old_price, new_item = EXCLUDED.new_item, end_ok = EXCLUDED.end_ok, created_at = now()`,
+      [uid, orderId, soldId, oldId, String(b.oldSku || live.sku || '').slice(0, 80), String(b.oldTitle || live.title || '').slice(0, 200), Number(live.price) || null, rel.itemId, !!end.ok]);
+    liveCache.delete(uid);
+    res.json({ ok: true, newItem: rel.itemId, endOk: !!end.ok, endError: end.ok ? null : end.error });
+  } catch (e) { console.error('[swap]', e.message); res.status(502).json({ error: e.message }); }
+});
+app.post('/api/orders/swap/end-ok', requireUser, express.json({ limit: '5kb' }), async (req, res) => {   // the older one was ended later (End it now)
+  try { await pool.query('UPDATE order_swaps SET end_ok = TRUE WHERE user_id = $1 AND old_item = $2', [req.user.id, String((req.body || {}).oldItem || '')]); res.json({ ok: true }); }
+  catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // ─── v320: ITEM PHOTOS + LISTING DETAILS ────────────────────────────────────
@@ -2306,19 +2396,6 @@ function threadsBlocked(conn) {
 const convType = (t) => (t === 'ebay' ? 'FROM_EBAY' : 'FROM_MEMBERS');
 const sameUser = (a, b) => !!a && !!b && String(a).toLowerCase() === String(b).toLowerCase();   // v476
 const lastNewSends = new Map();   // v476: userId → the last few first-message replies from eBay (for /api/threads/debug)
-// v476: every conversation eBay has with activity since `days` ago (up to 300)
-async function recentConversations(userId, type, days) {
-  const out = [];
-  const start = new Date(Date.now() - days * 86400000).toISOString(), end = new Date(Date.now() + 3600000).toISOString();
-  for (let offset = 0; offset < 300; offset += 50) {
-    const q = new URLSearchParams({ conversation_type: type, limit: '50', offset: String(offset), start_time: start, end_time: end });
-    const { data } = await restCall(userId, 'GET', '/commerce/message/v1/conversation?' + q);
-    const list = (data && data.conversations) || [];
-    out.push(...list);
-    if (!data || !data.next || list.length < 50) break;
-  }
-  return out;
-}
 const scopeError = (e) => e.status === 403 || /scope|access denied|insufficient permissions/i.test(e.message || '');
 
 // Conversations: ?type=members|ebay&unread=1
@@ -2344,11 +2421,6 @@ app.get('/api/threads', requireUser, async (req, res) => {
       const list = (data && data.conversations) || [];
       raw.push(...list);
       if (!data || !data.next || list.length < 50) break;
-    }
-    // v476: plus everything active in the last 10 days — eBay's paging order isn't guaranteed newest-first
-    if (type === 'FROM_MEMBERS' && req.query.unread !== '1' && req.query.trash !== '1') {
-      try { const seen = new Set(raw.map(c => c.conversationId)); (await recentConversations(req.user.id, type, 10)).forEach(c => { if (!seen.has(c.conversationId)) { seen.add(c.conversationId); raw.push(c); } }); }
-      catch (e) { console.warn('[threads recent]', e.message); }
     }
     {
       raw.forEach(c => {
@@ -2395,13 +2467,6 @@ app.get('/api/threads/find', requireUser, async (req, res) => {
         if (pick) return res.json({ found: pick });
       } catch (e) { console.warn('[thread find]', e.message); }
     }
-    // v476: the filters above didn't find it — look through everything from the last 10 days
-    try {
-      const rec = await recentConversations(req.user.id, 'FROM_MEMBERS', 10);
-      const hit = rec.filter(c => { const lm = c.latestMessage || {}; return sameUser(lm.senderUsername, buyer) || sameUser(lm.recipientUsername, buyer); });
-      const pick = hit.find(c => itemId && c.referenceId === itemId) || hit[0];
-      if (pick) return res.json({ found: map(pick) });
-    } catch (e) { console.warn('[thread find recent]', e.message); }
     res.json({ found: null });
   } catch (e) { console.error('[thread find]', e.message); res.json({ found: null, error: e.message }); }
 });
@@ -2429,8 +2494,6 @@ app.get('/api/threads/debug', requireUser, async (req, res) => {
     await run('Normal list (what the Messages page loads)', {}, 4);
     if (buyer) await run('Filter: other_party_username', { other_party_username: buyer });
     if (itemId) await run('Filter: this listing', { reference_type: 'LISTING', reference_id: itemId });
-    const start = new Date(Date.now() - 10 * 86400000).toISOString(), end = new Date(Date.now() + 3600000).toISOString();
-    await run('Last 10 days', { start_time: start, end_time: end }, 6);
     await run('Unread only', { conversation_status: 'UNREAD' });
     await run('Archived', { conversation_status: 'ARCHIVED' });
     res.json(out);
@@ -4518,14 +4581,33 @@ app.get('/api/relaunch/photo/:id/:n', requireUser, async (req, res) => {
   } catch (e) { console.error('[relaunch photo]', e.message); res.status(502).json({ error: 'Could not get that photo: ' + e.message }); }
 });
 // the old listing is ended only after the new one is live (the Listing Tool calls this after a successful launch)
+// v478: end the old listing, then ASK eBay whether it really ended; try once more if not; say so honestly
+async function listingStatusOf(userId, id) {
+  const xml = await tradingCall(userId, 'GetItem', `<ItemID>${id}</ItemID><OutputSelector>Item.SellingStatus.ListingStatus</OutputSelector>`, '100');
+  return xmlTag(xmlTag(xmlTag(xml, 'Item') || '', 'SellingStatus') || '', 'ListingStatus') || '';
+}
+async function endAndVerify(userId, id) {   // v479: shared by Relaunch and Swap
+  let lastErr = '', status = '';
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt) await new Promise(r => setTimeout(r, attempt * 3000));
+    try { await tradingCall(userId, 'EndFixedPriceItem', `<ItemID>${id}</ItemID><EndingReason>OtherListingError</EndingReason>`, '100'); }
+    catch (e) { lastErr = e.message; if (!/already (been )?(closed|ended)|has ended|is closed/i.test(e.message)) console.warn('[end] try ' + (attempt + 1) + ':', e.message); }
+    try { status = await listingStatusOf(userId, id); } catch (e) { status = ''; console.warn('[end] check:', e.message); }
+    if (status && status !== 'Active') break;   // Completed / Ended — done
+  }
+  if (status && status !== 'Active') {
+    try { await pool.query("UPDATE yolo_listings SET status = 'ended' WHERE user_id = $1 AND item_id = $2 AND status = 'active'", [userId, id]); } catch (e) { /* not a YOLO one */ }
+    liveCache.delete(userId); itemDetailCache.delete(userId + ':' + id);
+    return { ok: true, status };
+  }
+  console.error('[end] still live after 3 tries:', id, lastErr);
+  return { ok: false, stillLive: status === 'Active', error: status === 'Active' ? 'eBay still shows it live' + (lastErr ? ' (' + lastErr + ')' : '') : 'could not confirm it ended' + (lastErr ? ' (' + lastErr + ')' : '') };
+}
 app.post('/api/relaunch/end/:id', requireUser, async (req, res) => {
-  try {
-    const id = String(req.params.id || '').replace(/\D/g, ''); if (!id) return res.status(400).json({ error: 'Missing item number' });
-    await tradingCall(req.user.id, 'EndFixedPriceItem', `<ItemID>${id}</ItemID><EndingReason>OtherListingError</EndingReason>`, '100');
-    try { await pool.query("UPDATE yolo_listings SET status = 'ended' WHERE user_id = $1 AND item_id = $2 AND status = 'active'", [req.user.id, id]); } catch (e) { /* not a YOLO one */ }
-    liveCache.delete(req.user.id); itemDetailCache.delete(req.user.id + ':' + id);
-    res.json({ ok: true });
-  } catch (e) { console.error('[relaunch end]', e.message); res.status(502).json({ error: 'eBay did not end the old listing: ' + e.message }); }
+  const id = String(req.params.id || '').replace(/\D/g, ''); if (!id) return res.status(400).json({ error: 'Missing item number' });
+  const r = await endAndVerify(req.user.id, id);
+  if (r.ok) return res.json({ ok: true, verified: true, status: r.status });
+  res.status(502).json({ error: r.error, stillLive: r.stillLive });
 });
 // v433: read a listing title properly — year range, make, model, part name (used by Relaunch and Check Active / Check Sold)
 const parseTitleCache = new Map();   // v445: the cache key now includes a version so older answers (no partNumber) aren't reused
@@ -4753,39 +4835,45 @@ app.post('/api/returns/needs-work/:id/remove', requireUser, async (req, res) => 
   } catch (e) { console.error('[needs-work remove]', e.message); res.status(500).json({ error: 'Could not remove it' }); }
 });
 // Relist the same listing (same price, photos, description) with an emoji at the front of the title.
+// v479: put a sold listing back up (Relist if ended; raise the quantity if it's still active at 0). Shared by Returns and Swap.
+async function relistSoldItem(uid, itemId, emoji) {
+  const gi = await tradingCall(uid, 'GetItem', `<ItemID>${itemId}</ItemID>`, '100');
+  const item = xmlTag(gi, 'Item') || '';
+  const ss = xmlTag(item, 'SellingStatus') || '';
+  const status = xmlTag(ss, 'ListingStatus') || '';
+  const qty = parseInt(xmlTag(item, 'Quantity') || '0', 10) || 0, sold = parseInt(xmlTag(ss, 'QuantitySold') || '0', 10) || 0;
+  const cur = xmlDecode(xmlTag(item, 'Title') || '');
+  const newTitle = emoji && cur ? (emoji + ' ' + cur.replace(/^[\p{Emoji_Presentation}\p{Extended_Pictographic}\uFE0F\u200D\s]+/gu, '').trim()).slice(0, 80) : '';
+  const active = status === 'Active';
+  if (active && qty - sold > 0) { const e = new Error('That listing is still live on eBay, so there is nothing to relist.'); e.code = 409; throw e; }
+  const doCall = async (withTitle) => {
+    const t = withTitle && newTitle ? `<Title>${xmlEsc(newTitle)}</Title>` : '';
+    if (active) return tradingCall(uid, 'ReviseFixedPriceItem', `<Item><ItemID>${itemId}</ItemID><Quantity>${sold + 1}</Quantity>${t}</Item>`, '100');
+    return tradingCall(uid, 'RelistFixedPriceItem', `<Item><ItemID>${itemId}</ItemID><Quantity>1</Quantity>${t}</Item>`, '100');
+  };
+  let xml, titleChanged = !!newTitle;
+  try { xml = await doCall(true); }
+  catch (e) {
+    if (!newTitle) throw e;
+    console.warn('[relist] title not changed:', e.message);
+    titleChanged = false; xml = await doCall(false);
+  }
+  liveCache.delete(uid);
+  return { itemId: active ? itemId : (xmlTag(xml, 'ItemID') || itemId), title: titleChanged ? newTitle : cur, titleChanged };
+}
 app.post('/api/returns/relist', requireUser, express.json({ limit: '10kb' }), async (req, res) => {
   const uid = req.user.id;
   try {
     const b = req.body || {};
     const itemId = String(b.itemId || '').replace(/\D/g, '');
     if (!/^\d{6,20}$/.test(itemId)) return res.status(400).json({ error: 'This return has no item number to relist.' });
-    const emoji = String(b.emoji || '').trim().slice(0, 16);
-    const gi = await tradingCall(uid, 'GetItem', `<ItemID>${itemId}</ItemID>`, '100');
-    const item = xmlTag(gi, 'Item') || '';
-    const ss = xmlTag(item, 'SellingStatus') || '';
-    const status = xmlTag(ss, 'ListingStatus') || '';
-    const qty = parseInt(xmlTag(item, 'Quantity') || '0', 10) || 0, sold = parseInt(xmlTag(ss, 'QuantitySold') || '0', 10) || 0;
-    const cur = xmlDecode(xmlTag(item, 'Title') || '');
-    const newTitle = emoji && cur ? (emoji + ' ' + cur.replace(/^[\p{Emoji_Presentation}\p{Extended_Pictographic}️‍\s]+/gu, '').trim()).slice(0, 80) : '';
-    const active = status === 'Active';
-    if (active && qty - sold > 0) return res.status(409).json({ error: 'That listing is still live on eBay, so there is nothing to relist.' });
-    const doCall = async (withTitle) => {
-      const t = withTitle && newTitle ? `<Title>${xmlEsc(newTitle)}</Title>` : '';
-      if (active) return tradingCall(uid, 'ReviseFixedPriceItem', `<Item><ItemID>${itemId}</ItemID><Quantity>${sold + 1}</Quantity>${t}</Item>`, '100');
-      return tradingCall(uid, 'RelistFixedPriceItem', `<Item><ItemID>${itemId}</ItemID><Quantity>1</Quantity>${t}</Item>`, '100');
-    };
-    let xml, titleChanged = !!newTitle;
-    try { xml = await doCall(true); }
-    catch (e) {
-      if (!newTitle) throw e;
-      console.warn('[relist] title not changed:', e.message);
-      titleChanged = false; xml = await doCall(false);
-    }
-    const newId = active ? itemId : (xmlTag(xml, 'ItemID') || itemId);
+    const out = await relistSoldItem(uid, itemId, String(b.emoji || '').trim().slice(0, 16));
     if (b.followupId) await pool.query('DELETE FROM return_followups WHERE user_id = $1 AND id = $2', [uid, parseInt(b.followupId, 10) || 0]);
-    liveCache.delete(uid);
-    res.json({ ok: true, itemId: newId, title: titleChanged ? newTitle : cur, titleChanged });
-  } catch (e) { console.error('[relist]', e.message); res.status(502).json({ error: 'eBay did not relist it: ' + e.message }); }
+    res.json(Object.assign({ ok: true }, out));
+  } catch (e) {
+    if (e.code === 409) return res.status(409).json({ error: e.message });
+    console.error('[relist]', e.message); res.status(502).json({ error: 'eBay did not relist it: ' + e.message });
+  }
 });
 app.get('/api/yolo', requireUser, async (req, res) => {
   try {
