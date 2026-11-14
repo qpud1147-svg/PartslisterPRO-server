@@ -1,4 +1,5 @@
-// PartsLister Pro server — v479
+// PartsLister Pro server — v480
+// v480: Swap candidates say which number matched and whether it came from the sold listing's title (trust) or its item specifics (check it).
 // v479: Orders — Swap. When a newer listing sells and an older listing of the same part is still live, Swap relists the one
 //       that sold and ends the older one (checked with eBay); the order then says which SKU to ship from (order_swaps table).
 // v478: Relaunch end — checks with eBay that the old listing really ended, retries up to 3 times, and reports if it's still live.
@@ -2027,8 +2028,9 @@ function swapPartNumbers(title, specifics) {   // part-number-looking codes from
     if (n.length >= 6 && (n.match(/\d/g) || []).length >= 3 && /[A-Z]|\d{7,}/.test(n) && !/^(19|20)\d\d(19|20)?\d\d$/.test(n)) out.add(n);
   });
   add(title);
+  const fromTitle = new Set(out);
   (specifics || []).forEach(sp => { if (/part number|mpn|oe\/oem/i.test(sp.name) && !/does not apply|n\/a/i.test(sp.value || '')) add(sp.value); });
-  return [...out];
+  return [...fromTitle].concat([...out].filter(p => !fromTitle.has(p)).map(p => Object.assign(new String(p), { spec: true })));   // title numbers first
 }
 function swapWords(title) { return new Set(String(title || '').toUpperCase().replace(/[^A-Z0-9 ]/g, ' ').split(/\s+/).filter(w => w.length >= 3 && !/^(OEM|USED|GENUINE|ORIGINAL|NEW|THE|AND|FOR|WITH)$/.test(w))); }
 app.post('/api/orders/swap-candidates', requireUser, express.json({ limit: '100kb' }), async (req, res) => {
@@ -2050,15 +2052,17 @@ app.post('/api/orders/swap-candidates', requireUser, express.json({ limit: '100k
         if (x.l.itemId === id || !(x.l.qty > 0)) continue;
         const ls = x.l.start ? Date.parse(x.l.start) : null;
         if (started && ls && ls >= started) continue;   // only listings that are OLDER than the one that sold
-        let how = '';
-        if (pns.some(p => x.words.has(p) || (p.length >= 8 && x.n.includes(p)))) how = 'part number';
+        let how = '', on = '', from = '';
+        const hit = pns.find(p => !p.spec && (x.words.has(String(p)) || (p.length >= 8 && x.n.includes(String(p))))) || pns.find(p => p.spec && (x.words.has(String(p)) || (p.length >= 8 && x.n.includes(String(p)))));
+        if (hit) { how = 'part number'; on = String(hit); from = hit.spec ? 'specifics' : 'title'; }
         else if (sw.size >= 4) {
           let common = 0; sw.forEach(w => { if (x.w.has(w)) common++; });
           if (common / (sw.size + x.w.size - common) >= 0.85) how = 'title';
         }
-        if (how) found.push({ itemId: x.l.itemId, title: x.l.title, sku: x.l.sku || '', price: x.l.price, start: x.l.start, image: x.l.image, url: x.l.url, match: how });
+        if (how) found.push({ itemId: x.l.itemId, title: x.l.title, sku: x.l.sku || '', price: x.l.price, start: x.l.start, image: x.l.image, url: x.l.url, match: how, matchedOn: on, from: from || 'title' });
       }
-      if (found.length) out[id] = found.sort((a, b) => (a.match === 'part number' ? 0 : 1) - (b.match === 'part number' ? 0 : 1) || String(a.start).localeCompare(String(b.start))).slice(0, 3);
+      const rank = (c) => c.match !== 'part number' ? 2 : c.from === 'specifics' ? 1 : 0;   // title-number matches first
+      if (found.length) out[id] = found.sort((a, b) => rank(a) - rank(b) || String(a.start).localeCompare(String(b.start))).slice(0, 3);
     }
     res.json({ candidates: out });
   } catch (e) { console.error('[swap candidates]', e.message); res.status(502).json({ error: e.message }); }

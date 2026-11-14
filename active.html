@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Active v411</title>
+<title>PartsLister Pro Active v412</title>
 <!-- v387: click a listing → your own eBay-style view (big photos with arrows, price, shipping, condition, item specifics, description); sharper list photos; shipping on the rows when eBay gives it. -->
 <!-- v403: Value chart: calculated-shipping listings use your average shipping from recent orders (30 days, else 90); fee/tax rates also 30 days (else 90); note says so. -->
 <!-- v402: listings-per-day chart gets a Listings | Value switch; in Value mode a 3-way switch: You keep / Listed / Buyer pays (price + shipping per quantity; fee and tax rates from your own last 90 days of orders). -->
@@ -258,7 +258,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v411</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v412</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -1067,6 +1067,7 @@ pageCache.rerun = () => { loadListings(false); loadDaily(false); };   // v380: f
   if (/[?&]view=sold\b/.test(location.search)) window.setView('sold');
   if (/[?&]view=ended\b/.test(location.search)) window.setView('ended');
   if (/[?&]view=flagged\b/.test(location.search)) window.setView('flagged');
+  { const om = /[?&]open=(\d{6,20})\b/.exec(location.search); if (om) setTimeout(() => window.openListing(om[1]), 300); }   // v412: Orders → Open (the older listing in a Swap)
   window.llShowSaved();   // v437: the saved copy shows at once
   setTimeout(() => window.llLoad(false), 1500);   // v386: the check of eBay starts a moment after the page
 })();

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Orders v411</title>
+<title>PartsLister Pro Orders v412</title>
 <!-- v382: switching views is instant; browser reload / Refresh really reloads. v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
 <!-- PartsLister Pro — Orders page (v319: new). Your sold items from eBay, newest first.
      v320: item photos, and click an order to see the listing (photos, description, item specifics).
@@ -230,7 +230,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v411</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v412</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -519,13 +519,47 @@ function swapBox(o, i) {
   const c = (swapCands[i.itemId] || [])[0]; if (!c) return null;
   const b = mk('');
   const t = document.createElement('span');
-  t.innerHTML = '<b>\u2194 Older one live</b> \u2014 ' + money2.format(c.price || 0) + ' \u00b7 listed ' + esc(ageOf(c.start)) + ' ago' + (c.sku ? ' \u00b7 SKU ' + esc(c.sku) : '') + (c.match === 'title' ? ' \u00b7 similar title' : '');
-  const v = document.createElement('a'); v.className = 'btn btn-secondary btn-sm'; v.textContent = 'View'; v.href = c.url || ('https://www.ebay.com/itm/' + c.itemId); v.target = '_blank'; v.rel = 'noopener';
+  const how = c.match === 'title' ? ' \u00b7 <span style="color:var(--danger,#e55)">similar title only \u2014 check it</span>'
+    : c.matchedOn ? ' \u00b7 matched on <b>' + esc(c.matchedOn) + '</b> ' + (c.from === 'specifics' ? '<span style="color:var(--danger,#e55)">from item specifics \u2014 check it</span>' : '<span style="color:var(--success,#3c9)">from the title</span>') : '';
+  t.innerHTML = '<b>\u2194 Older one live</b> \u2014 ' + money2.format(c.price || 0) + ' \u00b7 listed ' + esc(ageOf(c.start)) + ' ago' + (c.sku ? ' \u00b7 SKU ' + esc(c.sku) : '') + how;
+  t.title = 'Matched on ' + (c.matchedOn || 'title words') + ' \u2014 older listing: ' + (c.title || '');
+  const v = document.createElement('button'); v.type = 'button'; v.className = 'btn btn-secondary btn-sm'; v.textContent = 'View'; v.title = 'Photos of the older listing'; v.onclick = () => viewPhotos(c);   // v412
+  const op = document.createElement('a'); op.className = 'btn btn-secondary btn-sm'; op.textContent = 'Open'; op.title = 'Open the older listing on your Active page'; op.href = '/active?open=' + encodeURIComponent(c.itemId); op.target = '_blank'; op.rel = 'noopener';
   const sw = document.createElement('button'); sw.type = 'button'; sw.className = 'btn btn-primary btn-sm'; sw.textContent = 'Swap';
   sw.onclick = () => doSwap(o, i, c, sw, b);
-  if (!canSwap) { const x = document.createElement('small'); x.style.color = 'var(--muted)'; x.textContent = '(already shipped \u2014 look only)'; b.append(t, v, x); return b; }   // v411
-  b.append(t, v, sw);
+  if (!canSwap) { const x = document.createElement('small'); x.style.color = 'var(--muted)'; x.textContent = '(already shipped \u2014 look only)'; b.append(t, v, op, x); return b; }   // v411
+  b.append(t, v, op, sw);
   return b;
+}
+// v412: View = the older listing's photos, right here
+async function viewPhotos(c) {
+  let ov = document.getElementById('sw-photos');
+  if (!ov) {
+    ov = document.createElement('div'); ov.id = 'sw-photos';
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.88);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px;box-sizing:border-box;';
+    ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
+    document.addEventListener('keydown', function k(e) { if (!document.getElementById('sw-photos')) { document.removeEventListener('keydown', k); return; } if (e.key === 'Escape') ov.remove(); if (e.key === 'ArrowRight' && ov._go) ov._go(1); if (e.key === 'ArrowLeft' && ov._go) ov._go(-1); });
+    document.body.append(ov);
+  }
+  ov.innerHTML = '<div style="color:#fff">Loading photos\u2026</div>';
+  const r = await getJSON('/api/items/' + encodeURIComponent(c.itemId));
+  const pics = (r && r.item && r.item.pictures) || (c.image ? [c.image] : []);
+  if (!document.getElementById('sw-photos')) return;
+  ov.textContent = '';
+  const head = document.createElement('div'); head.style.cssText = 'color:#fff;font-size:13px;margin-bottom:8px;text-align:center;max-width:900px;';
+  head.textContent = (c.title || '') + (c.sku ? '  \u00b7  SKU ' + c.sku : '');
+  const big = document.createElement('img'); big.style.cssText = 'max-width:100%;max-height:70vh;object-fit:contain;border-radius:6px;background:#111;';
+  const cnt = document.createElement('div'); cnt.style.cssText = 'color:#ccc;font-size:12px;margin:6px 0;';
+  const strip = document.createElement('div'); strip.style.cssText = 'display:flex;gap:6px;overflow-x:auto;max-width:100%;padding:4px;';
+  const x = document.createElement('button'); x.type = 'button'; x.textContent = '\u00d7'; x.title = 'Close'; x.onclick = () => ov.remove();
+  x.style.cssText = 'position:absolute;top:10px;right:14px;background:none;border:none;color:#fff;font-size:30px;cursor:pointer;';
+  let idx = 0;
+  const show = () => { if (!pics.length) return; big.src = String(pics[idx]).replace(/\/s-l\d+\./i, '/s-l1600.'); cnt.textContent = (idx + 1) + ' / ' + pics.length; [...strip.children].forEach((t, i) => t.style.outline = i === idx ? '2px solid var(--accent)' : 'none'); };
+  ov._go = (d) => { idx = (idx + d + pics.length) % pics.length; show(); };
+  big.onclick = () => ov._go(1);
+  pics.forEach((u, i) => { const t = document.createElement('img'); t.src = String(u).replace(/\/s-l\d+\./i, '/s-l140.'); t.style.cssText = 'height:56px;border-radius:4px;cursor:pointer;'; t.onclick = () => { idx = i; show(); }; strip.append(t); });
+  if (!pics.length) { ov.append(x, head, Object.assign(document.createElement('div'), { textContent: 'eBay gave no photos for this listing.', style: 'color:#fff' })); return; }
+  ov.append(x, head, big, cnt, strip); show();
 }
 function esc(t) { return String(t == null ? '' : t).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch])); }
 async function doSwap(o, i, c, btn, box) {
