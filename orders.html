@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Orders v423</title>
+<title>PartsLister Pro Orders v424</title>
 <!-- v382: switching views is instant; browser reload / Refresh really reloads. v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
 <!-- PartsLister Pro — Orders page (v319: new). Your sold items from eBay, newest first.
      v320: item photos, and click an order to see the listing (photos, description, item specifics).
@@ -242,7 +242,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v423</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v424</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -505,6 +505,7 @@ function render() {
 
 // ─── v409: SWAP — a newer listing sold while an older one of the same part is still live ────────────
 // Ship the buyer the OLDER item, end the older listing, and relist the one they bought (it's still on the shelf).
+const itemCache = new Map();   // v424
 let swapCands = {}, swapAsked = new Set(), swapBusy = false, swapOpenMore = new Set();
 let orderSet = { swapOn: true, swapMinDays: 30, showCondition: false, shipTab: 'new' };   // v418: Settings → Orders
 fetch('/api/order-settings').then(r => r.ok ? r.json() : null).then(d => { if (d) orderSet = d; }).catch(() => {});
@@ -581,14 +582,20 @@ function swapBox(o, i) {
 const fullPic = (u) => String(u || '').replace(/\/s-l\d+\./i, '/s-l1600.').replace(/\$_\d+\.(jpg|jpeg|png)/i, '$_57.$1');
 const thumbPic = (u) => String(u || '').replace(/\/s-l\d+\./i, '/s-l225.').replace(/\$_\d+\.(jpg|jpeg|png)/i, '$_35.$1');
 async function viewPhotos(c, sold, ctx) {   // v419: ctx = { list, idx, o, canSwap } — flip between older listings, Swap from here
-  document.getElementById('sw-photos')?.remove();
-  const ov = document.createElement('div'); ov.id = 'sw-photos';
+  // v424: flipping builds the new view hidden and swaps it in once its photos are loaded — no black flash
+  document.getElementById('sw-photos-next')?.remove();   // a flip still loading — this one replaces it
+  const prev = document.getElementById('sw-photos');
+  const ov = document.createElement('div'); ov.id = prev ? 'sw-photos-next' : 'sw-photos';
+  let shown = !prev;
+  const reveal = () => { if (shown || !ov.isConnected) return; shown = true; prev.remove(); ov.id = 'sw-photos'; ov.style.visibility = ''; };
+  if (prev) setTimeout(reveal, 1500);   // slow eBay: don't wait forever
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:9999;display:flex;flex-direction:column;padding:' + (innerWidth < 760 ? '64px' : '44px') + ' 12px 12px;box-sizing:border-box;overflow:auto;';
   ov.addEventListener('click', e => { if (e.target === ov || e.target.dataset.bg) ov.remove(); });
   const x = document.createElement('button'); x.type = 'button'; x.textContent = '\u00d7'; x.title = 'Close (Esc)'; x.onclick = () => ov.remove();
   x.style.cssText = 'position:fixed;top:6px;right:14px;background:none;border:none;color:#fff;font-size:32px;cursor:pointer;z-index:2;';
   const row = document.createElement('div'); row.dataset.bg = '1';
   row.style.cssText = 'display:flex;gap:12px;flex:1;min-height:0;' + (innerWidth < 760 ? 'flex-direction:column;' : '');
+  if (prev) ov.style.visibility = 'hidden';
   ov.append(x, row); document.body.append(ov);
   const panels = [];
   const panel = (label, color, it) => {
@@ -613,7 +620,7 @@ async function viewPhotos(c, sold, ctx) {   // v419: ctx = { list, idx, o, canSw
   const left = panel('SOLD', 'var(--accent)', sold), right = panel('OLDER LISTING', '#4aa3ff', c);
   // v419: right side — ‹ 1 of 3 › to flip between older listings, and Swap for the one shown
   if (ctx && ctx.list && (ctx.list.length > 1 || ctx.canSwap)) {
-    const nav = document.createElement('div'); nav.style.cssText = (innerWidth < 760 ? 'position:fixed;top:34px;right:12px;' : 'position:fixed;top:6px;right:56px;') + 'display:flex;align-items:center;gap:8px;z-index:2;';   // v423: top bar, doesn't push the listing down
+    const nav = document.createElement('div'); nav.style.cssText = (innerWidth < 760 ? 'position:fixed;top:34px;right:12px;' : 'position:fixed;top:6px;left:75%;transform:translateX(-50%);') + 'display:flex;align-items:center;gap:8px;z-index:2;white-space:nowrap;';   // v424: over the middle of the right side   // v423: top bar, doesn't push the listing down
     const btn = (txt, title) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = txt; b.title = title; b.style.cssText = 'background:#1b1b1b;border:1px solid #4aa3ff;color:#fff;border-radius:4px;padding:3px 10px;cursor:pointer;font-size:14px;'; return b; };
     if (ctx.list.length > 1) {
       const n = ctx.list.length, go = (d) => { const k = (ctx.idx + d + n) % n; viewPhotos(ctx.list[k], sold, Object.assign({}, ctx, { idx: k, soldIdx: left.idx })); };
@@ -643,26 +650,29 @@ async function viewPhotos(c, sold, ctx) {   // v419: ctx = { list, idx, o, canSw
   const longFor = (ms) => { const d = Math.round(ms / 86400000); return d >= 365 ? (d / 365).toFixed(1).replace(/\.0$/, '') + ' years' : d >= 60 ? Math.round(d / 30) + ' months' : d >= 14 ? Math.round(d / 7) + ' weeks' : d + ' day' + (d === 1 ? '' : 's'); };
   const ages = () => {
     [['sold', left], ['old', right]].forEach(([k, st]) => { const a = st.h.querySelector('.sw-age'); if (a && starts[k]) a.textContent = 'Listed ' + longFor(Date.now() - starts[k]) + ' ago'; });
-    if (starts.sold && starts.old) { const diff = starts.sold - starts.old; top.textContent = diff > 86400000 ? 'The older listing is ' + longFor(diff) + ' older' : 'Both were listed around the same time'; }
+    if (starts.sold && starts.old) { const diff = starts.sold - starts.old; top.textContent = diff > 86400000 ? longFor(diff) + ' older' : 'Listed around the same time'; }
   };
   if (c.start) starts.old = Date.parse(c.start);
   const fill = async (st, id, fallback) => {
-    const r = await getJSON('/api/items/' + encodeURIComponent(id));
+    const r = itemCache.get(id) || await getJSON('/api/items/' + encodeURIComponent(id)); if (r && r.item) itemCache.set(id, r);   // v424: flipping back is instant
     if (orderSet.showCondition && r && r.item && r.item.condition) { /* v418: only when Settings → Orders says so */ const cd = st.h.querySelector('.sw-cond'); if (cd) { cd.textContent = 'Condition: ' + r.item.condition + (r.item.conditionNote ? ' \u2014 ' + r.item.conditionNote : ''); cd.title = cd.textContent; cd.style.cssText += 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'; } }
     if (r && r.item && r.item.started) { starts[st === left ? 'sold' : 'old'] = starts[st === left ? 'sold' : 'old'] || Date.parse(r.item.started); }
     ages();
     st.pics = (r && r.item && r.item.pictures && r.item.pictures.length) ? r.item.pictures : (fallback ? [fallback] : []);
-    if (!document.getElementById('sw-photos')) return;
+    if (!ov.isConnected) return;
     st.p.lastChild.remove();
-    if (!st.pics.length) { st.p.append(Object.assign(document.createElement('div'), { textContent: 'eBay gave no photos for this listing.', style: 'color:#ccc;padding:30px' })); return; }
+    if (!st.pics.length) { st.p.append(Object.assign(document.createElement('div'), { textContent: 'eBay gave no photos for this listing.', style: 'color:#ccc;padding:30px' })); if (++filled === 2) reveal(); return; }
     st.pics.forEach((u, i) => { const t = document.createElement('img'); t.src = thumbPic(u); t.style.cssText = 'width:100%;aspect-ratio:1/1;object-fit:cover;border-radius:4px;cursor:pointer;'; t.onclick = () => { st.idx = i; st.show(); }; st.strip.append(t); });
     if (st === left && ctx && ctx.soldIdx > 0 && ctx.soldIdx < st.pics.length) st.idx = ctx.soldIdx;   // v423: keep the sold photo you were on
     st.p.append(st.big, st.cnt, st.strip); st.show();
+    if (++filled === 2) { if (st.big.complete) reveal(); else { st.big.addEventListener('load', reveal, { once: true }); st.big.addEventListener('error', reveal, { once: true }); } }
   };
+  let filled = 0;
   ages();
   fill(left, sold.itemId, thumbs[sold.itemId]); fill(right, c.itemId, c.image);
   document.addEventListener('keydown', function k(e) {   // ← → move both, Esc closes
-    if (document.getElementById('sw-photos') !== ov) { document.removeEventListener('keydown', k); return; }
+    if (!ov.isConnected) { document.removeEventListener('keydown', k); return; }
+    if (!shown) return;
     if (e.key === 'Escape') ov.remove(); else if (e.key === 'ArrowRight') panels.forEach(p => p.go(1)); else if (e.key === 'ArrowLeft') panels.forEach(p => p.go(-1));
     else if ((e.key === ']' || e.key === 'PageDown') && ov._flip) ov._flip(1); else if ((e.key === '[' || e.key === 'PageUp') && ov._flip) ov._flip(-1);
   });
