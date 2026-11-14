@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Orders v416</title>
+<title>PartsLister Pro Orders v417</title>
 <!-- v382: switching views is instant; browser reload / Refresh really reloads. v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
 <!-- PartsLister Pro — Orders page (v319: new). Your sold items from eBay, newest first.
      v320: item photos, and click an order to see the listing (photos, description, item specifics).
@@ -242,7 +242,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v416</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v417</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -562,7 +562,7 @@ const thumbPic = (u) => String(u || '').replace(/\/s-l\d+\./i, '/s-l225.').repla
 async function viewPhotos(c, sold) {
   document.getElementById('sw-photos')?.remove();
   const ov = document.createElement('div'); ov.id = 'sw-photos';
-  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:9999;display:flex;flex-direction:column;padding:44px 12px 12px;box-sizing:border-box;overflow:auto;';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:9999;display:flex;flex-direction:column;padding:' + (innerWidth < 760 ? '64px' : '44px') + ' 12px 12px;box-sizing:border-box;overflow:auto;';
   ov.addEventListener('click', e => { if (e.target === ov || e.target.dataset.bg) ov.remove(); });
   const x = document.createElement('button'); x.type = 'button'; x.textContent = '\u00d7'; x.title = 'Close (Esc)'; x.onclick = () => ov.remove();
   x.style.cssText = 'position:fixed;top:6px;right:14px;background:none;border:none;color:#fff;font-size:32px;cursor:pointer;z-index:2;';
@@ -572,8 +572,12 @@ async function viewPhotos(c, sold) {
   const panels = [];
   const panel = (label, color, it) => {
     const p = document.createElement('div'); p.style.cssText = 'flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;border:2px solid ' + color + ';border-radius:8px;padding:8px;background:#0b0b0b;';
-    const h = document.createElement('div'); h.style.cssText = 'color:#fff;font-size:13px;text-align:center;margin-bottom:6px;width:100%;';
-    h.innerHTML = '<b style="color:' + color + ';letter-spacing:.06em">' + label + '</b><br>' + esc(it.title || '') + '<br><span style="color:#bbb">' + (it.price != null ? money2.format(it.price) + ' \u00b7 ' : '') + (it.sku ? 'SKU ' + esc(it.sku) + ' \u00b7 ' : '') + '#' + esc(it.itemId) + '</span><br><span class="sw-age" style="color:#fff;font-weight:600"></span>';
+    // v417: header like a listing row — label, title, SKU (yellow), condition, when it was listed; left-aligned
+    const h = document.createElement('div'); h.style.cssText = 'color:#fff;font-size:13px;text-align:left;margin-bottom:8px;width:100%;line-height:1.45;';
+    h.innerHTML = '<div style="font-size:11px;font-weight:700;letter-spacing:.08em;color:' + color + '">' + label + '</div>'
+      + '<div style="font-size:15px;font-weight:700;">' + esc(it.title || '') + '</div>'
+      + (it.sku ? '<div><span style="color:#999;font-size:11px;letter-spacing:.06em;">SKU </span><span style="color:var(--accent);font-weight:800;font-size:16px;">' + esc(it.sku) + '</span></div>' : '')
+      + '<div class="sw-cond" style="color:#ccc;"></div><div class="sw-age" style="color:#ccc;"></div>';
     const big = document.createElement('img'); big.style.cssText = 'max-width:100%;flex:1;min-height:0;max-height:' + (innerWidth < 760 ? '45vh' : '68vh') + ';object-fit:contain;border-radius:6px;cursor:pointer;';
     const cnt = document.createElement('div'); cnt.style.cssText = 'color:#ccc;font-size:12px;margin:6px 0;';
     const strip = document.createElement('div'); strip.style.cssText = 'display:grid;grid-template-columns:repeat(6,minmax(0,64px));justify-content:center;gap:6px;max-width:100%;padding:4px;';   // v415: rows of 6, no running off the side
@@ -587,17 +591,23 @@ async function viewPhotos(c, sold) {
   };
   const left = panel('SOLD', 'var(--accent)', sold), right = panel('OLDER LISTING', '#4aa3ff', c);
   // v416: how long ago each was listed, and how much older the older one is
-  const top = document.createElement('div'); top.style.cssText = 'position:fixed;top:10px;left:0;right:60px;text-align:center;color:#fff;font-size:15px;font-weight:700;';
+  const top = document.createElement('div'); top.style.cssText = 'position:fixed;top:10px;left:0;right:0;text-align:center;color:#fff;font-size:15px;font-weight:700;pointer-events:none;';
   ov.append(top);
+  // v417: top left — what made these match
+  const mb = document.createElement('div'); mb.style.cssText = 'position:fixed;top:6px;left:12px;border:1px solid #4aa3ff;border-radius:6px;padding:3px 9px;font-size:12px;color:#fff;background:#0b0b0b;max-width:40vw;z-index:1;';
+  if (c.match === 'part number' && c.matchedOn) mb.innerHTML = '<b style="color:#4aa3ff">Part number:</b> ' + esc(c.matchedOn) + ' <span style="color:' + (c.from === 'specifics' ? 'var(--danger,#e55)">from item specifics \u2014 check it' : 'var(--success,#3c9)">from the title') + '</span>';
+  else mb.innerHTML = '<b style="color:#4aa3ff">Title</b> <span style="color:var(--danger,#e55)">similar title only \u2014 check it</span>';
+  ov.append(mb);
   const starts = {};
   const longFor = (ms) => { const d = Math.round(ms / 86400000); return d >= 365 ? (d / 365).toFixed(1).replace(/\.0$/, '') + ' years' : d >= 60 ? Math.round(d / 30) + ' months' : d >= 14 ? Math.round(d / 7) + ' weeks' : d + ' day' + (d === 1 ? '' : 's'); };
   const ages = () => {
-    [['sold', left], ['old', right]].forEach(([k, st]) => { const a = st.h.querySelector('.sw-age'); if (a && starts[k]) a.textContent = 'listed ' + longFor(Date.now() - starts[k]) + ' ago'; });
+    [['sold', left], ['old', right]].forEach(([k, st]) => { const a = st.h.querySelector('.sw-age'); if (a && starts[k]) a.textContent = 'Listed ' + longFor(Date.now() - starts[k]) + ' ago'; });
     if (starts.sold && starts.old) { const diff = starts.sold - starts.old; top.textContent = diff > 86400000 ? 'The older listing is ' + longFor(diff) + ' older' : 'Both were listed around the same time'; }
   };
   if (c.start) starts.old = Date.parse(c.start);
   const fill = async (st, id, fallback) => {
     const r = await getJSON('/api/items/' + encodeURIComponent(id));
+    if (r && r.item && r.item.condition) { const cd = st.h.querySelector('.sw-cond'); if (cd) { cd.textContent = 'Condition: ' + r.item.condition + (r.item.conditionNote ? ' \u2014 ' + r.item.conditionNote : ''); cd.title = cd.textContent; cd.style.cssText += 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'; } }
     if (r && r.item && r.item.started) { starts[st === left ? 'sold' : 'old'] = starts[st === left ? 'sold' : 'old'] || Date.parse(r.item.started); }
     ages();
     st.pics = (r && r.item && r.item.pictures && r.item.pictures.length) ? r.item.pictures : (fallback ? [fallback] : []);
