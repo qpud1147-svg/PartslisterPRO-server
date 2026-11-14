@@ -570,7 +570,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v414</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v415</span></div>
   </a>
   <!-- v316: switch pages -->
   <nav class="page-tabs" aria-label="Pages">
@@ -2201,7 +2201,7 @@ function useDefaultInstructions() {
 async function loadOrderSettings() {
   const r = await fetch('/api/order-settings').catch(() => null);
   const d = r && r.ok ? await r.json().catch(() => null) : null;
-  if (!d) { setText('os-note', 'Could not load — upload the newest server.js'); return; }
+  if (!d) { setText('os-note', r && r.status === 404 ? 'The server on Railway is older than v481 \u2014 it doesn\u2019t have Orders settings yet. Check the deploy.' : 'Could not load (' + (r ? 'server ' + r.status : 'no connection') + ') \u2014 try again.'); return; }
   document.getElementById('os-swap-on').checked = d.swapOn !== false;
   const sel = document.getElementById('os-min'); sel.value = String(d.swapMinDays);
   if (sel.value !== String(d.swapMinDays)) { sel.append(new Option(d.swapMinDays + ' days', String(d.swapMinDays))); sel.value = String(d.swapMinDays); }
@@ -2213,7 +2213,7 @@ async function saveOrderSettings() {
   const r = await fetch('/api/order-settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
     swapOn: document.getElementById('os-swap-on').checked, swapMinDays: parseInt(document.getElementById('os-min').value, 10) || 0, showCondition: document.getElementById('os-cond').checked }) }).catch(() => null);
   btn.disabled = false;
-  setText('os-note', r && r.ok ? 'Saved.' : 'Could not save — try again.');
+  setText('os-note', r && r.ok ? 'Saved.' : r && r.status === 404 ? 'Could not save \u2014 the server on Railway is older than v481. Check the deploy.' : 'Could not save (' + (r ? 'server ' + r.status : 'no connection') + ') \u2014 try again.');
   try { localStorage.removeItem('plp_swap_cands'); } catch (e) { /* fine */ }
 }
 async function saveMsgSettings() {

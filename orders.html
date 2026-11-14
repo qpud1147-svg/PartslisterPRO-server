@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Orders v418</title>
+<title>PartsLister Pro Orders v419</title>
 <!-- v382: switching views is instant; browser reload / Refresh really reloads. v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
 <!-- PartsLister Pro — Orders page (v319: new). Your sold items from eBay, newest first.
      v320: item photos, and click an order to see the listing (photos, description, item specifics).
@@ -242,7 +242,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v418</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v419</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -552,7 +552,7 @@ function swapBox(o, i) {
     : c.matchedOn ? ' \u00b7 matched on <b>' + esc(c.matchedOn) + '</b> ' + (c.from === 'specifics' ? '<span style="color:var(--danger,#e55)">from item specifics \u2014 check it</span>' : '<span style="color:var(--success,#3c9)">from the title</span>') : '';
   t.innerHTML = '<b>\u2194 Older one live</b> \u2014 ' + money2.format(c.price || 0) + ' \u00b7 listed ' + esc(ageOf(c.start)) + ' ago' + (c.sku ? ' \u00b7 SKU ' + esc(c.sku) : '') + how;
   t.title = 'Matched on ' + (c.matchedOn || 'title words') + ' \u2014 older listing: ' + (c.title || '');
-  const v = document.createElement('button'); v.type = 'button'; v.className = 'btn btn-secondary btn-sm'; v.textContent = 'View'; v.title = 'Photos of both: the one that sold (left) and the older listing (right)'; v.onclick = () => viewPhotos(c, i);   // v412
+  const v = document.createElement('button'); v.type = 'button'; v.className = 'btn btn-secondary btn-sm'; v.textContent = 'View'; v.title = 'Photos of both: the one that sold (left) and the older listing (right)'; v.onclick = () => viewPhotos(c, i, { list, idx: list.indexOf(c), o, canSwap });   // v412
   const op = document.createElement('a'); op.className = 'btn btn-secondary btn-sm'; op.textContent = 'Open'; op.title = 'Open the older listing on your Active page'; op.href = '/active?open=' + encodeURIComponent(c.itemId); op.target = '_blank'; op.rel = 'noopener';
   const sw = document.createElement('button'); sw.type = 'button'; sw.className = 'btn btn-primary btn-sm'; sw.textContent = 'Swap';
   sw.onclick = () => doSwap(o, i, c, sw, b);
@@ -561,20 +561,13 @@ function swapBox(o, i) {
   return b;
   };
   const first = one(list[0], false);
-  if (list.length < 2) return first;
-  const wrap = document.createElement('div'); wrap.addEventListener('click', e => e.stopPropagation()); wrap.append(first);
-  const open = swapOpenMore.has(i.itemId);
-  const tog = document.createElement('button'); tog.type = 'button'; tog.className = 'btn btn-secondary btn-sm'; tog.style.marginLeft = 'auto';
-  tog.textContent = open ? 'Hide others' : '+' + (list.length - 1) + ' more';
-  tog.onclick = () => { if (swapOpenMore.has(i.itemId)) swapOpenMore.delete(i.itemId); else swapOpenMore.add(i.itemId); render(); };
-  first.append(tog);
-  if (open) list.slice(1).forEach(c2 => { const r2 = one(c2, true); r2.style.marginLeft = '18px'; wrap.append(r2); });
-  return wrap;
+  if (list.length > 1) { const n = document.createElement('small'); n.style.cssText = 'color:var(--muted);margin-left:auto;'; n.textContent = list.length + ' matches \u2014 flip through them in View'; first.append(n); }   // v419
+  return first;
 }
 // v413: View = photos of BOTH listings side by side — the one that sold (left) and the older one (right), full size
 const fullPic = (u) => String(u || '').replace(/\/s-l\d+\./i, '/s-l1600.').replace(/\$_\d+\.(jpg|jpeg|png)/i, '$_57.$1');
 const thumbPic = (u) => String(u || '').replace(/\/s-l\d+\./i, '/s-l225.').replace(/\$_\d+\.(jpg|jpeg|png)/i, '$_35.$1');
-async function viewPhotos(c, sold) {
+async function viewPhotos(c, sold, ctx) {   // v419: ctx = { list, idx, o, canSwap } — flip between older listings, Swap from here
   document.getElementById('sw-photos')?.remove();
   const ov = document.createElement('div'); ov.id = 'sw-photos';
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:9999;display:flex;flex-direction:column;padding:' + (innerWidth < 760 ? '64px' : '44px') + ' 12px 12px;box-sizing:border-box;overflow:auto;';
@@ -605,6 +598,26 @@ async function viewPhotos(c, sold) {
     panels.push(st); return st;
   };
   const left = panel('SOLD', 'var(--accent)', sold), right = panel('OLDER LISTING', '#4aa3ff', c);
+  // v419: right side — ‹ 1 of 3 › to flip between older listings, and Swap for the one shown
+  if (ctx && ctx.list && (ctx.list.length > 1 || ctx.canSwap)) {
+    const nav = document.createElement('div'); nav.style.cssText = 'display:flex;align-items:center;gap:8px;justify-content:flex-end;width:100%;margin-bottom:4px;';
+    const btn = (txt, title) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = txt; b.title = title; b.style.cssText = 'background:#1b1b1b;border:1px solid #4aa3ff;color:#fff;border-radius:4px;padding:3px 10px;cursor:pointer;font-size:14px;'; return b; };
+    if (ctx.list.length > 1) {
+      const n = ctx.list.length, go = (d) => { const k = (ctx.idx + d + n) % n; viewPhotos(ctx.list[k], sold, Object.assign({}, ctx, { idx: k })); };
+      const pv = btn('\u2039', 'Previous older listing'), nx = btn('\u203a', 'Next older listing');
+      pv.onclick = () => go(-1); nx.onclick = () => go(1);
+      const lb = document.createElement('span'); lb.style.cssText = 'color:#fff;font-size:13px;font-weight:700;'; lb.textContent = (ctx.idx + 1) + ' of ' + n;
+      nav.append(pv, lb, nx);
+      ov._flip = go;
+    }
+    if (ctx.canSwap) {
+      const sw = btn('Swap this one', 'Ship the buyer this older item, end it, and relist the one they bought');
+      sw.style.background = 'var(--accent)'; sw.style.color = '#000'; sw.style.fontWeight = '700'; sw.style.borderColor = 'var(--accent)'; sw.style.marginLeft = '8px';
+      sw.onclick = async () => { await doSwap(ctx.o, sold, c, sw, null); if (sold.swap) ov.remove(); };
+      nav.append(sw);
+    }
+    right.p.insertBefore(nav, right.h);
+  }
   // v416: how long ago each was listed, and how much older the older one is
   const top = document.createElement('div'); top.style.cssText = 'position:fixed;top:10px;left:0;right:0;text-align:center;color:#fff;font-size:15px;font-weight:700;pointer-events:none;';
   ov.append(top);
@@ -635,8 +648,9 @@ async function viewPhotos(c, sold) {
   ages();
   fill(left, sold.itemId, thumbs[sold.itemId]); fill(right, c.itemId, c.image);
   document.addEventListener('keydown', function k(e) {   // ← → move both, Esc closes
-    if (!document.getElementById('sw-photos')) { document.removeEventListener('keydown', k); return; }
+    if (document.getElementById('sw-photos') !== ov) { document.removeEventListener('keydown', k); return; }
     if (e.key === 'Escape') ov.remove(); else if (e.key === 'ArrowRight') panels.forEach(p => p.go(1)); else if (e.key === 'ArrowLeft') panels.forEach(p => p.go(-1));
+    else if ((e.key === ']' || e.key === 'PageDown') && ov._flip) ov._flip(1); else if ((e.key === '[' || e.key === 'PageUp') && ov._flip) ov._flip(-1);
   });
 }
 function esc(t) { return String(t == null ? '' : t).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch])); }
