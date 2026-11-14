@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Orders v419</title>
+<title>PartsLister Pro Orders v420</title>
 <!-- v382: switching views is instant; browser reload / Refresh really reloads. v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
 <!-- PartsLister Pro — Orders page (v319: new). Your sold items from eBay, newest first.
      v320: item photos, and click an order to see the listing (photos, description, item specifics).
@@ -242,7 +242,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v419</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v420</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -488,6 +488,7 @@ function render() {
     const skuLine = (i) => { const s2 = document.createElement('div'); s2.className = 'ebl-sku-l'; const sm = document.createElement('small'); sm.textContent = 'SKU'; s2.append(sm, document.createTextNode(i.sku)); return s2; };
     if (o.items[0] && o.items[0].sku) body.append(skuLine(o.items[0]));
     else if (o.items[0]) { const ns = document.createElement('div'); ns.className = 'ebl-sub'; ns.style.opacity = '.55'; ns.textContent = 'No SKU'; body.append(ns); }
+    if ((k === 'toship' || k === 'partial') && !o.items.some(i => i.swap)) body.append(shipBtn(o));   // swapped orders get it on the "Ship this one" line instead   // v420: straight to eBay's label page for this order
     o.items.forEach(i => { const sb = swapBox(o, i); if (sb) body.append(sb); });   // v409
     o.items.slice(1).forEach(i => {
       const x = document.createElement('div'); x.className = 'ebl-sub'; x.style.marginTop = '4px';
@@ -508,6 +509,15 @@ let swapCands = {}, swapAsked = new Set(), swapBusy = false, swapOpenMore = new 
 let orderSet = { swapOn: true, swapMinDays: 30, showCondition: false };   // v418: Settings → Orders
 fetch('/api/order-settings').then(r => r.ok ? r.json() : null).then(d => { if (d) orderSet = d; }).catch(() => {});
 const ageOf = (iso) => { const d = Math.floor((Date.now() - Date.parse(iso)) / 86400000); return d >= 365 ? (d / 365).toFixed(1).replace(/\.0$/, '') + ' yr' : d >= 60 ? Math.round(d / 30) + ' mo' : d + ' days'; };
+// v420: eBay's own shipping-label page for one order (same address as "Get shipping label" in Seller Hub). Opens in this tab.
+function shipBtn(o) {
+  const a = document.createElement('a'); a.className = 'btn btn-primary btn-sm'; a.textContent = '\ud83d\udce6 Ship';
+  a.href = 'https://www.ebay.com/ship/single/' + encodeURIComponent(o.id);
+  a.title = 'Open eBay\u2019s shipping label page for order ' + o.id;
+  a.style.cssText = 'display:inline-block;align-self:flex-start;width:fit-content;margin-top:6px;background:var(--accent);color:#000;font-weight:700;text-decoration:none;border-radius:4px;padding:5px 14px;font-size:12px;letter-spacing:.05em;';
+  a.addEventListener('click', e => e.stopPropagation());
+  return a;
+}
 function swapBox(o, i) {
   if (!i.itemId) return null;
   const mk = (cls) => { const b = document.createElement('div'); b.className = 'swap' + (cls ? ' ' + cls : ''); b.addEventListener('click', e => e.stopPropagation()); return b; };
@@ -526,7 +536,9 @@ function swapBox(o, i) {
       const ex = document.createElement('div'); ex.style.fontSize = '11px'; ex.style.color = 'var(--muted)'; ex.append(a); if (extra) ex.append(' \u00b7 ' + extra);
       tx.append(ex); r.append(ph, tx); return r;
     };
-    b.append(line('sb-ship', '\ud83d\udce6 Ship this one', i.swap.oldItem, i.swap.oldSku, i.swap.oldTitle, i.swap.oldPrice != null ? 'older listing, was ' + money2.format(i.swap.oldPrice) + ' \u2014 ended' : 'older listing \u2014 ended'));
+    const shipLine = line('sb-ship', '\ud83d\udce6 Ship this one', i.swap.oldItem, i.swap.oldSku, i.swap.oldTitle, i.swap.oldPrice != null ? 'older listing, was ' + money2.format(i.swap.oldPrice) + ' \u2014 ended' : 'older listing \u2014 ended');
+    { const kk = kind(o); if (kk === 'toship' || kk === 'partial') { const sbt = shipBtn(o); sbt.style.marginTop = '0'; sbt.style.flex = 'none'; shipLine.append(sbt); } }   // v420
+    b.append(shipLine);
     b.append(line('sb-rel', '\u21bb Relisted \u2014 stays on the shelf', i.swap.newItem || i.itemId, i.sku, i.title, 'the one they bought, back on eBay'));
     if (!i.swap.endOk) {
       b.style.borderColor = 'var(--danger, #e55)';
