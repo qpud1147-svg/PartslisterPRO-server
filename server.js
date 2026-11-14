@@ -1,4 +1,5 @@
-// PartsLister Pro server — v481
+// PartsLister Pro server — v482
+// v482: Orders settings — shipTab: 'new' (a new tab every time) or 'same' (one eBay tab, reused).
 // v481: Orders settings (Settings → Orders): Swap on/off, how much older the other listing must be, show condition in View.
 // v480: Swap candidates say which number matched and whether it came from the sold listing's title (trust) or its item specifics (check it).
 // v479: Orders — Swap. When a newer listing sells and an older listing of the same part is still live, Swap relists the one
@@ -2035,7 +2036,7 @@ function swapPartNumbers(title, specifics) {   // part-number-looking codes from
 }
 function swapWords(title) { return new Set(String(title || '').toUpperCase().replace(/[^A-Z0-9 ]/g, ' ').split(/\s+/).filter(w => w.length >= 3 && !/^(OEM|USED|GENUINE|ORIGINAL|NEW|THE|AND|FOR|WITH)$/.test(w))); }
 // v481: Settings → Orders
-const ORDER_SETTINGS_DEFAULT = { swapOn: true, swapMinDays: 30, showCondition: false };
+const ORDER_SETTINGS_DEFAULT = { swapOn: true, swapMinDays: 30, showCondition: false, shipTab: 'new' };
 const orderSettingsOf = (st) => Object.assign({}, ORDER_SETTINGS_DEFAULT, (st && st.orderSettings) || {});
 app.get('/api/order-settings', requireUser, async (req, res) => {
   try { res.json(orderSettingsOf(await getUserSettings(req.user.id))); } catch (e) { res.status(500).json({ error: 'Could not load Orders settings' }); }
@@ -2045,7 +2046,7 @@ app.post('/api/order-settings', requireUser, express.json({ limit: '5kb' }), asy
     const b = req.body || {};
     const d = (await readUserData(req.user.id)) || { settings: {}, history: { pigtail: [], otherside: [] } };
     d.settings = d.settings || {};
-    d.settings.orderSettings = { swapOn: b.swapOn !== false, swapMinDays: Math.max(0, Math.min(3650, parseInt(b.swapMinDays, 10) || 0)), showCondition: b.showCondition === true };
+    d.settings.orderSettings = { swapOn: b.swapOn !== false, swapMinDays: Math.max(0, Math.min(3650, parseInt(b.swapMinDays, 10) || 0)), showCondition: b.showCondition === true, shipTab: b.shipTab === 'same' ? 'same' : 'new' };
     await writeUserData(req.user.id, d);
     res.json(Object.assign({ ok: true }, d.settings.orderSettings));
   } catch (e) { console.error('[order settings]', e.message); res.status(500).json({ error: 'Could not save' }); }

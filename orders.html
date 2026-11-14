@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Orders v420</title>
+<title>PartsLister Pro Orders v421</title>
 <!-- v382: switching views is instant; browser reload / Refresh really reloads. v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
 <!-- PartsLister Pro — Orders page (v319: new). Your sold items from eBay, newest first.
      v320: item photos, and click an order to see the listing (photos, description, item specifics).
@@ -242,7 +242,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v420</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v421</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -506,16 +506,17 @@ function render() {
 // ─── v409: SWAP — a newer listing sold while an older one of the same part is still live ────────────
 // Ship the buyer the OLDER item, end the older listing, and relist the one they bought (it's still on the shelf).
 let swapCands = {}, swapAsked = new Set(), swapBusy = false, swapOpenMore = new Set();
-let orderSet = { swapOn: true, swapMinDays: 30, showCondition: false };   // v418: Settings → Orders
+let orderSet = { swapOn: true, swapMinDays: 30, showCondition: false, shipTab: 'new' };   // v418: Settings → Orders
 fetch('/api/order-settings').then(r => r.ok ? r.json() : null).then(d => { if (d) orderSet = d; }).catch(() => {});
 const ageOf = (iso) => { const d = Math.floor((Date.now() - Date.parse(iso)) / 86400000); return d >= 365 ? (d / 365).toFixed(1).replace(/\.0$/, '') + ' yr' : d >= 60 ? Math.round(d / 30) + ' mo' : d + ' days'; };
-// v420: eBay's own shipping-label page for one order (same address as "Get shipping label" in Seller Hub). Opens in this tab.
+// v420: eBay's own shipping-label page for one order (same address as "Get shipping label" in Seller Hub).
+// v421: opens in a new tab every time, or in one reused eBay tab (Settings → Orders → Ship button).
 function shipBtn(o) {
   const a = document.createElement('a'); a.className = 'btn btn-primary btn-sm'; a.textContent = '\ud83d\udce6 Ship';
   a.href = 'https://www.ebay.com/ship/single/' + encodeURIComponent(o.id);
   a.title = 'Open eBay\u2019s shipping label page for order ' + o.id;
   a.style.cssText = 'display:inline-block;align-self:flex-start;width:fit-content;margin-top:6px;background:var(--accent);color:#000;font-weight:700;text-decoration:none;border-radius:4px;padding:5px 14px;font-size:12px;letter-spacing:.05em;';
-  a.addEventListener('click', e => e.stopPropagation());
+  a.addEventListener('click', e => { e.stopPropagation(); const same = orderSet.shipTab === 'same'; a.target = same ? 'partslister-ebay-ship' : '_blank'; a.rel = same ? '' : 'noopener'; });   // a named tab can't be reused with noopener
   return a;
 }
 function swapBox(o, i) {
