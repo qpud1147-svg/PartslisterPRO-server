@@ -258,7 +258,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v412</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v413</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -727,7 +727,7 @@ pageCache.rerun = () => { loadListings(false); loadDaily(false); };   // v380: f
         '<div class="ld-row">Quantity: <b>' + j.qty + ' available</b></div>' +
         (n != null ? '<div class="ld-row">Listed <b>' + n + (n === 1 ? ' day' : ' days') + '</b> ago</div>' : '') +
         (j.sku ? '<div class="ld-row">SKU: <b>' + esc(j.sku) + '</b></div>' : '') +
-        '<a class="ld-link" href="' + esc(j.url) + '" target="_blank" rel="noopener">Open on eBay ↗</a></div></div>' +
+        '<a class="btn btn-secondary btn-sm" style="display:inline-block;margin-top:10px;text-decoration:none;" href="' + esc(j.url) + '" target="_blank" rel="noopener">Open on eBay</a></div></div>' +   // v413: a button, same as Orders
         (j.specifics && j.specifics.length ? '<div class="ld-h">Item specifics</div><div class="ld-spec">' + j.specifics.map(x => '<div><span>' + esc(x.name) + '</span>' + esc(x.value) + '</div>').join('') + '</div>' : '') +
         (j.description ? '<div class="ld-h">Description</div><iframe class="ld-desc" sandbox="" id="ld-desc"></iframe>' : '');
       window.ldGo = ldGo;

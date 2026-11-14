@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Orders v421</title>
+<title>PartsLister Pro Orders v423</title>
 <!-- v382: switching views is instant; browser reload / Refresh really reloads. v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
 <!-- PartsLister Pro — Orders page (v319: new). Your sold items from eBay, newest first.
      v320: item photos, and click an order to see the listing (photos, description, item specifics).
@@ -242,7 +242,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v421</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v423</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -470,8 +470,8 @@ function render() {
     const body = document.createElement('div'); body.className = 'ebl-body';
     const titleEl = (i) => {
       const t = document.createElement('div'); t.className = 'ebl-title';
-      const a = document.createElement(i.itemId ? 'a' : 'span'); a.textContent = (i.qty > 1 ? i.qty + '× ' : '') + (i.title || '(no title)');
-      if (i.itemId) { a.href = 'https://www.ebay.com/itm/' + encodeURIComponent(i.itemId); a.target = '_blank'; a.rel = 'noopener'; }
+      const a = document.createElement('span'); a.textContent = (i.qty > 1 ? i.qty + '× ' : '') + (i.title || '(no title)');   // v422: the title opens the listing here (like Active), not eBay
+      a.style.cursor = 'pointer';
       t.append(a); return t;
     };
     if (!o.items.length) { const p = document.createElement('div'); p.className = 'ebl-title'; p.style.color = 'var(--muted)'; p.textContent = 'Items still importing…'; body.append(p); }
@@ -613,10 +613,10 @@ async function viewPhotos(c, sold, ctx) {   // v419: ctx = { list, idx, o, canSw
   const left = panel('SOLD', 'var(--accent)', sold), right = panel('OLDER LISTING', '#4aa3ff', c);
   // v419: right side — ‹ 1 of 3 › to flip between older listings, and Swap for the one shown
   if (ctx && ctx.list && (ctx.list.length > 1 || ctx.canSwap)) {
-    const nav = document.createElement('div'); nav.style.cssText = 'display:flex;align-items:center;gap:8px;justify-content:flex-end;width:100%;margin-bottom:4px;';
+    const nav = document.createElement('div'); nav.style.cssText = (innerWidth < 760 ? 'position:fixed;top:34px;right:12px;' : 'position:fixed;top:6px;right:56px;') + 'display:flex;align-items:center;gap:8px;z-index:2;';   // v423: top bar, doesn't push the listing down
     const btn = (txt, title) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = txt; b.title = title; b.style.cssText = 'background:#1b1b1b;border:1px solid #4aa3ff;color:#fff;border-radius:4px;padding:3px 10px;cursor:pointer;font-size:14px;'; return b; };
     if (ctx.list.length > 1) {
-      const n = ctx.list.length, go = (d) => { const k = (ctx.idx + d + n) % n; viewPhotos(ctx.list[k], sold, Object.assign({}, ctx, { idx: k })); };
+      const n = ctx.list.length, go = (d) => { const k = (ctx.idx + d + n) % n; viewPhotos(ctx.list[k], sold, Object.assign({}, ctx, { idx: k, soldIdx: left.idx })); };
       const pv = btn('\u2039', 'Previous older listing'), nx = btn('\u203a', 'Next older listing');
       pv.onclick = () => go(-1); nx.onclick = () => go(1);
       const lb = document.createElement('span'); lb.style.cssText = 'color:#fff;font-size:13px;font-weight:700;'; lb.textContent = (ctx.idx + 1) + ' of ' + n;
@@ -629,7 +629,7 @@ async function viewPhotos(c, sold, ctx) {   // v419: ctx = { list, idx, o, canSw
       sw.onclick = async () => { await doSwap(ctx.o, sold, c, sw, null); if (sold.swap) ov.remove(); };
       nav.append(sw);
     }
-    right.p.insertBefore(nav, right.h);
+    ov.append(nav);
   }
   // v416: how long ago each was listed, and how much older the older one is
   const top = document.createElement('div'); top.style.cssText = 'position:fixed;top:10px;left:0;right:0;text-align:center;color:#fff;font-size:15px;font-weight:700;pointer-events:none;';
@@ -656,6 +656,7 @@ async function viewPhotos(c, sold, ctx) {   // v419: ctx = { list, idx, o, canSw
     st.p.lastChild.remove();
     if (!st.pics.length) { st.p.append(Object.assign(document.createElement('div'), { textContent: 'eBay gave no photos for this listing.', style: 'color:#ccc;padding:30px' })); return; }
     st.pics.forEach((u, i) => { const t = document.createElement('img'); t.src = thumbPic(u); t.style.cssText = 'width:100%;aspect-ratio:1/1;object-fit:cover;border-radius:4px;cursor:pointer;'; t.onclick = () => { st.idx = i; st.show(); }; st.strip.append(t); });
+    if (st === left && ctx && ctx.soldIdx > 0 && ctx.soldIdx < st.pics.length) st.idx = ctx.soldIdx;   // v423: keep the sold photo you were on
     st.p.append(st.big, st.cnt, st.strip); st.show();
   };
   ages();
@@ -702,6 +703,7 @@ async function loadSwaps() {   // in the background: to-ship orders only, each i
       if (!j) { const e = r ? await r.json().catch(() => ({})) : {}; note('Swap check didn\u2019t finish: ' + (e.error || (r ? 'server ' + r.status : 'no connection')) + ' \u2014 reload to try again.'); return; }
       part.forEach(l => swapAsked.add(l.itemId));
       Object.assign(swapCands, j.candidates || {});
+      Object.keys(j.candidates || {}).forEach(k2 => swapCands[k2].sort((a, b) => (Date.parse(a.start) || 0) - (Date.parse(b.start) || 0)));   // v423: oldest first
       note('Swap check: ' + Math.min(toShip, toShip - lines.length + k + part.length) + ' of ' + toShip + ' sold items checked\u2026');
       if (Object.keys(j.candidates || {}).length) render();
     }
