@@ -1,4 +1,5 @@
-// PartsLister Pro server — v482
+// PartsLister Pro server — v483
+// v483: Swap matches whole part numbers only (read like the photo-scan prompt), never a piece in the middle of a longer number.
 // v482: Orders settings — shipTab: 'new' (a new tab every time) or 'same' (one eBay tab, reused).
 // v481: Orders settings (Settings → Orders): Swap on/off, how much older the other listing must be, show condition in View.
 // v480: Swap candidates say which number matched and whether it came from the sold listing's title (trust) or its item specifics (check it).
@@ -2023,16 +2024,36 @@ app.get('/api/orders/list', requireUser, async (req, res) => {
 
 // ─── v479: SWAP — sold a newer listing while an older one of the same part is still live ─────────
 const swapNorm = (t) => String(t || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
-function swapPartNumbers(title, specifics) {   // part-number-looking codes from the title and the part number fields
-  const out = new Set();
-  const add = (v) => String(v || '').split(/[\s,;|/()]+/).forEach(tok => {
-    const n = swapNorm(tok);
-    if (n.length >= 6 && (n.match(/\d/g) || []).length >= 3 && /[A-Z]|\d{7,}/.test(n) && !/^(19|20)\d\d(19|20)?\d\d$/.test(n)) out.add(n);
+// v483: part numbers read the way the photo-scan prompt describes them — an OEM number is letters + digits (often ending in
+// 1-2 letters), 6+ characters; short mold/cavity codes and years are ignored; a digits-only number counts only when the
+// title has no letters+digits number at all. A match must be the WHOLE number (dashes/spaces ignored) — never a piece
+// of a longer number. Numbers written with spaces ("84702 AL07A", "37820 R40 A73") are joined.
+const swapIsYear = (p) => /^(19|20)\d\d$/.test(p) || /^(19|20)\d\d(19|20)?\d\d$/.test(p) || /^\d\d$/.test(p);
+function swapCodes(text) {   // every whole part-number-looking code in a title, including ones split by spaces
+  const toks = String(text || '').toUpperCase().split(/[\s,;|/()]+/).map(t => t.replace(/^[^A-Z0-9]+|[^A-Z0-9]+$/g, '')).filter(Boolean);
+  const alnum = new Set(), digits = new Set();
+  const consider = (raw) => {
+    const n = swapNorm(raw);
+    if (n.length < 6 || n.length > 22 || swapIsYear(n) || (n.match(/\d/g) || []).length < 3) return;
+    if (/[A-Z]/.test(n)) { alnum.add(n); if (/^P\d{5,}[A-Z0-9]*$/.test(n)) alnum.add(n.slice(1)); }   // Mopar "(P)" prefix stuck on
+    else if (n.length >= 8) alnum.add(n); else digits.add(n);   // long digits-only (BMW, GM) are real numbers; 6-7 digits only as a last resort
+  };
+  // a "piece" of a spaced-out number: has a digit, isn't a year, engine size (2.4L, 5.7) or the like
+  const piece = (t) => /\d/.test(t) && !swapIsYear(swapNorm(t)) && !/^\d+\.\d+L?$/.test(t) && !/^\d+(K|MI|MILES|KM)$/.test(t);
+  let run = [];
+  const flush = () => { if (run.length > 1 && run.some(p => p.length >= 5)) consider(run.join('')); run = []; };   // model codes like "E90 328i" or "F150 4x4" aren't numbers   // the whole run only — never part of it
+  toks.forEach(t => { consider(t); if (piece(t)) run.push(t); else flush(); });
+  flush();
+  return alnum.size ? alnum : digits;   // digits-only only as a last resort, like the scan prompt
+}
+function swapPartNumbers(title, specifics) {   // the sold listing's numbers: title first, then its part-number fields
+  const fromTitle = swapCodes(title);
+  const spec = new Set();
+  (specifics || []).forEach(sp => {
+    if (!/part number|mpn|oe\/oem/i.test(sp.name) || /does not apply|n\/a/i.test(sp.value || '')) return;
+    String(sp.value || '').split(/[,;|]+/).forEach(v => swapCodes(v).forEach(n => { if (!fromTitle.has(n)) spec.add(n); }));
   });
-  add(title);
-  const fromTitle = new Set(out);
-  (specifics || []).forEach(sp => { if (/part number|mpn|oe\/oem/i.test(sp.name) && !/does not apply|n\/a/i.test(sp.value || '')) add(sp.value); });
-  return [...fromTitle].concat([...out].filter(p => !fromTitle.has(p)).map(p => Object.assign(new String(p), { spec: true })));   // title numbers first
+  return [...fromTitle].concat([...spec].map(p => Object.assign(new String(p), { spec: true })));
 }
 function swapWords(title) { return new Set(String(title || '').toUpperCase().replace(/[^A-Z0-9 ]/g, ' ').split(/\s+/).filter(w => w.length >= 3 && !/^(OEM|USED|GENUINE|ORIGINAL|NEW|THE|AND|FOR|WITH)$/.test(w))); }
 // v481: Settings → Orders
@@ -2059,7 +2080,7 @@ app.post('/api/orders/swap-candidates', requireUser, express.json({ limit: '100k
     const lines = ((req.body || {}).lines || []).slice(0, 60).filter(l => /^\d{6,20}$/.test(String(l.itemId || '')));
     if (!lines.length) return res.json({ candidates: {} });
     const live = await fetchLiveList(req.user.id, false);
-    const liveNorm = live.map(l => ({ l, n: swapNorm(l.title), w: swapWords(l.title), words: new Set(String(l.title).toUpperCase().split(/[^A-Z0-9]+/).map(swapNorm)) }));
+    const liveNorm = live.map(l => ({ l, w: swapWords(l.title), codes: swapCodes(l.title) }));   // v483: whole codes only
     const out = {};
     for (const line of lines) {
       const id = String(line.itemId);
@@ -2075,7 +2096,7 @@ app.post('/api/orders/swap-candidates', requireUser, express.json({ limit: '100k
         if (started && ls && ls >= started) continue;   // only listings that are OLDER than the one that sold
         if (started && ls && started - ls < minGap) continue;   // v481: …by at least the amount set in Settings → Orders
         let how = '', on = '', from = '';
-        const hit = pns.find(p => !p.spec && (x.words.has(String(p)) || (p.length >= 8 && x.n.includes(String(p))))) || pns.find(p => p.spec && (x.words.has(String(p)) || (p.length >= 8 && x.n.includes(String(p)))));
+        const hit = pns.find(p => !p.spec && x.codes.has(String(p))) || pns.find(p => p.spec && x.codes.has(String(p)));
         if (hit) { how = 'part number'; on = String(hit); from = hit.spec ? 'specifics' : 'title'; }
         else if (sw.size >= 4) {
           let common = 0; sw.forEach(w => { if (x.w.has(w)) common++; });
