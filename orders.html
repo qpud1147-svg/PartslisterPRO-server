@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Orders v413</title>
+<title>PartsLister Pro Orders v414</title>
 <!-- v382: switching views is instant; browser reload / Refresh really reloads. v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
 <!-- PartsLister Pro — Orders page (v319: new). Your sold items from eBay, newest first.
      v320: item photos, and click an order to see the listing (photos, description, item specifics).
@@ -230,7 +230,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v413</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v414</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -531,49 +531,56 @@ function swapBox(o, i) {
   b.append(t, v, op, sw);
   return b;
 }
-// v413: View = photos of BOTH listings side by side — the one that sold (left) and the older one (right), full size
+// v414: View = photos of BOTH listings side by side — the one that sold (left) and the older one (right).
+// All photos at once in a grid, 6 to a row (3 on a phone); click one to see it full size.
 const fullPic = (u) => String(u || '').replace(/\/s-l\d+\./i, '/s-l1600.').replace(/\$_\d+\.(jpg|jpeg|png)/i, '$_57.$1');
-const thumbPic = (u) => String(u || '').replace(/\/s-l\d+\./i, '/s-l225.').replace(/\$_\d+\.(jpg|jpeg|png)/i, '$_35.$1');
+const midPic = (u) => String(u || '').replace(/\/s-l\d+\./i, '/s-l500.').replace(/\$_\d+\.(jpg|jpeg|png)/i, '$_12.$1');
 async function viewPhotos(c, sold) {
   document.getElementById('sw-photos')?.remove();
+  const phoneW = innerWidth < 760;
   const ov = document.createElement('div'); ov.id = 'sw-photos';
-  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:9999;display:flex;flex-direction:column;padding:44px 12px 12px;box-sizing:border-box;overflow:auto;';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.94);z-index:9999;padding:44px 12px 12px;box-sizing:border-box;overflow:auto;';
   ov.addEventListener('click', e => { if (e.target === ov || e.target.dataset.bg) ov.remove(); });
   const x = document.createElement('button'); x.type = 'button'; x.textContent = '\u00d7'; x.title = 'Close (Esc)'; x.onclick = () => ov.remove();
   x.style.cssText = 'position:fixed;top:6px;right:14px;background:none;border:none;color:#fff;font-size:32px;cursor:pointer;z-index:2;';
   const row = document.createElement('div'); row.dataset.bg = '1';
-  row.style.cssText = 'display:flex;gap:12px;flex:1;min-height:0;' + (innerWidth < 760 ? 'flex-direction:column;' : '');
+  row.style.cssText = 'display:flex;gap:12px;align-items:flex-start;' + (phoneW ? 'flex-direction:column;' : '');
   ov.append(x, row); document.body.append(ov);
-  const panels = [];
-  const panel = (label, color, it) => {
-    const p = document.createElement('div'); p.style.cssText = 'flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;border:2px solid ' + color + ';border-radius:8px;padding:8px;background:#0b0b0b;';
-    const h = document.createElement('div'); h.style.cssText = 'color:#fff;font-size:13px;text-align:center;margin-bottom:6px;width:100%;';
+  // one photo full size (click anywhere or Esc to go back to the grid)
+  const zoom = (u) => {
+    const z = document.createElement('div'); z.id = 'sw-zoom';
+    z.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.97);z-index:10000;display:flex;align-items:center;justify-content:center;cursor:zoom-out;';
+    const im = document.createElement('img'); im.style.cssText = 'max-width:96vw;max-height:94vh;object-fit:contain;';
+    im.onerror = () => { im.onerror = null; im.src = u; }; im.src = fullPic(u);
+    z.append(im); z.onclick = () => z.remove(); document.body.append(z);
+  };
+  const panel = (label, color, it, id, fallback) => {
+    const p = document.createElement('div'); p.style.cssText = 'flex:1;min-width:0;width:100%;border:2px solid ' + color + ';border-radius:8px;padding:8px;background:#0b0b0b;box-sizing:border-box;';
+    const h = document.createElement('div'); h.style.cssText = 'color:#fff;font-size:13px;text-align:center;margin-bottom:8px;';
     h.innerHTML = '<b style="color:' + color + ';letter-spacing:.06em">' + label + '</b><br>' + esc(it.title || '') + '<br><span style="color:#bbb">' + (it.price != null ? money2.format(it.price) + ' \u00b7 ' : '') + (it.sku ? 'SKU ' + esc(it.sku) + ' \u00b7 ' : '') + '#' + esc(it.itemId) + '</span>';
-    const big = document.createElement('img'); big.style.cssText = 'max-width:100%;flex:1;min-height:0;max-height:' + (innerWidth < 760 ? '45vh' : '68vh') + ';object-fit:contain;border-radius:6px;cursor:pointer;';
-    const cnt = document.createElement('div'); cnt.style.cssText = 'color:#ccc;font-size:12px;margin:6px 0;';
-    const strip = document.createElement('div'); strip.style.cssText = 'display:flex;gap:6px;overflow-x:auto;max-width:100%;padding:4px;';
-    p.append(h, Object.assign(document.createElement('div'), { textContent: 'Loading photos\u2026', style: 'color:#ccc;padding:30px' }));
-    row.append(p);
-    const st = { p, h, big, cnt, strip, pics: [], idx: 0 };
-    st.show = () => { if (!st.pics.length) return; const u = st.pics[st.idx]; big.onerror = () => { big.onerror = null; big.src = u; }; big.src = fullPic(u); cnt.textContent = (st.idx + 1) + ' / ' + st.pics.length; [...strip.children].forEach((t, i) => t.style.outline = i === st.idx ? '2px solid ' + color : 'none'); };
-    st.go = (d) => { if (st.pics.length) { st.idx = (st.idx + d + st.pics.length) % st.pics.length; st.show(); } };
-    big.onclick = () => st.go(1);
-    panels.push(st); return st;
+    const grid = document.createElement('div'); grid.style.cssText = 'display:grid;grid-template-columns:repeat(' + (phoneW ? 3 : 6) + ',1fr);gap:4px;';
+    grid.append(Object.assign(document.createElement('div'), { textContent: 'Loading photos\u2026', style: 'color:#ccc;padding:20px;grid-column:1/-1;text-align:center' }));
+    p.append(h, grid); row.append(p);
+    (async () => {
+      const r = await getJSON('/api/items/' + encodeURIComponent(id));
+      const pics = (r && r.item && r.item.pictures && r.item.pictures.length) ? r.item.pictures : (fallback ? [fallback] : []);
+      if (!document.getElementById('sw-photos')) return;
+      grid.textContent = '';
+      if (!pics.length) { grid.append(Object.assign(document.createElement('div'), { textContent: 'eBay gave no photos for this listing.', style: 'color:#ccc;padding:20px;grid-column:1/-1;text-align:center' })); return; }
+      pics.forEach(u => {
+        const t = document.createElement('img'); t.loading = 'lazy'; t.alt = ''; t.title = 'Click for full size';
+        t.style.cssText = 'width:100%;aspect-ratio:1/1;object-fit:cover;border-radius:4px;cursor:zoom-in;background:#151515;';
+        t.onerror = () => { t.onerror = null; t.src = u; }; t.src = midPic(u);
+        t.onclick = () => zoom(u); grid.append(t);
+      });
+      h.querySelector('span').append(' \u00b7 ' + pics.length + ' photo' + (pics.length === 1 ? '' : 's'));
+    })();
   };
-  const left = panel('SOLD', 'var(--accent)', sold), right = panel('OLDER LISTING', '#4aa3ff', c);
-  const fill = async (st, id, fallback) => {
-    const r = await getJSON('/api/items/' + encodeURIComponent(id));
-    st.pics = (r && r.item && r.item.pictures && r.item.pictures.length) ? r.item.pictures : (fallback ? [fallback] : []);
-    if (!document.getElementById('sw-photos')) return;
-    st.p.lastChild.remove();
-    if (!st.pics.length) { st.p.append(Object.assign(document.createElement('div'), { textContent: 'eBay gave no photos for this listing.', style: 'color:#ccc;padding:30px' })); return; }
-    st.pics.forEach((u, i) => { const t = document.createElement('img'); t.src = thumbPic(u); t.style.cssText = 'height:54px;border-radius:4px;cursor:pointer;flex:none;'; t.onclick = () => { st.idx = i; st.show(); }; st.strip.append(t); });
-    st.p.append(st.big, st.cnt, st.strip); st.show();
-  };
-  fill(left, sold.itemId, thumbs[sold.itemId]); fill(right, c.itemId, c.image);
-  document.addEventListener('keydown', function k(e) {   // ← → move both, Esc closes
+  panel('SOLD', 'var(--accent)', sold, sold.itemId, thumbs[sold.itemId]);
+  panel('OLDER LISTING', '#4aa3ff', c, c.itemId, c.image);
+  document.addEventListener('keydown', function k(e) {   // Esc: full-size photo first, then the whole view
     if (!document.getElementById('sw-photos')) { document.removeEventListener('keydown', k); return; }
-    if (e.key === 'Escape') ov.remove(); else if (e.key === 'ArrowRight') panels.forEach(p => p.go(1)); else if (e.key === 'ArrowLeft') panels.forEach(p => p.go(-1));
+    if (e.key === 'Escape') { const z = document.getElementById('sw-zoom'); if (z) z.remove(); else ov.remove(); }
   });
 }
 function esc(t) { return String(t == null ? '' : t).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch])); }
