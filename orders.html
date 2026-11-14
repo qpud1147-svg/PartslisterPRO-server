@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Orders v424</title>
+<title>PartsLister Pro Orders v427</title>
 <!-- v382: switching views is instant; browser reload / Refresh really reloads. v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
 <!-- PartsLister Pro — Orders page (v319: new). Your sold items from eBay, newest first.
      v320: item photos, and click an order to see the listing (photos, description, item specifics).
@@ -153,6 +153,9 @@
   .swap.bad { border-color: var(--danger, #e55); background: rgba(230,80,80,0.08); }
   /* v416: swapped order — a blue box with the item to ship and the one that went back up */
   .swapbox { margin-top: 8px; border: 2px solid #4aa3ff; border-radius: 8px; padding: 8px; background: rgba(74,163,255,0.07); }
+  .ebl.swapcard { border: 2px solid #4aa3ff; border-radius: 8px; background: rgba(74,163,255,0.07); margin: 6px 0; }
+  .swapbox.flat { border: none; background: none; padding: 0; margin-top: 6px; }
+  .swapbox.flat > .sb-head { display: none; }
   .swapbox .sb-head { font-size: 11px; font-weight: 700; letter-spacing: .08em; color: #4aa3ff; margin-bottom: 6px; text-transform: uppercase; }
   .swapbox .sb-row { display: flex; gap: 10px; align-items: center; padding: 6px; border-radius: 6px; }
   .swapbox .sb-row + .sb-row { margin-top: 6px; }
@@ -242,7 +245,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v424</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v427</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -462,6 +465,20 @@ function render() {
     const k = kind(o);
     const row = document.createElement('div'); row.className = 'ebl' + (k === 'refunded' || k === 'cancelled' ? ' off' : '');
     row.addEventListener('click', (e) => { if (!e.target.closest('a')) openOrder(o.id); });
+    if (o.items.length === 1 && o.items[0].swap) {   // v425: a swapped order IS the blue box — no repeat of the item above it
+      row.classList.add('swapcard'); if (!o.items[0].swap.endOk) row.style.borderColor = 'var(--danger, #e55)';
+      const body = document.createElement('div'); body.className = 'ebl-body'; body.style.flex = '1';
+      const top = document.createElement('div'); top.style.cssText = 'display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;padding-right:24px;';
+      top.append(Object.assign(document.createElement('span'), { className: 'sb-head', textContent: '\u2194 Swapped', style: 'font-size:12px;font-weight:700;letter-spacing:.08em;color:#4aa3ff;text-transform:uppercase;' }));
+      const [d0, t0] = o.sold.split(' ');
+      top.append(Object.assign(document.createElement('span'), { className: 'ebl-sub', textContent: 'Sold ' + new Date(d0 + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' \u00b7 ' + t0 + ' \u00b7 order ' + o.id }));
+      const pr = document.createElement('span'); pr.style.cssText = 'margin-left:auto;font-weight:700;'; pr.textContent = money2.format(o.total);
+      const sm0 = document.createElement('small'); sm0.style.cssText = 'color:var(--muted);font-weight:400;margin-left:6px;'; sm0.textContent = CHIP[k][0]; pr.append(sm0); top.append(pr);
+      const sb = swapBox(o, o.items[0]); sb.classList.add('flat');
+      body.append(top); if (o.note) body.append(noteBox(o)); body.append(sb);   // v427
+      const num = document.createElement('span'); num.className = 'ebl-n'; num.textContent = ix + 1; row.append(num, body);
+      box.append(row); return;
+    }
     const first = o.items.find(i => i.itemId) || o.items[0];
     const imgBox = document.createElement('div'); imgBox.className = 'ebl-img';
     const img = document.createElement('img'); img.alt = ''; img.loading = 'lazy'; img.className = 'o-thumb';
@@ -488,6 +505,7 @@ function render() {
     const skuLine = (i) => { const s2 = document.createElement('div'); s2.className = 'ebl-sku-l'; const sm = document.createElement('small'); sm.textContent = 'SKU'; s2.append(sm, document.createTextNode(i.sku)); return s2; };
     if (o.items[0] && o.items[0].sku) body.append(skuLine(o.items[0]));
     else if (o.items[0]) { const ns = document.createElement('div'); ns.className = 'ebl-sub'; ns.style.opacity = '.55'; ns.textContent = 'No SKU'; body.append(ns); }
+    if (o.note) body.append(noteBox(o));   // v427: the buyer's checkout note, before you ship
     if ((k === 'toship' || k === 'partial') && !o.items.some(i => i.swap)) body.append(shipBtn(o));   // swapped orders get it on the "Ship this one" line instead   // v420: straight to eBay's label page for this order
     o.items.forEach(i => { const sb = swapBox(o, i); if (sb) body.append(sb); });   // v409
     o.items.slice(1).forEach(i => {
@@ -512,13 +530,32 @@ fetch('/api/order-settings').then(r => r.ok ? r.json() : null).then(d => { if (d
 const ageOf = (iso) => { const d = Math.floor((Date.now() - Date.parse(iso)) / 86400000); return d >= 365 ? (d / 365).toFixed(1).replace(/\.0$/, '') + ' yr' : d >= 60 ? Math.round(d / 30) + ' mo' : d + ' days'; };
 // v420: eBay's own shipping-label page for one order (same address as "Get shipping label" in Seller Hub).
 // v421: opens in a new tab every time, or in one reused eBay tab (Settings → Orders → Ship button).
+// v427: note the buyer left at checkout
+function noteBox(o) {
+  const n = document.createElement('div');
+  n.style.cssText = 'margin-top:6px;padding:6px 10px;border-left:3px solid var(--accent);background:rgba(245,166,35,0.08);border-radius:4px;font-size:13px;white-space:pre-wrap;';
+  const b = document.createElement('b'); b.textContent = 'Note from buyer: '; b.style.color = 'var(--accent)';
+  n.append(b, document.createTextNode(o.note));
+  n.addEventListener('click', e => e.stopPropagation());
+  return n;
+}
 function shipBtn(o) {
-  const a = document.createElement('a'); a.className = 'btn btn-primary btn-sm'; a.textContent = '\ud83d\udce6 Ship';
+  const a = document.createElement('a'); a.className = 'btn btn-primary btn-sm'; a.textContent = 'Ship';
   a.href = 'https://www.ebay.com/ship/single/' + encodeURIComponent(o.id);
   a.title = 'Open eBay\u2019s shipping label page for order ' + o.id;
   a.style.cssText = 'display:inline-block;align-self:flex-start;width:fit-content;margin-top:6px;background:var(--accent);color:#000;font-weight:700;text-decoration:none;border-radius:4px;padding:5px 14px;font-size:12px;letter-spacing:.05em;';
   a.addEventListener('click', e => { e.stopPropagation(); const same = orderSet.shipTab === 'same'; a.target = same ? 'partslister-ebay-ship' : '_blank'; a.rel = same ? '' : 'noopener'; });   // a named tab can't be reused with noopener
   return a;
+}
+// v426: a swapped sale — the buyer got the OLDER listing's item, not the one in the title
+function swapTagHTML(sw) {
+  if (!sw || !sw.oldItem) return '';
+  const e = (t) => String(t == null ? '' : t).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+  return '<div class="swaptag" onclick="event.stopPropagation()" style="border:1px solid #4aa3ff;border-radius:6px;padding:4px 8px;margin-top:6px;font-size:12px;background:rgba(74,163,255,0.08);display:flex;gap:8px;align-items:center;flex-wrap:wrap;">'
+    + '<b style="color:#4aa3ff">\u2194 Swapped</b><span>sent SKU <b style="color:var(--accent)">' + e(sw.oldSku || '(none)') + '</b></span>'
+    + (sw.oldTitle ? '<span style="color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:320px;" title="' + e(sw.oldTitle) + '">' + e(sw.oldTitle) + '</span>' : '')
+    + '<a href="/active?open=' + encodeURIComponent(sw.oldItem) + '" target="_blank" rel="noopener" style="color:#4aa3ff">Open</a>'
+    + '<a href="https://www.ebay.com/itm/' + encodeURIComponent(sw.oldItem) + '" target="_blank" rel="noopener" style="color:#4aa3ff">Open on eBay</a></div>';
 }
 function swapBox(o, i) {
   if (!i.itemId) return null;
@@ -538,10 +575,11 @@ function swapBox(o, i) {
       const ex = document.createElement('div'); ex.style.fontSize = '11px'; ex.style.color = 'var(--muted)'; ex.append(a); if (extra) ex.append(' \u00b7 ' + extra);
       tx.append(ex); r.append(ph, tx); return r;
     };
-    const shipLine = line('sb-ship', '\ud83d\udce6 Ship this one', i.swap.oldItem, i.swap.oldSku, i.swap.oldTitle, i.swap.oldPrice != null ? 'older listing, was ' + money2.format(i.swap.oldPrice) + ' \u2014 ended' : 'older listing \u2014 ended');
+    // v425: Original sold (the one they bought, relisted) on top; Swapped in (the older one — ship this) below, with the only Ship button
+    b.append(line('sb-rel', 'Original sold', i.swap.newItem || i.itemId, i.sku, i.title, 'relisted \u2014 stays on the shelf'));
+    const shipLine = line('sb-ship', 'Swapped in \u2014 ship this one', i.swap.oldItem, i.swap.oldSku, i.swap.oldTitle, i.swap.oldPrice != null ? 'older listing, was ' + money2.format(i.swap.oldPrice) + ' \u2014 ended' : 'older listing \u2014 ended');
     { const kk = kind(o); if (kk === 'toship' || kk === 'partial') { const sbt = shipBtn(o); sbt.style.marginTop = '0'; sbt.style.flex = 'none'; shipLine.append(sbt); } }   // v420
     b.append(shipLine);
-    b.append(line('sb-rel', '\u21bb Relisted \u2014 stays on the shelf', i.swap.newItem || i.itemId, i.sku, i.title, 'the one they bought, back on eBay'));
     if (!i.swap.endOk) {
       b.style.borderColor = 'var(--danger, #e55)';
       const w = document.createElement('span'); w.textContent = '\u26a0 the older listing may still be live';
@@ -780,6 +818,8 @@ async function showDetail(id) {
   head.append(el('span', '', 'Order ' + o.id));
   if (o.refunded > 0) head.append(el('span', '', 'Refunded ' + money2.format(o.refunded)));
   box.append(head);
+  if (o.note) box.append(noteBox(o));   // v427
+  o.items.forEach(it => { if (it.swap) { const st = document.createElement('div'); st.innerHTML = swapTagHTML(it.swap); box.append(st.firstChild); } });   // v426
   if (!o.items.length) { box.append(el('div', 'd-msg', 'The items in this order are still importing.')); return; }
   for (const it of o.items) {
     const wrap = el('div', 'd-item');

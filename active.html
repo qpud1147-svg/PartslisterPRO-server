@@ -258,7 +258,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v413</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v414</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -978,6 +978,17 @@ pageCache.rerun = () => { loadListings(false); loadDaily(false); };   // v380: f
     if (failed && picFails < 4) { picFails++; setTimeout(() => fillPics(arr, redraw), 3000 * picFails); } else if (!failed) picFails = 0;
     if (changed) redraw();
   }
+  // v414: a swapped sale — the buyer got the OLDER listing's item, not the one in the title
+  function swapTagHTML(sw) {
+    if (!sw || !sw.oldItem) return '';
+    const e = (t) => String(t == null ? '' : t).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+    return '<div class="swaptag" onclick="event.stopPropagation()" style="border:1px solid #4aa3ff;border-radius:6px;padding:4px 8px;margin-top:6px;font-size:12px;background:rgba(74,163,255,0.08);display:flex;gap:8px;align-items:center;flex-wrap:wrap;">'
+      + '<b style="color:#4aa3ff">\u2194 Swapped</b><span>sent SKU <b style="color:var(--accent)">' + e(sw.oldSku || '(none)') + '</b></span>'
+      + (sw.oldTitle ? '<span style="color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:320px;" title="' + e(sw.oldTitle) + '">' + e(sw.oldTitle) + '</span>' : '')
+      + '<a href="/active?open=' + encodeURIComponent(sw.oldItem) + '" target="_blank" rel="noopener" style="color:#4aa3ff">Open</a>'
+      + '<a href="https://www.ebay.com/itm/' + encodeURIComponent(sw.oldItem) + '" target="_blank" rel="noopener" style="color:#4aa3ff">Open on eBay</a></div>';
+  }
+  window.swapTagHTML = swapTagHTML;
   let histShown = { sold: 50, ended: 50 };
   window.histMore = function (kind) { histShown[kind] += 50; histRender(kind); };
   function histRender(kind) {
@@ -989,7 +1000,7 @@ pageCache.rerun = () => { loadListings(false); loadDaily(false); };   // v380: f
       return '<div class="ebl ll"><span class="ebl-n">' + (ix + 1) + '</span>' + photo(x) + '<div class="ebl-body"><div class="ebl-title"><a href="#" onclick="openListing(\'' + esc(x.itemId) + '\');return false">' + esc(x.title || ('Item ' + x.itemId)) + '</a></div>' +
         '<div class="ebl-price">' + (sold ? '<span class="yo-g">' + money(x.price) + '</span>' : money(x.price)) + (sold && x.shipping != null ? '<small>' + (x.shipping === 0 ? 'Free shipping' : '+ ' + money(x.shipping) + ' shipping') + '</small>' : '') + (sold && x.qty > 1 ? '<small>' + x.qty + ' sold</small>' : '') + '</div>' +
         '<div class="ebl-sub">' + (sold ? 'Sold <b>' + esc(dstr(x.soldAt)) + '</b>' : 'Ended <b>' + esc(dstr(x.endedAt)) + '</b>') + (ran != null ? ' · ran <b>' + ran + (ran === 1 ? ' day' : ' days') + '</b>' : '') + '</div>' +
-        (x.sku ? '<div class="ebl-sku-l"><small>SKU</small>' + esc(x.sku) + '</div>' : '<div class="ebl-sub" style="opacity:.55">No SKU</div>') + chkBtns(x) + '</div></div>';
+        (x.sku ? '<div class="ebl-sku-l"><small>SKU</small>' + esc(x.sku) + '</div>' : '<div class="ebl-sub" style="opacity:.55">No SKU</div>') + (sold && x.swap ? swapTagHTML(x.swap) : '') + chkBtns(x) + '</div></div>';   // v414
     }).join('') + (a.length > histShown[kind] ? '<button class="btn btn-secondary btn-sm" style="margin-top:10px" onclick="histMore(\'' + kind + '\')">Show more</button>' : '');
     histFill(kind);
   }

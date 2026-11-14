@@ -199,7 +199,7 @@
   /* FIGURES — one hero number, then supporting tiles */
   .figures {
     display: grid;
-    grid-template-columns: 1.6fr repeat(4, 1fr);
+    grid-template-columns: 1.6fr repeat(5, 1fr);   /* v418: + sell-through */
     gap: 12px;
     margin-bottom: 12px;
   }
@@ -570,7 +570,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v417</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v418</span></div>
   </a>
   <!-- v316: switch pages -->
   <nav class="page-tabs" aria-label="Pages">
@@ -659,6 +659,11 @@
       <div class="tile-label">Best day</div>
       <div class="tile-value" id="fig-best">—</div>
       <div class="tile-sub" id="fig-best-sub">&nbsp;</div>
+    </div>
+    <div class="tile" title="Items sold in the dates shown, divided by your listings live on eBay right now">   <!-- v418 -->
+      <div class="tile-label">Sell-through</div>
+      <div class="tile-value" id="fig-st">—</div>
+      <div class="tile-sub" id="fig-st-sub">&nbsp;</div>
     </div>
   </div>
 
@@ -1285,6 +1290,8 @@ let salesMode = 'sample';   // 'sample' until eBay is connected, then 'live'
 let salesInfo = {};         // { syncing, lastSync, lastError, historyFrom }
 let pollTimer = null;
 let taxOn = false;        // v309: add sales tax into the sales numbers
+let activeNow = null;   // v418: listings live on eBay now (Home's count), for sell-through
+fetch('/api/listings/summary').then(r => r.ok ? r.json() : null).then(j => { if (j && j.activeCount != null) { activeNow = j.activeCount; try { renderFigures(); } catch (e) { /* not drawn yet */ } } }).catch(() => {});
 let liveRows = [];        // v309: last daily rows from the server, so the toggle can redraw without refetching
 let feesInfo = { available: false, reason: 'not_connected' };   // v307
 let feesByDay = new Map();                                       // v307: 'YYYY-MM-DD' → [fees, penalty]
@@ -1394,6 +1401,10 @@ function renderFigures() {
   setText('fig-today', money0.format(today.sales));
   setText('fig-today-sub', yesterday ? 'Yesterday ' + money0.format(yesterday.sales) : ' ');
 
+  // v418: sell-through = items sold in these dates ÷ listings live on eBay now
+  { const sold = shownDays.reduce((s, d) => s + (d.items != null ? d.items : d.orders), 0);
+    if (activeNow > 0) { const p = sold / activeNow * 100; setText('fig-st', (p < 10 ? p.toFixed(1) : Math.round(p)) + '%'); setText('fig-st-sub', sold.toLocaleString() + ' sold · ' + activeNow.toLocaleString() + ' listed'); }
+    else { setText('fig-st', '—'); setText('fig-st-sub', activeNow === 0 ? 'No listings live' : 'Counting your listings…'); } }
   setText('fig-orders', orders.toLocaleString());
   setText('fig-orders-sub', orders ? 'Avg ' + money2.format(total / orders) + ' per order' : ' ');
 
@@ -1745,7 +1756,7 @@ async function logout() {
 function buildLiveDays(rows, totalDays) {
   // const byDay = new Map(rows.map(([key, sales, orders]) => [key, { sales, orders }]));
   // v309: rows are [day, sales, orders, tax]; tax is added when the toggle is on
-  const byDay = new Map(rows.map(([key, sales, orders, tax]) => [key, { sales: Math.round((sales + (taxOn ? (tax || 0) : 0)) * 100) / 100, orders }]));
+  const byDay = new Map(rows.map(([key, sales, orders, tax, items]) => [key, { sales: Math.round((sales + (taxOn ? (tax || 0) : 0)) * 100) / 100, orders, items: items == null ? orders : items }]));   // v418: + items
   const days = [];
   const now = new Date();
   // const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -1754,8 +1765,8 @@ function buildLiveDays(rows, totalDays) {
     const d = new Date(today);
     d.setDate(today.getDate() - i);
     const key = dayKey(d);
-    const v = byDay.get(key) || { sales: 0, orders: 0 };
-    days.push({ date: d, key, sales: v.sales, orders: v.orders });
+    const v = byDay.get(key) || { sales: 0, orders: 0, items: 0 };
+    days.push({ date: d, key, sales: v.sales, orders: v.orders, items: v.items });
   }
   return days;
 }

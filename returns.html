@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Returns v420</title>
+<title>PartsLister Pro Returns v421</title>
 <!-- v382: switching views is instant; browser reload / Refresh really reloads. v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
 <!-- PartsLister Pro — Returns page (v324: new). Returns, "item not received" claims and cases from
      eBay's Post-Order API, read live (nothing saved on the server). Approve / decline / refund from here.
@@ -348,7 +348,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v420</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v421</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -837,6 +837,7 @@ function render() {
     mid.append(l1);
     const pr = el('div', 'ebl-price', x.amount !== null && x.amount !== undefined ? money2.format(x.amount) : '—');
     mid.append(pr);
+    if (x.swap) { const st = document.createElement('div'); st.innerHTML = swapTagHTML(x.swap); mid.append(st.firstChild); }   // v421
     const l2 = el('div', 'ebl-sub');
     l2.append(document.createTextNode([x.buyer && 'Buyer ' + x.buyer, x.reason && nice(x.reason), nice(x.status || x.state)].filter(Boolean).join(' · ')));
     mid.append(l2);
@@ -1098,6 +1099,16 @@ function progressEl(pg) {
   });
   return wrap;
 }
+// v421: a swapped sale — the buyer got the OLDER listing's item, not the one in the title
+function swapTagHTML(sw) {
+  if (!sw || !sw.oldItem) return '';
+  const e = (t) => String(t == null ? '' : t).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+  return '<div class="swaptag" onclick="event.stopPropagation()" style="border:1px solid #4aa3ff;border-radius:6px;padding:4px 8px;margin-top:6px;font-size:12px;background:rgba(74,163,255,0.08);display:flex;gap:8px;align-items:center;flex-wrap:wrap;">'
+    + '<b style="color:#4aa3ff">\u2194 Swapped</b><span>sent SKU <b style="color:var(--accent)">' + e(sw.oldSku || '(none)') + '</b></span>'
+    + (sw.oldTitle ? '<span style="color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:320px;" title="' + e(sw.oldTitle) + '">' + e(sw.oldTitle) + '</span>' : '')
+    + '<a href="/active?open=' + encodeURIComponent(sw.oldItem) + '" target="_blank" rel="noopener" style="color:#4aa3ff">Open</a>'
+    + '<a href="https://www.ebay.com/itm/' + encodeURIComponent(sw.oldItem) + '" target="_blank" rel="noopener" style="color:#4aa3ff">Open on eBay</a></div>';
+}
 async function showDetail(key) {
   const [kind, id] = key.split(':');
   const x = items.find(i => i.kind === kind && i.id === id);
@@ -1128,6 +1139,7 @@ async function showDetail(key) {
   }
   const pgBox = el('div'), histBox = el('div');   // v415: steps right under the item, then reason + comment, then history
   if (x.kind === 'return') box.append(pgBox);
+  if (x.swap) { const st = document.createElement('div'); st.innerHTML = swapTagHTML(x.swap); box.append(st.firstChild); }   // v421: the buyer got the older item
   if (x.reason) box.append(el('div', 'r-line', 'Reason: ' + nice(x.reason) + (x.qty > 1 ? ' · qty ' + x.qty : '')));
   if (x.comments) box.append(el('div', 'quote', '“' + x.comments + '”'));
   if (x.buyer && x.itemId) {   // v419: ask the buyer a question — opens Messages on this buyer + item (with a way back here)

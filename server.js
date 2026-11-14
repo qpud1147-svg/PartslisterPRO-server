@@ -1,4 +1,7 @@
-// PartsLister Pro server — v484
+// PartsLister Pro server — v487
+// v487: the buyer's checkout note (buyerCheckoutNotes) is saved with each order and shown on Orders; one-time 30-day re-import to pick up notes.
+// v486: /api/sales days carry items sold (for the Sales page's sell-through).
+// v485: Returns and Active → Sold carry the swap (which older item was actually sent) so those pages can say "Swapped".
 // v484: Swap leaves pigtails out (titles with the Listing Tool's pigtail words) unless Settings → Orders → Match pigtails is on.
 // v483: Swap matches whole part numbers only (read like the photo-scan prompt), never a piece in the middle of a longer number.
 // v482: Orders settings — shipTab: 'new' (a new tab every time) or 'same' (one eBay tab, reused).
@@ -355,6 +358,7 @@ async function setupDatabase() {
     -- v309: sales tax per order + the dashboard's tax toggle
     ALTER TABLE ebay_orders ADD COLUMN IF NOT EXISTS tax NUMERIC(12,2) NOT NULL DEFAULT 0;
     ALTER TABLE ebay_connections ADD COLUMN IF NOT EXISTS orders_v INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE ebay_orders ADD COLUMN IF NOT EXISTS buyer_note TEXT;   -- v487: note from the buyer at checkout
     -- v319: what was in each order (for the Orders page) + whether it has shipped
     CREATE TABLE IF NOT EXISTS ebay_order_items (
       user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -1381,6 +1385,7 @@ function mapOrder(o) {
     refunded: Math.round(refunded * 100) / 100,   // v312
     refundedTax: Math.round(refundedTax * 100) / 100,   // v314
     shipStatus: o.orderFulfillmentStatus || null,          // v319: NOT_STARTED / IN_PROGRESS / FULFILLED
+    note: o.buyerCheckoutNotes ? String(o.buyerCheckoutNotes).slice(0, 1000) : null,   // v487
     lineItems: (o.lineItems || []).map(li => ({            // v319: what was sold (no buyer details)
       lineItemId: String(li.lineItemId || ''),
       itemId: li.legacyItemId ? String(li.legacyItemId) : null,
@@ -1397,17 +1402,17 @@ async function saveOrders(userId, orders) {
   const values = [];
   const params = [];
   orders.forEach((o, i) => {
-    const b = i * 13;   // v309: + tax, v312: + refunded, v314: + refunded_tax, v319: + ship_status
-    values.push(`($${b + 1},$${b + 2},$${b + 3},$${b + 4},$${b + 5},$${b + 6},$${b + 7},$${b + 8},$${b + 9},$${b + 10},$${b + 11},$${b + 12},$${b + 13})`);
-    params.push(userId, o.orderId, o.created, o.total, o.payout, o.fees, o.items, o.status, o.counted, o.tax, o.refunded, o.refundedTax, o.shipStatus);
+    const b = i * 14;   // v309: + tax, v312: + refunded, v314: + refunded_tax, v319: + ship_status, v487: + buyer_note
+    values.push(`($${b + 1},$${b + 2},$${b + 3},$${b + 4},$${b + 5},$${b + 6},$${b + 7},$${b + 8},$${b + 9},$${b + 10},$${b + 11},$${b + 12},$${b + 13},$${b + 14})`);
+    params.push(userId, o.orderId, o.created, o.total, o.payout, o.fees, o.items, o.status, o.counted, o.tax, o.refunded, o.refundedTax, o.shipStatus, o.note);
   });
   await pool.query(
-    `INSERT INTO ebay_orders (user_id, order_id, created_at, total, payout, fees, item_count, status, counted, tax, refunded, refunded_tax, ship_status)
+    `INSERT INTO ebay_orders (user_id, order_id, created_at, total, payout, fees, item_count, status, counted, tax, refunded, refunded_tax, ship_status, buyer_note)
      VALUES ${values.join(',')}
      ON CONFLICT (user_id, order_id) DO UPDATE SET
        created_at = EXCLUDED.created_at, total = EXCLUDED.total, payout = EXCLUDED.payout,
        fees = EXCLUDED.fees, item_count = EXCLUDED.item_count, status = EXCLUDED.status, counted = EXCLUDED.counted,
-       tax = EXCLUDED.tax, refunded = EXCLUDED.refunded, refunded_tax = EXCLUDED.refunded_tax, ship_status = EXCLUDED.ship_status`,
+       tax = EXCLUDED.tax, refunded = EXCLUDED.refunded, refunded_tax = EXCLUDED.refunded_tax, ship_status = EXCLUDED.ship_status, buyer_note = EXCLUDED.buyer_note`,
     params
   );
   // v319: the items in each order
@@ -1451,6 +1456,8 @@ async function syncOrders(userId) {
     if (!conn.last_sync || (conn.orders_v || 0) < 6) {   // v319: order items for the Orders page — re-import once
       historyFrom = new Date(started.getTime() - HISTORY_DAYS * 86400000);
       filter = `creationdate:[${historyFrom.toISOString()}..]`;
+    } else if ((conn.orders_v || 0) < 7) {   // v487: once — the last 30 days again, to pick up buyer notes
+      filter = `creationdate:[${new Date(started.getTime() - 30 * 86400000).toISOString()}..]`;
     } else {
       const since = new Date(new Date(conn.last_sync).getTime() - 2 * 86400000);
       filter = `lastmodifieddate:[${since.toISOString()}..]`;
@@ -1484,7 +1491,7 @@ async function syncOrders(userId) {
     }
     await pool.query(
       `UPDATE ebay_connections SET last_sync = $2, last_error = NULL,
-         history_from = COALESCE($3, history_from), orders_v = 6 WHERE user_id = $1`,   // v313: was 3, v314: was 4, v319: was 5
+         history_from = COALESCE($3, history_from), orders_v = 7 WHERE user_id = $1`,   // v487: was 6   // v313: was 3, v314: was 4, v319: was 5
       [userId, started, historyFrom]
     );
     await syncFees(userId);   // v307: fees import has its own error handling
@@ -1656,7 +1663,8 @@ app.get('/api/sales', requireUser, async (req, res) => {
               -- v314: refund comes off sales; the tax eBay gave back comes off tax.
               COALESCE(SUM(total - refunded) FILTER (WHERE counted), 0)::float AS sales,
               (COUNT(*) FILTER (WHERE counted))::int AS orders,
-              COALESCE(SUM(tax - refunded_tax) FILTER (WHERE counted), 0)::float AS tax
+              COALESCE(SUM(tax - refunded_tax) FILTER (WHERE counted), 0)::float AS tax,
+              COALESCE(SUM(GREATEST(item_count, 1)) FILTER (WHERE counted), 0)::int AS items   -- v486
          FROM ebay_orders
         WHERE user_id = $1 AND created_at > now() - interval '740 days'
         GROUP BY 1 ORDER BY 1`,
@@ -1681,7 +1689,7 @@ app.get('/api/sales', requireUser, async (req, res) => {
       lastError: conn.last_error || null,
       historyFrom,
       taxReady: (conn.orders_v || 0) >= 3,   // v309, v312: refunds imported too
-      days: r.rows.map(x => [x.day, Math.round(x.sales * 100) / 100, x.orders, Math.round(x.tax * 100) / 100])
+      days: r.rows.map(x => [x.day, Math.round(x.sales * 100) / 100, x.orders, Math.round(x.tax * 100) / 100, x.items])   // v486: + items sold
     });
   } catch (e) {
     console.error('[sales]', e);
@@ -1987,16 +1995,16 @@ app.get('/api/orders/list', requireUser, async (req, res) => {
     if (!conn || !conn.refresh_enc) return res.json({ connected: false });
     const days = Math.max(1, Math.min(730, parseInt(req.query.days, 10) || 31));
     const tz = safeTimeZone(String(req.query.tz || 'UTC'));
-    if ((conn.orders_v || 0) < 6 && !syncing.has(req.user.id) && !conn.last_error) syncOrders(req.user.id);
+    if ((conn.orders_v || 0) < 7 && !syncing.has(req.user.id) && !conn.last_error) syncOrders(req.user.id);   // v487: was < 6 (notes)
     const r = await pool.query(
       `SELECT o.order_id, o.created_at, to_char(o.created_at AT TIME ZONE $2, 'YYYY-MM-DD HH24:MI') AS sold_local,
-              o.total::float, o.tax::float, o.refunded::float, o.refunded_tax::float, o.counted, o.status, o.ship_status,
+              o.total::float, o.tax::float, o.refunded::float, o.refunded_tax::float, o.counted, o.status, o.ship_status, o.buyer_note,
               COALESCE(json_agg(json_build_object('itemId', i.item_id, 'sku', i.sku, 'title', i.title, 'qty', i.qty, 'price', i.price::float)
                          ORDER BY i.line_item_id) FILTER (WHERE i.line_item_id IS NOT NULL), '[]') AS items
          FROM ebay_orders o
          LEFT JOIN ebay_order_items i ON i.user_id = o.user_id AND i.order_id = o.order_id
         WHERE o.user_id = $1 AND (o.created_at AT TIME ZONE $2)::date > (now() AT TIME ZONE $2)::date - $3::int
-        GROUP BY o.order_id, o.created_at, o.total, o.tax, o.refunded, o.refunded_tax, o.counted, o.status, o.ship_status
+        GROUP BY o.order_id, o.created_at, o.total, o.tax, o.refunded, o.refunded_tax, o.counted, o.status, o.ship_status, o.buyer_note
         ORDER BY o.created_at DESC
         LIMIT 3000`,
       [req.user.id, tz, days]
@@ -2014,7 +2022,8 @@ app.get('/api/orders/list', requireUser, async (req, res) => {
         id: x.order_id, sold: x.sold_local, counted: x.counted, status: x.status || '', ship: x.ship_status || null,
         total: x.counted ? Math.round((x.total + x.tax - x.refunded - x.refunded_tax) * 100) / 100 : 0,
         refunded: Math.round((x.refunded + x.refunded_tax) * 100) / 100,
-        items: x.items
+        items: x.items,
+        note: x.buyer_note || null   // v487
       }))
     });
   } catch (e) {
@@ -2023,6 +2032,16 @@ app.get('/api/orders/list', requireUser, async (req, res) => {
   }
 });
 
+async function swapLookup(uid) {   // v485: order_id|sold_item → swap, and sold_item → swap
+  const byOrder = new Map(), byItem = new Map();
+  try {
+    (await pool.query('SELECT order_id, sold_item, old_item, old_sku, old_title, new_item, created_at FROM order_swaps WHERE user_id = $1 ORDER BY created_at', [uid])).rows.forEach(z => {
+      const v = { oldItem: z.old_item, oldSku: z.old_sku, oldTitle: z.old_title, newItem: z.new_item, at: z.created_at };
+      byOrder.set(z.order_id + '|' + z.sold_item, v); byItem.set(z.sold_item, v);
+    });
+  } catch (e) { /* no table yet */ }
+  return { find: (orderId, itemId) => (orderId && byOrder.get(orderId + '|' + itemId)) || (itemId ? byItem.get(String(itemId)) : null) || null };
+}
 // ─── v479: SWAP — sold a newer listing while an older one of the same part is still live ─────────
 const swapNorm = (t) => String(t || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 // v483: part numbers read the way the photo-scan prompt describes them — an OEM number is letters + digits (often ending in
@@ -4745,7 +4764,7 @@ async function fetchHistory(userId, kind, force) {
   return items;
 }
 app.get('/api/active/sold', requireUser, async (req, res) => {
-  try { const items = await fetchHistory(req.user.id, 'sold', req.query.refresh === '1'); res.json({ items }); }
+  try { const items = await fetchHistory(req.user.id, 'sold', req.query.refresh === '1'); const sl = await swapLookup(req.user.id); res.json({ items: items.map(x => { const sw = sl.find(null, x.itemId); return sw ? Object.assign({}, x, { swap: sw }) : x; }) }); }   // v485
   catch (e) { console.error('[sold list]', e.message); res.status(502).json({ error: 'Could not load your sales from eBay: ' + e.message }); }
 });
 app.get('/api/active/ended', requireUser, async (req, res) => {
@@ -5636,7 +5655,8 @@ app.get('/api/returns', requireUser, async (req, res) => {
     // const { items, errors } = await loadReturns(req.user.id, req.query.view === 'closed' ? 'closed' : 'open');
     // res.json({ connected: true, items, errors });
     const { items, errors, disputesNeedScope } = await loadReturns(req.user.id, req.query.view === 'closed' ? 'closed' : 'open');
-    res.json({ connected: true, items, errors, disputesNeedScope });   // v373
+    const sl = await swapLookup(req.user.id);   // v485
+    res.json({ connected: true, items: (items || []).map(x => { const sw = x.itemId ? sl.find(x.orderId, x.itemId) : null; return sw ? Object.assign({}, x, { swap: sw }) : x; }), errors, disputesNeedScope });   // v373
   } catch (e) {
     console.error('[returns]', e.message);
     res.json({ connected: true, items: [], errors: [e.message] });
