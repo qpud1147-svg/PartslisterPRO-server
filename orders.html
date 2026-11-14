@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Orders v415</title>
+<title>PartsLister Pro Orders v416</title>
 <!-- v382: switching views is instant; browser reload / Refresh really reloads. v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
 <!-- PartsLister Pro — Orders page (v319: new). Your sold items from eBay, newest first.
      v320: item photos, and click an order to see the listing (photos, description, item specifics).
@@ -151,6 +151,18 @@
   .swap.done { border-color: var(--success, #3c9); background: rgba(60,200,140,0.08); }
   .swap.done b { color: var(--success, #3c9); }
   .swap.bad { border-color: var(--danger, #e55); background: rgba(230,80,80,0.08); }
+  /* v416: swapped order — a blue box with the item to ship and the one that went back up */
+  .swapbox { margin-top: 8px; border: 2px solid #4aa3ff; border-radius: 8px; padding: 8px; background: rgba(74,163,255,0.07); }
+  .swapbox .sb-head { font-size: 11px; font-weight: 700; letter-spacing: .08em; color: #4aa3ff; margin-bottom: 6px; text-transform: uppercase; }
+  .swapbox .sb-row { display: flex; gap: 10px; align-items: center; padding: 6px; border-radius: 6px; }
+  .swapbox .sb-row + .sb-row { margin-top: 6px; }
+  .swapbox .sb-ship { background: rgba(60,200,140,0.12); border: 1px solid var(--success, #3c9); }
+  .swapbox .sb-rel { opacity: .75; border: 1px dashed var(--border); }
+  .swapbox .sb-ph { width: 56px; height: 56px; flex: none; border-radius: 4px; overflow: hidden; background: #151515; }
+  .swapbox .sb-tag { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+  .swapbox .sb-ship .sb-tag { color: var(--success, #3c9); }
+  .swapbox .sb-sku { font-size: 18px; font-weight: 800; }
+  .swapbox .sb-title { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .ebl { position: relative; }
   .ebl-n { position: absolute; right: 12px; top: 8px; font-size: 17px; font-weight: 700; color: var(--muted, #888); }
   .ebl-sku-l { font-size: 17px; font-weight: 700; color: var(--accent); letter-spacing: 0.3px; line-height: 1.2; word-break: break-word; }
@@ -230,7 +242,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v415</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v416</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -497,12 +509,25 @@ const ageOf = (iso) => { const d = Math.floor((Date.now() - Date.parse(iso)) / 8
 function swapBox(o, i) {
   if (!i.itemId) return null;
   const mk = (cls) => { const b = document.createElement('div'); b.className = 'swap' + (cls ? ' ' + cls : ''); b.addEventListener('click', e => e.stopPropagation()); return b; };
-  if (i.swap) {   // already swapped: say which item to ship
-    const b = mk(i.swap.endOk ? 'done' : 'bad');
-    const t = document.createElement('span'); t.innerHTML = '<b>\u2194 Swapped</b> \u2014 ship from SKU <b>' + esc(i.swap.oldSku || '(none)') + '</b>';
-    const a = document.createElement('a'); a.href = 'https://www.ebay.com/itm/' + encodeURIComponent(i.swap.oldItem); a.target = '_blank'; a.rel = 'noopener'; a.textContent = 'older listing ' + i.swap.oldItem;
-    b.append(t, a);
+  if (i.swap) {   // v416: already swapped — a blue box: the item to ship (older) and the one that was relisted
+    const b = document.createElement('div'); b.className = 'swapbox'; b.addEventListener('click', e => e.stopPropagation());
+    b.append(Object.assign(document.createElement('div'), { className: 'sb-head', textContent: '\u2194 Swapped' }));
+    const line = (cls, tag, id, sku, title, extra) => {
+      const r = document.createElement('div'); r.className = 'sb-row ' + cls;
+      const ph = document.createElement('div'); ph.className = 'sb-ph';
+      const im = document.createElement('img'); im.className = 'o-thumb'; im.alt = ''; const pid = cls === 'sb-rel' ? i.itemId : id; im.dataset.item = pid; if (thumbs[pid]) setPhoto(im, thumbs[pid]); ph.append(im);
+      const tx = document.createElement('div'); tx.style.minWidth = '0'; tx.style.flex = '1';
+      tx.append(Object.assign(document.createElement('div'), { className: 'sb-tag', textContent: tag }),
+        Object.assign(document.createElement('div'), { className: 'sb-sku', textContent: 'SKU ' + (sku || '(none)') }),
+        Object.assign(document.createElement('div'), { className: 'sb-title', textContent: title || '', title: title || '' }));
+      const a = document.createElement('a'); a.href = 'https://www.ebay.com/itm/' + encodeURIComponent(id); a.target = '_blank'; a.rel = 'noopener'; a.textContent = '#' + id; a.style.fontSize = '11px'; a.style.color = '#4aa3ff';
+      const ex = document.createElement('div'); ex.style.fontSize = '11px'; ex.style.color = 'var(--muted)'; ex.append(a); if (extra) ex.append(' \u00b7 ' + extra);
+      tx.append(ex); r.append(ph, tx); return r;
+    };
+    b.append(line('sb-ship', '\ud83d\udce6 Ship this one', i.swap.oldItem, i.swap.oldSku, i.swap.oldTitle, i.swap.oldPrice != null ? 'older listing, was ' + money2.format(i.swap.oldPrice) + ' \u2014 ended' : 'older listing \u2014 ended'));
+    b.append(line('sb-rel', '\u21bb Relisted \u2014 stays on the shelf', i.swap.newItem || i.itemId, i.sku, i.title, 'the one they bought, back on eBay'));
     if (!i.swap.endOk) {
+      b.style.borderColor = 'var(--danger, #e55)';
       const w = document.createElement('span'); w.textContent = '\u26a0 the older listing may still be live';
       const end = document.createElement('button'); end.type = 'button'; end.className = 'btn btn-secondary btn-sm'; end.textContent = 'End it now';
       end.onclick = async () => {
@@ -548,7 +573,7 @@ async function viewPhotos(c, sold) {
   const panel = (label, color, it) => {
     const p = document.createElement('div'); p.style.cssText = 'flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;border:2px solid ' + color + ';border-radius:8px;padding:8px;background:#0b0b0b;';
     const h = document.createElement('div'); h.style.cssText = 'color:#fff;font-size:13px;text-align:center;margin-bottom:6px;width:100%;';
-    h.innerHTML = '<b style="color:' + color + ';letter-spacing:.06em">' + label + '</b><br>' + esc(it.title || '') + '<br><span style="color:#bbb">' + (it.price != null ? money2.format(it.price) + ' \u00b7 ' : '') + (it.sku ? 'SKU ' + esc(it.sku) + ' \u00b7 ' : '') + '#' + esc(it.itemId) + '</span>';
+    h.innerHTML = '<b style="color:' + color + ';letter-spacing:.06em">' + label + '</b><br>' + esc(it.title || '') + '<br><span style="color:#bbb">' + (it.price != null ? money2.format(it.price) + ' \u00b7 ' : '') + (it.sku ? 'SKU ' + esc(it.sku) + ' \u00b7 ' : '') + '#' + esc(it.itemId) + '</span><br><span class="sw-age" style="color:#fff;font-weight:600"></span>';
     const big = document.createElement('img'); big.style.cssText = 'max-width:100%;flex:1;min-height:0;max-height:' + (innerWidth < 760 ? '45vh' : '68vh') + ';object-fit:contain;border-radius:6px;cursor:pointer;';
     const cnt = document.createElement('div'); cnt.style.cssText = 'color:#ccc;font-size:12px;margin:6px 0;';
     const strip = document.createElement('div'); strip.style.cssText = 'display:grid;grid-template-columns:repeat(6,minmax(0,64px));justify-content:center;gap:6px;max-width:100%;padding:4px;';   // v415: rows of 6, no running off the side
@@ -561,8 +586,20 @@ async function viewPhotos(c, sold) {
     panels.push(st); return st;
   };
   const left = panel('SOLD', 'var(--accent)', sold), right = panel('OLDER LISTING', '#4aa3ff', c);
+  // v416: how long ago each was listed, and how much older the older one is
+  const top = document.createElement('div'); top.style.cssText = 'position:fixed;top:10px;left:0;right:60px;text-align:center;color:#fff;font-size:15px;font-weight:700;';
+  ov.append(top);
+  const starts = {};
+  const longFor = (ms) => { const d = Math.round(ms / 86400000); return d >= 365 ? (d / 365).toFixed(1).replace(/\.0$/, '') + ' years' : d >= 60 ? Math.round(d / 30) + ' months' : d >= 14 ? Math.round(d / 7) + ' weeks' : d + ' day' + (d === 1 ? '' : 's'); };
+  const ages = () => {
+    [['sold', left], ['old', right]].forEach(([k, st]) => { const a = st.h.querySelector('.sw-age'); if (a && starts[k]) a.textContent = 'listed ' + longFor(Date.now() - starts[k]) + ' ago'; });
+    if (starts.sold && starts.old) { const diff = starts.sold - starts.old; top.textContent = diff > 86400000 ? 'The older listing is ' + longFor(diff) + ' older' : 'Both were listed around the same time'; }
+  };
+  if (c.start) starts.old = Date.parse(c.start);
   const fill = async (st, id, fallback) => {
     const r = await getJSON('/api/items/' + encodeURIComponent(id));
+    if (r && r.item && r.item.started) { starts[st === left ? 'sold' : 'old'] = starts[st === left ? 'sold' : 'old'] || Date.parse(r.item.started); }
+    ages();
     st.pics = (r && r.item && r.item.pictures && r.item.pictures.length) ? r.item.pictures : (fallback ? [fallback] : []);
     if (!document.getElementById('sw-photos')) return;
     st.p.lastChild.remove();
@@ -570,6 +607,7 @@ async function viewPhotos(c, sold) {
     st.pics.forEach((u, i) => { const t = document.createElement('img'); t.src = thumbPic(u); t.style.cssText = 'width:100%;aspect-ratio:1/1;object-fit:cover;border-radius:4px;cursor:pointer;'; t.onclick = () => { st.idx = i; st.show(); }; st.strip.append(t); });
     st.p.append(st.big, st.cnt, st.strip); st.show();
   };
+  ages();
   fill(left, sold.itemId, thumbs[sold.itemId]); fill(right, c.itemId, c.image);
   document.addEventListener('keydown', function k(e) {   // ← → move both, Esc closes
     if (!document.getElementById('sw-photos')) { document.removeEventListener('keydown', k); return; }
