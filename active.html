@@ -261,7 +261,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v416</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v417</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -331,21 +331,23 @@
   <div class="chart-card">
     <div class="chart-top">
       <h2 id="lc-title">Listings per day</h2>
-      <div class="range-picker" role="group" aria-label="Range" id="lc-range">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-left:auto;">   <!-- v417: All / Net new sits left of the day buttons -->
+      <div class="range-picker" style="margin-left:0" role="group" aria-label="Which listings" id="lc-new" title="Net new leaves out relists — items put back up by Swap or by Relist on the Returns page (teal on top of the bars)">
+        <button type="button" data-n="all" aria-pressed="true">All</button>
+        <button type="button" data-n="new">Net new</button>
+      </div>
+      <div class="range-picker" style="margin-left:0" role="group" aria-label="Range" id="lc-range">
         <button type="button" data-r="1">Today</button>
         <button type="button" data-r="7">7 Day</button>
         <button type="button" data-r="31" aria-pressed="true">31 Day</button>
         <button type="button" data-r="90">90 Day</button>
+      </div>
       </div>
     </div>
     <div class="chart-modes">   <!-- v438: Listings | Value, and (Value only) You keep · Listed · Buyer pays. The row keeps its height so nothing jumps. -->
       <div class="range-picker" style="margin-left:0" role="group" aria-label="Count" id="lc-kind">
         <button type="button" data-k="n" aria-pressed="true">Listings</button>
         <button type="button" data-k="v">Value</button>
-      </div>
-      <div class="range-picker" style="margin-left:0" role="group" aria-label="Which listings" id="lc-new" title="Relists = items put back up by Swap or by Relist on the Returns page (teal on top of the bars)">
-        <button type="button" data-n="all" aria-pressed="true">All</button>
-        <button type="button" data-n="new">New only</button>
       </div>
       <div class="range-picker" style="margin-left:0;visibility:hidden" role="group" aria-label="Value view" id="lc-vmode">
         <button type="button" data-m="keep" title="Price + shipping minus eBay's average fees (your own rate, from your last 90 days of orders)">You keep</button>
@@ -1172,7 +1174,7 @@ function drawDaily() {
     const bi = bars.reduce((a, b, i) => b.n > bars[a].n ? i : a, 0), best = bars[bi], bd = daily.days.slice(-lcRange)[bi];
     setText('lc-best', best && best.n ? F(best.n) : '—'); setText('lc-best-k', best && best.n && bd ? 'Best day · ' + dLabel(bd.date, { month: 'short', day: 'numeric' }) : 'Best day');
   }
-  setText('lc-note', (lcNew === 'new' ? 'New listings only \u2014 relists from Swap and Returns left out' : 'Every listing that went up' + (relTotal ? ' (teal = ' + (money$ ? fmtMoney(relTotal) : relTotal) + ' relisted by Swap or Returns)' : '')) + ', including ones that since sold or ended · your time zone · checked ' + timeAgo(daily.checkedAt)
+  setText('lc-note', (lcNew === 'new' ? 'Net new \u2014 relists from Swap and Returns left out' : 'Every listing that went up' + (relTotal ? ' (teal = ' + (money$ ? fmtMoney(relTotal) : relTotal) + ' relisted by Swap or Returns)' : '')) + ', including ones that since sold or ended · your time zone · checked ' + timeAgo(daily.checkedAt)
     + (money$ ? ' · ' + (lcVMode === 'keep' ? (rt.fee != null ? 'estimate: price + shipping minus your average eBay fees (' + (rt.fee * 100).toFixed(1) + '% of sales, last ' + (rt.days || 30) + ' days)' : 'not enough sales yet to estimate your fees — showing the listed value') : lcVMode === 'buyer' ? (rt.tax != null ? 'estimate: price + shipping plus your average sales tax (' + (rt.tax * 100).toFixed(1) + '% of sales, last ' + (rt.days || 30) + ' days)' : 'not enough sales yet to estimate tax — showing the listed value') : 'price + shipping per quantity') + (daily.shipEst ? ' · ' + daily.shipEst + ' listing' + (daily.shipEst === 1 ? ' has' : 's have') + ' calculated shipping, estimated at your average of $' + Number(rt.ship).toFixed(2) + ' (from your last ' + (rt.shipDays || 30) + ' days of orders)' : '') + (daily.noShip ? ' · ' + daily.noShip + ' listing' + (daily.noShip === 1 ? ' has' : 's have') + ' calculated shipping and there are not enough recent orders to estimate it (counted as $0)' : '') : ''));
 
   const svg = document.getElementById('lchart'), wrap = document.getElementById('lchart-wrap');

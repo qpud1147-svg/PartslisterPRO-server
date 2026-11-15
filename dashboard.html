@@ -233,6 +233,7 @@
   /* .fees-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; } */
   .fees-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 12px; }   /* v315: + penalty this year */
   .tile.penalty { border-left-width: 3px; }
+  #chart .penbar { fill: var(--danger); pointer-events: none; }   /* v419 */
   .tile.penalty.ok { border-left-color: var(--success); }
   .tile.penalty.bad { border-left-color: var(--danger); background: rgba(224,82,82,0.06); }
   .tile.penalty.bad .tile-value { color: var(--danger); }
@@ -570,7 +571,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v418</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v419</span></div>
   </a>
   <!-- v316: switch pages -->
   <nav class="page-tabs" aria-label="Pages">
@@ -606,10 +607,7 @@
     -->
     <!-- v305: says where the numbers come from — sample, or eBay with last update -->
     <button type="button" class="sample-badge" id="sample-badge" onclick="badgeClick()">Sample data</button>
-    <!-- v309: sales tax on/off -->
-    <button type="button" class="tax-toggle" id="tax-toggle" role="switch" aria-checked="false" onclick="setTax(!taxOn, true)" style="display:none;">
-      <span class="track"><span class="knob"></span></span><span id="tax-toggle-label">Include sales tax</span>
-    </button>
+    <!-- v419: the tax switch became You keep / Listed / Buyer pays (in the row under the dates) -->
     <div class="range-picker" role="group" aria-label="Date range">
       <button type="button" data-range="today">Today</button>
       <button type="button" data-range="week">Week</button>
@@ -621,6 +619,11 @@
     </div>
     <!-- v315: any month, or your own start and end dates -->
     <div class="range-extra">
+      <div class="range-picker" role="group" aria-label="Which amount" id="sales-view" style="display:none;margin-left:0;">   <!-- v419 -->
+        <button type="button" data-v="keep" onclick="setSalesView('keep', true)" title="Sales minus the eBay fees you actually paid">You keep</button>
+        <button type="button" data-v="listed" onclick="setSalesView('listed', true)" title="Item sales + shipping, without sales tax">Listed</button>
+        <button type="button" data-v="buyer" onclick="setSalesView('buyer', true)" title="What buyers paid, sales tax included (matches eBay's Total sales)">Buyer pays</button>
+      </div>
       <select id="range-month" aria-label="Show one month" onchange="if (this.value) setRange(this.value, true)">
         <option value="">Month…</option>
       </select>
@@ -1290,6 +1293,7 @@ let salesMode = 'sample';   // 'sample' until eBay is connected, then 'live'
 let salesInfo = {};         // { syncing, lastSync, lastError, historyFrom }
 let pollTimer = null;
 let taxOn = false;        // v309: add sales tax into the sales numbers
+let salesView = 'listed';   // v419: keep | listed | buyer  (buyer = taxOn)
 let activeNow = null;   // v418: listings live on eBay now (Home's count), for sell-through
 fetch('/api/listings/summary').then(r => r.ok ? r.json() : null).then(j => { if (j && j.activeCount != null) { activeNow = j.activeCount; try { renderFigures(); } catch (e) { /* not drawn yet */ } } }).catch(() => {});
 let liveRows = [];        // v309: last daily rows from the server, so the toggle can redraw without refetching
@@ -1376,7 +1380,7 @@ function renderFigures() {
   const best = shownDays.reduce((b, d) => (d.sales > b.sales ? d : b), shownDays[0]);
 
   // setText('fig-total-label', 'Sales · ' + r.label);
-  setText('fig-total-label', (salesMode === 'live' && taxOn ? 'Sales incl. tax · ' : 'Sales · ') + r.label);   // v309
+  setText('fig-total-label', (salesMode !== 'live' ? 'Sales · ' : salesView === 'keep' ? 'You keep · ' : salesView === 'buyer' ? 'Sales incl. tax · ' : 'Sales · ') + r.label);   // v309, v419
   setText('fig-total', money0.format(total));
   // Compare against the same-length period right before it
   // const prev = allDays.slice(-2 * r.days, -r.days);
@@ -1417,7 +1421,7 @@ function renderFigures() {
   setText('fig-best-sub', best.sales > 0 ? fmtLong(best.date) : ' ');
 
   setText('chart-title', 'Sales per day · ' + r.label);
-  renderFees(total);   // v307
+  renderFees(salesView === 'keep' && salesMode === 'live' ? total + shownDays.reduce((s2, d2) => s2 + ((feesByDay.get(d2.key) || [0])[0] || 0), 0) : total);   // v307; v419: fees % of sales before fees
 }
 
 // ─── CHART ───────────────────────────────────────────────────────────────────
@@ -1503,6 +1507,8 @@ function renderChart() {
     const y = m.top + ph - h;
     const p = el('path', { class: 'bar', d: barPath(x, y, bw, h) }, bars);
     barEls.push(p);
+    const pen = salesMode === 'live' && salesView !== 'keep' && feesByDay ? ((feesByDay.get(d.key) || [0, 0])[1] || 0) : 0;   // v419: penalty fees in red on top
+    if (pen > 0.005 && h > 0) { const ph2 = Math.min(h, Math.max(2, (pen / max) * ph)); el('path', { class: 'penbar', d: barPath(x, y, bw, ph2) }, bars); }
   });
 
   // Label the single bar on the Today view (it's the only value)
@@ -1545,6 +1551,7 @@ function renderChart() {
     v.textContent = money2.format(d.sales);
     tip.appendChild(v);
     tip.appendChild(document.createTextNode(d.orders + ' order' + (d.orders === 1 ? '' : 's') + ' · ' + fmtLong(d.date)));
+    { const pen = salesMode === 'live' && salesView !== 'keep' && feesByDay ? ((feesByDay.get(d.key) || [0, 0])[1] || 0) : 0; if (pen > 0.005) { const pl = document.createElement('div'); pl.style.color = 'var(--danger)'; pl.textContent = money2.format(pen) + ' penalty fees'; tip.appendChild(pl); } }   // v419
     const h = (d.sales / max) * ph;
     let x = m.left + i * slot + slot / 2;
     const y = Math.max(m.top + ph - h - 10, 70);
@@ -1677,7 +1684,7 @@ function setRange(range, save) {
   curInfo = info;
   rangeStartIdx = allDays.findIndex(d => d.key >= info.start);
   shownDays = allDays.filter(d => d.key >= info.start && d.key <= info.end);
-  document.querySelectorAll('.range-picker button').forEach(b => {
+  document.querySelectorAll('.range-picker button[data-range]').forEach(b => {
     b.setAttribute('aria-pressed', b.dataset.range === range ? 'true' : 'false');
   });
   fillMonthMenu();
@@ -1698,7 +1705,7 @@ function setRange(range, save) {
   renderTable();
 }
 
-document.querySelectorAll('.range-picker button').forEach(b => {
+document.querySelectorAll('.range-picker button[data-range]').forEach(b => {
   b.addEventListener('click', () => setRange(b.dataset.range, true));
 });
 
@@ -1756,7 +1763,8 @@ async function logout() {
 function buildLiveDays(rows, totalDays) {
   // const byDay = new Map(rows.map(([key, sales, orders]) => [key, { sales, orders }]));
   // v309: rows are [day, sales, orders, tax]; tax is added when the toggle is on
-  const byDay = new Map(rows.map(([key, sales, orders, tax, items]) => [key, { sales: Math.round((sales + (taxOn ? (tax || 0) : 0)) * 100) / 100, orders, items: items == null ? orders : items }]));   // v418: + items
+  const feeOf = (k) => salesView === 'keep' && typeof feesByDay !== 'undefined' && feesByDay ? ((feesByDay.get(k) || [0])[0] || 0) : 0;   // v419: You keep = sales minus that day's eBay fees
+  const byDay = new Map(rows.map(([key, sales, orders, tax, items]) => [key, { sales: Math.round((sales + (taxOn ? (tax || 0) : 0) - feeOf(key)) * 100) / 100, orders, items: items == null ? orders : items }]));   // v418: + items
   const days = [];
   const now = new Date();
   // const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -1805,6 +1813,8 @@ async function refreshSales() {
   await loadSales();
   renderTaxToggle();   // v309
   await loadFees();   // v307
+  if (salesView === 'keep' && salesMode === 'live') allDays = buildLiveDays(liveRows, 730);   // v419: needs the fees
+  renderTaxToggle();
   setRange(currentRange, false);
   if (document.getElementById('settings-overlay').classList.contains('open')) loadEbayStatus();
 }
@@ -1883,7 +1893,21 @@ function showToast(msg, isError) {
 }
 
 // ─── v309: SALES TAX TOGGLE ──────────────────────────────────────────────────
-function renderTaxToggle() {
+function renderTaxToggle() {   // v419: now the You keep / Listed / Buyer pays buttons
+  const g = document.getElementById('sales-view'); if (!g) return;
+  g.style.display = salesMode === 'live' ? 'inline-flex' : 'none';
+  g.querySelectorAll('button').forEach(b => {
+    b.setAttribute('aria-pressed', String(b.dataset.v === salesView));
+    if (b.dataset.v === 'buyer') { b.disabled = !salesInfo.taxReady; if (!salesInfo.taxReady) b.title = 'Importing sales tax from eBay — this takes about a minute, once.'; }
+    if (b.dataset.v === 'keep') { b.disabled = !(feesInfo && feesInfo.available); if (b.disabled) b.title = 'Needs your eBay fees (⚙ Settings → Admin → Fees)'; }
+  });
+}
+function setSalesView(v, save) {
+  salesView = ['keep', 'listed', 'buyer'].includes(v) ? v : 'listed';
+  try { localStorage.setItem('plp_sales_view', salesView); } catch (e) { /* fine */ }
+  setTax(salesView === 'buyer', save);
+}
+function renderTaxToggleOld() {
   const t = document.getElementById('tax-toggle');
   t.style.display = salesMode === 'live' ? 'inline-flex' : 'none';
   t.setAttribute('aria-checked', taxOn ? 'true' : 'false');
@@ -2562,6 +2586,7 @@ async function load() {
   let saved = me.dashRange;
   if (!saved) { try { saved = localStorage.getItem(RANGE_KEY); } catch (e) { /* use default */ } }
   taxOn = !!me.dashTax;   // v309
+  { let sv = null; try { sv = localStorage.getItem('plp_sales_view'); } catch (e) { /* fine */ } salesView = ['keep', 'listed', 'buyer'].includes(sv) ? sv : (taxOn ? 'buyer' : 'listed'); taxOn = salesView === 'buyer'; }   // v419
   if (salesMode === 'live') allDays = buildLiveDays(liveRows, 730);
   renderTaxToggle();
   setRange(saved || 'week', false);
