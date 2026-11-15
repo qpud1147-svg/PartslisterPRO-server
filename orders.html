@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Orders v428</title>
+<title>PartsLister Pro Orders v429</title>
 <!-- v382: switching views is instant; browser reload / Refresh really reloads. v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
 <!-- PartsLister Pro — Orders page (v319: new). Your sold items from eBay, newest first.
      v320: item photos, and click an order to see the listing (photos, description, item specifics).
@@ -154,6 +154,13 @@
   /* v416: swapped order — a blue box with the item to ship and the one that went back up */
   .swapbox { margin-top: 8px; border: 2px solid #4aa3ff; border-radius: 8px; padding: 8px; background: rgba(74,163,255,0.07); }
   .ebl.swapcard { border: 2px solid #4aa3ff; border-radius: 8px; background: rgba(74,163,255,0.07); margin: 6px 0; }
+  /* v429: swapped order — two rows that look like every other order, in a blue frame */
+  .swapcard2 { position: relative; border: 2px solid #4aa3ff; border-radius: 8px; background: rgba(74,163,255,0.06); padding: 8px; display: flex; flex-direction: column; gap: 8px; margin: 6px 0; }
+  .swapcard2 .sw2-head { font-size: 12px; font-weight: 700; letter-spacing: .08em; color: #4aa3ff; text-transform: uppercase; padding: 0 4px; }
+  .swapcard2 .sw2-tag { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  .swapcard2 .sw2-ship { border-color: var(--success, #3c9); background: rgba(60,200,140,0.08); }
+  .swapcard2 .sw2-ship .sw2-tag { color: var(--success, #3c9); }
+  .swapcard2 .sw2-orig { opacity: .8; }
   .swapbox.flat { border: none; background: none; padding: 0; margin-top: 6px; }
   .swapbox.flat > .sb-head { display: none; }
   .swapbox .sb-head { font-size: 11px; font-weight: 700; letter-spacing: .08em; color: #4aa3ff; margin-bottom: 6px; text-transform: uppercase; }
@@ -245,7 +252,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v428</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v429</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -465,18 +472,43 @@ function render() {
     const k = kind(o);
     const row = document.createElement('div'); row.className = 'ebl' + (k === 'refunded' || k === 'cancelled' ? ' off' : '');
     row.addEventListener('click', (e) => { if (!e.target.closest('a')) openOrder(o.id); });
-    if (o.items.length === 1 && o.items[0].swap) {   // v425: a swapped order IS the blue box — no repeat of the item above it
-      row.classList.add('swapcard'); if (!o.items[0].swap.endOk) row.style.borderColor = 'var(--danger, #e55)';
-      const body = document.createElement('div'); body.className = 'ebl-body'; body.style.flex = '1';
-      const top = document.createElement('div'); top.style.cssText = 'display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;padding-right:24px;';
-      top.append(Object.assign(document.createElement('span'), { className: 'sb-head', textContent: '\u2194 Swapped', style: 'font-size:12px;font-weight:700;letter-spacing:.08em;color:#4aa3ff;text-transform:uppercase;' }));
+    if (o.items.length === 1 && o.items[0].swap) {   // v429: a swapped order = a blue frame holding two normal-looking order rows
+      const it = o.items[0], sw = it.swap;
+      row.className = 'swapcard2'; if (!sw.endOk) row.style.borderColor = 'var(--danger, #e55)';
+      const head = document.createElement('div'); head.className = 'sw2-head'; head.textContent = '↔ Swapped';
+      const num = document.createElement('span'); num.className = 'ebl-n'; num.textContent = ix + 1;
+      row.append(head, num);
       const [d0, t0] = o.sold.split(' ');
-      top.append(Object.assign(document.createElement('span'), { className: 'ebl-sub', textContent: 'Sold ' + new Date(d0 + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' \u00b7 ' + t0 + ' \u00b7 order ' + o.id }));
-      const pr = document.createElement('span'); pr.style.cssText = 'margin-left:auto;font-weight:700;'; pr.textContent = money2.format(o.total);
-      const sm0 = document.createElement('small'); sm0.style.cssText = 'color:var(--muted);font-weight:400;margin-left:6px;'; sm0.textContent = CHIP[k][0]; pr.append(sm0); top.append(pr);
-      const sb = swapBox(o, o.items[0]); sb.classList.add('flat');
-      body.append(top); if (o.note) body.append(noteBox(o)); body.append(sb);   // v427
-      const num = document.createElement('span'); num.className = 'ebl-n'; num.textContent = ix + 1; row.append(num, body);
+      const soldTxt = 'Sold ' + new Date(d0 + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' · ' + t0 + ' · order ' + o.id;
+      const mkRow = (cls, tag, photoId, title, priceTxt, priceSmall, subTxt, sku, onOpen) => {
+        const r2 = document.createElement('div'); r2.className = 'ebl ' + cls;
+        r2.addEventListener('click', (e) => { if (!e.target.closest('a,button')) { e.stopPropagation(); onOpen(); } else e.stopPropagation(); });
+        const ib = document.createElement('div'); ib.className = 'ebl-img';
+        const im = document.createElement('img'); im.alt = ''; im.loading = 'lazy'; im.className = 'o-thumb'; im.dataset.item = photoId; if (thumbs[photoId]) setPhoto(im, thumbs[photoId]); ib.append(im);
+        const bd = document.createElement('div'); bd.className = 'ebl-body';
+        bd.append(Object.assign(document.createElement('div'), { className: 'sw2-tag', textContent: tag }));
+        const tl = document.createElement('div'); tl.className = 'ebl-title'; tl.textContent = title || '(no title)'; bd.append(tl);
+        const pr = document.createElement('div'); pr.className = 'ebl-price'; pr.textContent = priceTxt; const sm = document.createElement('small'); sm.textContent = priceSmall; pr.append(sm); bd.append(pr);
+        bd.append(Object.assign(document.createElement('div'), { className: 'ebl-sub', textContent: subTxt }));
+        const sk = document.createElement('div'); sk.className = 'ebl-sku-l'; const sks = document.createElement('small'); sks.textContent = 'SKU'; sk.append(sks, document.createTextNode(sku || '(none)')); bd.append(sk);
+        r2.append(ib, bd); return { r2, bd };
+      };
+      const A = mkRow('sw2-orig', 'Original sold — relisted, stays on the shelf', it.itemId, it.title, money2.format(o.total), CHIP[k][0], soldTxt, it.sku, () => openOrder(o.id));
+      if (o.note) A.bd.append(noteBox(o));
+      const B = mkRow('sw2-ship', 'Swapped in — ship this one', sw.oldItem, sw.oldTitle, sw.oldPrice != null ? money2.format(sw.oldPrice) : '—', 'older listing · ' + (sw.endOk ? 'ended' : 'may still be live'), 'Item #' + sw.oldItem, sw.oldSku, () => openListing(sw.oldItem, sw.oldSku, sw.oldTitle, 'Swapped in — the one you shipped'));
+      if (k === 'toship' || k === 'partial') B.bd.append(shipBtn(o));
+      if (!sw.endOk) {
+        const w = document.createElement('div'); w.className = 'ebl-sub'; w.style.color = 'var(--danger, #e55)'; w.textContent = '⚠ eBay didn’t confirm the older listing ended';
+        const end = document.createElement('button'); end.type = 'button'; end.className = 'btn btn-secondary btn-sm'; end.textContent = 'End it now'; end.style.alignSelf = 'flex-start';
+        end.onclick = async (ev) => {
+          ev.stopPropagation(); end.disabled = true; end.textContent = 'Ending…';
+          const r = await fetch('/api/relaunch/end/' + encodeURIComponent(sw.oldItem), { method: 'POST' }).catch(() => null);
+          if (r && r.ok) { await fetch('/api/orders/swap/end-ok', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ oldItem: sw.oldItem }) }).catch(() => {}); sw.endOk = true; render(); }
+          else { const j = r ? await r.json().catch(() => ({})) : {}; alert('It did not end: ' + (j.error || 'try again, or end it on eBay')); end.disabled = false; end.textContent = 'End it now'; }
+        };
+        B.bd.append(w, end);
+      }
+      row.append(A.r2, B.r2);
       box.append(row); return;
     }
     const first = o.items.find(i => i.itemId) || o.items[0];
