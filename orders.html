@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Orders v430</title>
+<title>PartsLister Pro Orders v431</title>
 <!-- v382: switching views is instant; browser reload / Refresh really reloads. v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
 <!-- PartsLister Pro — Orders page (v319: new). Your sold items from eBay, newest first.
      v320: item photos, and click an order to see the listing (photos, description, item specifics).
@@ -161,6 +161,9 @@
   .swapcard2 .sw2-ship { border-color: var(--success, #3c9); background: rgba(60,200,140,0.08); }
   .swapcard2 .sw2-ship .sw2-tag { color: var(--success, #3c9); }
   .swapcard2 .sw2-orig { opacity: .85; }
+  .swapcard2 .ebl > .sw-badge { position: absolute; top: 10px; right: 12px; }
+  .swapcard2 .ebl-body { padding-right: 190px; }
+  @media (max-width: 640px) { .swapcard2 .ebl > .sw-badge { position: static; align-self: flex-start; } .swapcard2 .ebl { flex-wrap: wrap; } .swapcard2 .ebl-body { padding-right: 0; } }
   .sw-badge { align-self: flex-start; font-size: 11px; font-weight: 700; letter-spacing: .04em; border-radius: 10px; padding: 2px 9px; border: 1px solid var(--border); color: var(--muted); }
   .sw-badge.ok { color: var(--success, #3c9); border-color: var(--success, #3c9); background: rgba(60,200,140,0.1); }
   .sw-badge.bad { color: var(--danger, #e55); border-color: var(--danger, #e55); background: rgba(230,80,80,0.1); }
@@ -255,7 +258,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v430</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v431</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -513,7 +516,7 @@ function render() {
       }
       // v430: badges checked with eBay — not just what the app did
       const newId = sw.newItem || it.itemId;
-      A.bd.firstChild.after(swBadge(newId, 'new')); B.bd.firstChild.after(swBadge(sw.oldItem, 'old'));
+      A.r2.append(swBadge(newId, 'new')); B.r2.append(swBadge(sw.oldItem, 'old'));   // v431: top right of each row
       swNeed.add(newId); swNeed.add(sw.oldItem);
       row.append(A.r2, B.r2);
       box.append(row); return;
