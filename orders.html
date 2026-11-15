@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Orders v427</title>
+<title>PartsLister Pro Orders v428</title>
 <!-- v382: switching views is instant; browser reload / Refresh really reloads. v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
 <!-- PartsLister Pro — Orders page (v319: new). Your sold items from eBay, newest first.
      v320: item photos, and click an order to see the listing (photos, description, item specifics).
@@ -245,7 +245,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v427</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v428</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -554,7 +554,7 @@ function swapTagHTML(sw) {
   return '<div class="swaptag" onclick="event.stopPropagation()" style="border:1px solid #4aa3ff;border-radius:6px;padding:4px 8px;margin-top:6px;font-size:12px;background:rgba(74,163,255,0.08);display:flex;gap:8px;align-items:center;flex-wrap:wrap;">'
     + '<b style="color:#4aa3ff">\u2194 Swapped</b><span>sent SKU <b style="color:var(--accent)">' + e(sw.oldSku || '(none)') + '</b></span>'
     + (sw.oldTitle ? '<span style="color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:320px;" title="' + e(sw.oldTitle) + '">' + e(sw.oldTitle) + '</span>' : '')
-    + '<a href="/active?open=' + encodeURIComponent(sw.oldItem) + '" target="_blank" rel="noopener" style="color:#4aa3ff">Open</a>'
+    + '<a href="#" onclick="event.preventDefault();openListing(\'' + encodeURIComponent(sw.oldItem) + '\', ' + e(JSON.stringify(sw.oldSku || '')) + ', ' + e(JSON.stringify(sw.oldTitle || '')) + ', \'Swapped in \u2014 the one you shipped\')" style="color:#4aa3ff">Open</a>'
     + '<a href="https://www.ebay.com/itm/' + encodeURIComponent(sw.oldItem) + '" target="_blank" rel="noopener" style="color:#4aa3ff">Open on eBay</a></div>';
 }
 function swapBox(o, i) {
@@ -605,7 +605,7 @@ function swapBox(o, i) {
   t.innerHTML = '<b>\u2194 Older one live</b> \u2014 ' + money2.format(c.price || 0) + ' \u00b7 listed ' + esc(ageOf(c.start)) + ' ago' + (c.sku ? ' \u00b7 SKU ' + esc(c.sku) : '') + how;
   t.title = 'Matched on ' + (c.matchedOn || 'title words') + ' \u2014 older listing: ' + (c.title || '');
   const v = document.createElement('button'); v.type = 'button'; v.className = 'btn btn-secondary btn-sm'; v.textContent = 'View'; v.title = 'Photos of both: the one that sold (left) and the older listing (right)'; v.onclick = () => viewPhotos(c, i, { list, idx: list.indexOf(c), o, canSwap });   // v412
-  const op = document.createElement('a'); op.className = 'btn btn-secondary btn-sm'; op.textContent = 'Open'; op.title = 'Open the older listing on your Active page'; op.href = '/active?open=' + encodeURIComponent(c.itemId); op.target = '_blank'; op.rel = 'noopener';
+  const op = document.createElement('button'); op.type = 'button'; op.className = 'btn btn-secondary btn-sm'; op.textContent = 'Open'; op.title = 'Open the older listing here'; op.onclick = (ev) => { ev.stopPropagation(); openListing(c.itemId, c.sku, c.title, 'Older listing \u2014 still live'); };   // v428: stays on Orders
   const sw = document.createElement('button'); sw.type = 'button'; sw.className = 'btn btn-primary btn-sm'; sw.textContent = 'Swap';
   sw.onclick = () => doSwap(o, i, c, sw, b);
   if (!canSwap) { const x = document.createElement('small'); x.style.color = 'var(--muted)'; x.textContent = '(already shipped \u2014 look only)'; b.append(t, v, op, x); return b; }   // v411
@@ -802,16 +802,25 @@ document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && document
 
 function el(tag, cls, text) { const n = document.createElement(tag); if (cls) n.className = cls; if (text !== undefined) n.textContent = text; return n; }
 
-async function showDetail(id) {
-  const o = orders.find(x => x.id === id);
+// v428: open any listing (e.g. the older one in a Swap) in this same panel — stays on Orders, closing leaves you where you were
+function openListing(itemId, sku, title, label) {
+  showDetail(null, { itemId: String(itemId), sku: sku || '', title: title || '', price: 0, qty: 1, label: label || 'Older listing' });
+}
+async function showDetail(id, solo) {
+  const o = solo ? { items: [solo], sold: '' } : orders.find(x => x.id === id);
   const box = document.getElementById('d-content');
   document.getElementById('detail').classList.add('open');
   document.body.style.overflow = 'hidden';
   box.textContent = '';
   if (!o) { box.append(el('div', 'd-msg', 'That order isn\u2019t in the dates you\u2019re looking at.')); return; }
+  let d = null;
+  if (solo) {
+    const hd = el('div', 'd-order'); const lb = el('span', 'chip', solo.label); lb.style.cssText = 'color:#4aa3ff;border-color:#4aa3ff;'; hd.append(lb);
+    box.append(hd);
+  } else {
   const k = kind(o);
   const head = el('div', 'd-order');
-  const [d, t] = o.sold.split(' ');
+  const [d0, t] = o.sold.split(' '); d = d0;
   head.append(el('div', 'o-total', money2.format(o.total)));
   const chip = el('span', 'chip ' + CHIP[k][1], CHIP[k][0] + (k !== 'refunded' && o.refunded > 0 ? ' · part refund' : '')); head.append(chip);
   head.append(el('span', '', 'Sold ' + new Date(d + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }) + ' · ' + t + ' (eBay time)'));
@@ -820,6 +829,7 @@ async function showDetail(id) {
   box.append(head);
   if (o.note) box.append(noteBox(o));   // v427
   o.items.forEach(it => { if (it.swap) { const st = document.createElement('div'); st.innerHTML = swapTagHTML(it.swap); box.append(st.firstChild); } });   // v426
+  }
   if (!o.items.length) { box.append(el('div', 'd-msg', 'The items in this order are still importing.')); return; }
   for (const it of o.items) {
     const wrap = el('div', 'd-item');
@@ -855,7 +865,7 @@ async function showDetail(id) {
     // facts
     const info = el('div');
     info.append(el('div', 'd-title', item.title || it.title || ''));
-    info.append(el('div', 'd-price', money2.format(it.price || item.price || 0) + (it.qty > 1 ? ' × ' + it.qty : '')));
+    info.append(el('div', 'd-price', money2.format(it.price || item.price || 0) + (it.qty > 1 ? ' × ' + it.qty : '') + (solo && item.listingStatus && item.listingStatus !== 'Active' ? ' \u00b7 ' + (item.listingStatus === 'Completed' ? 'Ended' : item.listingStatus) : '')));
     const facts = el('dl', 'd-facts');
     const fact = (k2, v) => { if (v === null || v === undefined || v === '') return; facts.append(el('dt', '', k2)); const dd = el('dd'); if (v instanceof Node) dd.append(v); else dd.textContent = v; facts.append(dd); };
     fact('SKU', (it.sku || item.sku) ? skuEl(it.sku || item.sku) : null);
