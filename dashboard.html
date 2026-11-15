@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Sales v412</title>
+<title>PartsLister Pro Sales v422</title>
 <!-- v383: eBay User Token removed from Keys. -->
 <!-- v382: switching views is instant; browser reload / Refresh really reloads. v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
 <style>
@@ -571,7 +571,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v421</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v422</span></div>
   </a>
   <!-- v316: switch pages -->
   <nav class="page-tabs" aria-label="Pages">
@@ -1479,7 +1479,7 @@ function renderChart() {
   const m = { top: 28, right: 8, bottom: 26, left: phone ? 40 : 52 };
   const pw = W - m.left - m.right, ph = H - m.top - m.bottom;
   const n = shownDays.length;
-  const peak = Math.max(1, ...shownDays.map(d => d.sales)) * 1.08;
+  const peak = Math.max(1, ...shownDays.map(d => Math.max(d.sales, d.top || 0))) * 1.08;   // v422: same scale for You keep / Listed / Buyer pays
   const step = niceStep(peak / 4);
   const steps = Math.max(1, Math.ceil(peak / step));
   const max = step * steps;
@@ -1764,7 +1764,7 @@ function buildLiveDays(rows, totalDays) {
   // const byDay = new Map(rows.map(([key, sales, orders]) => [key, { sales, orders }]));
   // v309: rows are [day, sales, orders, tax]; tax is added when the toggle is on
   const feeOf = (k) => salesView === 'keep' && typeof feesByDay !== 'undefined' && feesByDay ? ((feesByDay.get(k) || [0])[0] || 0) : 0;   // v419: You keep = sales minus that day's eBay fees
-  const byDay = new Map(rows.map(([key, sales, orders, tax, items]) => [key, { sales: Math.round((sales + (taxOn ? (tax || 0) : 0) - feeOf(key)) * 100) / 100, orders, items: items == null ? orders : items }]));   // v418: + items
+  const byDay = new Map(rows.map(([key, sales, orders, tax, items]) => [key, { top: Math.round((sales + (tax || 0)) * 100) / 100, sales: Math.round((sales + (taxOn ? (tax || 0) : 0) - feeOf(key)) * 100) / 100, orders, items: items == null ? orders : items }]));   // v418: + items
   const days = [];
   const now = new Date();
   // const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -1773,8 +1773,8 @@ function buildLiveDays(rows, totalDays) {
     const d = new Date(today);
     d.setDate(today.getDate() - i);
     const key = dayKey(d);
-    const v = byDay.get(key) || { sales: 0, orders: 0, items: 0 };
-    days.push({ date: d, key, sales: v.sales, orders: v.orders, items: v.items });
+    const v = byDay.get(key) || { sales: 0, orders: 0, items: 0, top: 0 };
+    days.push({ date: d, key, sales: v.sales, orders: v.orders, items: v.items, top: v.top });   // v422: top = the Buyer pays amount, for a steady scale
   }
   return days;
 }

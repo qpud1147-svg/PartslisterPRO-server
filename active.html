@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Active v412</title>
+<title>PartsLister Pro Active v418</title>
 <!-- v387: click a listing → your own eBay-style view (big photos with arrows, price, shipping, condition, item specifics, description); sharper list photos; shipping on the rows when eBay gives it. -->
 <!-- v403: Value chart: calculated-shipping listings use your average shipping from recent orders (30 days, else 90); fee/tax rates also 30 days (else 90); note says so. -->
 <!-- v402: listings-per-day chart gets a Listings | Value switch; in Value mode a 3-way switch: You keep / Listed / Buyer pays (price + shipping per quantity; fee and tax rates from your own last 90 days of orders). -->
@@ -261,7 +261,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v417</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v418</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -1157,6 +1157,7 @@ function drawDaily() {
     ? daily.hours.map((n, h) => ({ n, val: (daily.hoursV || [])[h] || 0, r: (daily.hoursR || [])[h] || 0, rv: (daily.hoursRV || [])[h] || 0, label: hourLabel(h), long: hourLabel(h) + ' – ' + hourLabel((h + 1) % 24) + ' today', tick: h % 3 === 0 ? hourLabel(h) : '' }))
     : daily.days.slice(-lcRange).map((d, i, arr) => ({ n: d.n, val: d.v || 0, r: d.r || 0, rv: d.rv || 0, long: dLabel(d.date, { weekday: 'short', month: 'short', day: 'numeric' }),
         tick: lcRange === 7 ? dLabel(d.date, { weekday: 'short' }) : (i % (lcRange === 31 ? 5 : 14) === 0 || i === arr.length - 1) ? dLabel(d.date, { month: 'short', day: 'numeric' }) : '' }));
+  bars.forEach(b => { b.top = money$ ? b.val * (1 + (rt.tax || 0)) : b.n; });   // v418: the scale stays at the biggest view (All, Buyer pays)
   if (money$) bars.forEach(b => { b.n = Math.round(b.val * factor * 100) / 100; b.r = Math.round(b.rv * factor * 100) / 100; });   // v438: bars are dollars
   if (lcNew === 'new') bars.forEach(b => { b.n = Math.max(0, Math.round((b.n - b.r) * 100) / 100); b.r = 0; });   // v415: relists left out
   const relTotal = bars.reduce((s, b) => s + (b.r || 0), 0);
@@ -1183,7 +1184,7 @@ function drawDaily() {
   svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
   const m = { top: 14, right: 8, bottom: 24, left: money$ ? 52 : 36 };
   const pw = W - m.left - m.right, ph = H - m.top - m.bottom, n = bars.length;
-  const peak = Math.max(1, ...bars.map(b => b.n)) * 1.08, step = niceStep(peak / 4), steps = Math.max(1, Math.ceil(peak / step)), max = step * steps;
+  const peak = Math.max(1, ...bars.map(b => Math.max(b.n, b.top || 0))) * 1.08, step = niceStep(peak / 4), steps = Math.max(1, Math.ceil(peak / step)), max = step * steps;
   for (let i = 0; i <= steps; i++) {
     const v = step * i, y = Math.round(m.top + ph - (v / max) * ph) + 0.5;
     sv('line', { class: i ? 'gridline' : 'baseline', x1: m.left, x2: W - m.right, y1: y, y2: y }, svg);
