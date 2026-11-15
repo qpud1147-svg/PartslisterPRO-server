@@ -261,7 +261,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v415</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v416</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -365,7 +365,7 @@
   <div class="section-title">Live listings</div>
   <div class="ll-bar">
     <input type="search" id="ll-q" placeholder="Search title, SKU or item number" oninput="llRender()">
-    <select id="ll-sort" onchange="llRender()"><option value="old">Oldest first</option><option value="new">Newest first</option><option value="hi">Price, high to low</option><option value="lo">Price, low to high</option></select>
+    <select id="ll-sort" onchange="try{localStorage.setItem('plp_ll_sort',this.value)}catch(e){};llRender()"><option value="old">Oldest first</option><option value="new">Newest first</option><option value="hi">Price, high to low</option><option value="lo">Price, low to high</option></select>
     <button type="button" class="btn btn-secondary btn-sm" onclick="llLoad(true)">Refresh</button>
   </div>
   <div class="dr-note" id="ll-note">Loading your listings…</div>
@@ -992,7 +992,7 @@ pageCache.rerun = () => { loadListings(false); loadDaily(false); };   // v380: f
     return '<div class="swaptag" onclick="event.stopPropagation()" style="border:1px solid #4aa3ff;border-radius:6px;padding:4px 8px;margin-top:6px;font-size:12px;background:rgba(74,163,255,0.08);display:flex;gap:8px;align-items:center;flex-wrap:wrap;">'
       + '<b style="color:#4aa3ff">\u2194 Swapped</b><span>sent SKU <b style="color:var(--accent)">' + e(sw.oldSku || '(none)') + '</b></span>'
       + (sw.oldTitle ? '<span style="color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:320px;" title="' + e(sw.oldTitle) + '">' + e(sw.oldTitle) + '</span>' : '')
-      + '<a href="/active?open=' + encodeURIComponent(sw.oldItem) + '" target="_blank" rel="noopener" style="color:#4aa3ff">Open</a>'
+      + '<a href="#" onclick="event.preventDefault();event.stopPropagation();window.openListing(\'' + encodeURIComponent(sw.oldItem) + '\')" style="color:#4aa3ff">Open</a>'   // v416: opens right here
       + '<a href="https://www.ebay.com/itm/' + encodeURIComponent(sw.oldItem) + '" target="_blank" rel="noopener" style="color:#4aa3ff">Open on eBay</a></div>';
   }
   window.swapTagHTML = swapTagHTML;
@@ -1222,5 +1222,6 @@ document.querySelectorAll('#lc-vmode button').forEach(b => b.addEventListener('c
 new ResizeObserver(() => drawDaily()).observe(document.getElementById('lchart-wrap'));
 loadDaily(false);
 </script>
+<script>/* v416: Active opens with the sort you used last */ try { const v = localStorage.getItem('plp_ll_sort'), sel = document.getElementById('ll-sort'); if (v && sel && [...sel.options].some(o => o.value === v)) { sel.value = v; } } catch (e) { /* fine */ }</script>
 </body>
 </html>

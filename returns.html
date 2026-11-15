@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Returns v421</title>
+<title>PartsLister Pro Returns v422</title>
 <!-- v382: switching views is instant; browser reload / Refresh really reloads. v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
 <!-- PartsLister Pro — Returns page (v324: new). Returns, "item not received" claims and cases from
      eBay's Post-Order API, read live (nothing saved on the server). Approve / decline / refund from here.
@@ -348,7 +348,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v421</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v422</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -600,6 +600,34 @@ async function applyPlanAfterRefund(key) {
 async function loadFollowups() {
   const d = await getJSON('/api/returns/followups');
   if (d) { followups = d.items || []; emojiSet = d.emojis || {}; }
+}
+// v422: a listing (e.g. the item you actually shipped on a swapped sale) shown right on this page
+async function openListing(itemId) {
+  fuModal(async (card, close) => {
+    card.style.maxWidth = '880px';
+    const x = el('button', 'btn btn-secondary btn-sm', '\u00d7 Close'); x.type = 'button'; x.style.float = 'right'; x.onclick = close;
+    card.append(x, el('div', 'r-line', 'Loading the listing from eBay\u2026'));
+    const r = await getJSON('/api/items/' + encodeURIComponent(itemId));
+    const it = r && r.item; card.lastChild.remove();
+    if (!it) { card.append(el('div', 'r-line', 'eBay didn\u2019t give us this listing.')); return; }
+    const tag = el('div', 'r-line', 'Swapped in \u2014 the one you shipped' + (it.listingStatus && it.listingStatus !== 'Active' ? ' \u00b7 ended' : '')); tag.style.cssText = 'color:#4aa3ff;font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-size:12px;';
+    const top = el('div'); top.style.cssText = 'display:flex;gap:16px;flex-wrap:wrap;margin-top:8px;';
+    const gal = el('div'); gal.style.cssText = 'flex:1 1 320px;min-width:0;';
+    const main = el('img'); main.style.cssText = 'width:100%;max-height:420px;object-fit:contain;background:#fff;border-radius:6px;'; main.alt = '';
+    const pics2 = it.pictures || []; if (pics2.length) main.src = pics2[0];
+    const strip = el('div'); strip.style.cssText = 'display:grid;grid-template-columns:repeat(6,1fr);gap:4px;margin-top:6px;';
+    pics2.forEach(u => { const t = el('img'); t.src = String(u).replace(/\/s-l\d+\./i, '/s-l140.'); t.style.cssText = 'width:100%;aspect-ratio:1/1;object-fit:cover;border-radius:4px;cursor:pointer;'; t.onclick = () => { main.src = u; }; strip.append(t); });
+    gal.append(main, strip);
+    const info = el('div'); info.style.cssText = 'flex:1 1 260px;min-width:0;';
+    info.append(el('h3', '', it.title || ''));
+    info.append(el('div', 'r-line', [it.price != null ? money2.format(it.price) : '', it.sku ? 'SKU ' + it.sku : '', it.condition || '', '#' + it.itemId].filter(Boolean).join(' \u00b7 ')));
+    if (it.conditionNote) info.append(el('div', 'r-line', it.conditionNote));
+    const ob = el('a', 'btn btn-secondary btn-sm', 'Open on eBay'); ob.href = it.url || ('https://www.ebay.com/itm/' + itemId); ob.target = '_blank'; ob.rel = 'noopener'; ob.style.marginTop = '8px'; ob.style.display = 'inline-block';
+    info.append(ob);
+    (it.specifics || []).slice(0, 30).forEach(sp => { const row = el('div', 'r-line'); row.style.fontSize = '12px'; row.append(el('b', '', sp.name + ': '), document.createTextNode(sp.value)); info.append(row); });
+    top.append(gal, info); card.append(tag, top);
+    const esc2 = (e) => { if (e.key === 'Escape') { close(); document.removeEventListener('keydown', esc2); } }; document.addEventListener('keydown', esc2);
+  });
 }
 function fuModal(build) {
   const bg = el('div'); bg.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:400;display:flex;align-items:center;justify-content:center;padding:16px';
@@ -1106,7 +1134,7 @@ function swapTagHTML(sw) {
   return '<div class="swaptag" onclick="event.stopPropagation()" style="border:1px solid #4aa3ff;border-radius:6px;padding:4px 8px;margin-top:6px;font-size:12px;background:rgba(74,163,255,0.08);display:flex;gap:8px;align-items:center;flex-wrap:wrap;">'
     + '<b style="color:#4aa3ff">\u2194 Swapped</b><span>sent SKU <b style="color:var(--accent)">' + e(sw.oldSku || '(none)') + '</b></span>'
     + (sw.oldTitle ? '<span style="color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:320px;" title="' + e(sw.oldTitle) + '">' + e(sw.oldTitle) + '</span>' : '')
-    + '<a href="/active?open=' + encodeURIComponent(sw.oldItem) + '" target="_blank" rel="noopener" style="color:#4aa3ff">Open</a>'
+    + '<a href="#" onclick="event.preventDefault();event.stopPropagation();openListing(\'' + encodeURIComponent(sw.oldItem) + '\')" style="color:#4aa3ff">Open</a>'   // v422: opens right here
     + '<a href="https://www.ebay.com/itm/' + encodeURIComponent(sw.oldItem) + '" target="_blank" rel="noopener" style="color:#4aa3ff">Open on eBay</a></div>';
 }
 async function showDetail(key) {
