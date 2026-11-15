@@ -1,4 +1,5 @@
-// PartsLister Pro server — v490
+// PartsLister Pro server — v491
+// v491: POST /api/orders/returns-status — return state per order (opened / returned / closed), cached 10 minutes; Active → Sold orders carry total + refunded.
 // v490: delivery — shipped orders get their delivery date from eBay (Trading GetOrders, ActualDeliveryTime); POST /api/orders/delivery; Active → Sold rows carry their order's ship status.
 // v489: POST /api/orders/swap-status — asks eBay right now whether each swap's relisted listing is live and the older one ended (verified badges).
 // v488: Listings per day knows which listings were relists (Swap or Returns → Relist) — relist_log + order_swaps.new_item; days carry r / rv.
@@ -2221,6 +2222,35 @@ app.post('/api/orders/delivery', requireUser, express.json({ limit: '50kb' }), a
     const out = {}; r.rows.forEach(x => { out[x.order_id] = x.delivered_at; });
     res.json({ delivered: out });
   } catch (e) { console.error('[delivery]', e.message); res.status(502).json({ error: e.message }); }
+});
+const retStateCache = new Map();   // userId → { at, map }
+async function returnsByOrder(uid) {   // v491: orderId → { label, open } from eBay returns (open + closed, last 90 days)
+  const c = retStateCache.get(uid); if (c && Date.now() - c.at < 600000) return c.map;
+  const map = {};
+  const from = new Date(Date.now() - 90 * 86400000).toISOString();
+  for (const st of ['ALL_OPEN', 'CLOSED']) {
+    try {
+      const q = new URLSearchParams({ role: 'SELLER', limit: '200', sort: '-FILING_DATE', return_state: st });
+      if (st === 'CLOSED') q.set('creation_date_range_from', from);
+      const d = await poCall(uid, 'GET', '/return/search?' + q);
+      ((d && d.members) || []).map(mapReturn).forEach(x => {
+        if (!x.orderId || map[x.orderId]) return;
+        const open = st === 'ALL_OPEN';
+        const back = /ITEM_DELIVERED|ITEM_RECEIVED|RETURN_RECEIVED/i.test(x.status) || (!open && x.refunded > 0);
+        map[x.orderId] = { open, label: open ? (back ? 'Returned' : 'Return opened') : (back ? 'Returned' : 'Return closed'), status: x.status };
+      });
+    } catch (e) { console.warn('[returns by order]', e.message); }
+  }
+  retStateCache.set(uid, { at: Date.now(), map });
+  return map;
+}
+app.post('/api/orders/returns-status', requireUser, express.json({ limit: '50kb' }), async (req, res) => {
+  try {
+    const ids = new Set(((req.body || {}).ids || []).map(String));
+    const all = await returnsByOrder(req.user.id), out = {};
+    Object.keys(all).forEach(k => { if (ids.has(k)) out[k] = all[k]; });
+    res.json({ returns: out });
+  } catch (e) { res.status(502).json({ error: e.message }); }
 });
 app.post('/api/orders/swap/end-ok', requireUser, express.json({ limit: '5kb' }), async (req, res) => {   // the older one was ended later (End it now)
   try { await pool.query('UPDATE order_swaps SET end_ok = TRUE WHERE user_id = $1 AND old_item = $2', [req.user.id, String((req.body || {}).oldItem || '')]); res.json({ ok: true }); }
@@ -4836,14 +4866,14 @@ app.get('/api/active/sold', requireUser, async (req, res) => {
     try {
       const ids = [...new Set(items.map(x => x.itemId).filter(Boolean))];
       if (ids.length) (await pool.query(
-        `SELECT i.item_id, o.order_id, o.created_at, o.ship_status, o.counted, o.status, o.delivered_at FROM ebay_order_items i JOIN ebay_orders o ON o.user_id = i.user_id AND o.order_id = i.order_id
+        `SELECT i.item_id, o.order_id, o.created_at, o.ship_status, o.counted, o.status, o.delivered_at, o.total::float AS total, o.refunded::float AS refunded FROM ebay_order_items i JOIN ebay_orders o ON o.user_id = i.user_id AND o.order_id = i.order_id
           WHERE i.user_id = $1 AND i.item_id = ANY($2)`, [req.user.id, ids])).rows.forEach(z => { const a = ordersByItem.get(z.item_id) || []; a.push(z); ordersByItem.set(z.item_id, a); });
     } catch (e) { /* no orders table yet */ }
     const orderFor = (x) => {
       const a = ordersByItem.get(x.itemId); if (!a || !a.length) return null;
       const t = x.soldAt ? Date.parse(x.soldAt) : 0;
       const z = a.slice().sort((p, q) => Math.abs(Date.parse(p.created_at) - t) - Math.abs(Date.parse(q.created_at) - t))[0];
-      return { id: z.order_id, ship: z.ship_status || null, counted: z.counted, status: z.status || '', delivered: z.delivered_at || null };
+      return { id: z.order_id, ship: z.ship_status || null, counted: z.counted, status: z.status || '', delivered: z.delivered_at || null, total: z.total, refunded: z.refunded };
     };
     { const oids = [...new Set([...ordersByItem.values()].flat().filter(z => z.ship_status === 'FULFILLED' && !z.delivered_at).map(z => z.order_id))]; if (oids.length) refreshDelivery(req.user.id, oids).catch(() => {}); }   // v490: in the background — shows next time
     res.json({ items: items.map(x => { const sw = sl.find(null, x.itemId), ord = orderFor(x); return (sw || ord) ? Object.assign({}, x, sw ? { swap: sw } : {}, ord ? { order: ord } : {}) : x; }) });   // v485, v490
