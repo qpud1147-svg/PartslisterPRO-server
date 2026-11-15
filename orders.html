@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Orders v429</title>
+<title>PartsLister Pro Orders v430</title>
 <!-- v382: switching views is instant; browser reload / Refresh really reloads. v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
 <!-- PartsLister Pro — Orders page (v319: new). Your sold items from eBay, newest first.
      v320: item photos, and click an order to see the listing (photos, description, item specifics).
@@ -160,7 +160,10 @@
   .swapcard2 .sw2-tag { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
   .swapcard2 .sw2-ship { border-color: var(--success, #3c9); background: rgba(60,200,140,0.08); }
   .swapcard2 .sw2-ship .sw2-tag { color: var(--success, #3c9); }
-  .swapcard2 .sw2-orig { opacity: .8; }
+  .swapcard2 .sw2-orig { opacity: .85; }
+  .sw-badge { align-self: flex-start; font-size: 11px; font-weight: 700; letter-spacing: .04em; border-radius: 10px; padding: 2px 9px; border: 1px solid var(--border); color: var(--muted); }
+  .sw-badge.ok { color: var(--success, #3c9); border-color: var(--success, #3c9); background: rgba(60,200,140,0.1); }
+  .sw-badge.bad { color: var(--danger, #e55); border-color: var(--danger, #e55); background: rgba(230,80,80,0.1); }
   .swapbox.flat { border: none; background: none; padding: 0; margin-top: 6px; }
   .swapbox.flat > .sb-head { display: none; }
   .swapbox .sb-head { font-size: 11px; font-weight: 700; letter-spacing: .08em; color: #4aa3ff; margin-bottom: 6px; text-transform: uppercase; }
@@ -252,7 +255,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v429</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v430</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -493,9 +496,9 @@ function render() {
         const sk = document.createElement('div'); sk.className = 'ebl-sku-l'; const sks = document.createElement('small'); sks.textContent = 'SKU'; sk.append(sks, document.createTextNode(sku || '(none)')); bd.append(sk);
         r2.append(ib, bd); return { r2, bd };
       };
-      const A = mkRow('sw2-orig', 'Original sold — relisted, stays on the shelf', it.itemId, it.title, money2.format(o.total), CHIP[k][0], soldTxt, it.sku, () => openOrder(o.id));
+      const A = mkRow('sw2-orig', 'Original sold', it.itemId, it.title, money2.format(o.total), CHIP[k][0], soldTxt, it.sku, () => openOrder(o.id));
       if (o.note) A.bd.append(noteBox(o));
-      const B = mkRow('sw2-ship', 'Swapped in — ship this one', sw.oldItem, sw.oldTitle, sw.oldPrice != null ? money2.format(sw.oldPrice) : '—', 'older listing · ' + (sw.endOk ? 'ended' : 'may still be live'), 'Item #' + sw.oldItem, sw.oldSku, () => openListing(sw.oldItem, sw.oldSku, sw.oldTitle, 'Swapped in — the one you shipped'));
+      const B = mkRow('sw2-ship', 'Swapped in — ship this one', sw.oldItem, sw.oldTitle, sw.oldPrice != null ? money2.format(sw.oldPrice) : '—', 'older listing', 'Item #' + sw.oldItem, sw.oldSku, () => openListing(sw.oldItem, sw.oldSku, sw.oldTitle, 'Swapped in — the one you shipped'));
       if (k === 'toship' || k === 'partial') B.bd.append(shipBtn(o));
       if (!sw.endOk) {
         const w = document.createElement('div'); w.className = 'ebl-sub'; w.style.color = 'var(--danger, #e55)'; w.textContent = '⚠ eBay didn’t confirm the older listing ended';
@@ -508,6 +511,10 @@ function render() {
         };
         B.bd.append(w, end);
       }
+      // v430: badges checked with eBay — not just what the app did
+      const newId = sw.newItem || it.itemId;
+      A.bd.firstChild.after(swBadge(newId, 'new')); B.bd.firstChild.after(swBadge(sw.oldItem, 'old'));
+      swNeed.add(newId); swNeed.add(sw.oldItem);
       row.append(A.r2, B.r2);
       box.append(row); return;
     }
@@ -551,11 +558,44 @@ function render() {
   });
   document.getElementById('o-more').style.display = list.length > shown ? '' : 'none';
   loadThumbs();   // v320
+  checkSwaps();   // v430
 }
 
 // ─── v409: SWAP — a newer listing sold while an older one of the same part is still live ────────────
 // Ship the buyer the OLDER item, end the older listing, and relist the one they bought (it's still on the shelf).
 const itemCache = new Map();   // v424
+// v430: verified swap badges — the server asks eBay about each listing
+const swState = {}, swNeed = new Set(); let swChecking = false;
+function swBadge(id, which) {
+  const b = document.createElement('span'); b.className = 'sw-badge'; b.dataset.id = id; b.dataset.which = which;
+  paintBadge(b); return b;
+}
+function paintBadge(b) {
+  const st = swState[b.dataset.id], which = b.dataset.which;
+  let txt, cls;
+  if (!st) { txt = 'Checking eBay…'; cls = 'wait'; }
+  else if (st.error) { txt = 'Couldn’t check eBay'; cls = 'wait'; }
+  else if (which === 'new') {
+    if (st.status === 'Active') { txt = '✓ Relisted · live on eBay'; cls = 'ok'; }
+    else if (st.sold > 0) { txt = '✓ Relisted · sold since'; cls = 'ok'; }
+    else { txt = '✕ Not live on eBay'; cls = 'bad'; }
+  } else {
+    if (st.status && st.status !== 'Active') { txt = '✓ Taken down · ended on eBay'; cls = 'ok'; }
+    else { txt = '✕ Still live on eBay'; cls = 'bad'; }
+  }
+  b.textContent = txt; b.className = 'sw-badge ' + cls; b.title = 'Checked with eBay' + (st && st.at ? ' at ' + new Date(st.at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '');
+}
+async function checkSwaps() {
+  if (swChecking) return;
+  const ids = [...swNeed].filter(id => !swState[id] || swState[id].error); if (!ids.length) return;
+  swChecking = true;
+  try {
+    const r = await fetch('/api/orders/swap-status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids }) }).catch(() => null);
+    const j = r && r.ok ? await r.json().catch(() => null) : null;
+    ids.forEach(id => { swState[id] = j && j.status && j.status[id] ? Object.assign({ at: Date.now() }, j.status[id]) : { error: true }; });
+    document.querySelectorAll('.sw-badge').forEach(paintBadge);
+  } finally { swChecking = false; }
+}
 let swapCands = {}, swapAsked = new Set(), swapBusy = false, swapOpenMore = new Set();
 let orderSet = { swapOn: true, swapMinDays: 30, showCondition: false, shipTab: 'new' };   // v418: Settings → Orders
 fetch('/api/order-settings').then(r => r.ok ? r.json() : null).then(d => { if (d) orderSet = d; }).catch(() => {});

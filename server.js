@@ -1,4 +1,5 @@
-// PartsLister Pro server — v488
+// PartsLister Pro server — v489
+// v489: POST /api/orders/swap-status — asks eBay right now whether each swap's relisted listing is live and the older one ended (verified badges).
 // v488: Listings per day knows which listings were relists (Swap or Returns → Relist) — relist_log + order_swaps.new_item; days carry r / rv.
 // v487: the buyer's checkout note (buyerCheckoutNotes) is saved with each order and shown on Orders; one-time 30-day re-import to pick up notes.
 // v486: /api/sales days carry items sold (for the Sales page's sell-through).
@@ -2164,6 +2165,25 @@ app.post('/api/orders/swap', requireUser, express.json({ limit: '10kb' }), async
     liveCache.delete(uid);
     res.json({ ok: true, newItem: rel.itemId, endOk: !!end.ok, endError: end.ok ? null : end.error });
   } catch (e) { console.error('[swap]', e.message); res.status(502).json({ error: e.message }); }
+});
+const swapStatusCache = new Map();   // userId:itemId → { at, v }
+async function liveStateOf(uid, id) {   // v489: { status: 'Active'|'Completed'|'Ended', sold } straight from eBay (cached 3 minutes)
+  const key = uid + ':' + id, c = swapStatusCache.get(key);
+  if (c && Date.now() - c.at < 180000) return c.v;
+  const xml = await tradingCall(uid, 'GetItem', `<ItemID>${id}</ItemID><OutputSelector>Item.SellingStatus</OutputSelector><OutputSelector>Item.Quantity</OutputSelector>`, '100');
+  const ss = xmlTag(xmlTag(xml, 'Item') || '', 'SellingStatus') || '';
+  const v = { status: xmlTag(ss, 'ListingStatus') || '', sold: parseInt(xmlTag(ss, 'QuantitySold') || '0', 10) || 0 };
+  swapStatusCache.set(key, { at: Date.now(), v });
+  return v;
+}
+app.post('/api/orders/swap-status', requireUser, express.json({ limit: '20kb' }), async (req, res) => {
+  const ids = [...new Set(((req.body || {}).ids || []).map(x => String(x).replace(/\D/g, '')).filter(x => /^\d{6,20}$/.test(x)))].slice(0, 60);
+  const out = {};
+  for (const id of ids) {
+    try { out[id] = await liveStateOf(req.user.id, id); }
+    catch (e) { out[id] = { error: e.message }; }
+  }
+  res.json({ status: out, checkedAt: new Date().toISOString() });
 });
 app.post('/api/orders/swap/end-ok', requireUser, express.json({ limit: '5kb' }), async (req, res) => {   // the older one was ended later (End it now)
   try { await pool.query('UPDATE order_swaps SET end_ok = TRUE WHERE user_id = $1 AND old_item = $2', [req.user.id, String((req.body || {}).oldItem || '')]); res.json({ ok: true }); }
