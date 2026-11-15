@@ -1,4 +1,5 @@
-// PartsLister Pro server — v487
+// PartsLister Pro server — v488
+// v488: Listings per day knows which listings were relists (Swap or Returns → Relist) — relist_log + order_swaps.new_item; days carry r / rv.
 // v487: the buyer's checkout note (buyerCheckoutNotes) is saved with each order and shown on Orders; one-time 30-day re-import to pick up notes.
 // v486: /api/sales days carry items sold (for the Sales page's sell-through).
 // v485: Returns and Active → Sold carry the swap (which older item was actually sent) so those pages can say "Swapped".
@@ -471,6 +472,13 @@ async function setupDatabase() {
       UNIQUE (user_id, item_id)
     );
     -- v455: RETURNS follow-ups — "Needs work" list (refunded, but not ready to relist yet)
+    CREATE TABLE IF NOT EXISTS relist_log (                                               -- v488: listings that are relists, not new
+      user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      item_id    TEXT NOT NULL,
+      kind       TEXT NOT NULL DEFAULT 'relist',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY (user_id, item_id)
+    );
     CREATE TABLE IF NOT EXISTS order_swaps (                                              -- v479: ship the older item, relist the one that sold
       user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       order_id   TEXT NOT NULL,
@@ -2146,7 +2154,7 @@ app.post('/api/orders/swap', requireUser, express.json({ limit: '10kb' }), async
     if (st && st !== 'Active') return res.status(409).json({ error: 'The older listing (' + oldId + ') is no longer live, so there is nothing to swap.' });
     const live = (await fetchLiveList(uid, false)).find(l => l.itemId === oldId) || {};
     let rel;
-    try { rel = await relistSoldItem(uid, soldId, ''); }
+    try { rel = await relistSoldItem(uid, soldId, '', 'swap'); }
     catch (e) { return res.status(e.code === 409 ? 409 : 502).json({ error: e.code === 409 ? e.message : 'eBay did not relist the one that sold, so nothing was changed: ' + e.message }); }
     const end = await endAndVerify(uid, oldId);
     await pool.query(
@@ -4910,7 +4918,7 @@ app.post('/api/returns/needs-work/:id/remove', requireUser, async (req, res) => 
 });
 // Relist the same listing (same price, photos, description) with an emoji at the front of the title.
 // v479: put a sold listing back up (Relist if ended; raise the quantity if it's still active at 0). Shared by Returns and Swap.
-async function relistSoldItem(uid, itemId, emoji) {
+async function relistSoldItem(uid, itemId, emoji, kind) {
   const gi = await tradingCall(uid, 'GetItem', `<ItemID>${itemId}</ItemID>`, '100');
   const item = xmlTag(gi, 'Item') || '';
   const ss = xmlTag(item, 'SellingStatus') || '';
@@ -4933,7 +4941,9 @@ async function relistSoldItem(uid, itemId, emoji) {
     titleChanged = false; xml = await doCall(false);
   }
   liveCache.delete(uid);
-  return { itemId: active ? itemId : (xmlTag(xml, 'ItemID') || itemId), title: titleChanged ? newTitle : cur, titleChanged };
+  const newId = active ? itemId : (xmlTag(xml, 'ItemID') || itemId);
+  if (!active && newId) pool.query('INSERT INTO relist_log (user_id, item_id, kind) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING', [uid, String(newId), kind || 'relist']).catch(() => {});   // v488
+  return { itemId: newId, title: titleChanged ? newTitle : cur, titleChanged };
 }
 app.post('/api/returns/relist', requireUser, express.json({ limit: '10kb' }), async (req, res) => {
   const uid = req.user.id;
@@ -4941,7 +4951,7 @@ app.post('/api/returns/relist', requireUser, express.json({ limit: '10kb' }), as
     const b = req.body || {};
     const itemId = String(b.itemId || '').replace(/\D/g, '');
     if (!/^\d{6,20}$/.test(itemId)) return res.status(400).json({ error: 'This return has no item number to relist.' });
-    const out = await relistSoldItem(uid, itemId, String(b.emoji || '').trim().slice(0, 16));
+    const out = await relistSoldItem(uid, itemId, String(b.emoji || '').trim().slice(0, 16), 'return');
     if (b.followupId) await pool.query('DELETE FROM return_followups WHERE user_id = $1 AND id = $2', [uid, parseInt(b.followupId, 10) || 0]);
     res.json(Object.assign({ ok: true }, out));
   } catch (e) {
@@ -6503,7 +6513,7 @@ async function listingStarts(userId) {
       let ship = null;   // null = eBay did not give a flat cost (calculated shipping)
       if (/<FreeShipping>\s*true/i.test(sd)) ship = 0;
       else { const c = parseFloat(xmlTag(xmlTag(sd, 'ShippingServiceOptions') || '', 'ShippingServiceCost') || ''); if (Number.isFinite(c)) ship = c; }
-      starts.push({ st, price, qty, ship });
+      starts.push({ st, price, qty, ship, id: xmlTag(it, 'ItemID') || '' });   // v488: + id
     });
     const pages = parseInt(xmlTag(xmlTag(xml, 'PaginationResult') || '', 'TotalNumberOfPages') || '1', 10) || 1;
     if (!items.length || page >= pages) break;
@@ -6533,6 +6543,12 @@ app.get('/api/listings/daily', requireUser, async (req, res) => {
     const hourOf = new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: 'numeric', hourCycle: 'h23' });
     const today = dayKey.format(new Date());
     const byDay = {}, byDayV = {}, hours = new Array(24).fill(0), hoursV = new Array(24).fill(0);
+    const relDay = {}, relDayV = {}, hoursR = new Array(24).fill(0), hoursRV = new Array(24).fill(0);   // v488: the relists inside those
+    const relIds = new Set();
+    try {
+      (await pool.query('SELECT item_id FROM relist_log WHERE user_id = $1', [req.user.id])).rows.forEach(z => relIds.add(String(z.item_id)));
+      (await pool.query('SELECT new_item FROM order_swaps WHERE user_id = $1 AND new_item IS NOT NULL', [req.user.id])).rows.forEach(z => relIds.add(String(z.new_item)));
+    } catch (e) { /* tables not there yet */ }
     // v439: your own average fee, tax and shipping from your orders — the last 30 days, or 90 if there are fewer than 5 orders in 30 (for the Value chart)
     let rates = { fee: null, tax: null, ship: null, orders: 0, days: 30 };
     try {
@@ -6555,16 +6571,18 @@ app.get('/api/listings/daily', requireUser, async (req, res) => {
       if (shipUse === null) { if (rates.ship !== null) { shipUse = rates.ship; shipEst++; } else { shipUse = 0; noShip++; } }   // v439: calculated shipping -> your average shipping
       const val = (s.price + shipUse) * s.qty;   // v438: price + shipping, per quantity
       const k = dayKey.format(d); byDay[k] = (byDay[k] || 0) + 1; byDayV[k] = (byDayV[k] || 0) + val;
-      if (k === today) { const h = parseInt(hourOf.format(d), 10) % 24; hours[h]++; hoursV[h] += val; }
+      const isRel = !!(s.id && relIds.has(String(s.id)));
+      if (isRel) { relDay[k] = (relDay[k] || 0) + 1; relDayV[k] = (relDayV[k] || 0) + val; }
+      if (k === today) { const h = parseInt(hourOf.format(d), 10) % 24; hours[h]++; hoursV[h] += val; if (isRel) { hoursR[h]++; hoursRV[h] += val; } }
     });
     const days = [];
     const [y, m, dd] = today.split('-').map(Number);
     for (let i = 89; i >= 0; i--) {
       const t = new Date(Date.UTC(y, m - 1, dd - i));
       const k = t.toISOString().slice(0, 10);
-      days.push({ date: k, n: byDay[k] || 0, v: Math.round((byDayV[k] || 0) * 100) / 100 });
+      days.push({ date: k, n: byDay[k] || 0, v: Math.round((byDayV[k] || 0) * 100) / 100, r: relDay[k] || 0, rv: Math.round((relDayV[k] || 0) * 100) / 100 });
     }
-    res.json({ connected: true, tz, today, days, hours, hoursV: hoursV.map(x => Math.round(x * 100) / 100), rates, noShip, shipEst, checkedAt: new Date(listedCache.get(req.user.id).at || Date.now()).toISOString() });
+    res.json({ connected: true, tz, today, days, hours, hoursV: hoursV.map(x => Math.round(x * 100) / 100), hoursR, hoursRV: hoursRV.map(x => Math.round(x * 100) / 100), rates, noShip, shipEst, checkedAt: new Date(listedCache.get(req.user.id).at || Date.now()).toISOString() });
   } catch (e) {
     console.error('[listings daily]', e.message);
     res.json({ connected: true, error: 'eBay didn\u2019t give us your listing dates: ' + e.message });

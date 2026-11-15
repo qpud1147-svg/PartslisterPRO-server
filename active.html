@@ -140,6 +140,9 @@
   #lchart .bar { fill: var(--accent); }
   #lchart.hovering .bar { fill: var(--bar-dim); }
   #lchart.hovering .bar.active { fill: var(--accent); }
+  #lchart .relbar { fill: #2ec4b6; pointer-events: none; }   /* v415: relists (Swap, Returns → Relist) on top of the bar */
+  #lchart.hovering .relbar { opacity: .4; }
+  #lchart.hovering .relbar.active { opacity: 1; }
   #lchart .avgline { stroke: var(--text2); stroke-width: 1; stroke-dasharray: 4 4; }
   .tooltip { position: absolute; pointer-events: none; background: #0b0b0b; border: 1px solid #3a3a3a; border-radius: 6px; padding: 8px 12px; font-size: 12px; color: var(--text2); white-space: nowrap; opacity: 0; transform: translate(-50%, -100%); z-index: 5; box-shadow: 0 6px 20px rgba(0,0,0,0.5); }
   .tooltip.show { opacity: 1; }
@@ -258,7 +261,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v414</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v415</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -339,6 +342,10 @@
       <div class="range-picker" style="margin-left:0" role="group" aria-label="Count" id="lc-kind">
         <button type="button" data-k="n" aria-pressed="true">Listings</button>
         <button type="button" data-k="v">Value</button>
+      </div>
+      <div class="range-picker" style="margin-left:0" role="group" aria-label="Which listings" id="lc-new" title="Relists = items put back up by Swap or by Relist on the Returns page (teal on top of the bars)">
+        <button type="button" data-n="all" aria-pressed="true">All</button>
+        <button type="button" data-n="new">New only</button>
       </div>
       <div class="range-picker" style="margin-left:0;visibility:hidden" role="group" aria-label="Value view" id="lc-vmode">
         <button type="button" data-m="keep" title="Price + shipping minus eBay's average fees (your own rate, from your last 90 days of orders)">You keep</button>
@@ -1086,7 +1093,8 @@ pageCache.rerun = () => { loadListings(false); loadDaily(false); };   // v380: f
 loadListings(false);
 
 // ─── v374: LISTINGS PER DAY ──────────────────────────────────────────────────
-let daily = null, lcRange = 31, lcKind = 'n', lcVMode = 'listed';
+let daily = null, lcRange = 31, lcKind = 'n', lcVMode = 'listed', lcNew = 'all';   // v415: lcNew = all | new (leave relists out)
+try { if (localStorage.getItem('lcNew') === 'new') lcNew = 'new'; } catch (e) { /* fine */ }
 try { lcKind = localStorage.getItem('lcKind') === 'v' ? 'v' : 'n'; const vm = localStorage.getItem('lcVMode'); if (['keep', 'listed', 'buyer'].includes(vm)) lcVMode = vm; } catch (e) { /* fine */ }
 try { const r = parseInt(localStorage.getItem('lcRange'), 10); if ([1, 7, 31, 90].includes(r)) lcRange = r; } catch (e) { /* fine */ }
 const SVGNS = 'http://www.w3.org/2000/svg';
@@ -1136,6 +1144,7 @@ function drawDaily() {
   document.querySelectorAll('#lc-range button').forEach(b => b.setAttribute('aria-pressed', String(parseInt(b.dataset.r, 10) === lcRange)));
   document.querySelectorAll('#lc-kind button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.k === lcKind)));
   document.querySelectorAll('#lc-vmode button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.m === lcVMode)));
+  document.querySelectorAll('#lc-new button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.n === lcNew)));
   const vm = document.getElementById('lc-vmode'); if (vm) vm.style.visibility = lcKind === 'v' ? 'visible' : 'hidden';
   setText('lc-title', lcKind === 'v' ? 'Value listed per day' : 'Listings per day');
   if (!daily) return;
@@ -1143,10 +1152,12 @@ function drawDaily() {
   const rt = daily.rates || {}, factor = !money$ ? 1 : lcVMode === 'keep' ? (1 - (rt.fee || 0)) : lcVMode === 'buyer' ? (1 + (rt.tax || 0)) : 1;
   // the bars for this range: Today = by hour, otherwise by day
   const bars = lcRange === 1
-    ? daily.hours.map((n, h) => ({ n, val: (daily.hoursV || [])[h] || 0, label: hourLabel(h), long: hourLabel(h) + ' – ' + hourLabel((h + 1) % 24) + ' today', tick: h % 3 === 0 ? hourLabel(h) : '' }))
-    : daily.days.slice(-lcRange).map((d, i, arr) => ({ n: d.n, val: d.v || 0, long: dLabel(d.date, { weekday: 'short', month: 'short', day: 'numeric' }),
+    ? daily.hours.map((n, h) => ({ n, val: (daily.hoursV || [])[h] || 0, r: (daily.hoursR || [])[h] || 0, rv: (daily.hoursRV || [])[h] || 0, label: hourLabel(h), long: hourLabel(h) + ' – ' + hourLabel((h + 1) % 24) + ' today', tick: h % 3 === 0 ? hourLabel(h) : '' }))
+    : daily.days.slice(-lcRange).map((d, i, arr) => ({ n: d.n, val: d.v || 0, r: d.r || 0, rv: d.rv || 0, long: dLabel(d.date, { weekday: 'short', month: 'short', day: 'numeric' }),
         tick: lcRange === 7 ? dLabel(d.date, { weekday: 'short' }) : (i % (lcRange === 31 ? 5 : 14) === 0 || i === arr.length - 1) ? dLabel(d.date, { month: 'short', day: 'numeric' }) : '' }));
-  if (money$) bars.forEach(b => { b.n = Math.round(b.val * factor * 100) / 100; });   // v438: bars are dollars
+  if (money$) bars.forEach(b => { b.n = Math.round(b.val * factor * 100) / 100; b.r = Math.round(b.rv * factor * 100) / 100; });   // v438: bars are dollars
+  if (lcNew === 'new') bars.forEach(b => { b.n = Math.max(0, Math.round((b.n - b.r) * 100) / 100); b.r = 0; });   // v415: relists left out
+  const relTotal = bars.reduce((s, b) => s + (b.r || 0), 0);
   const F = x => money$ ? fmtMoney(x) : x.toLocaleString();
   const total = bars.reduce((s, b) => s + b.n, 0);
   setText('lc-total', F(total));
@@ -1161,7 +1172,7 @@ function drawDaily() {
     const bi = bars.reduce((a, b, i) => b.n > bars[a].n ? i : a, 0), best = bars[bi], bd = daily.days.slice(-lcRange)[bi];
     setText('lc-best', best && best.n ? F(best.n) : '—'); setText('lc-best-k', best && best.n && bd ? 'Best day · ' + dLabel(bd.date, { month: 'short', day: 'numeric' }) : 'Best day');
   }
-  setText('lc-note', 'Every listing that went up, including ones that since sold or ended · your time zone · checked ' + timeAgo(daily.checkedAt)
+  setText('lc-note', (lcNew === 'new' ? 'New listings only \u2014 relists from Swap and Returns left out' : 'Every listing that went up' + (relTotal ? ' (teal = ' + (money$ ? fmtMoney(relTotal) : relTotal) + ' relisted by Swap or Returns)' : '')) + ', including ones that since sold or ended · your time zone · checked ' + timeAgo(daily.checkedAt)
     + (money$ ? ' · ' + (lcVMode === 'keep' ? (rt.fee != null ? 'estimate: price + shipping minus your average eBay fees (' + (rt.fee * 100).toFixed(1) + '% of sales, last ' + (rt.days || 30) + ' days)' : 'not enough sales yet to estimate your fees — showing the listed value') : lcVMode === 'buyer' ? (rt.tax != null ? 'estimate: price + shipping plus your average sales tax (' + (rt.tax * 100).toFixed(1) + '% of sales, last ' + (rt.days || 30) + ' days)' : 'not enough sales yet to estimate tax — showing the listed value') : 'price + shipping per quantity') + (daily.shipEst ? ' · ' + daily.shipEst + ' listing' + (daily.shipEst === 1 ? ' has' : 's have') + ' calculated shipping, estimated at your average of $' + Number(rt.ship).toFixed(2) + ' (from your last ' + (rt.shipDays || 30) + ' days of orders)' : '') + (daily.noShip ? ' · ' + daily.noShip + ' listing' + (daily.noShip === 1 ? ' has' : 's have') + ' calculated shipping and there are not enough recent orders to estimate it (counted as $0)' : '') : ''));
 
   const svg = document.getElementById('lchart'), wrap = document.getElementById('lchart-wrap');
@@ -1178,19 +1189,21 @@ function drawDaily() {
   }
   const slot = pw / n, gap = slot >= 6 ? 2 : 1, bw = Math.max(1, Math.min(n <= 7 ? 48 : 24, slot - gap));
   const els = bars.map((b, i) => { const h = (b.n / max) * ph, x = m.left + i * slot + (slot - bw) / 2; return sv('path', { class: 'bar', d: barPath(x, m.top + ph - h, bw, h) }, svg); });
+  const rels = bars.map((b, i) => { if (!(b.r > 0)) return null; const h = (b.n / max) * ph, rh = Math.min(h, (b.r / max) * ph), x = m.left + i * slot + (slot - bw) / 2; return sv('path', { class: 'relbar', d: barPath(x, m.top + ph - h, bw, rh) }, svg); });   // v415: teal tip
   if (lcRange > 1) { const avg = total / lcRange, y = Math.round(m.top + ph - (avg / max) * ph) + 0.5; sv('line', { class: 'avgline', x1: m.left, x2: W - m.right, y1: y, y2: y }, svg); }
   bars.forEach((b, i) => { if (b.tick) sv('text', { class: 'tick', x: m.left + i * slot + slot / 2, y: H - 6, 'text-anchor': 'middle' }, svg).textContent = b.tick; });
   // hover
   const tip = document.getElementById('lc-tip'); let act = -1;
   function show(i) {
     if (i === act) return;
-    if (act >= 0) els[act].classList.remove('active');
+    if (act >= 0) { els[act].classList.remove('active'); if (rels[act]) rels[act].classList.remove('active'); }
     act = i;
     if (i < 0) { svg.classList.remove('hovering'); tip.classList.remove('show'); return; }
-    svg.classList.add('hovering'); els[i].classList.add('active');
+    svg.classList.add('hovering'); els[i].classList.add('active'); if (rels[i]) rels[i].classList.add('active');
     tip.textContent = '';
     const v = document.createElement('span'); v.className = 'tt-value'; v.textContent = money$ ? '$' + bars[i].n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' listed' : bars[i].n + ' listed';
     tip.append(v, document.createTextNode(bars[i].long));
+    if (bars[i].r > 0) { const rr = document.createElement('div'); rr.style.color = '#2ec4b6'; rr.textContent = (money$ ? fmtMoney(bars[i].r) : bars[i].r) + ' relisted (Swap / Returns)'; tip.append(rr); }
     let x = m.left + i * slot + slot / 2; const y = Math.max(m.top + ph - (bars[i].n / max) * ph - 10, 60);
     tip.style.top = y + 'px'; tip.style.left = x + 'px'; tip.classList.add('show');
     const tw = tip.offsetWidth; x = Math.max(tw / 2 + 2, Math.min(W - tw / 2 - 2, x)); tip.style.left = x + 'px';
@@ -1204,6 +1217,7 @@ document.querySelectorAll('#lc-range button').forEach(b => b.addEventListener('c
   drawDaily();
 }));
 document.querySelectorAll('#lc-kind button').forEach(b => b.addEventListener('click', () => { lcKind = b.dataset.k; try { localStorage.setItem('lcKind', lcKind); } catch (e) { /* fine */ } drawDaily(); }));
+document.querySelectorAll('#lc-new button').forEach(b => b.addEventListener('click', () => { lcNew = b.dataset.n; try { localStorage.setItem('lcNew', lcNew); } catch (e) { /* fine */ } drawDaily(); }));   // v415
 document.querySelectorAll('#lc-vmode button').forEach(b => b.addEventListener('click', () => { lcVMode = b.dataset.m; try { localStorage.setItem('lcVMode', lcVMode); } catch (e) { /* fine */ } drawDaily(); }));
 new ResizeObserver(() => drawDaily()).observe(document.getElementById('lchart-wrap'));
 loadDaily(false);
