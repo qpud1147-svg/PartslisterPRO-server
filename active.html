@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Active v418</title>
+<title>PartsLister Pro Active v419</title>
 <!-- v387: click a listing → your own eBay-style view (big photos with arrows, price, shipping, condition, item specifics, description); sharper list photos; shipping on the rows when eBay gives it. -->
 <!-- v403: Value chart: calculated-shipping listings use your average shipping from recent orders (30 days, else 90); fee/tax rates also 30 days (else 90); note says so. -->
 <!-- v402: listings-per-day chart gets a Listings | Value switch; in Value mode a 3-way switch: You keep / Listed / Buyer pays (price + shipping per quantity; fee and tax rates from your own last 90 days of orders). -->
@@ -140,6 +140,11 @@
   #lchart .bar { fill: var(--accent); }
   #lchart.hovering .bar { fill: var(--bar-dim); }
   #lchart.hovering .bar.active { fill: var(--accent); }
+  /* v419: ship status badge, top right */
+  .shipbadge { position: absolute; top: 8px; right: 40px; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; border-radius: 10px; padding: 2px 10px; z-index: 1; }
+  .shipbadge.now { color: #fff; background: #d9303a; }
+  .shipbadge.shp { color: #fff; background: #2f7fe0; }
+  .shipbadge.del { color: #fff; background: #2a9d5c; }
   #lchart .relbar { fill: #2ec4b6; pointer-events: none; }   /* v415: relists (Swap, Returns → Relist) on top of the bar */
   #lchart.hovering .relbar { opacity: .4; }
   #lchart.hovering .relbar.active { opacity: 1; }
@@ -261,7 +266,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v418</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v419</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -998,6 +1003,18 @@ pageCache.rerun = () => { loadListings(false); loadDaily(false); };   // v380: f
       + '<a href="https://www.ebay.com/itm/' + encodeURIComponent(sw.oldItem) + '" target="_blank" rel="noopener" style="color:#4aa3ff">Open on eBay</a></div>';
   }
   window.swapTagHTML = swapTagHTML;
+  // v419: where an order is — red Ship now, blue Shipped, green Delivered
+  function shipBadgeHTML(o) {
+    if (!o) return '';
+    let txt, cls;
+    if (o.counted === false) return '';
+    if (o.delivered) { txt = 'Delivered'; cls = 'del'; }
+    else if (o.ship === 'FULFILLED') { txt = 'Shipped'; cls = 'shp'; }
+    else if (o.ship === 'IN_PROGRESS') { txt = 'Partly shipped'; cls = 'now'; }
+    else { txt = 'Ship now'; cls = 'now'; }
+    const t = o.delivered ? ' title="Delivered ' + new Date(o.delivered).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + '"' : '';
+    return '<span class="shipbadge ' + cls + '"' + t + '>' + txt + '</span>';
+  }
   let histShown = { sold: 50, ended: 50 };
   window.histMore = function (kind) { histShown[kind] += 50; histRender(kind); };
   function histRender(kind) {
@@ -1006,7 +1023,7 @@ pageCache.rerun = () => { loadListings(false); loadDaily(false); };   // v380: f
     g(P + '-note').textContent = a.length ? (sold ? a.length + ' sales · ' + money(total) + ' · last 60 days (eBay\'s limit)' : a.length + ' ended listings · last 60 days (eBay\'s limit)') : (sold ? 'No sales in the last 60 days.' : 'No ended listings in the last 60 days.');
     g(P + '-list').innerHTML = a.slice(0, histShown[kind]).map((x, ix) => {
       const ran = daysBetween(x.start, sold ? x.soldAt : x.endedAt);
-      return '<div class="ebl ll"><span class="ebl-n">' + (ix + 1) + '</span>' + photo(x) + '<div class="ebl-body"><div class="ebl-title"><a href="#" onclick="openListing(\'' + esc(x.itemId) + '\');return false">' + esc(x.title || ('Item ' + x.itemId)) + '</a></div>' +
+      return '<div class="ebl ll"><span class="ebl-n">' + (ix + 1) + '</span>' + (sold ? shipBadgeHTML(x.order) : '') + photo(x) + '<div class="ebl-body"' + (sold ? ' style="padding-right:120px"' : '') + '><div class="ebl-title"><a href="#" onclick="openListing(\'' + esc(x.itemId) + '\');return false">' + esc(x.title || ('Item ' + x.itemId)) + '</a></div>' +
         '<div class="ebl-price">' + (sold ? '<span class="yo-g">' + money(x.price) + '</span>' : money(x.price)) + (sold && x.shipping != null ? '<small>' + (x.shipping === 0 ? 'Free shipping' : '+ ' + money(x.shipping) + ' shipping') + '</small>' : '') + (sold && x.qty > 1 ? '<small>' + x.qty + ' sold</small>' : '') + '</div>' +
         '<div class="ebl-sub">' + (sold ? 'Sold <b>' + esc(dstr(x.soldAt)) + '</b>' : 'Ended <b>' + esc(dstr(x.endedAt)) + '</b>') + (ran != null ? ' · ran <b>' + ran + (ran === 1 ? ' day' : ' days') + '</b>' : '') + '</div>' +
         (x.sku ? '<div class="ebl-sku-l"><small>SKU</small>' + esc(x.sku) + '</div>' : '<div class="ebl-sub" style="opacity:.55">No SKU</div>') + (sold && x.swap ? swapTagHTML(x.swap) : '') + chkBtns(x) + '</div></div>';   // v414

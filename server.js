@@ -1,4 +1,5 @@
-// PartsLister Pro server — v489
+// PartsLister Pro server — v490
+// v490: delivery — shipped orders get their delivery date from eBay (Trading GetOrders, ActualDeliveryTime); POST /api/orders/delivery; Active → Sold rows carry their order's ship status.
 // v489: POST /api/orders/swap-status — asks eBay right now whether each swap's relisted listing is live and the older one ended (verified badges).
 // v488: Listings per day knows which listings were relists (Swap or Returns → Relist) — relist_log + order_swaps.new_item; days carry r / rv.
 // v487: the buyer's checkout note (buyerCheckoutNotes) is saved with each order and shown on Orders; one-time 30-day re-import to pick up notes.
@@ -361,6 +362,8 @@ async function setupDatabase() {
     ALTER TABLE ebay_orders ADD COLUMN IF NOT EXISTS tax NUMERIC(12,2) NOT NULL DEFAULT 0;
     ALTER TABLE ebay_connections ADD COLUMN IF NOT EXISTS orders_v INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE ebay_orders ADD COLUMN IF NOT EXISTS buyer_note TEXT;   -- v487: note from the buyer at checkout
+    ALTER TABLE ebay_orders ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMPTZ;      -- v490
+    ALTER TABLE ebay_orders ADD COLUMN IF NOT EXISTS delivery_checked TIMESTAMPTZ;  -- v490
     -- v319: what was in each order (for the Orders page) + whether it has shipped
     CREATE TABLE IF NOT EXISTS ebay_order_items (
       user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -2007,13 +2010,13 @@ app.get('/api/orders/list', requireUser, async (req, res) => {
     if ((conn.orders_v || 0) < 7 && !syncing.has(req.user.id) && !conn.last_error) syncOrders(req.user.id);   // v487: was < 6 (notes)
     const r = await pool.query(
       `SELECT o.order_id, o.created_at, to_char(o.created_at AT TIME ZONE $2, 'YYYY-MM-DD HH24:MI') AS sold_local,
-              o.total::float, o.tax::float, o.refunded::float, o.refunded_tax::float, o.counted, o.status, o.ship_status, o.buyer_note,
+              o.total::float, o.tax::float, o.refunded::float, o.refunded_tax::float, o.counted, o.status, o.ship_status, o.buyer_note, o.delivered_at,
               COALESCE(json_agg(json_build_object('itemId', i.item_id, 'sku', i.sku, 'title', i.title, 'qty', i.qty, 'price', i.price::float)
                          ORDER BY i.line_item_id) FILTER (WHERE i.line_item_id IS NOT NULL), '[]') AS items
          FROM ebay_orders o
          LEFT JOIN ebay_order_items i ON i.user_id = o.user_id AND i.order_id = o.order_id
         WHERE o.user_id = $1 AND (o.created_at AT TIME ZONE $2)::date > (now() AT TIME ZONE $2)::date - $3::int
-        GROUP BY o.order_id, o.created_at, o.total, o.tax, o.refunded, o.refunded_tax, o.counted, o.status, o.ship_status, o.buyer_note
+        GROUP BY o.order_id, o.created_at, o.total, o.tax, o.refunded, o.refunded_tax, o.counted, o.status, o.ship_status, o.buyer_note, o.delivered_at
         ORDER BY o.created_at DESC
         LIMIT 3000`,
       [req.user.id, tz, days]
@@ -2032,7 +2035,8 @@ app.get('/api/orders/list', requireUser, async (req, res) => {
         total: x.counted ? Math.round((x.total + x.tax - x.refunded - x.refunded_tax) * 100) / 100 : 0,
         refunded: Math.round((x.refunded + x.refunded_tax) * 100) / 100,
         items: x.items,
-        note: x.buyer_note || null   // v487
+        note: x.buyer_note || null,   // v487
+        delivered: x.delivered_at || null   // v490
       }))
     });
   } catch (e) {
@@ -2184,6 +2188,39 @@ app.post('/api/orders/swap-status', requireUser, express.json({ limit: '20kb' })
     catch (e) { out[id] = { error: e.message }; }
   }
   res.json({ status: out, checkedAt: new Date().toISOString() });
+});
+// v490: ask eBay whether shipped orders were delivered. Each order is asked at most every 2 hours; delivered ones never again.
+async function refreshDelivery(uid, ids) {
+  const r = await pool.query(
+    `SELECT order_id FROM ebay_orders WHERE user_id = $1 AND order_id = ANY($2) AND ship_status = 'FULFILLED' AND delivered_at IS NULL
+        AND created_at > now() - interval '75 days' AND (delivery_checked IS NULL OR delivery_checked < now() - interval '2 hours')`, [uid, ids]);
+  const need = r.rows.map(x => x.order_id).slice(0, 100);
+  for (let k = 0; k < need.length; k += 20) {
+    const chunk = need.slice(k, k + 20);
+    try {
+      const xml = await tradingCall(uid, 'GetOrders', `<OrderIDArray>${chunk.map(id => `<OrderID>${xmlEsc(id)}</OrderID>`).join('')}</OrderIDArray><OrderRole>Seller</OrderRole>`);
+      const got = new Map();
+      xmlAll(xmlTag(xml, 'OrderArray') || '', 'Order').forEach(o => {
+        const ids2 = [xmlTag(o, 'OrderID'), xmlTag(o, 'ExtendedOrderID')].filter(Boolean);
+        const del = (o.match(/<ActualDeliveryTime>([^<]+)<\/ActualDeliveryTime>/) || [])[1] || null;
+        ids2.forEach(i => got.set(i, del));
+      });
+      for (const id of chunk) {
+        const del = got.get(id);
+        await pool.query('UPDATE ebay_orders SET delivery_checked = now(), delivered_at = COALESCE($3::timestamptz, delivered_at) WHERE user_id = $1 AND order_id = $2', [uid, id, del || null]);
+      }
+    } catch (e) { console.warn('[delivery]', e.message); break; }
+  }
+}
+app.post('/api/orders/delivery', requireUser, express.json({ limit: '50kb' }), async (req, res) => {
+  try {
+    const ids = [...new Set(((req.body || {}).ids || []).map(String).filter(x => x && x.length < 60))].slice(0, 300);
+    if (!ids.length) return res.json({ delivered: {} });
+    await refreshDelivery(req.user.id, ids);
+    const r = await pool.query('SELECT order_id, delivered_at FROM ebay_orders WHERE user_id = $1 AND order_id = ANY($2) AND delivered_at IS NOT NULL', [req.user.id, ids]);
+    const out = {}; r.rows.forEach(x => { out[x.order_id] = x.delivered_at; });
+    res.json({ delivered: out });
+  } catch (e) { console.error('[delivery]', e.message); res.status(502).json({ error: e.message }); }
 });
 app.post('/api/orders/swap/end-ok', requireUser, express.json({ limit: '5kb' }), async (req, res) => {   // the older one was ended later (End it now)
   try { await pool.query('UPDATE order_swaps SET end_ok = TRUE WHERE user_id = $1 AND old_item = $2', [req.user.id, String((req.body || {}).oldItem || '')]); res.json({ ok: true }); }
@@ -4792,7 +4829,25 @@ async function fetchHistory(userId, kind, force) {
   return items;
 }
 app.get('/api/active/sold', requireUser, async (req, res) => {
-  try { const items = await fetchHistory(req.user.id, 'sold', req.query.refresh === '1'); const sl = await swapLookup(req.user.id); res.json({ items: items.map(x => { const sw = sl.find(null, x.itemId); return sw ? Object.assign({}, x, { swap: sw }) : x; }) }); }   // v485
+  try {
+    const items = await fetchHistory(req.user.id, 'sold', req.query.refresh === '1'); const sl = await swapLookup(req.user.id);
+    // v490: the order behind each sale — ship status + delivery
+    const ordersByItem = new Map();
+    try {
+      const ids = [...new Set(items.map(x => x.itemId).filter(Boolean))];
+      if (ids.length) (await pool.query(
+        `SELECT i.item_id, o.order_id, o.created_at, o.ship_status, o.counted, o.status, o.delivered_at FROM ebay_order_items i JOIN ebay_orders o ON o.user_id = i.user_id AND o.order_id = i.order_id
+          WHERE i.user_id = $1 AND i.item_id = ANY($2)`, [req.user.id, ids])).rows.forEach(z => { const a = ordersByItem.get(z.item_id) || []; a.push(z); ordersByItem.set(z.item_id, a); });
+    } catch (e) { /* no orders table yet */ }
+    const orderFor = (x) => {
+      const a = ordersByItem.get(x.itemId); if (!a || !a.length) return null;
+      const t = x.soldAt ? Date.parse(x.soldAt) : 0;
+      const z = a.slice().sort((p, q) => Math.abs(Date.parse(p.created_at) - t) - Math.abs(Date.parse(q.created_at) - t))[0];
+      return { id: z.order_id, ship: z.ship_status || null, counted: z.counted, status: z.status || '', delivered: z.delivered_at || null };
+    };
+    { const oids = [...new Set([...ordersByItem.values()].flat().filter(z => z.ship_status === 'FULFILLED' && !z.delivered_at).map(z => z.order_id))]; if (oids.length) refreshDelivery(req.user.id, oids).catch(() => {}); }   // v490: in the background — shows next time
+    res.json({ items: items.map(x => { const sw = sl.find(null, x.itemId), ord = orderFor(x); return (sw || ord) ? Object.assign({}, x, sw ? { swap: sw } : {}, ord ? { order: ord } : {}) : x; }) });   // v485, v490
+  }
   catch (e) { console.error('[sold list]', e.message); res.status(502).json({ error: 'Could not load your sales from eBay: ' + e.message }); }
 });
 app.get('/api/active/ended', requireUser, async (req, res) => {

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Orders v431</title>
+<title>PartsLister Pro Orders v432</title>
 <!-- v382: switching views is instant; browser reload / Refresh really reloads. v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
 <!-- PartsLister Pro — Orders page (v319: new). Your sold items from eBay, newest first.
      v320: item photos, and click an order to see the listing (photos, description, item specifics).
@@ -180,6 +180,11 @@
   .swapbox .sb-sku { font-size: 18px; font-weight: 800; }
   .swapbox .sb-title { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .ebl { position: relative; }
+  /* v432: ship status badge, top right */
+  .shipbadge { position: absolute; top: 8px; right: 40px; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; border-radius: 10px; padding: 2px 10px; z-index: 1; }
+  .shipbadge.now { color: #fff; background: #d9303a; }
+  .shipbadge.shp { color: #fff; background: #2f7fe0; }
+  .shipbadge.del { color: #fff; background: #2a9d5c; }
   .ebl-n { position: absolute; right: 12px; top: 8px; font-size: 17px; font-weight: 700; color: var(--muted, #888); }
   .ebl-sku-l { font-size: 17px; font-weight: 700; color: var(--accent); letter-spacing: 0.3px; line-height: 1.2; word-break: break-word; }
   .ebl-sku-l small { font-size: 11px; font-weight: 600; color: var(--muted); letter-spacing: 1px; margin-right: 6px; text-transform: uppercase; }
@@ -258,7 +263,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v431</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v432</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -484,6 +489,7 @@ function render() {
       const head = document.createElement('div'); head.className = 'sw2-head'; head.textContent = '↔ Swapped';
       const num = document.createElement('span'); num.className = 'ebl-n'; num.textContent = ix + 1;
       row.append(head, num);
+      { const sb0 = document.createElement('span'); sb0.innerHTML = shipBadgeHTML(o); if (sb0.firstChild) row.append(sb0.firstChild); }   // v432
       const [d0, t0] = o.sold.split(' ');
       const soldTxt = 'Sold ' + new Date(d0 + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' · ' + t0 + ' · order ' + o.id;
       const mkRow = (cls, tag, photoId, title, priceTxt, priceSmall, subTxt, sku, onOpen) => {
@@ -536,7 +542,7 @@ function render() {
     if (!o.items.length) { const p = document.createElement('div'); p.className = 'ebl-title'; p.style.color = 'var(--muted)'; p.textContent = 'Items still importing…'; body.append(p); }
     else body.append(titleEl(o.items[0]));
     const price = document.createElement('div'); price.className = 'ebl-price'; price.textContent = money2.format(o.total);
-    const sm = document.createElement('small'); sm.textContent = CHIP[k][0] + (k !== 'refunded' && o.refunded > 0 ? ' · part refund' : ''); price.append(sm);
+    const sm = document.createElement('small'); sm.textContent = (o.delivered && k === 'shipped' ? 'Delivered' : CHIP[k][0]) + (k !== 'refunded' && o.refunded > 0 ? ' · part refund' : ''); price.append(sm);   // v432
     body.append(price);
     const [d, t] = o.sold.split(' ');
     const dt = new Date(d + 'T12:00:00');
@@ -556,12 +562,15 @@ function render() {
       body.append(x);
     });
     const num = document.createElement('span'); num.className = 'ebl-n'; num.textContent = ix + 1; row.append(num);
+    { const sb0 = document.createElement('span'); sb0.innerHTML = shipBadgeHTML(o); if (sb0.firstChild) row.append(sb0.firstChild); }   // v432
+    body.style.paddingRight = '120px';
     row.append(imgBox, body);
     box.append(row);
   });
   document.getElementById('o-more').style.display = list.length > shown ? '' : 'none';
   loadThumbs();   // v320
   checkSwaps();   // v430
+  loadDelivery();   // v432
 }
 
 // ─── v409: SWAP — a newer listing sold while an older one of the same part is still live ────────────
@@ -614,6 +623,28 @@ function noteBox(o) {
   n.addEventListener('click', e => e.stopPropagation());
   return n;
 }
+// v432: where an order is — red Ship now, blue Shipped, green Delivered
+function shipBadgeHTML(o) {
+  if (!o) return '';
+  let txt, cls;
+  if (o.counted === false) return '';
+  if (o.delivered) { txt = 'Delivered'; cls = 'del'; }
+  else if (o.ship === 'FULFILLED') { txt = 'Shipped'; cls = 'shp'; }
+  else if (o.ship === 'IN_PROGRESS') { txt = 'Partly shipped'; cls = 'now'; }
+  else { txt = 'Ship now'; cls = 'now'; }
+  const t = o.delivered ? ' title="Delivered ' + new Date(o.delivered).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + '"' : '';
+  return '<span class="shipbadge ' + cls + '"' + t + '>' + txt + '</span>';
+}
+async function loadDelivery() {   // v432: ask the server (and eBay) which shipped orders were delivered
+  const ids = orders.filter(x => kind(x) === 'shipped' && !x.delivered && !delAsked.has(x.id)).map(x => x.id).slice(0, 300);
+  if (!ids.length) return; ids.forEach(i => delAsked.add(i));
+  const r = await fetch('/api/orders/delivery', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids }) }).catch(() => null);
+  const j = r && r.ok ? await r.json().catch(() => null) : null;
+  if (!j || !j.delivered) return;
+  let ch = false; orders.forEach(x => { if (j.delivered[x.id] && !x.delivered) { x.delivered = j.delivered[x.id]; ch = true; } });
+  if (ch) render();
+}
+const delAsked = new Set();
 function shipBtn(o) {
   const a = document.createElement('a'); a.className = 'btn btn-primary btn-sm'; a.textContent = 'Ship';
   a.href = 'https://www.ebay.com/ship/single/' + encodeURIComponent(o.id);
