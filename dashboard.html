@@ -169,7 +169,7 @@
   .range-picker button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
   /* v315: MONTH + CUSTOM DATES, next to the range buttons */
-  .range-extra { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .range-extra { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; flex-basis: 100%; }   /* v420: full row, so You keep / Listed / Buyer pays can sit at the right */
   .range-extra select, .range-extra input[type="date"] {
     background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 6px;
     font-family: 'Barlow', sans-serif; font-size: 13px; padding: 7px 8px; color-scheme: dark;
@@ -233,7 +233,7 @@
   /* .fees-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; } */
   .fees-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 12px; }   /* v315: + penalty this year */
   .tile.penalty { border-left-width: 3px; }
-  #chart .penbar { fill: var(--danger); pointer-events: none; }   /* v419 */
+  #chart .penbar { fill: #d9303a; pointer-events: none; }   /* v419; v420: a deep red — the warning color looked pink next to the yellow */
   .tile.penalty.ok { border-left-color: var(--success); }
   .tile.penalty.bad { border-left-color: var(--danger); background: rgba(224,82,82,0.06); }
   .tile.penalty.bad .tile-value { color: var(--danger); }
@@ -571,7 +571,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v419</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v421</span></div>
   </a>
   <!-- v316: switch pages -->
   <nav class="page-tabs" aria-label="Pages">
@@ -619,7 +619,7 @@
     </div>
     <!-- v315: any month, or your own start and end dates -->
     <div class="range-extra">
-      <div class="range-picker" role="group" aria-label="Which amount" id="sales-view" style="display:none;margin-left:0;">   <!-- v419 -->
+      <div class="range-picker" role="group" aria-label="Which amount" id="sales-view" style="display:none;margin-left:auto;order:99;">   <!-- v419; v420: right side, under Year / This month / Last month -->
         <button type="button" data-v="keep" onclick="setSalesView('keep', true)" title="Sales minus the eBay fees you actually paid">You keep</button>
         <button type="button" data-v="listed" onclick="setSalesView('listed', true)" title="Item sales + shipping, without sales tax">Listed</button>
         <button type="button" data-v="buyer" onclick="setSalesView('buyer', true)" title="What buyers paid, sales tax included (matches eBay's Total sales)">Buyer pays</button>
