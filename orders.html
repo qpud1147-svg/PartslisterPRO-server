@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Orders v434</title>
+<title>PartsLister Pro Orders v435</title>
 <!-- v382: switching views is instant; browser reload / Refresh really reloads. v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
 <!-- PartsLister Pro — Orders page (v319: new). Your sold items from eBay, newest first.
      v320: item photos, and click an order to see the listing (photos, description, item specifics).
@@ -144,13 +144,20 @@
   .ebl-price { font-size: 20px; font-weight: 700; }
   .ebl-price small { font-size: 12px; font-weight: 400; color: var(--muted); margin-left: 6px; }
   .yo-g { color: #3fa65b; font-weight: 700; }
-  .ebl-ship { font-size: 12px; color: var(--muted); margin-top: -2px; }   /* v434: shipping under the price, like eBay */
+  .ebl-ship { font-size: 14px; color: var(--text); font-weight: 600; margin-top: -2px; }   /* v434: shipping under the price, like eBay; v435: stands out more */
   .shipbtn-corner { position: absolute; right: 12px; bottom: 10px; margin: 0 !important; z-index: 1; }   /* v434: Ship sits in the corner, no row of its own */
   .ebl-sub { color: var(--muted); font-size: 12px; }
   /* v409: Swap */
   .swap { margin-top: 6px; padding: 6px 8px; border: 1px solid var(--accent); border-radius: 6px; font-size: 12px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; background: rgba(245,166,35,0.07); }
   .swap b { color: var(--accent); }
   .swap .btn-sm { padding: 3px 10px; font-size: 11px; }
+  /* v435: the swap line, simpler */
+  .swap { border-color: var(--border) !important; background: var(--surface2, rgba(255,255,255,0.03)) !important; }
+  .swp-tag { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #fff; background: #2f7fe0; border-radius: 10px; padding: 2px 9px; }
+  .swp-txt { font-size: 13px; color: var(--text); }
+  .swp-chip { font-size: 11px; border: 1px solid var(--border); border-radius: 4px; padding: 3px 8px; color: var(--muted); }
+  .swp-chip.ok { color: var(--success, #3c9); border-color: rgba(60,200,140,0.5); }
+  .swp-chip.warn { color: #f0a24a; border-color: rgba(240,162,74,0.5); }
   .swap.done { border-color: var(--success, #3c9); background: rgba(60,200,140,0.08); }
   .swap.done b { color: var(--success, #3c9); }
   .swap.bad { border-color: var(--danger, #e55); background: rgba(230,80,80,0.08); }
@@ -273,7 +280,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v434</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v435</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -517,7 +524,7 @@ function render() {
         r2.append(ib, bd); return { r2, bd };
       };
       const shipA = Math.max(0, Math.round((o.total - (Number(it.price) || 0)) * 100) / 100);
-      const A = mkRow('sw2-orig', 'Original sold', it.itemId, it.title, money2.format(Number(it.price) || o.total), CHIP[k][0], soldTxt, it.sku, () => openOrder(o.id), shipA > 0 ? '+' + money2.format(shipA) + ' shipping' : 'Free shipping');
+      const A = mkRow('sw2-orig', 'Original sold', it.itemId, it.title, money2.format(Number(it.price) || o.total), '', soldTxt, it.sku, () => openOrder(o.id), shipA > 0 ? '+' + money2.format(shipA) + ' shipping' : 'Free shipping');
       if (o.note) A.bd.append(noteBox(o));
       const B = mkRow('sw2-ship', 'Swapped in — ship this one', sw.oldItem, sw.oldTitle, sw.oldPrice != null ? money2.format(sw.oldPrice) : '—', 'older listing', 'Item #' + sw.oldItem, sw.oldSku, () => openListing(sw.oldItem, sw.oldSku, sw.oldTitle, 'Swapped in — the one you shipped'));
       if (k === 'toship' || k === 'partial') { const sb2 = shipBtn(o); sb2.classList.add('shipbtn-corner'); B.r2.append(sb2); }   // v434
@@ -558,7 +565,7 @@ function render() {
     const shipAmt = o.items.length ? Math.max(0, Math.round((o.total - itemsSum) * 100) / 100) : null;
     const price = document.createElement('div'); price.className = 'ebl-price';
     const pv = document.createElement('span'); pv.className = 'yo-g'; pv.textContent = money2.format(o.items.length ? itemsSum : o.total); price.append(pv);
-    const sm = document.createElement('small'); sm.textContent = (o.delivered && k === 'shipped' ? 'Delivered' : CHIP[k][0]) + (k !== 'refunded' && o.refunded > 0 ? ' · part refund' : ''); price.append(sm);   // v432
+    // v435: no status text by the price — the badges at the top right say it
     body.append(price);
     if (shipAmt != null) body.append(Object.assign(document.createElement('div'), { className: 'ebl-ship', textContent: shipAmt > 0 ? '+' + money2.format(shipAmt) + ' shipping' : 'Free shipping' }));
     const [d, t] = o.sold.split(' ');
@@ -734,24 +741,21 @@ function swapBox(o, i) {
   const k = kind(o); const canSwap = k === 'toship' || k === 'partial'; if (!canSwap && k !== 'shipped') return null;
   const list = swapCands[i.itemId] || []; if (!list.length) return null;
   // v418: the best match first; any others behind "+N more"
-  const one = (c, extra) => {
-  const b = mk(extra ? 'more' : '');
-  const t = document.createElement('span');
-  const how = c.match === 'title' ? ' \u00b7 <span style="color:var(--danger,#e55)">similar title only \u2014 check it</span>'
-    : c.matchedOn ? ' \u00b7 matched on <b>' + esc(c.matchedOn) + '</b> ' + (c.from === 'specifics' ? '<span style="color:var(--danger,#e55)">from item specifics \u2014 check it</span>' : '<span style="color:var(--success,#3c9)">from the title</span>') : '';
-  t.innerHTML = '<b>\u2194 Older one live</b> \u2014 ' + money2.format(c.price || 0) + ' \u00b7 listed ' + esc(ageOf(c.start)) + ' ago' + (c.sku ? ' \u00b7 SKU ' + esc(c.sku) : '') + how;
-  t.title = 'Matched on ' + (c.matchedOn || 'title words') + ' \u2014 older listing: ' + (c.title || '');
-  const v = document.createElement('button'); v.type = 'button'; v.className = 'btn btn-secondary btn-sm'; v.textContent = 'View'; v.title = 'Photos of both: the one that sold (left) and the older listing (right)'; v.onclick = () => viewPhotos(c, i, { list, idx: list.indexOf(c), o, canSwap });   // v412
-  const op = document.createElement('button'); op.type = 'button'; op.className = 'btn btn-secondary btn-sm'; op.textContent = 'Open'; op.title = 'Open the older listing here'; op.onclick = (ev) => { ev.stopPropagation(); openListing(c.itemId, c.sku, c.title, 'Older listing \u2014 still live'); };   // v428: stays on Orders
-  const sw = document.createElement('button'); sw.type = 'button'; sw.className = 'btn btn-primary btn-sm'; sw.textContent = 'Swap';
-  sw.onclick = () => doSwap(o, i, c, sw, b);
-  if (!canSwap) { const x = document.createElement('small'); x.style.color = 'var(--muted)'; x.textContent = '(already shipped \u2014 look only)'; b.append(t, v, op, x); return b; }   // v411
-  b.append(t, v, op, sw);
+  // v435: a simple line — [Swappable] how much older · how many · [Found by …] [View]. Swapping only from View.
+  const c = list[0];
+  const b = mk('');
+  const tag = document.createElement('span'); tag.className = 'swp-tag'; tag.textContent = '↔ Swappable';
+  const older = c.olderBy != null ? c.olderBy : (c.start ? Date.now() - Date.parse(c.start) : null);
+  const span = document.createElement('span'); span.className = 'swp-txt';
+  span.textContent = (older != null ? ageOf(new Date(Date.now() - older).toISOString()) + ' older' : 'older listing') + (list.length > 1 ? ' · ' + list.length + ' swappable' : '');
+  const found = c.match === 'title' ? ['Found by similar title', 'warn'] : c.from === 'specifics' ? ['Found by item specifics', 'warn'] : ['Found by title', 'ok'];
+  const chip = document.createElement('span'); chip.className = 'swp-chip ' + found[1]; chip.textContent = found[0];
+  chip.title = (c.matchedOn ? 'Matched on ' + c.matchedOn + ' — ' : '') + 'older listing: ' + (c.title || '');
+  const v = document.createElement('button'); v.type = 'button'; v.className = 'btn btn-secondary btn-sm'; v.textContent = 'View'; v.title = 'Compare both listings — swap from there';
+  v.onclick = () => viewPhotos(c, i, { list, idx: 0, o, canSwap });
+  b.append(tag, span, chip, v);
+  if (!canSwap) { const x = document.createElement('small'); x.style.color = 'var(--muted)'; x.textContent = '(already shipped — look only)'; b.append(x); }
   return b;
-  };
-  const first = one(list[0], false);
-  if (list.length > 1) { const n = document.createElement('small'); n.style.cssText = 'color:var(--muted);margin-left:auto;'; n.textContent = list.length + ' matches \u2014 flip through them in View'; first.append(n); }   // v419
-  return first;
 }
 // v413: View = photos of BOTH listings side by side — the one that sold (left) and the older one (right), full size
 const fullPic = (u) => String(u || '').replace(/\/s-l\d+\./i, '/s-l1600.').replace(/\$_\d+\.(jpg|jpeg|png)/i, '$_57.$1');

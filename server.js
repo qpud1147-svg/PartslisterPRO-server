@@ -1,4 +1,5 @@
-// PartsLister Pro server — v492
+// PartsLister Pro server — v493
+// v493: swap candidates carry olderBy (how much older than the listing that sold).
 // v492: POST /api/more-like-this — a short, specific search from a Pick result's title (Claude), near-repeats dropped.
 // v491: POST /api/orders/returns-status — return state per order (opened / returned / closed), cached 10 minutes; Active → Sold orders carry total + refunded.
 // v490: delivery — shipped orders get their delivery date from eBay (Trading GetOrders, ActualDeliveryTime); POST /api/orders/delivery; Active → Sold rows carry their order's ship status.
@@ -2144,7 +2145,7 @@ app.post('/api/orders/swap-candidates', requireUser, express.json({ limit: '100k
           let common = 0; sw.forEach(w => { if (x.w.has(w)) common++; });
           if (common / (sw.size + x.w.size - common) >= 0.85) how = 'title';
         }
-        if (how) found.push({ itemId: x.l.itemId, title: x.l.title, sku: x.l.sku || '', price: x.l.price, start: x.l.start, image: x.l.image, url: x.l.url, match: how, matchedOn: on, from: from || 'title' });
+        if (how) found.push({ itemId: x.l.itemId, title: x.l.title, sku: x.l.sku || '', price: x.l.price, start: x.l.start, image: x.l.image, url: x.l.url, match: how, matchedOn: on, from: from || 'title', olderBy: started && ls ? started - ls : null });   // v493: + olderBy (ms)
       }
       const rank = (c) => c.match !== 'part number' ? 2 : c.from === 'specifics' ? 1 : 0;   // title-number matches first
       if (found.length) out[id] = found.sort((a, b) => rank(a) - rank(b) || String(a.start).localeCompare(String(b.start))).slice(0, 3);
