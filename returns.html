@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Returns v422</title>
+<title>PartsLister Pro Returns v423</title>
 <!-- v382: switching views is instant; browser reload / Refresh really reloads. v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
 <!-- PartsLister Pro — Returns page (v324: new). Returns, "item not received" claims and cases from
      eBay's Post-Order API, read live (nothing saved on the server). Approve / decline / refund from here.
@@ -348,7 +348,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v422</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v423</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -1114,9 +1114,9 @@ function progressEl(pg) {
   // v419: four steps — Requested · Approved · Shipped/Delivered · Refunded
   const moved = !!(pg.shipped || pg.delivered || pg.refunded);
   const appr = pg.approved !== undefined ? (!!pg.approved || moved) : true;
-  const done = [!!pg.started, appr, !!(pg.shipped || pg.delivered), !!pg.refunded || pg.closed];
+  const done = [!!pg.started, appr, !!(pg.shipped || pg.delivered || pg.refunded), !!pg.delivered, !!pg.refunded || pg.closed];   // v423: + Delivered
   const dstr = (v) => v && /^\d{4}-/.test(v) ? dateStr(v) : '';
-  const labels = [['Requested', dstr(pg.started)], [pg.declined ? 'Declined' : appr ? 'Approved' : 'Approve', appr ? dstr(pg.approved) : (pg.declined ? '' : 'waiting on you')], [pg.delivered ? 'Delivered' : 'Shipped', dstr(pg.delivered || pg.shipped)], [pg.refunded || pg.closed ? 'Refunded' : 'Refund', pg.refunded || pg.closed ? dstr(pg.refunded) : (pg.refundBy ? 'by ' + dstr(pg.refundBy) : '')]];
+  const labels = [['Requested', dstr(pg.started)], [pg.declined ? 'Declined' : appr ? 'Approved' : 'Approve', appr ? dstr(pg.approved) : (pg.declined ? '' : 'waiting on you')], ['Shipped', dstr(pg.shipped)], ['Delivered', dstr(pg.delivered)], [pg.refunded || pg.closed ? 'Refunded' : 'Refund', pg.refunded || pg.closed ? dstr(pg.refunded) : (pg.refundBy ? 'by ' + dstr(pg.refundBy) : '')]];
   labels.forEach(([t, d], i) => {
     const col = el('div'); col.style.cssText = 'flex:1;text-align:center;position:relative;';
     if (i) { const ln = el('div'); ln.style.cssText = 'position:absolute;top:11px;left:calc(-50% + 16px);width:calc(100% - 32px);height:2px;background:' + (done[i] ? '#3b82f6' : 'var(--border)') + ';'; col.append(ln); }
@@ -1162,6 +1162,8 @@ async function showDetail(key) {
     it.style.cssText = 'display:flex;gap:12px;align-items:center;color:var(--text);text-decoration:none;margin-bottom:12px;';
     const im = el('img'); im.style.cssText = 'width:72px;height:72px;object-fit:cover;border-radius:6px;background:var(--surface2);';
     if (pics[x.itemId]) im.src = pics[x.itemId];
+    else if (x.itemId) { im.dataset.item = x.itemId; im.classList.add('o-thumb');   // v423: back from Messages — load it now
+      getJSON('/api/items/' + encodeURIComponent(x.itemId)).then(d => { const u = d && d.item && d.item.pictures && d.item.pictures[0]; if (u) { pics[x.itemId] = u; im.src = u; } }).catch(() => {}); }
     it.append(im, el('span', '', (titles[x.itemId] || 'Item #' + x.itemId) + ' · #' + x.itemId));
     box.append(it);
   }

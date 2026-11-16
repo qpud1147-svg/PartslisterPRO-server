@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Orders v440</title>
+<title>PartsLister Pro Orders v441</title>
 <!-- v382: switching views is instant; browser reload / Refresh really reloads. v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
 <!-- PartsLister Pro — Orders page (v319: new). Your sold items from eBay, newest first.
      v320: item photos, and click an order to see the listing (photos, description, item specifics).
@@ -288,7 +288,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v440</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v441</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -763,7 +763,7 @@ function swapBox(o, i) {
     }
     return b;
   }
-  const k = kind(o); const canSwap = k === 'toship' || k === 'partial'; if (!canSwap && k !== 'shipped') return null;
+  const k = kind(o); const canSwap = k === 'toship' || k === 'partial'; if (!canSwap) return null;   // v441
   const list = swapCands[i.itemId] || []; if (!list.length) return null;
   // v418: the best match first; any others behind "+N more"
   // v435: a simple line — [Swappable] how much older · how many · [Found by …] [View]. Swapping only from View.
@@ -902,7 +902,7 @@ async function loadSwaps() {   // in the background: to-ship orders only, each i
   if (swapBusy) return; swapBusy = true;
   try {
     const lines = [];
-    const SWAP_KINDS = ['toship', 'partial', 'shipped'];   // v411: shipped too, look only (testing the matching)
+    const SWAP_KINDS = ['toship', 'partial'];   // v441: to-ship orders only again
     orders.forEach(o => { const k = kind(o); if (!SWAP_KINDS.includes(k)) return; o.items.forEach(i => { if (i.itemId && !i.swap && !swapAsked.has(i.itemId)) lines.push({ orderId: o.id, itemId: i.itemId, title: i.title, sku: i.sku }); }); });
     const note = (t) => setText('o-swapnote', t);
     const bar = (done, all) => {   // v438: a thin bar that fills as the check goes
@@ -911,14 +911,14 @@ async function loadSwaps() {   // in the background: to-ship orders only, each i
       el2.innerHTML = '<div style="display:flex;align-items:center;gap:10px;"><div style="flex:1;max-width:420px;height:6px;border-radius:3px;background:var(--border);overflow:hidden;"><div style="width:' + p + '%;height:100%;background:#2f7fe0;transition:width .3s;"></div></div><span>Checking for swaps \u2014 ' + done + ' of ' + all + '</span></div>';
     };
     const toShip = orders.reduce((n, o) => n + (SWAP_KINDS.includes(kind(o)) ? o.items.filter(i => i.itemId).length : 0), 0);
-    if (orderSet.swapOn === false) { note('Swap check is off (Settings \u2192 Orders).'); return; }   // v418
-    if (!toShip) { note('Swap check: no orders to check in these dates.'); return; }
+    if (orderSet.swapOn === false) { note('Swap check off'); return; }   // v418
+    if (!toShip) { note(''); return; }
     if (lines.length) bar(toShip - lines.length, toShip);
     for (let k = 0; k < lines.length; k += 30) {
       const part = lines.slice(k, k + 30);
       const r = await fetch('/api/orders/swap-candidates', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lines: part }) }).catch(() => null);
       const j = r && r.ok ? await r.json().catch(() => null) : null;
-      if (j && j.off) { note('Swap check is off (Settings \u2192 Orders).'); return; }
+      if (j && j.off) { note('Swap check off'); return; }
       if (!j) { const e = r ? await r.json().catch(() => ({})) : {}; note('Swap check didn\u2019t finish: ' + (e.error || (r ? 'server ' + r.status : 'no connection')) + ' \u2014 reload to try again.'); return; }
       part.forEach(l => swapAsked.add(l.itemId));
       Object.assign(swapCands, j.candidates || {});
@@ -927,7 +927,7 @@ async function loadSwaps() {   // in the background: to-ship orders only, each i
       if (Object.keys(j.candidates || {}).length) render();
     }
     const found = Object.keys(swapCands).length;
-    note('Swap check: ' + toShip + ' sold item' + (toShip === 1 ? '' : 's') + ' checked (to ship + shipped) \u00b7 ' + (found ? found + ' with an older listing live \u2014 see the yellow lines' : 'no older listings of the same part found') + (orderSet.swapMinDays ? ' \u00b7 at least ' + ({ 7: '1 week', 14: '2 weeks', 30: '1 month', 90: '3 months', 180: '6 months', 365: '1 year', 730: '2 years' }[orderSet.swapMinDays] || orderSet.swapMinDays + ' days') + ' older' : ''));
+    { const found = Object.keys(swapCands).length; note(found ? found + ' swappable' : 'No swaps'); }   // v441: short
   } finally { swapBusy = false; }
 }
 
