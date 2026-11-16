@@ -1,4 +1,5 @@
-// PartsLister Pro server — v491
+// PartsLister Pro server — v492
+// v492: POST /api/more-like-this — a short, specific search from a Pick result's title (Claude), near-repeats dropped.
 // v491: POST /api/orders/returns-status — return state per order (opened / returned / closed), cached 10 minutes; Active → Sold orders carry total + refunded.
 // v490: delivery — shipped orders get their delivery date from eBay (Trading GetOrders, ActualDeliveryTime); POST /api/orders/delivery; Active → Sold rows carry their order's ship status.
 // v489: POST /api/orders/swap-status — asks eBay right now whether each swap's relisted listing is live and the older one ended (verified badges).
@@ -4780,6 +4781,43 @@ app.post('/api/relaunch/end/:id', requireUser, async (req, res) => {
 });
 // v433: read a listing title properly — year range, make, model, part name (used by Relaunch and Check Active / Check Sold)
 const parseTitleCache = new Map();   // v445: the cache key now includes a version so older answers (no partNumber) aren't reused
+// v492: More like this (Pick page) — Claude turns a result's title into a short search: year make model + a few SPECIFIC part words,
+// near-repeats dropped (trim/bezel, climate/AC). Separate from /api/parse-title so Relaunch is untouched.
+const mltCache = new Map();
+app.post('/api/more-like-this', requireUser, express.json({ limit: '20kb' }), async (req, res) => {
+  try {
+    const title = String((req.body && req.body.title) || '').replace(/[\u{1F000}-\u{1FFFF}\u{2190}-\u{2BFF}\u{FE00}-\u{FE0F}‍]/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, 200);
+    const pig = !!(req.body && req.body.pigtail);
+    if (!title) return res.status(400).json({ error: 'No title' });
+    const key = req.user.id + ':' + pig + ':' + title; if (mltCache.has(key)) return res.json(mltCache.get(key));
+    const settings = await getUserSettings(req.user.id);
+    const apiKey = String(settings.apiKey || '').trim();
+    if (!apiKey) return res.status(400).json({ error: 'Add your Anthropic API key in Settings first.' });
+    const model = String(settings.claudeModel || '').trim() || 'claude-sonnet-4-5';
+    const system = 'You turn an eBay title of a used car part into a short eBay SEARCH that finds more listings of the same part. ' +
+      'Reply with ONLY a JSON object: {"year":"the first 4-digit model year or empty","make":"vehicle make","model":"vehicle model (e.g. Grand Cherokee)","part":"2 to 4 words"}. ' +
+      'Rules for "part": name exactly which part it is, keeping the words that make it specific (e.g. ignition, climate control, washer reservoir, fuse box). ' +
+      'Drop near-repeats and synonyms — keep only one of trim/bezel/panel/cover, one of climate/AC/heater/temperature control, one of tank/reservoir. ' +
+      'Leave out part numbers, years, OEM/genuine/used, conditions, colors, sides (left/right/driver/passenger) and filler like "assembly", "unit", "module" unless that word IS the part name. ' +
+      (pig ? 'This listing is a PIGTAIL (wiring connector plugs cut from the part): make "part" the part it plugs into followed by the word pigtail, e.g. "fuse box pigtail". ' : '') +
+      'Example: "2011-2013 Jeep Grand Cherokee Climate AC Radio Control Trim Bezel OEM 1UR12DX9AC" -> {"year":"2011","make":"Jeep","model":"Grand Cherokee","part":"radio climate control bezel"}.';
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({ model, max_tokens: 200, temperature: 0, system, messages: [{ role: 'user', content: title }] }),
+      signal: AbortSignal.timeout(30000)
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) return res.status(502).json({ error: 'Could not read the title: ' + ((d.error && d.error.message) || ('HTTP ' + r.status)) });
+    const txt = ((d.content || []).filter(c => c.type === 'text').map(c => c.text).join('') || '');
+    let o = {}; try { o = JSON.parse((/\{[\s\S]*\}/.exec(txt) || ['{}'])[0]); } catch (e) { o = {}; }
+    const out = {}; ['year', 'make', 'model', 'part'].forEach(k => { out[k] = String(o[k] || '').trim().slice(0, 60); });
+    out.query = [out.year, out.make, out.model, out.part].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+    if (mltCache.size > 3000) mltCache.clear();
+    mltCache.set(key, out);
+    res.json(out);
+  } catch (e) { console.error('[more like this]', e.message); res.status(502).json({ error: 'Could not read the title: ' + e.message }); }
+});
 app.post('/api/parse-title', requireUser, express.json({ limit: '20kb' }), async (req, res) => {
   try {
     const title = String((req.body && req.body.title) || '').replace(/[\u{1F000}-\u{1FFFF}\u{2190}-\u{2BFF}\u{FE00}-\u{FE0F}\u200D]/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, 200);

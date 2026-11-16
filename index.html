@@ -9,7 +9,7 @@
   // refresh, overriding anything init does.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 </script>
-<title>PartsLister Pro v475</title>
+<title>PartsLister Pro v476</title>
 <!-- v409: hover the green L to see exactly which listings (price + shipping) were averaged. -->
 <!-- v408: clearing a listing also clears the low-resolution / unreadable / too-many photo warnings. -->
 <!-- v407: a scan that finds no part number opens No Part Number by itself; a cleared listing starts on Has Part Number. -->
@@ -950,7 +950,7 @@
     <!-- v302: logo goes to the dashboard -->
     <a href="/" title="Dashboard" style="text-decoration:none;color:inherit;">
       <div class="logo"><span>PARTS</span>LISTER</div>
-      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v475</span></div>
+      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v476</span></div>
     </a>
     <!-- v303: removed — the logo is the dashboard button
     <a href="/" class="btn btn-secondary btn-sm" title="Back to your dashboard" style="font-size:11px;padding:4px 10px;text-decoration:none;margin-left:6px;">⌂ Dashboard</a>
@@ -9350,36 +9350,44 @@ function openActiveListings() {
 // v474: read a result's title (same reader as Relaunch: year, make, model, part) and search for just that
 async function alMoreLikeThis(item, btn) {
   const title = String(item && item.title || '').trim(); if (!title) return;
-  if (btn) { btn.disabled = true; btn.textContent = 'Reading\u2026'; }
-  let v = null;
-  try {
-    const pr = await fetch('/api/parse-title', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title }) });
-    const pj = await pr.json().catch(() => ({}));
-    if (pr.ok && (pj.make || pj.part)) v = { year: pj.yearFrom, make: pj.make, model: pj.model, part: pj.part };
-  } catch (e) { /* word-guess below */ }
-  if (!v) { const g = _rlVehicle(title); v = { year: g.year, make: g.make, model: g.model, part: g.rest }; }
-  // v475: the part words come from the listing's OWN title (after taking out the car, years, part numbers and filler) —
-  // the title reader's part name is too general ("dash trim panel" instead of "ignition trim bezel"). Relaunch is unchanged.
+  if (btn) { btn.disabled = true; btn.textContent = 'Reading…'; }
   const esc2 = (w) => String(w).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  let rest = _rlClean(title);
   const pigWords = [settings.pigtailTitleWords || 'Plugs for'].concat(settings.pigtailSpotWords || []).map(w => String(w || '').trim()).filter(Boolean);
-  let isPig = false;
-  pigWords.forEach(w => { const re = new RegExp('(^|[^A-Za-z0-9])' + esc2(w).replace(/\s+/g, '\\s+') + '(?=$|[^A-Za-z0-9])', 'ig'); if (re.test(rest)) { isPig = true; rest = rest.replace(re, ' '); } });
-  [v.make, v.model].filter(Boolean).forEach(w => { rest = rest.replace(new RegExp('(^|\\s)' + esc2(w).replace(/\s+/g, '\\s+') + '(?=\\s|$)', 'i'), ' '); });
-  rest = rest.split(/\s+/).filter(t => {
-    const n = t.replace(/[^A-Za-z0-9]/g, '');
-    if (!n) return false;
-    if (_rlIsYears(t) || /^(19|20)\d\d$/.test(n)) return false;                                  // years
-    if (n.length >= 5 && (n.match(/\d/g) || []).length >= 3) return false;                         // part numbers
-    if (/^(OEM|GENUINE|ORIGINAL|FACTORY|USED|NEW|TESTED|WORKING|NICE|GOOD|CLEAN|NICE|FAST|SHIP|SHIPPING|FREE|LOT|OF|THE|A|AN)$/i.test(n)) return false;
-    return true;
-  }).join(' ').replace(/(\s+(with|and|for|w\/|&|plus))+$/i, '').replace(/^((with|and|for|&)\s+)+/i, '').trim();
-  const part = (rest.split(' ').slice(0, 8).join(' ') + (isPig && !/pigtail/i.test(rest) ? ' pigtail' : '')).trim();
-  const q = [v.year, v.make, v.model, part].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+  const pigRe = (w) => new RegExp('(^|[^A-Za-z0-9])' + esc2(w).replace(/\s+/g, '\\s+') + '(?=$|[^A-Za-z0-9])', 'ig');
+  const isPig = pigWords.some(w => pigRe(w).test(_rlClean(title)));
+  let q = '';
+  // v476: one Claude call for a short, specific search (near-repeats like trim/bezel dropped)
+  try {
+    const mr = await fetch('/api/more-like-this', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title, pigtail: isPig }) });
+    const mj = await mr.json().catch(() => ({}));
+    if (mr.ok && mj.query && mj.part) q = mj.query;
+  } catch (e) { /* fallback below */ }
+  // fallback (v475): the title's own words minus car, years, part numbers and filler
+  if (!q) {
+    let v = null;
+    try {
+      const pr = await fetch('/api/parse-title', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title }) });
+      const pj = await pr.json().catch(() => ({}));
+      if (pr.ok && (pj.make || pj.part)) v = { year: pj.yearFrom, make: pj.make, model: pj.model };
+    } catch (e) { /* word-guess below */ }
+    if (!v) { const g = _rlVehicle(title); v = { year: g.year, make: g.make, model: g.model }; }
+    let rest = _rlClean(title);
+    pigWords.forEach(w => { rest = rest.replace(pigRe(w), ' '); });
+    [v.make, v.model].filter(Boolean).forEach(w => { rest = rest.replace(new RegExp('(^|\\s)' + esc2(w).replace(/\s+/g, '\\s+') + '(?=\\s|$)', 'i'), ' '); });
+    rest = rest.split(/\s+/).filter(t => {
+      const n = t.replace(/[^A-Za-z0-9]/g, '');
+      if (!n) return false;
+      if (_rlIsYears(t) || /^(19|20)\d\d$/.test(n)) return false;
+      if (n.length >= 5 && (n.match(/\d/g) || []).length >= 3) return false;
+      return !/^(OEM|GENUINE|ORIGINAL|FACTORY|USED|NEW|TESTED|WORKING|NICE|GOOD|CLEAN|FAST|SHIP|SHIPPING|FREE|LOT|OF|THE|A|AN)$/i.test(n);
+    }).join(' ').replace(/(\s+(with|and|for|w\/|&|plus))+$/i, '').replace(/^((with|and|for|&)\s+)+/i, '').trim();
+    const part = (rest.split(' ').slice(0, 8).join(' ') + (isPig && !/pigtail/i.test(rest) ? ' pigtail' : '')).trim();
+    q = [v.year, v.make, v.model, part].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+  }
   if (btn) { btn.disabled = false; btn.textContent = 'More like this'; }
-  if (!q) { showNotif('\u26a0 Couldn\u2019t read the car and part from that title', true); return; }
+  if (!q) { showNotif('⚠ Couldn’t read the car and part from that title', true); return; }
   const inp = document.getElementById('al-query-input'); if (inp) inp.value = q;
-  if (_exactEnabled()) { const key = _exactModeKey(); settings[key] = false; _saveUserData(); _syncExactToggles(); showNotif('Exact match turned off so this search can find the same part \u2014 turn it back on any time'); }
+  if (_exactEnabled()) { const key = _exactModeKey(); settings[key] = false; _saveUserData(); _syncExactToggles(); showNotif('Exact match turned off so this search can find the same part — turn it back on any time'); }
   await alSearchFromInput();
 }
 
