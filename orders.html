@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Orders v437</title>
+<title>PartsLister Pro Orders v439</title>
 <!-- v382: switching views is instant; browser reload / Refresh really reloads. v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
 <!-- PartsLister Pro — Orders page (v319: new). Your sold items from eBay, newest first.
      v320: item photos, and click an order to see the listing (photos, description, item specifics).
@@ -201,6 +201,8 @@
   .shipbadge.del { color: #fff; background: #2a9d5c; }
   .shipbadges { position: absolute; top: 8px; right: 40px; display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; max-width: 260px; z-index: 1; }
   .shipbadges .shipbadge { position: static; }
+  .shipbadges a.btn { margin: 0 !important; padding: 3px 14px !important; font-size: 11px !important; line-height: 1.4; }   /* v438: Ship in the top-right row */
+  .shipbadges { align-items: center; }
   .shipbadge.can { color: #fff; background: #6b6b6b; }
   .shipbadge.ref { color: #000; background: #f08a24; }
   .shipbadge.ret { color: #fff; background: #8a4fd8; }
@@ -284,7 +286,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v437</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v439</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -531,7 +533,7 @@ function render() {
       const A = mkRow('sw2-orig', 'Original sold', it.itemId, it.title, money2.format(Number(it.price) || o.total), '', soldTxt, it.sku, () => openOrder(o.id), shipA > 0 ? '+' + money2.format(shipA) + ' shipping' : 'Free shipping');
       if (o.note) A.bd.append(noteBox(o));
       const B = mkRow('sw2-ship', 'Swapped in — ship this one', sw.oldItem, sw.oldTitle, sw.oldPrice != null ? money2.format(sw.oldPrice) : '—', 'older listing', 'Item #' + sw.oldItem, sw.oldSku, () => openListing(sw.oldItem, sw.oldSku, sw.oldTitle, 'Swapped in — the one you shipped'));
-      if (k === 'toship' || k === 'partial') { const sb2 = paidShipBtn(o); sb2.classList.add('shipbtn-corner'); B.r2.append(sb2); }   // v434, v437
+      if (k === 'toship' || k === 'partial') { const sb2 = shipBtn(o); sb2.textContent = (o.ship === 'IN_PROGRESS' ? 'Partly shipped' : 'Paid') + ' \u00b7 Ship'; topRight(row).prepend(sb2); }   // v438; v439: says Paid
       if (!sw.endOk) {
         const w = document.createElement('div'); w.className = 'ebl-sub'; w.style.color = 'var(--danger, #e55)'; w.textContent = '⚠ eBay didn’t confirm the older listing ended';
         const end = document.createElement('button'); end.type = 'button'; end.className = 'btn btn-secondary btn-sm'; end.textContent = 'End it now'; end.style.alignSelf = 'flex-start';
@@ -582,7 +584,7 @@ function render() {
     if (o.items[0] && o.items[0].sku) body.append(skuLine(o.items[0]));
     else if (o.items[0]) { const ns = document.createElement('div'); ns.className = 'ebl-sub'; ns.style.opacity = '.55'; ns.textContent = 'No SKU'; body.append(ns); }
     if (o.note) body.append(noteBox(o));   // v427: the buyer's checkout note, before you ship
-    if ((k === 'toship' || k === 'partial') && !o.items.some(i => i.swap)) { const sb2 = paidShipBtn(o); sb2.classList.add('shipbtn-corner'); row.append(sb2); }   // v434; v437: Paid · Ship now, bottom right   // swapped orders get it on the "Ship this one" line instead   // v420: straight to eBay's label page for this order
+    if ((k === 'toship' || k === 'partial') && !o.items.some(i => i.swap)) { const sb2 = shipBtn(o); sb2.textContent = (o.ship === 'IN_PROGRESS' ? 'Partly shipped' : 'Paid') + ' \u00b7 Ship'; topRight(row).prepend(sb2); }   // v438: top right, where the Paid badge was; v439: says Paid   // swapped orders get it on the "Ship this one" line instead   // v420: straight to eBay's label page for this order
     o.items.forEach(i => { const sb = swapBox(o, i); if (sb) body.append(sb); });   // v409
     o.items.slice(1).forEach(i => {
       const x = document.createElement('div'); x.className = 'ebl-sub'; x.style.marginTop = '4px';
@@ -688,7 +690,13 @@ async function loadReturnStates() {
   const j = r && r.ok ? await r.json().catch(() => null) : null;
   if (j && j.returns && Object.keys(j.returns).length) { Object.assign(retByOrder, j.returns); render(); }
 }
-// v437: "Paid · Ship now" — the red Paid badge turned into the Ship button, bottom right
+// v438: the badge row at the top right (made if the order has no badges)
+function topRight(row) {
+  let c = row.querySelector(':scope > .shipbadges');
+  if (!c) { c = document.createElement('span'); c.className = 'shipbadges'; row.append(c); }
+  return c;
+}
+// v437: "Paid · Ship now" — kept for reference, no longer used
 function paidShipBtn(o) {
   const a = shipBtn(o);
   a.textContent = (o.ship === 'IN_PROGRESS' ? 'Partly shipped' : 'Paid') + ' \u00b7 Ship now';
@@ -892,10 +900,15 @@ async function loadSwaps() {   // in the background: to-ship orders only, each i
     const SWAP_KINDS = ['toship', 'partial', 'shipped'];   // v411: shipped too, look only (testing the matching)
     orders.forEach(o => { const k = kind(o); if (!SWAP_KINDS.includes(k)) return; o.items.forEach(i => { if (i.itemId && !i.swap && !swapAsked.has(i.itemId)) lines.push({ orderId: o.id, itemId: i.itemId, title: i.title, sku: i.sku }); }); });
     const note = (t) => setText('o-swapnote', t);
+    const bar = (done, all) => {   // v438: a thin bar that fills as the check goes
+      const el2 = document.getElementById('o-swapnote'); if (!el2) return;
+      const p = all ? Math.round(done / all * 100) : 0;
+      el2.innerHTML = '<div style="display:flex;align-items:center;gap:10px;"><div style="flex:1;max-width:420px;height:6px;border-radius:3px;background:var(--border);overflow:hidden;"><div style="width:' + p + '%;height:100%;background:#2f7fe0;transition:width .3s;"></div></div><span>Checking for swaps \u2014 ' + done + ' of ' + all + '</span></div>';
+    };
     const toShip = orders.reduce((n, o) => n + (SWAP_KINDS.includes(kind(o)) ? o.items.filter(i => i.itemId).length : 0), 0);
     if (orderSet.swapOn === false) { note('Swap check is off (Settings \u2192 Orders).'); return; }   // v418
     if (!toShip) { note('Swap check: no orders to check in these dates.'); return; }
-    if (lines.length) note('Swap check: looking for older listings of ' + toShip + ' sold item' + (toShip === 1 ? '' : 's') + '\u2026 (' + (toShip - lines.length) + ' done)');
+    if (lines.length) bar(toShip - lines.length, toShip);
     for (let k = 0; k < lines.length; k += 30) {
       const part = lines.slice(k, k + 30);
       const r = await fetch('/api/orders/swap-candidates', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lines: part }) }).catch(() => null);
@@ -905,7 +918,7 @@ async function loadSwaps() {   // in the background: to-ship orders only, each i
       part.forEach(l => swapAsked.add(l.itemId));
       Object.assign(swapCands, j.candidates || {});
       Object.keys(j.candidates || {}).forEach(k2 => swapCands[k2].sort((a, b) => (Date.parse(a.start) || 0) - (Date.parse(b.start) || 0)));   // v423: oldest first
-      note('Swap check: ' + Math.min(toShip, toShip - lines.length + k + part.length) + ' of ' + toShip + ' sold items checked\u2026');
+      bar(Math.min(toShip, toShip - lines.length + k + part.length), toShip);
       if (Object.keys(j.candidates || {}).length) render();
     }
     const found = Object.keys(swapCands).length;
