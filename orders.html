@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Orders v433</title>
+<title>PartsLister Pro Orders v434</title>
 <!-- v382: switching views is instant; browser reload / Refresh really reloads. v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
 <!-- PartsLister Pro — Orders page (v319: new). Your sold items from eBay, newest first.
      v320: item photos, and click an order to see the listing (photos, description, item specifics).
@@ -143,6 +143,9 @@
   .ebl-title a:hover { text-decoration: underline; }
   .ebl-price { font-size: 20px; font-weight: 700; }
   .ebl-price small { font-size: 12px; font-weight: 400; color: var(--muted); margin-left: 6px; }
+  .yo-g { color: #3fa65b; font-weight: 700; }
+  .ebl-ship { font-size: 12px; color: var(--muted); margin-top: -2px; }   /* v434: shipping under the price, like eBay */
+  .shipbtn-corner { position: absolute; right: 12px; bottom: 10px; margin: 0 !important; z-index: 1; }   /* v434: Ship sits in the corner, no row of its own */
   .ebl-sub { color: var(--muted); font-size: 12px; }
   /* v409: Swap */
   .swap { margin-top: 6px; padding: 6px 8px; border: 1px solid var(--accent); border-radius: 6px; font-size: 12px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; background: rgba(245,166,35,0.07); }
@@ -270,7 +273,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v433</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v434</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -499,7 +502,7 @@ function render() {
       { const sb0 = document.createElement('span'); sb0.innerHTML = shipBadgeHTML(o, retByOrder[o.id]); if (sb0.firstChild) row.append(sb0.firstChild); }   // v432, v433
       const [d0, t0] = o.sold.split(' ');
       const soldTxt = 'Sold ' + new Date(d0 + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' · ' + t0 + ' · order ' + o.id;
-      const mkRow = (cls, tag, photoId, title, priceTxt, priceSmall, subTxt, sku, onOpen) => {
+      const mkRow = (cls, tag, photoId, title, priceTxt, priceSmall, subTxt, sku, onOpen, shipTxt) => {
         const r2 = document.createElement('div'); r2.className = 'ebl ' + cls;
         r2.addEventListener('click', (e) => { if (!e.target.closest('a,button')) { e.stopPropagation(); onOpen(); } else e.stopPropagation(); });
         const ib = document.createElement('div'); ib.className = 'ebl-img';
@@ -507,15 +510,17 @@ function render() {
         const bd = document.createElement('div'); bd.className = 'ebl-body';
         bd.append(Object.assign(document.createElement('div'), { className: 'sw2-tag', textContent: tag }));
         const tl = document.createElement('div'); tl.className = 'ebl-title'; tl.textContent = title || '(no title)'; bd.append(tl);
-        const pr = document.createElement('div'); pr.className = 'ebl-price'; pr.textContent = priceTxt; const sm = document.createElement('small'); sm.textContent = priceSmall; pr.append(sm); bd.append(pr);
+        const pr = document.createElement('div'); pr.className = 'ebl-price'; const pv2 = document.createElement('span'); pv2.className = 'yo-g'; pv2.textContent = priceTxt; pr.append(pv2); const sm = document.createElement('small'); sm.textContent = priceSmall; pr.append(sm); bd.append(pr);
+        if (shipTxt) bd.append(Object.assign(document.createElement('div'), { className: 'ebl-ship', textContent: shipTxt }));
         bd.append(Object.assign(document.createElement('div'), { className: 'ebl-sub', textContent: subTxt }));
         const sk = document.createElement('div'); sk.className = 'ebl-sku-l'; const sks = document.createElement('small'); sks.textContent = 'SKU'; sk.append(sks, document.createTextNode(sku || '(none)')); bd.append(sk);
         r2.append(ib, bd); return { r2, bd };
       };
-      const A = mkRow('sw2-orig', 'Original sold', it.itemId, it.title, money2.format(o.total), CHIP[k][0], soldTxt, it.sku, () => openOrder(o.id));
+      const shipA = Math.max(0, Math.round((o.total - (Number(it.price) || 0)) * 100) / 100);
+      const A = mkRow('sw2-orig', 'Original sold', it.itemId, it.title, money2.format(Number(it.price) || o.total), CHIP[k][0], soldTxt, it.sku, () => openOrder(o.id), shipA > 0 ? '+' + money2.format(shipA) + ' shipping' : 'Free shipping');
       if (o.note) A.bd.append(noteBox(o));
       const B = mkRow('sw2-ship', 'Swapped in — ship this one', sw.oldItem, sw.oldTitle, sw.oldPrice != null ? money2.format(sw.oldPrice) : '—', 'older listing', 'Item #' + sw.oldItem, sw.oldSku, () => openListing(sw.oldItem, sw.oldSku, sw.oldTitle, 'Swapped in — the one you shipped'));
-      if (k === 'toship' || k === 'partial') B.bd.append(shipBtn(o));
+      if (k === 'toship' || k === 'partial') { const sb2 = shipBtn(o); sb2.classList.add('shipbtn-corner'); B.r2.append(sb2); }   // v434
       if (!sw.endOk) {
         const w = document.createElement('div'); w.className = 'ebl-sub'; w.style.color = 'var(--danger, #e55)'; w.textContent = '⚠ eBay didn’t confirm the older listing ended';
         const end = document.createElement('button'); end.type = 'button'; end.className = 'btn btn-secondary btn-sm'; end.textContent = 'End it now'; end.style.alignSelf = 'flex-start';
@@ -548,9 +553,14 @@ function render() {
     };
     if (!o.items.length) { const p = document.createElement('div'); p.className = 'ebl-title'; p.style.color = 'var(--muted)'; p.textContent = 'Items still importing…'; body.append(p); }
     else body.append(titleEl(o.items[0]));
-    const price = document.createElement('div'); price.className = 'ebl-price'; price.textContent = money2.format(o.total);
+    // v434: item price in green, shipping on its own line under it (same as Active → Sold and eBay)
+    const itemsSum = o.items.reduce((s2, i) => s2 + (Number(i.price) || 0), 0);
+    const shipAmt = o.items.length ? Math.max(0, Math.round((o.total - itemsSum) * 100) / 100) : null;
+    const price = document.createElement('div'); price.className = 'ebl-price';
+    const pv = document.createElement('span'); pv.className = 'yo-g'; pv.textContent = money2.format(o.items.length ? itemsSum : o.total); price.append(pv);
     const sm = document.createElement('small'); sm.textContent = (o.delivered && k === 'shipped' ? 'Delivered' : CHIP[k][0]) + (k !== 'refunded' && o.refunded > 0 ? ' · part refund' : ''); price.append(sm);   // v432
     body.append(price);
+    if (shipAmt != null) body.append(Object.assign(document.createElement('div'), { className: 'ebl-ship', textContent: shipAmt > 0 ? '+' + money2.format(shipAmt) + ' shipping' : 'Free shipping' }));
     const [d, t] = o.sold.split(' ');
     const dt = new Date(d + 'T12:00:00');
     const sub = document.createElement('div'); sub.className = 'ebl-sub';
@@ -561,7 +571,7 @@ function render() {
     if (o.items[0] && o.items[0].sku) body.append(skuLine(o.items[0]));
     else if (o.items[0]) { const ns = document.createElement('div'); ns.className = 'ebl-sub'; ns.style.opacity = '.55'; ns.textContent = 'No SKU'; body.append(ns); }
     if (o.note) body.append(noteBox(o));   // v427: the buyer's checkout note, before you ship
-    if ((k === 'toship' || k === 'partial') && !o.items.some(i => i.swap)) body.append(shipBtn(o));   // swapped orders get it on the "Ship this one" line instead   // v420: straight to eBay's label page for this order
+    if ((k === 'toship' || k === 'partial') && !o.items.some(i => i.swap)) { const sb2 = shipBtn(o); sb2.classList.add('shipbtn-corner'); row.append(sb2); }   // v434: bottom-right corner   // swapped orders get it on the "Ship this one" line instead   // v420: straight to eBay's label page for this order
     o.items.forEach(i => { const sb = swapBox(o, i); if (sb) body.append(sb); });   // v409
     o.items.slice(1).forEach(i => {
       const x = document.createElement('div'); x.className = 'ebl-sub'; x.style.marginTop = '4px';
