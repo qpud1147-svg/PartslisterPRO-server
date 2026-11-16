@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Orders v439</title>
+<title>PartsLister Pro Orders v440</title>
 <!-- v382: switching views is instant; browser reload / Refresh really reloads. v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
 <!-- PartsLister Pro — Orders page (v319: new). Your sold items from eBay, newest first.
      v320: item photos, and click an order to see the listing (photos, description, item specifics).
@@ -176,6 +176,8 @@
   .swapcard2 .sw2-ship .sw2-tag { color: var(--success, #3c9); }
   .swapcard2 .sw2-orig { opacity: .85; }
   .swapcard2 .ebl > .sw-badge { position: absolute; top: 10px; right: 12px; }
+  .sw2-tr { position: absolute; top: 8px; right: 12px; display: flex; gap: 6px; align-items: center; }
+  .sw2-tr a.btn { margin: 0 !important; padding: 3px 14px !important; font-size: 11px !important; line-height: 1.4; }
   .swapcard2 .ebl-body { padding-right: 190px; }
   @media (max-width: 640px) { .swapcard2 .ebl > .sw-badge { position: static; align-self: flex-start; } .swapcard2 .ebl { flex-wrap: wrap; } .swapcard2 .ebl-body { padding-right: 0; } }
   .sw-badge { align-self: flex-start; font-size: 11px; font-weight: 700; letter-spacing: .04em; border-radius: 10px; padding: 2px 9px; border: 1px solid var(--border); color: var(--muted); }
@@ -286,7 +288,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v439</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v440</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -514,7 +516,7 @@ function render() {
       row.append(head, num);
       { const sb0 = document.createElement('span'); sb0.innerHTML = shipBadgeHTML(o, retByOrder[o.id], k === 'toship' || k === 'partial'); if (sb0.firstChild) row.append(sb0.firstChild); }   // v432, v433, v437
       const [d0, t0] = o.sold.split(' ');
-      const soldTxt = 'Sold ' + new Date(d0 + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' · ' + t0 + ' · order ' + o.id;
+      const soldTxt = 'Sold ' + new Date(d0 + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' · ' + t0;
       const mkRow = (cls, tag, photoId, title, priceTxt, priceSmall, subTxt, sku, onOpen, shipTxt) => {
         const r2 = document.createElement('div'); r2.className = 'ebl ' + cls;
         r2.addEventListener('click', (e) => { if (!e.target.closest('a,button')) { e.stopPropagation(); onOpen(); } else e.stopPropagation(); });
@@ -533,7 +535,7 @@ function render() {
       const A = mkRow('sw2-orig', 'Original sold', it.itemId, it.title, money2.format(Number(it.price) || o.total), '', soldTxt, it.sku, () => openOrder(o.id), shipA > 0 ? '+' + money2.format(shipA) + ' shipping' : 'Free shipping');
       if (o.note) A.bd.append(noteBox(o));
       const B = mkRow('sw2-ship', 'Swapped in — ship this one', sw.oldItem, sw.oldTitle, sw.oldPrice != null ? money2.format(sw.oldPrice) : '—', 'older listing', 'Item #' + sw.oldItem, sw.oldSku, () => openListing(sw.oldItem, sw.oldSku, sw.oldTitle, 'Swapped in — the one you shipped'));
-      if (k === 'toship' || k === 'partial') { const sb2 = shipBtn(o); sb2.textContent = (o.ship === 'IN_PROGRESS' ? 'Partly shipped' : 'Paid') + ' \u00b7 Ship'; topRight(row).prepend(sb2); }   // v438; v439: says Paid
+      const shipInB = (k === 'toship' || k === 'partial');   // v440: Ship sits in the row you actually ship
       if (!sw.endOk) {
         const w = document.createElement('div'); w.className = 'ebl-sub'; w.style.color = 'var(--danger, #e55)'; w.textContent = '⚠ eBay didn’t confirm the older listing ended';
         const end = document.createElement('button'); end.type = 'button'; end.className = 'btn btn-secondary btn-sm'; end.textContent = 'End it now'; end.style.alignSelf = 'flex-start';
@@ -547,7 +549,10 @@ function render() {
       }
       // v430: badges checked with eBay — not just what the app did
       const newId = sw.newItem || it.itemId;
-      A.r2.append(swBadge(newId, 'new')); B.r2.append(swBadge(sw.oldItem, 'old'));   // v431: top right of each row
+      A.r2.append(swBadge(newId, 'new'));
+      { const tr = document.createElement('div'); tr.className = 'sw2-tr';   // v440: Paid · Ship + the verified badge, top right of the Swapped in row
+        if (shipInB) { const sb2 = shipBtn(o); sb2.textContent = (o.ship === 'IN_PROGRESS' ? 'Partly shipped' : 'Paid') + ' \u00b7 Ship'; tr.append(sb2); }
+        tr.append(swBadge(sw.oldItem, 'old')); B.r2.append(tr); }
       swNeed.add(newId); swNeed.add(sw.oldItem);
       row.append(A.r2, B.r2);
       box.append(row); return;
@@ -577,7 +582,7 @@ function render() {
     const [d, t] = o.sold.split(' ');
     const dt = new Date(d + 'T12:00:00');
     const sub = document.createElement('div'); sub.className = 'ebl-sub';
-    sub.textContent = 'Sold ' + dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' · ' + t + ' · order ' + o.id;
+    sub.textContent = 'Sold ' + dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' · ' + t;   // v440: order # only in the details
     body.append(sub);
     // SKU: same spot as the Active page (right under the date line)
     const skuLine = (i) => { const s2 = document.createElement('div'); s2.className = 'ebl-sku-l'; const sm = document.createElement('small'); sm.textContent = 'SKU'; s2.append(sm, document.createTextNode(i.sku)); return s2; };
@@ -987,8 +992,10 @@ async function showDetail(id, solo) {
   const k = kind(o);
   const head = el('div', 'd-order');
   const [d0, t] = o.sold.split(' '); d = d0;
-  head.append(el('div', 'o-total', money2.format(o.total)));
-  const chip = el('span', 'chip ' + CHIP[k][1], CHIP[k][0] + (k !== 'refunded' && o.refunded > 0 ? ' · part refund' : '')); head.append(chip);
+  // v440: the same badges as the list (and Paid · Ship), no second price
+  { const bw = document.createElement('span'); bw.innerHTML = shipBadgeHTML(o, retByOrder[o.id], k === 'toship' || k === 'partial');
+    const bb = bw.firstChild; if (bb) { bb.style.position = 'static'; bb.style.justifyContent = 'flex-start'; bb.style.maxWidth = 'none'; head.append(bb); }
+    if ((k === 'toship' || k === 'partial') && !o.items.some(i => i.swap)) { const sb2 = shipBtn(o); sb2.textContent = (o.ship === 'IN_PROGRESS' ? 'Partly shipped' : 'Paid') + ' \u00b7 Ship'; sb2.style.margin = '0'; head.append(sb2); } }
   head.append(el('span', '', 'Sold ' + new Date(d + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }) + ' · ' + t + ' (eBay time)'));
   head.append(el('span', '', 'Order ' + o.id));
   if (o.refunded > 0) head.append(el('span', '', 'Refunded ' + money2.format(o.refunded)));
@@ -1017,13 +1024,14 @@ async function showDetail(id, solo) {
     // photos
     const gal = el('div');
     const main = el('img', 'd-main'); main.alt = item.title || '';
-    if (item.pictures.length) main.src = item.pictures[0];
+    const fullOr = (u) => { main.onerror = () => { main.onerror = null; main.src = u; }; main.src = fullPic(u); };   // v440: full size
+    if (item.pictures.length) fullOr(item.pictures[0]);
     gal.append(main);
     if (item.pictures.length > 1) {
       const strip = el('div', 'd-strip');
       item.pictures.forEach((u, n) => {
         const th = el('img', n === 0 ? 'on' : ''); th.src = smallPicUrl(u); th.alt = 'Photo ' + (n + 1); th.loading = 'lazy';
-        th.addEventListener('click', () => { main.src = u; strip.querySelectorAll('img').forEach(x => x.classList.remove('on')); th.classList.add('on'); });
+        th.addEventListener('click', () => { fullOr(u); strip.querySelectorAll('img').forEach(x => x.classList.remove('on')); th.classList.add('on'); });
         strip.append(th);
       });
       gal.append(strip);
@@ -1034,7 +1042,7 @@ async function showDetail(id, solo) {
     info.append(el('div', 'd-price', money2.format(it.price || item.price || 0) + (it.qty > 1 ? ' × ' + it.qty : '') + (solo && item.listingStatus && item.listingStatus !== 'Active' ? ' \u00b7 ' + (item.listingStatus === 'Completed' ? 'Ended' : item.listingStatus) : '')));
     const facts = el('dl', 'd-facts');
     const fact = (k2, v) => { if (v === null || v === undefined || v === '') return; facts.append(el('dt', '', k2)); const dd = el('dd'); if (v instanceof Node) dd.append(v); else dd.textContent = v; facts.append(dd); };
-    fact('SKU', (it.sku || item.sku) ? skuEl(it.sku || item.sku) : null);
+    if (it.sku || item.sku) { const s2 = document.createElement('div'); s2.className = 'ebl-sku-l'; const sm2 = document.createElement('small'); sm2.textContent = 'SKU'; s2.append(sm2, document.createTextNode(it.sku || item.sku)); s2.style.margin = '2px 0 8px'; info.insertBefore(s2, info.lastChild.nextSibling); }   // v440: same look as the list
     fact('Condition', item.condition);
     fact('Condition note', item.conditionNote);
     fact('Category', item.category ? item.category.split(':').slice(-2).join(' › ') : null);
