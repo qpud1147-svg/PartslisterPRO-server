@@ -9,7 +9,7 @@
   // refresh, overriding anything init does.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 </script>
-<title>PartsLister Pro v481</title>
+<title>PartsLister Pro v482</title>
 <!-- v409: hover the green L to see exactly which listings (price + shipping) were averaged. -->
 <!-- v408: clearing a listing also clears the low-resolution / unreadable / too-many photo warnings. -->
 <!-- v407: a scan that finds no part number opens No Part Number by itself; a cleared listing starts on Has Part Number. -->
@@ -952,7 +952,7 @@
     <!-- v302: logo goes to the dashboard -->
     <a href="/" title="Dashboard" style="text-decoration:none;color:inherit;">
       <div class="logo"><span>PARTS</span>LISTER</div>
-      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v481</span></div>
+      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v482</span></div>
     </a>
     <!-- v303: removed — the logo is the dashboard button
     <a href="/" class="btn btn-secondary btn-sm" title="Back to your dashboard" style="font-size:11px;padding:4px 10px;text-decoration:none;margin-left:6px;">⌂ Dashboard</a>
@@ -7025,7 +7025,7 @@ function viewVehicle(view) {
   if (!color) { const ce = document.getElementById('color'); color = getDetectedColor(ce ? ce.value : '') || ''; }
   const mat = view === 'interior' ? (['Leather', 'Cloth'].find(m => new RegExp('\\b' + m + '\\b', 'i').test(desc)) || '') : '';
   const q = [car.trim(), body, color.toLowerCase(), mat.toLowerCase(), words].filter(Boolean).join(' ');
-  window.open('https://www.bing.com/images/search?q=' + encodeURIComponent(q), 'partslister-sold');   // v481: Bing images, because Google pages cut the link to their tab, so it could never be reused (and View sold then opened new tabs too)
+  window.open('https://www.google.com/search?tbm=isch&q=' + encodeURIComponent(q), '_blank');   // v482: back to Google in a new tab (Google pages cut the link to their tab, so it can't be reused; a new tab also keeps the View sold tab reusable)
 }
 function toggleOtherSideMenu() {
   const menu = document.getElementById('otherside-menu');
