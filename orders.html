@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Orders v435</title>
+<title>PartsLister Pro Orders v437</title>
 <!-- v382: switching views is instant; browser reload / Refresh really reloads. v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
 <!-- PartsLister Pro — Orders page (v319: new). Your sold items from eBay, newest first.
      v320: item photos, and click an order to see the listing (photos, description, item specifics).
@@ -146,18 +146,22 @@
   .yo-g { color: #3fa65b; font-weight: 700; }
   .ebl-ship { font-size: 14px; color: var(--text); font-weight: 600; margin-top: -2px; }   /* v434: shipping under the price, like eBay; v435: stands out more */
   .shipbtn-corner { position: absolute; right: 12px; bottom: 10px; margin: 0 !important; z-index: 1; }   /* v434: Ship sits in the corner, no row of its own */
+  .shipbtn-top { position: absolute; right: 40px; top: 34px; margin: 0 !important; z-index: 1; }   /* v436: right under the Paid badge */
+  .paidship { background: #d9303a !important; color: #fff !important; }   /* v437 */
+  .paidship:hover { background: #e8454f !important; }
   .ebl-sub { color: var(--muted); font-size: 12px; }
   /* v409: Swap */
   .swap { margin-top: 6px; padding: 6px 8px; border: 1px solid var(--accent); border-radius: 6px; font-size: 12px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; background: rgba(245,166,35,0.07); }
   .swap b { color: var(--accent); }
   .swap .btn-sm { padding: 3px 10px; font-size: 11px; }
   /* v435: the swap line, simpler */
-  .swap { border-color: var(--border) !important; background: var(--surface2, rgba(255,255,255,0.03)) !important; }
-  .swp-tag { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #fff; background: #2f7fe0; border-radius: 10px; padding: 2px 9px; }
+  .swap { border-color: var(--border) !important; background: var(--surface2, rgba(255,255,255,0.03)) !important; width: fit-content; max-width: 100%; box-sizing: border-box; }   /* v436: only as wide as what's in it */
+  .swp-tag { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #fff; background: #2f7fe0; border: none; border-radius: 10px; padding: 3px 10px; cursor: pointer; font-family: inherit; }
+  .swp-tag:hover { background: #4a93f0; }
   .swp-txt { font-size: 13px; color: var(--text); }
-  .swp-chip { font-size: 11px; border: 1px solid var(--border); border-radius: 4px; padding: 3px 8px; color: var(--muted); }
-  .swp-chip.ok { color: var(--success, #3c9); border-color: rgba(60,200,140,0.5); }
-  .swp-chip.warn { color: #f0a24a; border-color: rgba(240,162,74,0.5); }
+  .swp-chip { font-size: 12px; color: var(--muted); }   /* v436: plain text, not a button */
+  .swp-chip.ok { color: var(--success, #3c9); }
+  .swp-chip.warn { color: #f0a24a; }
   .swap.done { border-color: var(--success, #3c9); background: rgba(60,200,140,0.08); }
   .swap.done b { color: var(--success, #3c9); }
   .swap.bad { border-color: var(--danger, #e55); background: rgba(230,80,80,0.08); }
@@ -280,7 +284,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v435</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v437</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -506,7 +510,7 @@ function render() {
       const head = document.createElement('div'); head.className = 'sw2-head'; head.textContent = '↔ Swapped';
       const num = document.createElement('span'); num.className = 'ebl-n'; num.textContent = ix + 1;
       row.append(head, num);
-      { const sb0 = document.createElement('span'); sb0.innerHTML = shipBadgeHTML(o, retByOrder[o.id]); if (sb0.firstChild) row.append(sb0.firstChild); }   // v432, v433
+      { const sb0 = document.createElement('span'); sb0.innerHTML = shipBadgeHTML(o, retByOrder[o.id], k === 'toship' || k === 'partial'); if (sb0.firstChild) row.append(sb0.firstChild); }   // v432, v433, v437
       const [d0, t0] = o.sold.split(' ');
       const soldTxt = 'Sold ' + new Date(d0 + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' · ' + t0 + ' · order ' + o.id;
       const mkRow = (cls, tag, photoId, title, priceTxt, priceSmall, subTxt, sku, onOpen, shipTxt) => {
@@ -527,7 +531,7 @@ function render() {
       const A = mkRow('sw2-orig', 'Original sold', it.itemId, it.title, money2.format(Number(it.price) || o.total), '', soldTxt, it.sku, () => openOrder(o.id), shipA > 0 ? '+' + money2.format(shipA) + ' shipping' : 'Free shipping');
       if (o.note) A.bd.append(noteBox(o));
       const B = mkRow('sw2-ship', 'Swapped in — ship this one', sw.oldItem, sw.oldTitle, sw.oldPrice != null ? money2.format(sw.oldPrice) : '—', 'older listing', 'Item #' + sw.oldItem, sw.oldSku, () => openListing(sw.oldItem, sw.oldSku, sw.oldTitle, 'Swapped in — the one you shipped'));
-      if (k === 'toship' || k === 'partial') { const sb2 = shipBtn(o); sb2.classList.add('shipbtn-corner'); B.r2.append(sb2); }   // v434
+      if (k === 'toship' || k === 'partial') { const sb2 = paidShipBtn(o); sb2.classList.add('shipbtn-corner'); B.r2.append(sb2); }   // v434, v437
       if (!sw.endOk) {
         const w = document.createElement('div'); w.className = 'ebl-sub'; w.style.color = 'var(--danger, #e55)'; w.textContent = '⚠ eBay didn’t confirm the older listing ended';
         const end = document.createElement('button'); end.type = 'button'; end.className = 'btn btn-secondary btn-sm'; end.textContent = 'End it now'; end.style.alignSelf = 'flex-start';
@@ -578,7 +582,7 @@ function render() {
     if (o.items[0] && o.items[0].sku) body.append(skuLine(o.items[0]));
     else if (o.items[0]) { const ns = document.createElement('div'); ns.className = 'ebl-sub'; ns.style.opacity = '.55'; ns.textContent = 'No SKU'; body.append(ns); }
     if (o.note) body.append(noteBox(o));   // v427: the buyer's checkout note, before you ship
-    if ((k === 'toship' || k === 'partial') && !o.items.some(i => i.swap)) { const sb2 = shipBtn(o); sb2.classList.add('shipbtn-corner'); row.append(sb2); }   // v434: bottom-right corner   // swapped orders get it on the "Ship this one" line instead   // v420: straight to eBay's label page for this order
+    if ((k === 'toship' || k === 'partial') && !o.items.some(i => i.swap)) { const sb2 = paidShipBtn(o); sb2.classList.add('shipbtn-corner'); row.append(sb2); }   // v434; v437: Paid · Ship now, bottom right   // swapped orders get it on the "Ship this one" line instead   // v420: straight to eBay's label page for this order
     o.items.forEach(i => { const sb = swapBox(o, i); if (sb) body.append(sb); });   // v409
     o.items.slice(1).forEach(i => {
       const x = document.createElement('div'); x.className = 'ebl-sub'; x.style.marginTop = '4px';
@@ -586,7 +590,7 @@ function render() {
       body.append(x);
     });
     const num = document.createElement('span'); num.className = 'ebl-n'; num.textContent = ix + 1; row.append(num);
-    { const sb0 = document.createElement('span'); sb0.innerHTML = shipBadgeHTML(o, retByOrder[o.id]); if (sb0.firstChild) row.append(sb0.firstChild); }   // v432, v433
+    { const sb0 = document.createElement('span'); sb0.innerHTML = shipBadgeHTML(o, retByOrder[o.id], (k === 'toship' || k === 'partial') && !o.items.some(i => i.swap)); if (sb0.firstChild) row.append(sb0.firstChild); }   // v432, v433, v437
     body.style.paddingRight = '200px';
     row.append(imgBox, body);
     box.append(row);
@@ -649,7 +653,7 @@ function noteBox(o) {
   return n;
 }
 // v433: where an order is — badges stack: Paid / Shipped / Delivered, plus Cancelled, Refunded, Return …
-function shipBadgeHTML(o, ret) {
+function shipBadgeHTML(o, ret, noPaid) {   // v437: noPaid — Paid is the bottom-right button instead
   if (!o) return '';
   const b = [];
   const cancelled = o.counted === false && /CANCEL/i.test(o.status || '');
@@ -657,13 +661,14 @@ function shipBadgeHTML(o, ret) {
   else {
     if (o.delivered) b.push(['Delivered', 'del']);
     else if (o.ship === 'FULFILLED') b.push(['Shipped', 'shp']);
-    else if (o.ship === 'IN_PROGRESS') b.push(['Partly shipped', 'now']);
-    else if (o.counted !== false) b.push(['Paid', 'now']);
+    else if (o.ship === 'IN_PROGRESS') { if (!noPaid) b.push(['Partly shipped', 'now']); }
+    else if (o.counted !== false) { if (!noPaid) b.push(['Paid', 'now']); }
     if (ret) b.push([ret.label, ret.label === 'Returned' ? 'retd' : ret.open ? 'ret' : 'retc']);
     if (o.counted === false || (o.total > 0 && o.refunded >= o.total - 0.01)) b.push(['Refunded', 'ref']);
     else if (o.refunded > 0) b.push(['Part refund', 'ref']);
   }
   const t = o.delivered ? 'Delivered ' + new Date(o.delivered).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
+  if (!b.length) return '';
   return '<span class="shipbadges">' + b.map(([x, c]) => '<span class="shipbadge ' + c + '"' + (c === 'del' && t ? ' title="' + t + '"' : '') + '>' + x + '</span>').join('') + '</span>';
 }
 async function loadDelivery() {   // v432: ask the server (and eBay) which shipped orders were delivered
@@ -682,6 +687,13 @@ async function loadReturnStates() {
   const r = await fetch('/api/orders/returns-status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: orders.map(x => x.id) }) }).catch(() => null);
   const j = r && r.ok ? await r.json().catch(() => null) : null;
   if (j && j.returns && Object.keys(j.returns).length) { Object.assign(retByOrder, j.returns); render(); }
+}
+// v437: "Paid · Ship now" — the red Paid badge turned into the Ship button, bottom right
+function paidShipBtn(o) {
+  const a = shipBtn(o);
+  a.textContent = (o.ship === 'IN_PROGRESS' ? 'Partly shipped' : 'Paid') + ' \u00b7 Ship now';
+  a.classList.add('paidship');
+  return a;
 }
 function shipBtn(o) {
   const a = document.createElement('a'); a.className = 'btn btn-primary btn-sm'; a.textContent = 'Ship';
@@ -744,16 +756,16 @@ function swapBox(o, i) {
   // v435: a simple line — [Swappable] how much older · how many · [Found by …] [View]. Swapping only from View.
   const c = list[0];
   const b = mk('');
-  const tag = document.createElement('span'); tag.className = 'swp-tag'; tag.textContent = '↔ Swappable';
+  const tag = document.createElement('button'); tag.type = 'button'; tag.className = 'swp-tag'; tag.textContent = '↔ Swappable';   // v436: the button that opens the side-by-side view
+  tag.title = 'Compare both listings — swap from there';
+  tag.onclick = (ev) => { ev.stopPropagation(); viewPhotos(c, i, { list, idx: 0, o, canSwap }); };
   const older = c.olderBy != null ? c.olderBy : (c.start ? Date.now() - Date.parse(c.start) : null);
   const span = document.createElement('span'); span.className = 'swp-txt';
   span.textContent = (older != null ? ageOf(new Date(Date.now() - older).toISOString()) + ' older' : 'older listing') + (list.length > 1 ? ' · ' + list.length + ' swappable' : '');
-  const found = c.match === 'title' ? ['Found by similar title', 'warn'] : c.from === 'specifics' ? ['Found by item specifics', 'warn'] : ['Found by title', 'ok'];
+  const found = c.match === 'title' ? ['found by similar title', 'warn'] : c.from === 'specifics' ? ['found by item specifics', 'warn'] : ['found by title', 'ok'];
   const chip = document.createElement('span'); chip.className = 'swp-chip ' + found[1]; chip.textContent = found[0];
   chip.title = (c.matchedOn ? 'Matched on ' + c.matchedOn + ' — ' : '') + 'older listing: ' + (c.title || '');
-  const v = document.createElement('button'); v.type = 'button'; v.className = 'btn btn-secondary btn-sm'; v.textContent = 'View'; v.title = 'Compare both listings — swap from there';
-  v.onclick = () => viewPhotos(c, i, { list, idx: 0, o, canSwap });
-  b.append(tag, span, chip, v);
+  b.append(tag, span, chip);
   if (!canSwap) { const x = document.createElement('small'); x.style.color = 'var(--muted)'; x.textContent = '(already shipped — look only)'; b.append(x); }
   return b;
 }
