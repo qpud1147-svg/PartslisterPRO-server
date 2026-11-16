@@ -9,7 +9,7 @@
   // refresh, overriding anything init does.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 </script>
-<title>PartsLister Pro v473</title>
+<title>PartsLister Pro v474</title>
 <!-- v409: hover the green L to see exactly which listings (price + shipping) were averaged. -->
 <!-- v408: clearing a listing also clears the low-resolution / unreadable / too-many photo warnings. -->
 <!-- v407: a scan that finds no part number opens No Part Number by itself; a cleared listing starts on Has Part Number. -->
@@ -950,7 +950,7 @@
     <!-- v302: logo goes to the dashboard -->
     <a href="/" title="Dashboard" style="text-decoration:none;color:inherit;">
       <div class="logo"><span>PARTS</span>LISTER</div>
-      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v473</span></div>
+      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v474</span></div>
     </a>
     <!-- v303: removed — the logo is the dashboard button
     <a href="/" class="btn btn-secondary btn-sm" title="Back to your dashboard" style="font-size:11px;padding:4px 10px;text-decoration:none;margin-left:6px;">⌂ Dashboard</a>
@@ -9333,12 +9333,38 @@ function openActiveListings() {
     info.appendChild(titleEl);
     info.appendChild(priceEl);
     info.appendChild(shipEl);
+    // v474: More like this — search again for this listing's year, make, model and part
+    const more = document.createElement('button'); more.type = 'button'; more.textContent = 'More like this';
+    more.title = 'Search again for the car and part in this listing';
+    more.style.cssText = 'margin-top:8px;font-size:11px;padding:4px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;color:var(--text);cursor:pointer;font-family:Barlow Condensed,sans-serif;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;';
+    more.onclick = (e) => { e.stopPropagation(); alMoreLikeThis(item, more); };
+    info.appendChild(more);
     card.appendChild(imgWrap);
     card.appendChild(info);
     results.appendChild(card);
   });
 
   overlay.style.display = 'flex';
+}
+
+// v474: read a result's title (same reader as Relaunch: year, make, model, part) and search for just that
+async function alMoreLikeThis(item, btn) {
+  const title = String(item && item.title || '').trim(); if (!title) return;
+  if (btn) { btn.disabled = true; btn.textContent = 'Reading\u2026'; }
+  let v = null;
+  try {
+    const pr = await fetch('/api/parse-title', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title }) });
+    const pj = await pr.json().catch(() => ({}));
+    if (pr.ok && (pj.make || pj.part)) v = { year: pj.yearFrom, make: pj.make, model: pj.model, part: pj.part };
+  } catch (e) { /* word-guess below */ }
+  if (!v) { const g = _rlVehicle(title); v = { year: g.year, make: g.make, model: g.model, part: g.rest }; }
+  const part = String(v.part || '').replace(/\b(OEM|GENUINE|ORIGINAL|FACTORY|USED|NEW|TESTED|WORKING)\b/gi, ' ').replace(/\s+/g, ' ').trim().split(' ').slice(0, 6).join(' ').replace(/(\s+(with|and|for|w\/|&|plus))+$/i, '');   // the part words as read, filler left out
+  const q = [v.year, v.make, v.model, part].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+  if (btn) { btn.disabled = false; btn.textContent = 'More like this'; }
+  if (!q) { showNotif('\u26a0 Couldn\u2019t read the car and part from that title', true); return; }
+  const inp = document.getElementById('al-query-input'); if (inp) inp.value = q;
+  if (_exactEnabled()) { const key = _exactModeKey(); settings[key] = false; _saveUserData(); _syncExactToggles(); showNotif('Exact match turned off so this search can find the same part \u2014 turn it back on any time'); }
+  await alSearchFromInput();
 }
 
 window._alSelectedItems = [];
