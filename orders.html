@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Orders v441</title>
+<title>PartsLister Pro Orders v445</title>
 <!-- v382: switching views is instant; browser reload / Refresh really reloads. v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
 <!-- PartsLister Pro — Orders page (v319: new). Your sold items from eBay, newest first.
      v320: item photos, and click an order to see the listing (photos, description, item specifics).
@@ -281,6 +281,9 @@
   .sample-badge.warn .dot { background: var(--danger); }
   .sample-badge.busy .dot { background: var(--accent); animation: pulse 1s ease-in-out infinite; }
   @keyframes pulse { 50% { opacity: 0.3; } }
+  a.ship-done { background: #9a7a4a !important; color: #1a1a1a !important; opacity: .8; }   /* v444: Ship already clicked — half gray, half orange */
+  a.ship-done:hover { opacity: 1; }
+  .svc-badge{display:inline-block;align-self:flex-start;margin-top:6px;padding:3px 10px;border-radius:999px;font-size:13px;font-weight:700;color:#fff;background:#7c3aed;border:1px solid #a78bfa;}
 </style>
 </head>
 <body>
@@ -288,7 +291,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v441</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v445</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -533,6 +536,7 @@ function render() {
       };
       const shipA = Math.max(0, Math.round((o.total - (Number(it.price) || 0)) * 100) / 100);
       const A = mkRow('sw2-orig', 'Original sold', it.itemId, it.title, money2.format(Number(it.price) || o.total), '', soldTxt, it.sku, () => openOrder(o.id), shipA > 0 ? '+' + money2.format(shipA) + ' shipping' : 'Free shipping');
+      { const sv = svcBadge(o); if (sv) A.bd.append(sv); }   // v442
       if (o.note) A.bd.append(noteBox(o));
       const B = mkRow('sw2-ship', 'Swapped in — ship this one', sw.oldItem, sw.oldTitle, sw.oldPrice != null ? money2.format(sw.oldPrice) : '—', 'older listing', 'Item #' + sw.oldItem, sw.oldSku, () => openListing(sw.oldItem, sw.oldSku, sw.oldTitle, 'Swapped in — the one you shipped'));
       const shipInB = (k === 'toship' || k === 'partial');   // v440: Ship sits in the row you actually ship
@@ -588,6 +592,7 @@ function render() {
     const skuLine = (i) => { const s2 = document.createElement('div'); s2.className = 'ebl-sku-l'; const sm = document.createElement('small'); sm.textContent = 'SKU'; s2.append(sm, document.createTextNode(i.sku)); return s2; };
     if (o.items[0] && o.items[0].sku) body.append(skuLine(o.items[0]));
     else if (o.items[0]) { const ns = document.createElement('div'); ns.className = 'ebl-sub'; ns.style.opacity = '.55'; ns.textContent = 'No SKU'; body.append(ns); }
+    { const sv = svcBadge(o); if (sv) body.append(sv); }   // v442: the buyer picked a faster service
     if (o.note) body.append(noteBox(o));   // v427: the buyer's checkout note, before you ship
     if ((k === 'toship' || k === 'partial') && !o.items.some(i => i.swap)) { const sb2 = shipBtn(o); sb2.textContent = (o.ship === 'IN_PROGRESS' ? 'Partly shipped' : 'Paid') + ' \u00b7 Ship'; topRight(row).prepend(sb2); }   // v438: top right, where the Paid badge was; v439: says Paid   // swapped orders get it on the "Ship this one" line instead   // v420: straight to eBay's label page for this order
     o.items.forEach(i => { const sb = swapBox(o, i); if (sb) body.append(sb); });   // v409
@@ -645,11 +650,24 @@ async function checkSwaps() {
   } finally { swChecking = false; }
 }
 let swapCands = {}, swapAsked = new Set(), swapBusy = false, swapOpenMore = new Set();
-let orderSet = { swapOn: true, swapMinDays: 30, showCondition: false, shipTab: 'new' };   // v418: Settings → Orders
-fetch('/api/order-settings').then(r => r.ok ? r.json() : null).then(d => { if (d) orderSet = d; }).catch(() => {});
+let orderSet = { swapOn: true, swapMinDays: 30, showCondition: false, shipTab: 'new', priorityServices: ['Priority'], autoRefreshShip: true };   // v418: Settings → Orders
+fetch('/api/order-settings').then(r => r.ok ? r.json() : null).then(d => { if (d) { orderSet = d; try { if (orders.length) render(); } catch (e) { /* page not ready yet */ } } }).catch(() => {});
+// v443: one way to say how much older — the order line and the View window both use it, so they always match
+const olderText = (ms) => { const d = Math.round(ms / 86400000); return d >= 365 ? (d / 365).toFixed(1).replace(/\.0$/, '') + ' years' : d >= 60 ? Math.round(d / 30) + ' months' : d + ' day' + (d === 1 ? '' : 's'); };
 const ageOf = (iso) => { const d = Math.floor((Date.now() - Date.parse(iso)) / 86400000); return d >= 365 ? (d / 365).toFixed(1).replace(/\.0$/, '') + ' yr' : d >= 60 ? Math.round(d / 30) + ' mo' : d + ' days'; };
 // v420: eBay's own shipping-label page for one order (same address as "Get shipping label" in Seller Hub).
 // v421: opens in a new tab every time, or in one reused eBay tab (Settings → Orders → Ship button).
+// v442: "Buyer selected USPS Priority Mail" — only for the services listed in Settings → Orders → Buyer's shipping choice
+function svcBadge(o) {
+  if (!o || !o.service) return null;
+  const list = Array.isArray(orderSet.priorityServices) ? orderSet.priorityServices : ['Priority'];
+  const hay = (o.service + ' ' + (o.serviceCode || '')).toLowerCase();
+  if (!list.some(w => w && hay.includes(String(w).toLowerCase()))) return null;
+  const b = document.createElement('div'); b.className = 'svc-badge';
+  b.textContent = '\u{1F69A} Buyer selected ' + o.service;
+  b.title = 'The buyer picked this shipping service at checkout';
+  return b;
+}
 // v427: note the buyer left at checkout
 function noteBox(o) {
   const n = document.createElement('div');
@@ -714,8 +732,36 @@ function shipBtn(o) {
   a.title = 'Open eBay\u2019s shipping label page for order ' + o.id;
   a.style.cssText = 'display:inline-block;align-self:flex-start;width:fit-content;margin-top:6px;background:var(--accent);color:#000;font-weight:700;text-decoration:none;border-radius:4px;padding:5px 14px;font-size:12px;letter-spacing:.05em;';
   a.addEventListener('click', e => { e.stopPropagation(); const same = orderSet.shipTab === 'same'; a.target = same ? 'partslister-ebay-ship' : '_blank'; a.rel = same ? '' : 'noopener'; });   // a named tab can't be reused with noopener
+  // v444: once clicked, the button fades (still clickable) for 12 hours — kept in this browser only, survives a reload
+  a.dataset.ship = o.id;
+  if (shipClickedAt(o.id)) a.classList.add('ship-done');
+  a.addEventListener('click', () => { shipAutoRefresh(o); shipClickSave(o.id); document.querySelectorAll('a[data-ship]').forEach(x => { if (x.dataset.ship === String(o.id)) x.classList.add('ship-done'); }); });
   return a;
 }
+const SHIP_FADE_MS = 12 * 3600000, SHIP_KEY = 'plp_ship_clicked';
+// v445: Auto-refresh after Ship (Settings → Orders). Each Ship click quietly refreshes from eBay so orders you already
+// printed labels for drop off; the one you just clicked stays put (held) until the next click; 3 minutes after the
+// last click it refreshes once more and lets that one go too.
+let shipHold = null, shipFinalTimer = null;
+function shipAutoRefresh(o) {
+  if (orderSet.autoRefreshShip === false) return;
+  shipHold = { id: o.id, ship: o.ship || null };
+  ordSyncQuiet();
+  clearTimeout(shipFinalTimer);
+  shipFinalTimer = setTimeout(() => { shipHold = null; ordSyncQuiet(); }, 3 * 60000);
+}
+async function ordSyncQuiet() {
+  try { await fetch('/api/ebay/sync', { method: 'POST' }); } catch (e) { /* the next check shows the state */ }
+  if (ordInfo) { ordInfo.syncing = true; ordBadge(); }
+  clearTimeout(pollTimer); pollTimer = setTimeout(() => { pageCache.live(); loadOrders(); }, 3000);
+}
+function shipClicks() {
+  let m = {}; try { m = JSON.parse(localStorage.getItem(SHIP_KEY) || '{}') || {}; } catch (e) { m = {}; }
+  const now = Date.now(); Object.keys(m).forEach(k => { if (!(now - m[k] < SHIP_FADE_MS)) delete m[k]; });   // forget anything older than 12 hours
+  return m;
+}
+function shipClickedAt(id) { return shipClicks()[id] || null; }
+function shipClickSave(id) { const m = shipClicks(); m[id] = Date.now(); try { localStorage.setItem(SHIP_KEY, JSON.stringify(m)); } catch (e) { /* storage blocked — the fade just won't last */ } }
 // v426: a swapped sale — the buyer got the OLDER listing's item, not the one in the title
 function swapTagHTML(sw) {
   if (!sw || !sw.oldItem) return '';
@@ -774,7 +820,7 @@ function swapBox(o, i) {
   tag.onclick = (ev) => { ev.stopPropagation(); viewPhotos(c, i, { list, idx: 0, o, canSwap }); };
   const older = c.olderBy != null ? c.olderBy : (c.start ? Date.now() - Date.parse(c.start) : null);
   const span = document.createElement('span'); span.className = 'swp-txt';
-  span.textContent = (older != null ? ageOf(new Date(Date.now() - older).toISOString()) + ' older' : 'older listing') + (list.length > 1 ? ' · ' + list.length + ' swappable' : '');
+  span.textContent = (older != null ? olderText(older) + ' older' : 'older listing') + (list.length > 1 ? ' · ' + list.length + ' swappable' : '');
   const found = c.match === 'title' ? ['found by similar title', 'warn'] : c.from === 'specifics' ? ['found by item specifics', 'warn'] : ['found by title', 'ok'];
   const chip = document.createElement('span'); chip.className = 'swp-chip ' + found[1]; chip.textContent = found[0];
   chip.title = (c.matchedOn ? 'Matched on ' + c.matchedOn + ' — ' : '') + 'older listing: ' + (c.title || '');
@@ -854,7 +900,8 @@ async function viewPhotos(c, sold, ctx) {   // v419: ctx = { list, idx, o, canSw
   const longFor = (ms) => { const d = Math.round(ms / 86400000); return d >= 365 ? (d / 365).toFixed(1).replace(/\.0$/, '') + ' years' : d >= 60 ? Math.round(d / 30) + ' months' : d >= 14 ? Math.round(d / 7) + ' weeks' : d + ' day' + (d === 1 ? '' : 's'); };
   const ages = () => {
     [['sold', left], ['old', right]].forEach(([k, st]) => { const a = st.h.querySelector('.sw-age'); if (a && starts[k]) a.textContent = 'Listed ' + longFor(Date.now() - starts[k]) + ' ago'; });
-    if (starts.sold && starts.old) { const diff = starts.sold - starts.old; top.textContent = diff > 86400000 ? longFor(diff) + ' older' : 'Listed around the same time'; }
+    const diff = c.olderBy != null ? c.olderBy : (starts.sold && starts.old ? starts.sold - starts.old : null);   // v443: the same number as the order line
+    if (diff != null) top.textContent = diff > 86400000 ? olderText(diff) + ' older' : 'Listed around the same time';
   };
   if (c.start) starts.old = Date.parse(c.start);
   const fill = async (st, id, fallback) => {
@@ -1000,6 +1047,7 @@ async function showDetail(id, solo) {
   head.append(el('span', '', 'Order ' + o.id));
   if (o.refunded > 0) head.append(el('span', '', 'Refunded ' + money2.format(o.refunded)));
   box.append(head);
+  { const sv = svcBadge(o); if (sv) { sv.style.margin = '0 0 8px'; box.append(sv); } }   // v442
   if (o.note) box.append(noteBox(o));   // v427
   o.items.forEach(it => { if (it.swap) { const st = document.createElement('div'); st.innerHTML = swapTagHTML(it.swap); box.append(st.firstChild); } });   // v426
   }
@@ -1110,6 +1158,7 @@ async function loadOrders() {
   if (!d) { err.textContent = 'Could not load your orders.'; err.style.display = 'block'; return; }
   if (!d.connected) { ordInfo = d; ordBadge(); document.getElementById('o-note').style.display = ''; setText('o-note', 'eBay isn\u2019t connected yet' + ' — connect it in Settings → ' + (me.isAdmin ? 'Admin' : 'eBay') + '.'); orders = []; render(); return; }
   orders = d.orders || [];
+  if (shipHold) { const h = orders.find(x => x.id === shipHold.id); if (h && h.ship === 'FULFILLED') h.ship = shipHold.ship; }   // v445: the order you just clicked Ship on stays until the next click
   // setText('o-note', !d.ready ? 'Importing order details from eBay — this takes a minute, once…'
   //   : 'From eBay · updated ' + timeAgo(d.lastSync) + (d.syncing ? ' · updating now…' : ''));
   ordInfo = d; ordBadge();   // v402: the box says it

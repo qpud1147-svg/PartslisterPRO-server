@@ -1,4 +1,9 @@
-// PartsLister Pro server — v493
+// PartsLister Pro server — v497
+// v497: …and its YOLO age starts over from the day it was relisted.
+// v496: Swap — when the listing that sold was a YOLO listing, its relisted copy stays on the YOLO list (same prices).
+// v495: Orders settings — autoRefreshShip (on by default): the Orders page refreshes from eBay after each Ship click.
+// v494: each order keeps the shipping service the buyer picked (ship_service); Settings → Orders → Buyer's shipping choice lists the
+//       services that get a "Buyer selected …" badge on Orders; GET /api/orders/services lists the services buyers picked lately; one-time 30-day re-import.
 // v493: swap candidates carry olderBy (how much older than the listing that sold).
 // v492: POST /api/more-like-this — a short, specific search from a Pick result's title (Claude), near-repeats dropped.
 // v491: POST /api/orders/returns-status — return state per order (opened / returned / closed), cached 10 minutes; Active → Sold orders carry total + refunded.
@@ -365,6 +370,7 @@ async function setupDatabase() {
     ALTER TABLE ebay_orders ADD COLUMN IF NOT EXISTS tax NUMERIC(12,2) NOT NULL DEFAULT 0;
     ALTER TABLE ebay_connections ADD COLUMN IF NOT EXISTS orders_v INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE ebay_orders ADD COLUMN IF NOT EXISTS buyer_note TEXT;   -- v487: note from the buyer at checkout
+    ALTER TABLE ebay_orders ADD COLUMN IF NOT EXISTS ship_service TEXT;   -- v494: the shipping service the buyer picked (eBay's code)
     ALTER TABLE ebay_orders ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMPTZ;      -- v490
     ALTER TABLE ebay_orders ADD COLUMN IF NOT EXISTS delivery_checked TIMESTAMPTZ;  -- v490
     -- v319: what was in each order (for the Orders page) + whether it has shipped
@@ -1401,6 +1407,7 @@ function mapOrder(o) {
     refundedTax: Math.round(refundedTax * 100) / 100,   // v314
     shipStatus: o.orderFulfillmentStatus || null,          // v319: NOT_STARTED / IN_PROGRESS / FULFILLED
     note: o.buyerCheckoutNotes ? String(o.buyerCheckoutNotes).slice(0, 1000) : null,   // v487
+    service: String(((((o.fulfillmentStartInstructions || [])[0] || {}).shippingStep || {}).shippingServiceCode) || '').slice(0, 100) || null,   // v494
     lineItems: (o.lineItems || []).map(li => ({            // v319: what was sold (no buyer details)
       lineItemId: String(li.lineItemId || ''),
       itemId: li.legacyItemId ? String(li.legacyItemId) : null,
@@ -1417,17 +1424,18 @@ async function saveOrders(userId, orders) {
   const values = [];
   const params = [];
   orders.forEach((o, i) => {
-    const b = i * 14;   // v309: + tax, v312: + refunded, v314: + refunded_tax, v319: + ship_status, v487: + buyer_note
-    values.push(`($${b + 1},$${b + 2},$${b + 3},$${b + 4},$${b + 5},$${b + 6},$${b + 7},$${b + 8},$${b + 9},$${b + 10},$${b + 11},$${b + 12},$${b + 13},$${b + 14})`);
-    params.push(userId, o.orderId, o.created, o.total, o.payout, o.fees, o.items, o.status, o.counted, o.tax, o.refunded, o.refundedTax, o.shipStatus, o.note);
+    const b = i * 15;   // v494: + ship_service   // v309: + tax, v312: + refunded, v314: + refunded_tax, v319: + ship_status, v487: + buyer_note
+    values.push(`($${b + 1},$${b + 2},$${b + 3},$${b + 4},$${b + 5},$${b + 6},$${b + 7},$${b + 8},$${b + 9},$${b + 10},$${b + 11},$${b + 12},$${b + 13},$${b + 14},$${b + 15})`);
+    params.push(userId, o.orderId, o.created, o.total, o.payout, o.fees, o.items, o.status, o.counted, o.tax, o.refunded, o.refundedTax, o.shipStatus, o.note, o.service);
   });
   await pool.query(
-    `INSERT INTO ebay_orders (user_id, order_id, created_at, total, payout, fees, item_count, status, counted, tax, refunded, refunded_tax, ship_status, buyer_note)
+    `INSERT INTO ebay_orders (user_id, order_id, created_at, total, payout, fees, item_count, status, counted, tax, refunded, refunded_tax, ship_status, buyer_note, ship_service)
      VALUES ${values.join(',')}
      ON CONFLICT (user_id, order_id) DO UPDATE SET
        created_at = EXCLUDED.created_at, total = EXCLUDED.total, payout = EXCLUDED.payout,
        fees = EXCLUDED.fees, item_count = EXCLUDED.item_count, status = EXCLUDED.status, counted = EXCLUDED.counted,
-       tax = EXCLUDED.tax, refunded = EXCLUDED.refunded, refunded_tax = EXCLUDED.refunded_tax, ship_status = EXCLUDED.ship_status, buyer_note = EXCLUDED.buyer_note`,
+       tax = EXCLUDED.tax, refunded = EXCLUDED.refunded, refunded_tax = EXCLUDED.refunded_tax, ship_status = EXCLUDED.ship_status, buyer_note = EXCLUDED.buyer_note,
+       ship_service = COALESCE(EXCLUDED.ship_service, ebay_orders.ship_service)`,
     params
   );
   // v319: the items in each order
@@ -1471,7 +1479,7 @@ async function syncOrders(userId) {
     if (!conn.last_sync || (conn.orders_v || 0) < 6) {   // v319: order items for the Orders page — re-import once
       historyFrom = new Date(started.getTime() - HISTORY_DAYS * 86400000);
       filter = `creationdate:[${historyFrom.toISOString()}..]`;
-    } else if ((conn.orders_v || 0) < 7) {   // v487: once — the last 30 days again, to pick up buyer notes
+    } else if ((conn.orders_v || 0) < 8) {   // v487: once — the last 30 days again, to pick up buyer notes; v494: again for the shipping service
       filter = `creationdate:[${new Date(started.getTime() - 30 * 86400000).toISOString()}..]`;
     } else {
       const since = new Date(new Date(conn.last_sync).getTime() - 2 * 86400000);
@@ -1506,7 +1514,7 @@ async function syncOrders(userId) {
     }
     await pool.query(
       `UPDATE ebay_connections SET last_sync = $2, last_error = NULL,
-         history_from = COALESCE($3, history_from), orders_v = 7 WHERE user_id = $1`,   // v487: was 6   // v313: was 3, v314: was 4, v319: was 5
+         history_from = COALESCE($3, history_from), orders_v = 8 WHERE user_id = $1`,   // v494: was 7   // v487: was 6   // v313: was 3, v314: was 4, v319: was 5
       [userId, started, historyFrom]
     );
     await syncFees(userId);   // v307: fees import has its own error handling
@@ -2001,6 +2009,37 @@ app.get('/api/fees', requireUser, async (req, res) => {
   }
 });
 
+// v494: eBay's shipping service code → the name people know
+const SHIP_SERVICE_NAMES = {
+  USPSPriority: 'USPS Priority Mail', USPSExpressMail: 'USPS Priority Mail Express', USPSPriorityMailExpress: 'USPS Priority Mail Express',
+  USPSGroundAdvantage: 'USPS Ground Advantage', USPSFirstClass: 'USPS First Class', USPSParcel: 'USPS Parcel Select', USPSParcelSelect: 'USPS Parcel Select',
+  USPSMedia: 'USPS Media Mail', USPSStandardPost: 'USPS Retail Ground', USPSRetailGround: 'USPS Retail Ground',
+  UPSGround: 'UPS Ground', UPS3rdDay: 'UPS 3 Day Select', UPS2ndDay: 'UPS 2nd Day Air', UPSNextDay: 'UPS Next Day Air Saver', UPSNextDayAir: 'UPS Next Day Air',
+  FedExHomeDelivery: 'FedEx Home Delivery', FedExGround: 'FedEx Ground', FedEx2Day: 'FedEx 2Day', FedExExpressSaver: 'FedEx Express Saver',
+  FedExPriorityOvernight: 'FedEx Priority Overnight', FedExStandardOvernight: 'FedEx Standard Overnight',
+  ShippingMethodStandard: 'Standard Shipping', ShippingMethodExpress: 'Expedited Shipping', ShippingMethodOvernight: 'One-day Shipping',
+  ShippingMethodGround: 'Ground Shipping', ShippingMethodEconomy: 'Economy Shipping', Other: 'Economy Shipping', EconomyShippingFromOutsideUS: 'Economy Shipping'
+};
+function shipServiceName(code) {
+  const c = String(code || '').trim(); if (!c) return '';
+  if (SHIP_SERVICE_NAMES[c]) return SHIP_SERVICE_NAMES[c];
+  let t = c.replace(/^ShippingMethod/, '')
+    .replace(/^(USPS|UPS|FedEx|DHL)(?=[A-Z0-9])/, '$1 ')
+    .replace(/([a-z])([A-Z0-9])/g, '$1 $2').replace(/([0-9])([A-Z][a-z])/g, '$1 $2').trim();
+  t = t.replace(/^USPS Express( Mail)?/, 'USPS Priority Mail Express').replace(/^USPS Priority(?! Mail)/, 'USPS Priority Mail');
+  return t;
+}
+// v494: the services buyers picked lately (for Settings → Orders → Buyer's shipping choice)
+app.get('/api/orders/services', requireUser, async (req, res) => {
+  try {
+    const r = await pool.query(
+      `SELECT ship_service, COUNT(*)::int AS n FROM ebay_orders
+        WHERE user_id = $1 AND ship_service IS NOT NULL AND created_at > now() - interval '365 days'
+        GROUP BY ship_service ORDER BY n DESC LIMIT 40`, [req.user.id]);
+    res.json({ services: r.rows.map(x => ({ code: x.ship_service, name: shipServiceName(x.ship_service), n: x.n })) });
+  } catch (e) { console.error('[order services]', e.message); res.status(500).json({ error: 'Could not load' }); }
+});
+
 // ─── v319: ORDERS PAGE ───────────────────────────────────────────────────────
 // Your sold orders with what was in them, newest first. Days are in the time
 // zone the page asks for (eBay's Pacific time).
@@ -2010,16 +2049,16 @@ app.get('/api/orders/list', requireUser, async (req, res) => {
     if (!conn || !conn.refresh_enc) return res.json({ connected: false });
     const days = Math.max(1, Math.min(730, parseInt(req.query.days, 10) || 31));
     const tz = safeTimeZone(String(req.query.tz || 'UTC'));
-    if ((conn.orders_v || 0) < 7 && !syncing.has(req.user.id) && !conn.last_error) syncOrders(req.user.id);   // v487: was < 6 (notes)
+    if ((conn.orders_v || 0) < 8 && !syncing.has(req.user.id) && !conn.last_error) syncOrders(req.user.id);   // v494: was < 7 (shipping service)   // v487: was < 6 (notes)
     const r = await pool.query(
       `SELECT o.order_id, o.created_at, to_char(o.created_at AT TIME ZONE $2, 'YYYY-MM-DD HH24:MI') AS sold_local,
-              o.total::float, o.tax::float, o.refunded::float, o.refunded_tax::float, o.counted, o.status, o.ship_status, o.buyer_note, o.delivered_at,
+              o.total::float, o.tax::float, o.refunded::float, o.refunded_tax::float, o.counted, o.status, o.ship_status, o.buyer_note, o.ship_service, o.delivered_at,
               COALESCE(json_agg(json_build_object('itemId', i.item_id, 'sku', i.sku, 'title', i.title, 'qty', i.qty, 'price', i.price::float)
                          ORDER BY i.line_item_id) FILTER (WHERE i.line_item_id IS NOT NULL), '[]') AS items
          FROM ebay_orders o
          LEFT JOIN ebay_order_items i ON i.user_id = o.user_id AND i.order_id = o.order_id
         WHERE o.user_id = $1 AND (o.created_at AT TIME ZONE $2)::date > (now() AT TIME ZONE $2)::date - $3::int
-        GROUP BY o.order_id, o.created_at, o.total, o.tax, o.refunded, o.refunded_tax, o.counted, o.status, o.ship_status, o.buyer_note, o.delivered_at
+        GROUP BY o.order_id, o.created_at, o.total, o.tax, o.refunded, o.refunded_tax, o.counted, o.status, o.ship_status, o.buyer_note, o.ship_service, o.delivered_at
         ORDER BY o.created_at DESC
         LIMIT 3000`,
       [req.user.id, tz, days]
@@ -2039,6 +2078,8 @@ app.get('/api/orders/list', requireUser, async (req, res) => {
         refunded: Math.round((x.refunded + x.refunded_tax) * 100) / 100,
         items: x.items,
         note: x.buyer_note || null,   // v487
+        serviceCode: x.ship_service || null,   // v494
+        service: x.ship_service ? shipServiceName(x.ship_service) : null,
         delivered: x.delivered_at || null   // v490
       }))
     });
@@ -2093,7 +2134,7 @@ function swapPartNumbers(title, specifics) {   // the sold listing's numbers: ti
 }
 function swapWords(title) { return new Set(String(title || '').toUpperCase().replace(/[^A-Z0-9 ]/g, ' ').split(/\s+/).filter(w => w.length >= 3 && !/^(OEM|USED|GENUINE|ORIGINAL|NEW|THE|AND|FOR|WITH)$/.test(w))); }
 // v481: Settings → Orders
-const ORDER_SETTINGS_DEFAULT = { swapOn: true, swapMinDays: 30, showCondition: false, shipTab: 'new', matchPigtails: false };
+const ORDER_SETTINGS_DEFAULT = { swapOn: true, swapMinDays: 30, showCondition: false, shipTab: 'new', matchPigtails: false, priorityServices: ['Priority'], autoRefreshShip: true };   // v495: autoRefreshShip   // v494: priorityServices
 const orderSettingsOf = (st) => Object.assign({}, ORDER_SETTINGS_DEFAULT, (st && st.orderSettings) || {});
 app.get('/api/order-settings', requireUser, async (req, res) => {
   try { res.json(orderSettingsOf(await getUserSettings(req.user.id))); } catch (e) { res.status(500).json({ error: 'Could not load Orders settings' }); }
@@ -2103,7 +2144,9 @@ app.post('/api/order-settings', requireUser, express.json({ limit: '5kb' }), asy
     const b = req.body || {};
     const d = (await readUserData(req.user.id)) || { settings: {}, history: { pigtail: [], otherside: [] } };
     d.settings = d.settings || {};
-    d.settings.orderSettings = { swapOn: b.swapOn !== false, swapMinDays: Math.max(0, Math.min(3650, parseInt(b.swapMinDays, 10) || 0)), showCondition: b.showCondition === true, shipTab: b.shipTab === 'same' ? 'same' : 'new', matchPigtails: b.matchPigtails === true };
+    d.settings.orderSettings = { swapOn: b.swapOn !== false, swapMinDays: Math.max(0, Math.min(3650, parseInt(b.swapMinDays, 10) || 0)), showCondition: b.showCondition === true, shipTab: b.shipTab === 'same' ? 'same' : 'new', matchPigtails: b.matchPigtails === true,
+      autoRefreshShip: b.autoRefreshShip !== false,   // v495
+      priorityServices: Array.isArray(b.priorityServices) ? [...new Set(b.priorityServices.map(x => String(x || '').trim().slice(0, 60)).filter(Boolean))].slice(0, 30) : ORDER_SETTINGS_DEFAULT.priorityServices };   // v494
     await writeUserData(req.user.id, d);
     res.json(Object.assign({ ok: true }, d.settings.orderSettings));
   } catch (e) { console.error('[order settings]', e.message); res.status(500).json({ error: 'Could not save' }); }
@@ -2164,6 +2207,14 @@ app.post('/api/orders/swap', requireUser, express.json({ limit: '10kb' }), async
     let rel;
     try { rel = await relistSoldItem(uid, soldId, '', 'swap'); }
     catch (e) { return res.status(e.code === 409 ? 409 : 502).json({ error: e.code === 409 ? e.message : 'eBay did not relist the one that sold, so nothing was changed: ' + e.message }); }
+    // v496: a YOLO listing stays a YOLO listing — the relisted copy (new item number) goes on the YOLO list too
+    if (rel.itemId && rel.itemId !== soldId) {
+      await pool.query(
+        `INSERT INTO yolo_listings (user_id, item_id, title, sku, normal_price, yolo_price, status, listed_at, image)
+         SELECT user_id, $3, title, sku, normal_price, yolo_price, 'active', now(), image FROM yolo_listings   -- v497: age starts over
+          WHERE user_id = $1 AND item_id = $2 ORDER BY id DESC LIMIT 1
+         ON CONFLICT (user_id, item_id) DO NOTHING`, [uid, soldId, String(rel.itemId)]).catch(e => console.error('[swap yolo]', e.message));
+    }
     const end = await endAndVerify(uid, oldId);
     await pool.query(
       `INSERT INTO order_swaps (user_id, order_id, sold_item, old_item, old_sku, old_title, old_price, new_item, end_ok) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
