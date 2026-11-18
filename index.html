@@ -9,7 +9,7 @@
   // refresh, overriding anything init does.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 </script>
-<title>PartsLister Pro v482</title>
+<title>PartsLister Pro v484</title>
 <!-- v409: hover the green L to see exactly which listings (price + shipping) were averaged. -->
 <!-- v408: clearing a listing also clears the low-resolution / unreadable / too-many photo warnings. -->
 <!-- v407: a scan that finds no part number opens No Part Number by itself; a cleared listing starts on Has Part Number. -->
@@ -952,7 +952,7 @@
     <!-- v302: logo goes to the dashboard -->
     <a href="/" title="Dashboard" style="text-decoration:none;color:inherit;">
       <div class="logo"><span>PARTS</span>LISTER</div>
-      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v482</span></div>
+      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v484</span></div>
     </a>
     <!-- v303: removed — the logo is the dashboard button
     <a href="/" class="btn btn-secondary btn-sm" title="Back to your dashboard" style="font-size:11px;padding:4px 10px;text-decoration:none;margin-left:6px;">⌂ Dashboard</a>
@@ -1120,7 +1120,8 @@
           <div class="field" style="margin-bottom:8px;">
             <label>Year Make Model</label>
             <div style="position:relative;">   <!-- v477: View vehicle — Google Images for this car -->
-              <input type="text" id="np-vehicle" placeholder="" autocomplete="off" oninput="parseVehicleInput();updateNoPartSearch()" style="padding-right:58px;">
+              <input type="text" id="np-vehicle" placeholder="" autocomplete="off" oninput="parseVehicleInput();updateNoPartSearch()" style="padding-right:118px;">
+              <button type="button" id="amend-vehicle-btn" onclick="amendVehicle(this)" title="Fix the spelling of the year, make and model" style="position:absolute;right:56px;top:50%;transform:translateY(-50%);font-size:10px;padding:3px 8px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--muted);cursor:pointer;font-family:'Barlow Condensed',sans-serif;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;">Amend</button>   <!-- v484 -->
               <button type="button" onclick="toggleViewVehicle(event)" title="See this vehicle on Google Images" style="position:absolute;right:5px;top:50%;transform:translateY(-50%);font-size:10px;padding:3px 8px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--muted);cursor:pointer;font-family:'Barlow Condensed',sans-serif;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;">View</button>
               <div id="view-vehicle-menu" style="display:none;position:absolute;right:0;top:calc(100% + 4px);z-index:50;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:4px;box-shadow:0 6px 18px rgba(0,0,0,0.4);">
                 <button type="button" onclick="viewVehicle('interior')" class="vv-opt">Interior</button>
@@ -7013,6 +7014,33 @@ function toggleViewVehicle(e) {
   m.style.display = open ? 'block' : 'none';
   if (open) setTimeout(() => document.addEventListener('click', function off(ev) { if (!m.contains(ev.target)) { m.style.display = 'none'; document.removeEventListener('click', off); } }), 0);
 }
+// v484: Amend — Claude fixes the spelling of the year, make and model typed in the box ("2012 hunday sanata" → "2012 Hyundai Sonata")
+async function amendVehicle(btn) {
+  const inp = document.getElementById('np-vehicle'); const typed = (inp && inp.value || '').trim();
+  if (!typed) { showNotif('⚠ Type the year, make and model first', true); return; }
+  if (!settings.apiKey) { showNotif('⚠ Add your Anthropic API key in Settings first', true); return; }
+  const label = btn ? btn.textContent : ''; if (btn) { btn.disabled = true; btn.textContent = '…'; }
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': settings.apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
+      body: JSON.stringify({ model: settings.claudeModel || 'claude-sonnet-4-5', max_tokens: 100, temperature: 0,
+        system: 'You correct the spelling of a car\'s year, make and model typed by a used auto parts seller. Fix misspelled or garbled makes and models to their real names with normal capitalization (e.g. "2012 hunday sanata" -> "2012 Hyundai Sonata", "chevy silvrado 1500" -> "Chevrolet Silverado 1500", "merc c300" -> "Mercedes-Benz C300"). Keep the year or year range exactly as typed, and keep any trim or body words the seller added (spelled correctly). Do not add a year, trim or anything that was not typed. If you cannot tell what car it is, return it unchanged. Reply with ONLY a JSON object: {"vehicle":"..."}.',
+        messages: [{ role: 'user', content: typed }] })
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error.message);
+    const txt = ((data.content || []).filter(c => c.type === 'text').map(c => c.text).join('') || '');
+    const m = /\{[\s\S]*\}/.exec(txt); const fixed = m ? String((JSON.parse(m[0]) || {}).vehicle || '').replace(/\s+/g, ' ').trim().slice(0, 120) : '';
+    if (!fixed) throw new Error('no answer');
+    if (fixed === typed) { showNotif('✓ Looks right already'); return; }
+    inp.value = fixed;
+    try { parseVehicleInput(); updateNoPartSearch(); } catch (e) { /* the box still has the fixed text */ }
+    showNotif('✓ Amended: ' + fixed);
+  } catch (e) {
+    showNotif('⚠ Could not amend it: ' + e.message, true);
+  } finally { if (btn) { btn.disabled = false; btn.textContent = label || 'Amend'; } }
+}
 function viewVehicle(view) {
   const car = (document.getElementById('np-vehicle') || {}).value || '';
   document.getElementById('view-vehicle-menu').style.display = 'none';
@@ -8456,6 +8484,12 @@ async function _fetchSellSimilar(query, offset, openOverlay, opts = {}) {
       info.appendChild(titleEl);
       info.appendChild(priceEl);
       info.appendChild(shippingEl);
+      // v483: More like this on the No Part Number Pick list too (same as Has Part Number)
+      const more = document.createElement('button'); more.type = 'button'; more.textContent = 'More like this';
+      more.title = 'Search again for the car and part in this listing';
+      more.style.cssText = 'margin-top:8px;font-size:11px;padding:4px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;color:var(--text);cursor:pointer;font-family:Barlow Condensed,sans-serif;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;';
+      more.onclick = (e) => { e.stopPropagation(); alMoreLikeThis(item, more, 'ss'); };
+      info.appendChild(more);
       card.appendChild(imgWrap);
       card.appendChild(info);
       container.appendChild(card);
@@ -9380,7 +9414,8 @@ function openActiveListings() {
 }
 
 // v474: read a result's title (same reader as Relaunch: year, make, model, part) and search for just that
-async function alMoreLikeThis(item, btn) {
+async function alMoreLikeThis(item, btn, which) {   // v483: which = 'al' (Has Part Number Pick) or 'ss' (No Part Number Pick)
+  which = which === 'ss' ? 'ss' : 'al';
   const title = String(item && item.title || '').trim(); if (!title) return;
   if (btn) { btn.disabled = true; btn.textContent = 'Reading…'; }
   const esc2 = (w) => String(w).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -9418,9 +9453,9 @@ async function alMoreLikeThis(item, btn) {
   }
   if (btn) { btn.disabled = false; btn.textContent = 'More like this'; }
   if (!q) { showNotif('⚠ Couldn’t read the car and part from that title', true); return; }
-  const inp = document.getElementById('al-query-input'); if (inp) inp.value = q;
+  const inp = _exactInputEl(which); if (inp) inp.value = q;
   if (_exactEnabled()) { const key = _exactModeKey(); settings[key] = false; _saveUserData(); _syncExactToggles(); showNotif('Exact match turned off so this search can find the same part — turn it back on any time'); }
-  await alSearchFromInput();
+  if (which === 'ss') ssSearchFromInput(); else await alSearchFromInput();
 }
 
 window._alSelectedItems = [];
