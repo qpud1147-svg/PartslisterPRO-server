@@ -1,4 +1,8 @@
-// PartsLister Pro server — v497
+// PartsLister Pro server — v499
+// v499: POST /api/returns/return/:id/label-ebay — tries to have eBay make the return label right here (eBay's docs list
+//       this call for buyers only; if eBay refuses, the page falls back to eBay's own label page).
+// v498: returns — needsLabel (eBay is waiting on the seller's return label); POST /api/returns/return/:id/label-upload
+//       (your own label file + tracking) and /label-sent (you already sent the buyer a label); progress.needsLabel / labelSent.
 // v497: …and its YOLO age starts over from the day it was relisted.
 // v496: Swap — when the listing that sold was a YOLO listing, its relisted copy stays on the YOLO list (same prices).
 // v495: Orders settings — autoRefreshShip (on by default): the Orders page refreshes from eBay after each Ship click.
@@ -5739,7 +5743,9 @@ function mapReturn(m) {
     options: (m.sellerAvailableOptions || []).map(o => o.actionType).filter(Boolean),
     links: (m.sellerAvailableOptions || []).filter(o => o.actionType && /^https:\/\/[^/]*ebay\.com\//i.test(o.actionURL || ''))
       .map(o => ({ type: o.actionType, url: o.actionURL })),   // v325: eBay's own page for each next step
-    escalated: !!(m.escalationInfo && m.escalationInfo.caseId)
+    escalated: !!(m.escalationInfo && m.escalationInfo.caseId),
+    // v498: approved, but eBay still needs a return label from you (e.g. "doesn't match description" — you pay return shipping)
+    needsLabel: !/CLOSED/i.test(m.state || '') && /PROVIDE_LABEL/i.test(((m.sellerAvailableOptions || []).map(o => o.actionType).join(' ')) + ' ' + (due.activityDue || ''))
   };
 }
 // v373: cancellation requests (Post-Order API)
@@ -6221,7 +6227,9 @@ app.get('/api/returns/return/:id', requireUser, async (req, res) => {
       delivered: evDate(/DELIVERED|RECEIVED/i),
       refunded: evDate(/REFUND(ED)?_?(ISSUED|SENT|SUCCESS)|SELLER_ISSUE_REFUND|REFUND_SENT/i) || (summary && summary.refunded ? (dval(ri0.refundDate) || 'yes') : null),
       refundBy: dval(ri0.refundDueDate) || dval(det.refundDueDate) || dval((det.sellerRefundDue || {})) || (summary && summary.todo && /REFUND/i.test(summary.todo) ? summary.due : null),
-      closed: !!(summary && /CLOSED/i.test(summary.state))
+      closed: !!(summary && /CLOSED/i.test(summary.state)),
+      needsLabel: !!(summary && summary.needsLabel),   // v498
+      labelSent: evDate(/PROVIDE_LABEL|LABEL_SENT|MARK_AS_SENT|UPLOAD_LABEL|PRINT_SHIPPING_LABEL/i)
     };
     res.json({ summary, history, estimate: returnEstimate(d), fees, progress });
   } catch (e) {
@@ -6329,6 +6337,68 @@ app.post('/api/returns/return/:id/photo', requireUser, express.json({ limit: '9m
     await poCall(req.user.id, 'POST', '/return/' + req.params.id + '/file/submit', { files: [{ fileId, filePurpose: 'ITEM_RELATED' }] });
     res.json({ ok: true, fileId: fileId || null });
   } catch (e) { console.error('[return photo]', e.message); res.status(502).json({ error: 'eBay didn’t take the photo: ' + e.message }); }
+});
+
+// v498: return label — the same choices as eBay's page. (An eBay label is bought on eBay's own page — eBay doesn't let apps buy one.)
+const RET_CARRIERS = { USPS: 'USPS', UPS: 'UPS', FEDEX: 'FEDEX', DHL: 'DHL' };
+function retLabelBody(b, action) {
+  const carrier = String(b.carrier || '').trim().toUpperCase().replace(/\s+/g, '').slice(0, 20);
+  const tracking = String(b.tracking || '').replace(/\s+/g, '').slice(0, 60);
+  if (!carrier || !tracking) return { error: 'Enter the carrier and the tracking number on the label.' };
+  const body = { labelAction: action, trackingNumber: tracking };
+  if (RET_CARRIERS[carrier]) body.carrierEnum = RET_CARRIERS[carrier];
+  else { body.carrierEnum = 'OTHER'; body.carrierName = String(b.carrierName || b.carrier || 'Other').trim().slice(0, 40); }
+  const c = String(b.comment || '').trim().slice(0, 1000); if (c) body.comments = { content: c };
+  return { body };
+}
+// upload your own label { data (base64 / data URL), name, carrier, tracking, comment? }
+app.post('/api/returns/return/:id/label-upload', requireUser, express.json({ limit: '9mb' }), async (req, res) => {
+  if (!poId(req.params.id)) return res.status(400).json({ error: 'Bad return number' });
+  const b = req.body || {};
+  const data = String(b.data || '').replace(/^data:[^,]*,/, '').replace(/\s/g, '');
+  if (!/^[A-Za-z0-9+/=]+$/.test(data) || data.length < 100) return res.status(400).json({ error: 'Pick the label file first.' });
+  const name = String(b.name || 'label.pdf').replace(/[^\w.-]/g, '_').slice(0, 60);
+  if (!/\.(pdf|jpe?g|png|gif)$/i.test(name)) return res.status(400).json({ error: 'The label has to be a PDF, JPEG, PNG or GIF file.' });
+  const lb = retLabelBody(b, 'UPLOAD_LABEL'); if (lb.error) return res.status(400).json({ error: lb.error });
+  try {
+    const up = await poCall(req.user.id, 'POST', '/return/' + req.params.id + '/file/upload', { data, fileName: name, filePurpose: 'LABEL_RELATED' });
+    const fileId = up && (up.fileId || (up.file && up.file.fileId));
+    if (!fileId) throw new Error('eBay didn’t give back a file number');
+    await poCall(req.user.id, 'POST', '/return/' + req.params.id + '/file/submit', { files: [{ fileId, filePurpose: 'LABEL_RELATED' }] })
+      .catch(e => console.warn('[return label submit]', e.message));   // the label call below links the file either way
+    lb.body.fileId = String(fileId);
+    await poCall(req.user.id, 'POST', '/return/' + req.params.id + '/add_shipping_label', lb.body);
+    clearReturnCount(req.user.id);
+    res.json({ ok: true });
+  } catch (e) { console.error('[return label upload]', e.message); res.status(502).json({ error: 'eBay didn’t take the label: ' + e.message }); }
+});
+// v499: ask eBay to make its own return label for this return (charged by eBay like on its site)
+app.post('/api/returns/return/:id/label-ebay', requireUser, async (req, res) => {
+  if (!poId(req.params.id)) return res.status(400).json({ error: 'Bad return number' });
+  try {
+    const d = await poCall(req.user.id, 'POST', '/return/' + req.params.id + '/initiate_shipping_label');
+    console.log('[return label ebay] ok', req.params.id, JSON.stringify(d || {}).slice(0, 300));
+    clearReturnCount(req.user.id);
+    res.json({ ok: true, carrier: (d && d.carrier) || null, tracking: (d && d.trackingNumber) || null,
+      labelUrl: d && /^https:\/\/[^/]*ebay(img)?\.com\//i.test(d.labelURL || '') ? d.labelURL : null });
+  } catch (e) {
+    console.error('[return label ebay]', e.status || '', e.message);
+    res.status(502).json({ error: e.message || 'eBay said no', status: e.status || null });
+  }
+});
+// you already sent the buyer a label yourself { carrier, tracking, sent (YYYY-MM-DD), comment? }
+app.post('/api/returns/return/:id/label-sent', requireUser, express.json(), async (req, res) => {
+  if (!poId(req.params.id)) return res.status(400).json({ error: 'Bad return number' });
+  const b = req.body || {};
+  const lb = retLabelBody(b, 'MARK_AS_SENT'); if (lb.error) return res.status(400).json({ error: lb.error });
+  const sent = /^\d{4}-\d{2}-\d{2}$/.test(String(b.sent || '')) ? String(b.sent) : new Date().toISOString().slice(0, 10);
+  lb.body.labelSentDate = { value: sent + 'T12:00:00.000Z' };
+  lb.body.forwardShippingLabelProvided = true;
+  try {
+    await poCall(req.user.id, 'POST', '/return/' + req.params.id + '/add_shipping_label', lb.body);
+    clearReturnCount(req.user.id);
+    res.json({ ok: true });
+  } catch (e) { console.error('[return label sent]', e.message); res.status(502).json({ error: 'eBay didn’t accept that: ' + e.message }); }
 });
 
 // "Not received" claim: refund in full { comment? }

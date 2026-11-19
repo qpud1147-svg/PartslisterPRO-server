@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Returns v424</title>
+<title>PartsLister Pro Returns v425</title>
 <!-- v382: switching views is instant; browser reload / Refresh really reloads. v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
 <!-- PartsLister Pro — Returns page (v324: new). Returns, "item not received" claims and cases from
      eBay's Post-Order API, read live (nothing saved on the server). Approve / decline / refund from here.
@@ -348,7 +348,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v424</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v425</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -1144,10 +1144,32 @@ function labelBox(live, base) {
   function draw() {
     pane.innerHTML = '';
     if (pick === 'ebay') {
-      pane.append(el('div', 'r-line', 'eBay sells its return labels on its own page (apps can’t buy one), and the cost comes out of your payout. It opens in a new tab — come back here after, it updates on its own.'));
+      // v425: first try to have eBay make the label right here; if eBay refuses, use eBay's own page
+      pane.append(el('div', 'r-line', 'eBay makes the label and sends it to the buyer. The cost comes out of your payout, like on eBay.'));
       const lk = (live.links || []).find(o => /PROVIDE_LABEL|PRINT_SHIPPING_LABEL/i.test(o.type)) || (live.links || [])[0];
-      const a = el('a', 'btn btn-primary btn-sm', 'Get the eBay label on eBay'); a.href = lk ? lk.url : 'https://www.ebay.com/sh/ord'; a.target = '_blank'; a.rel = 'noopener'; a.style.marginTop = '6px'; a.style.display = 'inline-block';
-      pane.append(a);
+      const a = el('a', 'btn btn-secondary btn-sm', 'Do it on eBay instead'); a.href = lk ? lk.url : 'https://www.ebay.com/sh/ord'; a.target = '_blank'; a.rel = 'noopener'; a.style.display = 'none';
+      const out = el('div', 'r-line'); out.style.marginTop = '6px';
+      const go = el('button', 'btn btn-primary btn-sm', 'Get the eBay label'); go.type = 'button';
+      go.onclick = async () => {
+        if (!confirm('Have eBay make a return label for ' + (live.buyer || 'the buyer') + '? eBay charges you for it, like on its site.')) return;
+        go.disabled = true; go.textContent = 'Asking eBay…'; out.textContent = '';
+        try {
+          const r = await fetch(base + '/label-ebay', { method: 'POST' });
+          const j = await r.json().catch(() => ({}));
+          if (!r.ok) throw new Error(j.error || 'eBay said no');
+          out.textContent = '✓ eBay made the label' + (j.carrier ? ' (' + j.carrier + (j.tracking ? ' ' + j.tracking : '') + ')' : '') + ' and sends it to the buyer.';
+          out.style.color = '#4caf50';
+          if (j.labelUrl) { const v = el('a', 'btn btn-secondary btn-sm', 'View label'); v.href = j.labelUrl; v.target = '_blank'; v.rel = 'noopener'; v.style.marginLeft = '8px'; out.append(v); }
+          go.textContent = 'Label made'; toast('eBay made the return label.');
+          setTimeout(load, 1500);
+        } catch (e) {
+          go.disabled = false; go.textContent = 'Get the eBay label';
+          out.textContent = 'eBay wouldn’t make it from here (' + e.message + '). Use eBay’s page instead:'; out.style.color = '#f5a623';
+          a.style.display = 'inline-block';
+        }
+      };
+      const row = el('div', 'row'); row.style.marginTop = '6px'; row.append(go, a);
+      pane.append(row, out);
     } else if (pick === 'upload') {
       pane.append(el('div', 'r-line', 'A label you bought yourself (PDF or a picture). eBay sends it to the buyer.'));
       const f = el('input'); f.type = 'file'; f.accept = '.pdf,image/jpeg,image/png,image/gif'; f.style.margin = '6px 0';
