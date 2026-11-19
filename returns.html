@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Returns v423</title>
+<title>PartsLister Pro Returns v424</title>
 <!-- v382: switching views is instant; browser reload / Refresh really reloads. v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
 <!-- PartsLister Pro — Returns page (v324: new). Returns, "item not received" claims and cases from
      eBay's Post-Order API, read live (nothing saved on the server). Approve / decline / refund from here.
@@ -348,7 +348,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v423</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v424</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -534,6 +534,17 @@ let toastTimer;
 function toast(msg, bad) { const t = document.getElementById('toast'); t.textContent = msg; t.className = 'show' + (bad ? ' error' : ''); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.className = '', bad ? 8000 : 4000); }
 const nice = (s) => { s = String(s || '').replace(/_/g, ' ').toLowerCase(); return s.charAt(0).toUpperCase() + s.slice(1); };
 // const KIND = { return: 'Return', inquiry: 'Not received', case: 'Case' };
+// v424: eBay's own wording for the buyer's return reason (what eBay shows on the return page)
+const REASON_TEXT = {
+  NOT_AS_DESCRIBED: 'Doesn’t match description or photos', DIFFERENT_FROM_LISTING: 'Doesn’t match description or photos',
+  DEFECTIVE_ITEM: 'Doesn’t work or is defective', ARRIVED_DAMAGED: 'Arrived damaged', MISSING_PARTS: 'Missing parts or pieces',
+  BUYER_RECEIVED_WRONG_ITEM: 'Received the wrong item', WRONG_ITEM: 'Received the wrong item', FAKE_OR_COUNTERFEIT: 'Doesn’t seem authentic',
+  ARRIVED_LATE: 'Arrived too late', WRONG_SIZE: 'Doesn’t fit', ORDERED_WRONG_ITEM: 'Ordered by mistake', ORDERED_ACCIDENTALLY: 'Ordered by mistake',
+  ORDERED_DIFFERENT_ITEM: 'Ordered by mistake', FOUND_BETTER_PRICE: 'Found a better price', NO_LONGER_NEED_ITEM: 'Changed my mind',
+  BUYER_REMORSE: 'Changed my mind', CHANGED_MIND: 'Changed my mind', VERY_DISSATISFIED: 'Not satisfied', RETURNING_GIFT: 'Returning a gift',
+  EXPIRED_ITEM: 'Expired item', NO_REASON: 'No reason given', OTHER: 'Other'
+};
+const reasonText = (r) => REASON_TEXT[String(r || '').toUpperCase()] || nice(r);
 const KIND = { return: 'Return', inquiry: 'Not received', case: 'eBay case', cancel: 'Cancellation', dispute: 'Bank dispute' };   // v373
 // v373: stages
 function returnStage(x) {
@@ -867,7 +878,7 @@ function render() {
     mid.append(pr);
     if (x.swap) { const st = document.createElement('div'); st.innerHTML = swapTagHTML(x.swap); mid.append(st.firstChild); }   // v421
     const l2 = el('div', 'ebl-sub');
-    l2.append(document.createTextNode([x.buyer && 'Buyer ' + x.buyer, x.reason && nice(x.reason), nice(x.status || x.state)].filter(Boolean).join(' · ')));
+    l2.append(document.createTextNode([x.buyer && 'Buyer ' + x.buyer, x.reason && reasonText(x.reason), x.needsLabel ? 'Needs label' : nice(x.status || x.state)].filter(Boolean).join(' · ')));
     mid.append(l2);
     const d = dueEl(view === 'open' ? x.due : null);
     const l3 = el('div', 'ebl-sub'); l3.append(document.createTextNode((x.kind === 'cancel' ? 'Requested ' : 'Opened ') + dateStr(x.created) + (x.orderId && (x.kind === 'cancel' || x.kind === 'dispute') ? ' · order ' + x.orderId : '') + (d ? ' · ' : '')));
@@ -880,7 +891,7 @@ function render() {
       if (x.kind === 'case') { chipT = 'Case open'; chipC = 'bad'; }
       else if (x.kind === 'dispute') { chipT = /ACTION_NEEDED/i.test(x.status || '') ? 'Respond' : 'Awaiting decision'; chipC = /ACTION_NEEDED/i.test(x.status || '') ? 'bad' : 'ship'; }
       else if (x.kind === 'cancel') { chipT = x.needsMe ? 'Respond' : 'Open'; chipC = x.needsMe ? 'bad' : 'ship'; }
-      else if (x.kind === 'return') { chipT = needsAttention(x) ? 'Waiting on you' : (STAGE_LABEL[returnStage(x)] || 'Open'); chipC = needsAttention(x) ? 'bad' : 'ship'; }
+      else if (x.kind === 'return') { chipT = x.needsLabel ? 'Needs label' : needsAttention(x) ? 'Waiting on you' : (STAGE_LABEL[returnStage(x)] || 'Open'); chipC = needsAttention(x) ? 'bad' : 'ship'; }
       else chipT = 'Open', chipC = 'ship';
     }
     const pc = el('span', 'chip ' + chipC, chipT); pc.style.marginLeft = '8px'; pc.style.verticalAlign = 'middle'; pr.append(pc);
@@ -1108,6 +1119,69 @@ async function act(url, body, confirmText, okText) {
   } catch (e) { toast(e.message, true); return false; }
 }
 
+// v424: return label — the same three choices as eBay's page
+function labelBox(live, base) {
+  const box = el('div'); box.style.cssText = 'border:1px solid #f5a623;border-radius:8px;padding:10px 12px;margin:8px 0;background:rgba(245,166,35,0.06);';
+  box.append(el('div', '', 'Provide a return shipping label'));
+  box.firstChild.style.cssText = 'font-weight:700;font-size:15px;margin-bottom:2px;';
+  box.append(el('div', 'r-line', 'The return is approved, but eBay is waiting for you to give the buyer a label. Pick one:'));
+  const opts = el('div'); opts.style.cssText = 'display:flex;flex-direction:column;align-items:stretch;gap:6px;margin:8px 0;max-width:360px;';
+  const pane = el('div');
+  let pick = '';
+  const CH = [['ebay', 'Provide an eBay label'], ['upload', 'Upload a label'], ['sent', 'Confirm you sent a label']];
+  const mark = () => opts.querySelectorAll('label').forEach(l => { const on = l.dataset.k === pick; l.style.borderColor = on ? '#f5a623' : 'var(--border)'; l.querySelector('input').checked = on; });
+  CH.forEach(([k, t]) => {
+    const l = el('label'); l.dataset.k = k; l.style.cssText = 'display:flex;gap:8px;align-items:center;cursor:pointer;padding:6px 10px;border:1px solid var(--border);border-radius:6px;';
+    const rb = el('input'); rb.type = 'radio'; rb.name = 'lbl-' + base;
+    l.append(rb, document.createTextNode(t)); l.onclick = (e) => { e.preventDefault(); pick = k; mark(); draw(); };
+    opts.append(l);
+  });
+  const carrierRow = () => {
+    const car = el('select'); [['USPS', 'USPS'], ['UPS', 'UPS'], ['FEDEX', 'FedEx'], ['DHL', 'DHL'], ['OTHER', 'Other']].forEach(([v, t]) => { const o = el('option', '', t); o.value = v; car.append(o); });
+    const tr = el('input'); tr.type = 'text'; tr.placeholder = 'Tracking number on the label'; tr.style.minWidth = '220px';
+    return { car, tr };
+  };
+  function draw() {
+    pane.innerHTML = '';
+    if (pick === 'ebay') {
+      pane.append(el('div', 'r-line', 'eBay sells its return labels on its own page (apps can’t buy one), and the cost comes out of your payout. It opens in a new tab — come back here after, it updates on its own.'));
+      const lk = (live.links || []).find(o => /PROVIDE_LABEL|PRINT_SHIPPING_LABEL/i.test(o.type)) || (live.links || [])[0];
+      const a = el('a', 'btn btn-primary btn-sm', 'Get the eBay label on eBay'); a.href = lk ? lk.url : 'https://www.ebay.com/sh/ord'; a.target = '_blank'; a.rel = 'noopener'; a.style.marginTop = '6px'; a.style.display = 'inline-block';
+      pane.append(a);
+    } else if (pick === 'upload') {
+      pane.append(el('div', 'r-line', 'A label you bought yourself (PDF or a picture). eBay sends it to the buyer.'));
+      const f = el('input'); f.type = 'file'; f.accept = '.pdf,image/jpeg,image/png,image/gif'; f.style.margin = '6px 0';
+      const { car, tr } = carrierRow();
+      const note = el('input'); note.type = 'text'; note.placeholder = 'Note to the buyer (optional)'; note.maxLength = 1000; note.style.width = '100%';
+      const go = el('button', 'btn btn-primary btn-sm', 'Send label to the buyer'); go.type = 'button';
+      go.onclick = () => {
+        const file = f.files && f.files[0];
+        if (!file) { toast('Pick the label file first.', true); return; }
+        if (file.size > 6 * 1024 * 1024) { toast('That file is too big — eBay takes up to about 6 MB.', true); return; }
+        if (!tr.value.trim()) { toast('Type the tracking number on the label.', true); tr.focus(); return; }
+        const fr = new FileReader();
+        fr.onload = () => act(base + '/label-upload', { data: fr.result, name: file.name, carrier: car.value, tracking: tr.value, comment: note.value }, 'Send this label (' + car.options[car.selectedIndex].text + ' ' + tr.value.trim() + ') to ' + (live.buyer || 'the buyer') + ' through eBay?', 'Label sent to the buyer.');
+        fr.readAsDataURL(file);
+      };
+      const r1 = el('div', 'row'); r1.append(car, tr);
+      pane.append(f, r1, note, el('div', 'row', ''));
+      pane.lastChild.append(go);
+    } else if (pick === 'sent') {
+      pane.append(el('div', 'r-line', 'You already gave the buyer a label some other way (email, in the box…). This tells eBay, with the tracking number.'));
+      const { car, tr } = carrierRow();
+      const dt = el('input'); dt.type = 'date'; dt.value = new Date().toISOString().slice(0, 10);
+      const note = el('input'); note.type = 'text'; note.placeholder = 'Note to the buyer (optional)'; note.maxLength = 1000; note.style.width = '100%';
+      const go = el('button', 'btn btn-primary btn-sm', 'Confirm label sent'); go.type = 'button';
+      go.onclick = () => { if (!tr.value.trim()) { toast('Type the tracking number on the label.', true); tr.focus(); return; }
+        act(base + '/label-sent', { carrier: car.value, tracking: tr.value, sent: dt.value, comment: note.value }, 'Tell eBay you sent ' + (live.buyer || 'the buyer') + ' a ' + car.options[car.selectedIndex].text + ' label (' + tr.value.trim() + ')?', 'eBay knows the label was sent.'); };
+      const r1 = el('div', 'row'); r1.append(car, tr, el('label', '', 'Sent'), dt);
+      const r2 = el('div', 'row'); r2.append(go);
+      pane.append(r1, note, r2);
+    }
+  }
+  box.append(opts, pane);
+  return box;
+}
 // v412: three steps like eBay — Started · Shipped/Delivered · Refund (with the refund-by date)
 function progressEl(pg) {
   const wrap = el('div'); wrap.style.cssText = 'display:flex;align-items:flex-start;margin:8px 0 4px;';
@@ -1116,12 +1190,15 @@ function progressEl(pg) {
   const appr = pg.approved !== undefined ? (!!pg.approved || moved) : true;
   const done = [!!pg.started, appr, !!(pg.shipped || pg.delivered || pg.refunded), !!pg.delivered, !!pg.refunded || pg.closed];   // v423: + Delivered
   const dstr = (v) => v && /^\d{4}-/.test(v) ? dateStr(v) : '';
-  const labels = [['Requested', dstr(pg.started)], [pg.declined ? 'Declined' : appr ? 'Approved' : 'Approve', appr ? dstr(pg.approved) : (pg.declined ? '' : 'waiting on you')], ['Shipped', dstr(pg.shipped)], ['Delivered', dstr(pg.delivered)], [pg.refunded || pg.closed ? 'Refunded' : 'Refund', pg.refunded || pg.closed ? dstr(pg.refunded) : (pg.refundBy ? 'by ' + dstr(pg.refundBy) : '')]];
+  const needL = !!pg.needsLabel && !moved;   // v424: approved, but eBay still needs your return label
+  if (needL) done[1] = false;
+  const labels = [['Requested', dstr(pg.started)], needL ? ['Needs label', 'waiting on you'] : [pg.declined ? 'Declined' : appr ? 'Approved' : 'Approve', appr ? dstr(pg.approved) : (pg.declined ? '' : 'waiting on you')], ['Shipped', dstr(pg.shipped)], ['Delivered', dstr(pg.delivered)], [pg.refunded || pg.closed ? 'Refunded' : 'Refund', pg.refunded || pg.closed ? dstr(pg.refunded) : (pg.refundBy ? 'by ' + dstr(pg.refundBy) : '')]];
   labels.forEach(([t, d], i) => {
     const col = el('div'); col.style.cssText = 'flex:1;text-align:center;position:relative;';
     if (i) { const ln = el('div'); ln.style.cssText = 'position:absolute;top:11px;left:calc(-50% + 16px);width:calc(100% - 32px);height:2px;background:' + (done[i] ? '#3b82f6' : 'var(--border)') + ';'; col.append(ln); }
-    const dot = el('div', '', done[i] ? '✓' : ''); dot.style.cssText = 'position:relative;width:24px;height:24px;border-radius:50%;margin:0 auto;font-size:14px;line-height:24px;color:#fff;background:' + (done[i] ? '#3b82f6' : 'var(--surface2)') + ';border:2px solid ' + (done[i] ? '#3b82f6' : 'var(--border)') + ';';
-    const tt = el('div', '', t); tt.style.cssText = 'font-weight:600;font-size:13px;margin-top:4px;';
+    const warn = needL && i === 1;   // v424: the step eBay is waiting on you for
+    const dot = el('div', '', done[i] ? '✓' : warn ? '!' : ''); dot.style.cssText = 'position:relative;width:24px;height:24px;border-radius:50%;margin:0 auto;font-size:14px;line-height:24px;color:#fff;background:' + (done[i] ? '#3b82f6' : warn ? '#f5a623' : 'var(--surface2)') + ';border:2px solid ' + (done[i] ? '#3b82f6' : warn ? '#f5a623' : 'var(--border)') + ';';
+    const tt = el('div', '', t); tt.style.cssText = 'font-weight:600;font-size:13px;margin-top:4px;' + (warn ? 'color:#f5a623;' : '');
     const dd = el('div', 'r-line', d || ' '); dd.style.fontSize = '12px';
     col.append(dot, tt, dd); wrap.append(col);
   });
@@ -1170,11 +1247,11 @@ async function showDetail(key) {
   const pgBox = el('div'), histBox = el('div');   // v415: steps right under the item, then reason + comment, then history
   if (x.kind === 'return') box.append(pgBox);
   if (x.swap) { const st = document.createElement('div'); st.innerHTML = swapTagHTML(x.swap); box.append(st.firstChild); }   // v421: the buyer got the older item
-  if (x.reason) box.append(el('div', 'r-line', 'Reason: ' + nice(x.reason) + (x.qty > 1 ? ' · qty ' + x.qty : '')));
+  if (x.reason) box.append(el('div', 'r-line', 'Reason: ' + reasonText(x.reason) + (x.qty > 1 ? ' · qty ' + x.qty : '')));
   if (x.comments) box.append(el('div', 'quote', '“' + x.comments + '”'));
   if (x.buyer && x.itemId) {   // v419: ask the buyer a question — opens Messages on this buyer + item (with a way back here)
     const mb = el('a', 'btn btn-secondary btn-sm', '✉ Message ' + x.buyer);
-    mb.href = '/messages?buyer=' + encodeURIComponent(x.buyer) + '&item=' + encodeURIComponent(x.itemId) + '&ret=' + encodeURIComponent(key) + '&rv=' + view + '&why=' + encodeURIComponent(('Return reason: ' + nice(x.reason || '') + (x.comments ? '. Buyer wrote: ' + x.comments : '')).slice(0, 400));
+    mb.href = '/messages?buyer=' + encodeURIComponent(x.buyer) + '&item=' + encodeURIComponent(x.itemId) + '&ret=' + encodeURIComponent(key) + '&rv=' + view + '&why=' + encodeURIComponent(('Return reason: ' + reasonText(x.reason || '') + (x.comments ? '. Buyer wrote: ' + x.comments : '')).slice(0, 400));
     mb.style.margin = '6px 0'; box.append(mb);
   }
   box.append(histBox);
@@ -1276,6 +1353,7 @@ async function showDetail(key) {
       const stage = el('div', 'r-line', 'eBay status now: ' + nice(live.status || live.state || 'unknown'));
       holder.append(stage);
       if (r && r.error && !r.summary) { holder.append(el('div', 'r-line', 'Couldn’t check with eBay (' + r.error + ') — use Open on eBay below.')); return; }
+      if (live.needsLabel) holder.append(labelBox(live, base));   // v424: eBay is waiting on your return label
       const canDecide = opts ? /APPROVE|DECLINE|DECIDE/.test(opts) : /RETURN_REQUESTED|REQUESTED|PENDING/.test(st) && !/SHIP|DELIVER|CLOSED/.test(st);
       const canPartial = opts ? /PARTIAL/.test(opts) : canDecide;
       const canRefund = opts ? (live.options || []).some(o => /REFUND/i.test(o) && !/PARTIAL/i.test(o)) : /SHIPPED|DELIVERED|RECEIVED/.test(st);
@@ -1394,7 +1472,7 @@ async function showDetail(key) {
         }
         holder.append(r3);
       }
-      if (!canDecide && !canPartial && !canRefund) holder.append(el('div', 'r-line', 'Nothing to do here right now — eBay is waiting on the buyer or the item. Use Open on eBay below to see more.'));
+      if (!canDecide && !canPartial && !canRefund && !live.needsLabel) holder.append(el('div', 'r-line', 'Nothing to do here right now — eBay is waiting on the buyer or the item. Use Open on eBay below to see more.'));
     });
   } else if (x.kind === 'inquiry') {
     acts.append(el('h4', '', 'Respond'));
@@ -1623,7 +1701,7 @@ function renderTypes() {
     nb.onclick = () => { typesSel = sel ? null : { type: r.type, kind: (typesSel && typesSel.kind) || 'sold' }; renderTypes(); };
     nameTd.append(nb);
     tr.append(nameTd, el('td', '', String(r.sold)), el('td', '', num(r.returned)), el('td', '', pct(r.returnRate)));
-    tr.append(el('td', 'left', r.reasons && r.reasons.length ? r.reasons.map(x => nice(x.reason) + ' ' + x.n).join(' · ') : (r.returned === null ? '—' : '')));
+    tr.append(el('td', 'left', r.reasons && r.reasons.length ? r.reasons.map(x => reasonText(x.reason) + ' ' + x.n).join(' · ') : (r.returned === null ? '—' : '')));
     tr.append(el('td', '', num(r.listed)), el('td', '', pct(r.sellThrough)),
       el('td', '', r.avgDays === null ? '—' : r.avgDays + (r.daysN && r.daysN < 3 ? ' *' : '')), el('td', '', r.avgPrice === null ? '—' : money2.format(r.avgPrice)));
     body.append(tr);
@@ -1717,7 +1795,7 @@ function renderTypes() {
   rows.forEach(r => {
     const tr = el('tr', r.notPart || r.type === 'Unmatched' ? 'dim' : '');
     tr.append(el('td', '', r.type), el('td', '', String(r.sold)), el('td', '', num(r.returned)), el('td', '', pct(r.returnRate)));
-    tr.append(el('td', 'left', r.reasons && r.reasons.length ? r.reasons.map(x => nice(x.reason) + ' ' + x.n).join(' · ') : (r.returned === null ? '—' : '')));
+    tr.append(el('td', 'left', r.reasons && r.reasons.length ? r.reasons.map(x => reasonText(x.reason) + ' ' + x.n).join(' · ') : (r.returned === null ? '—' : '')));
     tr.append(el('td', '', num(r.listed)), el('td', '', pct(r.sellThrough)),
       el('td', '', r.avgDays === null ? '—' : r.avgDays + (r.daysN && r.daysN < 3 ? ' *' : '')), el('td', '', r.avgPrice === null ? '—' : money2.format(r.avgPrice)));
     body.append(tr);

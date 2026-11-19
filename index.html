@@ -9,7 +9,7 @@
   // refresh, overriding anything init does.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 </script>
-<title>PartsLister Pro v484</title>
+<title>PartsLister Pro v485</title>
 <!-- v409: hover the green L to see exactly which listings (price + shipping) were averaged. -->
 <!-- v408: clearing a listing also clears the low-resolution / unreadable / too-many photo warnings. -->
 <!-- v407: a scan that finds no part number opens No Part Number by itself; a cleared listing starts on Has Part Number. -->
@@ -952,7 +952,7 @@
     <!-- v302: logo goes to the dashboard -->
     <a href="/" title="Dashboard" style="text-decoration:none;color:inherit;">
       <div class="logo"><span>PARTS</span>LISTER</div>
-      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v484</span></div>
+      <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v485</span></div>
     </a>
     <!-- v303: removed — the logo is the dashboard button
     <a href="/" class="btn btn-secondary btn-sm" title="Back to your dashboard" style="font-size:11px;padding:4px 10px;text-decoration:none;margin-left:6px;">⌂ Dashboard</a>
@@ -1100,9 +1100,10 @@
           <label>Part Number</label>
           <div class="flex-row">
             <input type="text" id="part-number" placeholder="" oninput="updatePartNumber()" onblur="cleanPartNumberOnBlur()" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
-            <button class="btn btn-secondary btn-sm" onclick="document.getElementById('part-number').value='';updatePartNumber();" title="Clear" style="padding:4px 8px;">✕</button>
-            <button class="btn btn-secondary btn-sm" onclick="copyPartNumber()" title="Copy">📋</button>
-            <button class="btn btn-secondary btn-sm" onclick="addPNExtra()" title="Keep this number on the listing and type another one" style="padding:4px 10px;">＋ Add</button>
+            <!-- v485: X, Copy and Add all the same size -->
+            <button class="btn btn-secondary btn-sm" onclick="document.getElementById('part-number').value='';updatePartNumber();" title="Clear" style="width:52px;padding:4px 0;text-align:center;flex-shrink:0;">✕</button>
+            <button class="btn btn-secondary btn-sm" onclick="copyPartNumber()" title="Copy" style="width:52px;padding:4px 0;text-align:center;flex-shrink:0;">Copy</button>
+            <button class="btn btn-secondary btn-sm" onclick="addPNExtra()" title="Keep this number on the listing and type another one" style="width:52px;padding:4px 0;text-align:center;flex-shrink:0;">Add</button>
           </div>
           <div id="pn-alt-suggestion" style="display:none;margin-top:6px;">
             <div id="pn-cand-list" style="display:flex;flex-direction:column;gap:4px;align-items:flex-start;"></div>
@@ -7265,7 +7266,10 @@ function renderPNCandidates() {
     const active = val.toUpperCase() === cur;   // i still used by the click handler
     const rowEl = document.createElement('label');
     rowEl.style.cssText = 'display:flex;align-items:center;gap:6px;cursor:pointer;';
-    if (!active) {   // v456: the number in the box needs no checkbox; the others can ride along on the same listing
+    if (active) {   // v485: keep the checkbox's space so the part numbers never shift left when you switch
+      const sp = document.createElement('input'); sp.type = 'checkbox'; sp.tabIndex = -1; sp.disabled = true; sp.style.visibility = 'hidden';
+      rowEl.appendChild(sp);
+    } else {   // v456: the number in the box needs no checkbox; the others can ride along on the same listing
       const cb = document.createElement('input'); cb.type = 'checkbox';
       cb.checked = !!(window._pnExtra || {})[val.toUpperCase()];
       cb.title = 'Also list this part number';
