@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Returns v426</title>
+<title>PartsLister Pro Returns v427</title>
 <!-- v382: switching views is instant; browser reload / Refresh really reloads. v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
 <!-- PartsLister Pro — Returns page (v324: new). Returns, "item not received" claims and cases from
      eBay's Post-Order API, read live (nothing saved on the server). Approve / decline / refund from here.
@@ -348,7 +348,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v426</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v427</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -555,8 +555,17 @@ function returnStage(x) {
   if (/REQUESTED/.test(s) && !/LABEL/.test(s)) return 'requested';
   return 'waiting';
 }
-const needsAttention = (x) => x.kind === 'return' ? (/SELLER/i.test(x.todo || '') || (returnStage(x) === 'delivered' && !/BUYER/i.test(x.todo || '')))   // v410: only when eBay is waiting on YOU (a new request, or the item arrived)
+const needsAttention = (x) => x.kind === 'return' ? retOnYou(x)   // v410: only when eBay is waiting on YOU (a new request, or the item arrived)
   : x.kind === 'cancel' ? !!x.needsMe : x.kind === 'dispute' ? /ACTION_NEEDED/i.test(x.status || '') : true;
+// v427: a return is on you only when eBay lets you do the next step now: decide a new request, give the label,
+// or refund once it's delivered. (Before, any "SELLER…" deadline from eBay counted — it stayed "waiting on you"
+// after the label was bought, while the buyer still had to ship.)
+function retOnYou(x) {
+  if (x.needsLabel) return true;
+  const o = (x.options || []).join(' ').toUpperCase(), stg = returnStage(x);
+  if (o) return /APPROVE_REQUEST|DECLINE_REQUEST|OFFER_PARTIAL_REFUND|PROVIDE_RMA/.test(o) || (stg === 'delivered' && /ISSUE_REFUND|MARK_REFUND/.test(o));
+  return /SELLER/i.test(x.todo || '') && stg !== 'waiting' && stg !== 'shipped' || (stg === 'delivered' && !/BUYER/i.test(x.todo || ''));
+}
 const STAGES = {
   return: [['all', 'All open'], ['needs', 'Waiting on you'], ['requested', 'Requested'], ['waiting', 'Waiting for buyer to ship'], ['shipped', 'Return shipped'], ['delivered', 'Return delivered']],
   dispute: [['all', 'All open'], ['action', 'Needs your response'], ['decision', 'Awaiting decision']]
@@ -739,10 +748,13 @@ function followBtns(x) {
   const open = view === 'open', f = planFor(x.kind + ':' + x.id), isRl = !!(f && f.reason === 'relist');
   if (f) { const pl = el('div', 'r-line', planText(f, open)); pl.style.fontWeight = '600'; host.append(pl); }
   const w = el('div', 'fu-row'); w.style.marginTop = '6px';
+  const early = open && x.kind === 'return' && !x._delivered && !['delivered', 'closed'].includes(returnStage(x));   // v427: not until the item is back
   const rl = el('button', 'btn btn-sm ' + (!f || isRl ? 'btn-primary' : 'btn-secondary'), 'Relist'); rl.type = 'button';
   rl.onclick = (e) => { e.stopPropagation(); relistDialog(itemInfo(x), !open && f ? f.id : undefined, { open, emoji: isRl ? f.note : undefined }); };
   const nw = el('button', 'btn btn-sm ' + (f && !isRl ? 'btn-primary' : 'btn-secondary'), 'Needs work'); nw.type = 'button'; nw.onclick = (e) => { e.stopPropagation(); needsWorkDialog(itemInfo(x), open, f); };
+  if (early) [rl, nw].forEach(b => { b.disabled = true; b.style.opacity = '.4'; b.style.cursor = 'not-allowed'; b.title = 'Available once the return is delivered'; });
   w.append(rl, nw);
+  if (early) w.append(el('span', 'r-line', ' Once the return is delivered'));
   if (f) { const cl = el('button', 'btn btn-secondary btn-sm', 'Clear'); cl.type = 'button'; cl.onclick = (e) => { e.stopPropagation(); removePlan(f); }; w.append(cl); }
   host.append(w); return host;
 }
@@ -1184,22 +1196,31 @@ function labelBox(live, base) {
 }
 // v412: three steps like eBay — Started · Shipped/Delivered · Refund (with the refund-by date)
 function progressEl(pg) {
+  // v427: up to six steps — Requested · Approved · Label (only when you have to give the label) · Shipped · Delivered · Refunded
   const wrap = el('div'); wrap.style.cssText = 'display:flex;align-items:flex-start;margin:8px 0 4px;';
-  // v419: four steps — Requested · Approved · Shipped/Delivered · Refunded
   const moved = !!(pg.shipped || pg.delivered || pg.refunded);
   const appr = pg.approved !== undefined ? (!!pg.approved || moved) : true;
-  const done = [!!pg.started, appr, !!(pg.shipped || pg.delivered || pg.refunded), !!pg.delivered, !!pg.refunded || pg.closed];   // v423: + Delivered
   const dstr = (v) => v && /^\d{4}-/.test(v) ? dateStr(v) : '';
-  const needL = !!pg.needsLabel && !moved;   // v424: approved, but eBay still needs your return label
-  if (needL) done[1] = false;
-  const labels = [['Requested', dstr(pg.started)], needL ? ['Needs label', 'waiting on you'] : [pg.declined ? 'Declined' : appr ? 'Approved' : 'Approve', appr ? dstr(pg.approved) : (pg.declined ? '' : 'waiting on you')], ['Shipped', dstr(pg.shipped)], ['Delivered', dstr(pg.delivered)], [pg.refunded || pg.closed ? 'Refunded' : 'Refund', pg.refunded || pg.closed ? dstr(pg.refunded) : (pg.refundBy ? 'by ' + dstr(pg.refundBy) : '')]];
-  labels.forEach(([t, d], i) => {
+  const needL = !!pg.needsLabel && !moved;
+  const steps = [
+    { t: 'Requested', d: dstr(pg.started), done: !!pg.started },
+    { t: pg.declined ? 'Declined' : appr ? 'Approved' : 'Approve', d: appr ? dstr(pg.approved) : (pg.declined ? '' : 'waiting on you'), done: appr, warn: !appr && !pg.declined }
+  ];
+  if (pg.labelNeeded || pg.needsLabel || pg.labelSent) steps.push(needL
+    ? { t: 'Label', d: 'waiting on you', done: false, warn: true }
+    : { t: 'Label sent', d: dstr(pg.labelSent), done: true });
+  steps.push(
+    { t: 'Shipped', d: dstr(pg.shipped), done: !!(pg.shipped || pg.delivered || pg.refunded) },
+    { t: 'Delivered', d: dstr(pg.delivered), done: !!pg.delivered },
+    { t: pg.refunded || pg.closed ? 'Refunded' : 'Refund', d: pg.refunded || pg.closed ? dstr(pg.refunded) : (pg.refundBy ? 'by ' + dstr(pg.refundBy) : ''), done: !!pg.refunded || !!pg.closed }
+  );
+  steps.forEach((st, i) => {
     const col = el('div'); col.style.cssText = 'flex:1;text-align:center;position:relative;';
-    if (i) { const ln = el('div'); ln.style.cssText = 'position:absolute;top:11px;left:calc(-50% + 16px);width:calc(100% - 32px);height:2px;background:' + (done[i] ? '#3b82f6' : 'var(--border)') + ';'; col.append(ln); }
-    const warn = needL && i === 1;   // v424: the step eBay is waiting on you for
-    const dot = el('div', '', done[i] ? '✓' : warn ? '!' : ''); dot.style.cssText = 'position:relative;width:24px;height:24px;border-radius:50%;margin:0 auto;font-size:14px;line-height:24px;color:#fff;background:' + (done[i] ? '#3b82f6' : warn ? '#f5a623' : 'var(--surface2)') + ';border:2px solid ' + (done[i] ? '#3b82f6' : warn ? '#f5a623' : 'var(--border)') + ';';
-    const tt = el('div', '', t); tt.style.cssText = 'font-weight:600;font-size:13px;margin-top:4px;' + (warn ? 'color:#f5a623;' : '');
-    const dd = el('div', 'r-line', d || ' '); dd.style.fontSize = '12px';
+    if (i) { const ln = el('div'); ln.style.cssText = 'position:absolute;top:11px;left:calc(-50% + 16px);width:calc(100% - 32px);height:2px;background:' + (st.done ? '#3b82f6' : 'var(--border)') + ';'; col.append(ln); }
+    const warn = !!st.warn && !st.done;
+    const dot = el('div', '', st.done ? '✓' : warn ? '!' : ''); dot.style.cssText = 'position:relative;width:24px;height:24px;border-radius:50%;margin:0 auto;font-size:14px;line-height:24px;color:#fff;background:' + (st.done ? '#3b82f6' : warn ? '#f5a623' : 'var(--surface2)') + ';border:2px solid ' + (st.done ? '#3b82f6' : warn ? '#f5a623' : 'var(--border)') + ';';
+    const tt = el('div', '', st.t); tt.style.cssText = 'font-weight:600;font-size:13px;margin-top:4px;' + (warn ? 'color:#f5a623;' : '');
+    const dd = el('div', 'r-line', st.d || ' '); dd.style.fontSize = '12px';
     col.append(dot, tt, dd); wrap.append(col);
   });
   return wrap;
@@ -1265,6 +1286,7 @@ async function showDetail(key) {
     liveP.then(r => {
       pgBox.textContent = '';
       const pg = r && r.progress;
+      if (pg && pg.delivered && !x._delivered) { x._delivered = true; refreshFollow(); }   // v427
       if (pg) pgBox.append(progressEl(pg));   // v412: eBay-style steps
       const hist = (r && r.history) || [];
       if (!hist.length) { if (!pg) pgBox.append(el('div', 'd-msg', (r && r.error) || 'No history from eBay.')); return; }
@@ -1350,7 +1372,7 @@ async function showDetail(key) {
       const opts = (live.options || []).join(' ').toUpperCase();
       const st = String(live.state || '').toUpperCase() + ' ' + String(live.status || '').toUpperCase();
       const est = r && r.estimate;
-      const stage = el('div', 'r-line', 'eBay status now: ' + nice(live.status || live.state || 'unknown'));
+      const stage = el('div', 'r-line', 'eBay status now: ' + nice(live.status || live.state || 'unknown') + (live.todo ? ' · eBay’s next step: ' + nice(String(live.todo).replace(/^(SELLER|BUYER)_/, m => m === 'SELLER_' ? 'you: ' : 'buyer: ')) : ''));   // v427
       holder.append(stage);
       if (r && r.error && !r.summary) { holder.append(el('div', 'r-line', 'Couldn’t check with eBay (' + r.error + ') — use Open on eBay below.')); return; }
       if (live.needsLabel) holder.append(labelBox(live, base));   // v424: eBay is waiting on your return label

@@ -1,4 +1,6 @@
-// PartsLister Pro server — v499
+// PartsLister Pro server — v500
+// v500: return progress.labelSent only counts the SELLER's label steps (not a buyer printing their own); + labelNeeded
+//       (the return ever needed a label from you), so the Label step shows on those returns only.
 // v499: POST /api/returns/return/:id/label-ebay — tries to have eBay make the return label right here (eBay's docs list
 //       this call for buyers only; if eBay refuses, the page falls back to eBay's own label page).
 // v498: returns — needsLabel (eBay is waiting on the seller's return label); POST /api/returns/return/:id/label-upload
@@ -5876,6 +5878,16 @@ app.get('/api/returns', requireUser, async (req, res) => {
 
 // Count for Home: open returns/claims/cases (asked at most every 5 minutes)
 const returnCounts = new Map();
+// v500: a return is on you only when eBay lets you do the next step now (decide a new request, give the label,
+// or refund once it's delivered) — same rule as retOnYou on the Returns page.
+function retOnYou(x) {
+  if (x.needsLabel) return true;
+  const st = (String(x.status || '') + ' ' + String(x.state || '')).toUpperCase();
+  const stg = /CLOSED/.test(st) ? 'closed' : /DELIVERED|RECEIVED/.test(st) ? 'delivered' : /SHIPPED|IN_TRANSIT/.test(st) ? 'shipped' : /REQUESTED/.test(st) && !/LABEL/.test(st) ? 'requested' : 'waiting';
+  const o = (x.options || []).join(' ').toUpperCase();
+  if (o) return /APPROVE_REQUEST|DECLINE_REQUEST|OFFER_PARTIAL_REFUND|PROVIDE_RMA/.test(o) || (stg === 'delivered' && /ISSUE_REFUND|MARK_REFUND/.test(o));
+  return /SELLER/i.test(x.todo || '') && stg !== 'waiting' && stg !== 'shipped' || (stg === 'delivered' && !/BUYER/i.test(x.todo || ''));
+}
 app.get('/api/returns/summary', requireUser, async (req, res) => {
   try {
     const conn = await getConnection(req.user.id);
@@ -5884,7 +5896,7 @@ app.get('/api/returns/summary', requireUser, async (req, res) => {
     if (c && Date.now() - c.at < 300000) return res.json(c.data);
     const { items, errors } = await loadReturns(req.user.id, 'open');
     // const data = { connected: true, open: items.length, needMe: items.filter(x => x.kind !== 'return' || /SELLER/i.test(x.todo || '') || (x.options || []).length).length, errors };
-    const needs = (x) => x.kind === 'return' ? (/SELLER/i.test(x.todo || '') || (/DELIVERED|RECEIVED/i.test(String(x.status || '') + ' ' + String(x.state || '')) && !/CLOSED|BUYER/i.test(String(x.status || '') + ' ' + String(x.state || '') + ' ' + String(x.todo || ''))))   // v456: only when eBay waits on you
+    const needs = (x) => x.kind === 'return' ? retOnYou(x)   // v500: same rule as the Returns page
       : x.kind === 'cancel' ? !!x.needsMe : x.kind === 'dispute' ? /ACTION_NEEDED/i.test(x.status) : true;   // v373
     const data = { connected: true, open: items.length, needMe: items.filter(needs).length, errors };
     returnCounts.set(req.user.id, { at: Date.now(), data });
@@ -6229,7 +6241,8 @@ app.get('/api/returns/return/:id', requireUser, async (req, res) => {
       refundBy: dval(ri0.refundDueDate) || dval(det.refundDueDate) || dval((det.sellerRefundDue || {})) || (summary && summary.todo && /REFUND/i.test(summary.todo) ? summary.due : null),
       closed: !!(summary && /CLOSED/i.test(summary.state)),
       needsLabel: !!(summary && summary.needsLabel),   // v498
-      labelSent: evDate(/PROVIDE_LABEL|LABEL_SENT|MARK_AS_SENT|UPLOAD_LABEL|PRINT_SHIPPING_LABEL/i)
+      labelSent: evDate(/SELLER_(PROVIDE|PRINT_SHIPPING)_LABEL|LABEL_SENT|MARK_AS_SENT|UPLOAD_LABEL/i),   // v500: seller label steps only
+      labelNeeded: !!(summary && summary.needsLabel) || !!evDate(/SELLER_(PROVIDE|PRINT_SHIPPING)_LABEL|LABEL_SENT|MARK_AS_SENT|UPLOAD_LABEL|TIME_OUT_FOR_PROVIDE_LABEL/i)
     };
     res.json({ summary, history, estimate: returnEstimate(d), fees, progress });
   } catch (e) {
