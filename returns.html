@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Returns v427</title>
+<title>PartsLister Pro Returns v428</title>
 <!-- v382: switching views is instant; browser reload / Refresh really reloads. v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
 <!-- PartsLister Pro — Returns page (v324: new). Returns, "item not received" claims and cases from
      eBay's Post-Order API, read live (nothing saved on the server). Approve / decline / refund from here.
@@ -348,7 +348,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v427</span></div>
+    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v428</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -560,11 +560,14 @@ const needsAttention = (x) => x.kind === 'return' ? retOnYou(x)   // v410: only 
 // v427: a return is on you only when eBay lets you do the next step now: decide a new request, give the label,
 // or refund once it's delivered. (Before, any "SELLER…" deadline from eBay counted — it stayed "waiting on you"
 // after the label was bought, while the buyer still had to ship.)
+// v428: once eBay's status says ready for shipping (or later), the request is decided — eBay sometimes still sends a
+// leftover "approve request" next step, so that is ignored then.
+const retPastDecide = (x) => /READY_FOR_SHIP|SHIPPED|IN_TRANSIT|DELIVERED|RECEIVED|LABEL|REFUND|CLOSED/i.test(String(x.status || '') + ' ' + String(x.state || ''));
 function retOnYou(x) {
   if (x.needsLabel) return true;
-  const o = (x.options || []).join(' ').toUpperCase(), stg = returnStage(x);
-  if (o) return /APPROVE_REQUEST|DECLINE_REQUEST|OFFER_PARTIAL_REFUND|PROVIDE_RMA/.test(o) || (stg === 'delivered' && /ISSUE_REFUND|MARK_REFUND/.test(o));
-  return /SELLER/i.test(x.todo || '') && stg !== 'waiting' && stg !== 'shipped' || (stg === 'delivered' && !/BUYER/i.test(x.todo || ''));
+  const o = (x.options || []).join(' ').toUpperCase(), stg = returnStage(x), past = retPastDecide(x);
+  if (o) return (!past && /APPROVE_REQUEST|DECLINE_REQUEST|OFFER_PARTIAL_REFUND|PROVIDE_RMA/.test(o)) || (stg === 'delivered' && /ISSUE_REFUND|MARK_REFUND/.test(o));
+  return (!past && /SELLER/i.test(x.todo || '') && stg !== 'waiting' && stg !== 'shipped') || (stg === 'delivered' && !/BUYER/i.test(x.todo || ''));
 }
 const STAGES = {
   return: [['all', 'All open'], ['needs', 'Waiting on you'], ['requested', 'Requested'], ['waiting', 'Waiting for buyer to ship'], ['shipped', 'Return shipped'], ['delivered', 'Return delivered']],
@@ -1372,12 +1375,13 @@ async function showDetail(key) {
       const opts = (live.options || []).join(' ').toUpperCase();
       const st = String(live.state || '').toUpperCase() + ' ' + String(live.status || '').toUpperCase();
       const est = r && r.estimate;
-      const stage = el('div', 'r-line', 'eBay status now: ' + nice(live.status || live.state || 'unknown') + (live.todo ? ' · eBay’s next step: ' + nice(String(live.todo).replace(/^(SELLER|BUYER)_/, m => m === 'SELLER_' ? 'you: ' : 'buyer: ')) : ''));   // v427
+      const stage = el('div', 'r-line', 'eBay status now: ' + nice(live.status || live.state || 'unknown') + (live.todo && !(retPastDecide(live) && /APPROVE|DECLINE|DECIDE/i.test(live.todo)) ? ' · eBay’s next step: ' + nice(String(live.todo).replace(/^(SELLER|BUYER)_/, m => m === 'SELLER_' ? 'you: ' : 'buyer: ')) : ''));   // v427
       holder.append(stage);
       if (r && r.error && !r.summary) { holder.append(el('div', 'r-line', 'Couldn’t check with eBay (' + r.error + ') — use Open on eBay below.')); return; }
       if (live.needsLabel) holder.append(labelBox(live, base));   // v424: eBay is waiting on your return label
-      const canDecide = opts ? /APPROVE|DECLINE|DECIDE/.test(opts) : /RETURN_REQUESTED|REQUESTED|PENDING/.test(st) && !/SHIP|DELIVER|CLOSED/.test(st);
-      const canPartial = opts ? /PARTIAL/.test(opts) : canDecide;
+      const past = retPastDecide(live);   // v428: already decided — ignore eBay's leftover approve/decline
+      const canDecide = past ? false : opts ? /APPROVE|DECLINE|DECIDE/.test(opts) : /RETURN_REQUESTED|REQUESTED|PENDING/.test(st) && !/SHIP|DELIVER|CLOSED/.test(st);
+      const canPartial = past ? false : opts ? /PARTIAL/.test(opts) : canDecide;
       const canRefund = opts ? (live.options || []).some(o => /REFUND/i.test(o) && !/PARTIAL/i.test(o)) : /SHIPPED|DELIVERED|RECEIVED/.test(st);
       const note = el('textarea'); note.placeholder = canDecide ? 'Note to the buyer (needed to decline; optional otherwise)' : 'Note to the buyer (optional)'; note.maxLength = 1000;
       const noteHere = canDecide || canPartial || (canRefund && !(est && est.total !== null));   // v415: with only a refund to do, the note lives in the refund box

@@ -1,4 +1,5 @@
-// PartsLister Pro server — v500
+// PartsLister Pro server — v501
+// v501: retOnYou ignores eBay's leftover "approve request" once the status says ready for shipping or later.
 // v500: return progress.labelSent only counts the SELLER's label steps (not a buyer printing their own); + labelNeeded
 //       (the return ever needed a label from you), so the Label step shows on those returns only.
 // v499: POST /api/returns/return/:id/label-ebay — tries to have eBay make the return label right here (eBay's docs list
@@ -5882,11 +5883,12 @@ const returnCounts = new Map();
 // or refund once it's delivered) — same rule as retOnYou on the Returns page.
 function retOnYou(x) {
   if (x.needsLabel) return true;
+  const past = /READY_FOR_SHIP|SHIPPED|IN_TRANSIT|DELIVERED|RECEIVED|LABEL|REFUND|CLOSED/i.test(String(x.status || '') + ' ' + String(x.state || ''));   // v501
   const st = (String(x.status || '') + ' ' + String(x.state || '')).toUpperCase();
   const stg = /CLOSED/.test(st) ? 'closed' : /DELIVERED|RECEIVED/.test(st) ? 'delivered' : /SHIPPED|IN_TRANSIT/.test(st) ? 'shipped' : /REQUESTED/.test(st) && !/LABEL/.test(st) ? 'requested' : 'waiting';
   const o = (x.options || []).join(' ').toUpperCase();
-  if (o) return /APPROVE_REQUEST|DECLINE_REQUEST|OFFER_PARTIAL_REFUND|PROVIDE_RMA/.test(o) || (stg === 'delivered' && /ISSUE_REFUND|MARK_REFUND/.test(o));
-  return /SELLER/i.test(x.todo || '') && stg !== 'waiting' && stg !== 'shipped' || (stg === 'delivered' && !/BUYER/i.test(x.todo || ''));
+  if (o) return (!past && /APPROVE_REQUEST|DECLINE_REQUEST|OFFER_PARTIAL_REFUND|PROVIDE_RMA/.test(o)) || (stg === 'delivered' && /ISSUE_REFUND|MARK_REFUND/.test(o));
+  return (!past && /SELLER/i.test(x.todo || '') && stg !== 'waiting' && stg !== 'shipped') || (stg === 'delivered' && !/BUYER/i.test(x.todo || ''));
 }
 app.get('/api/returns/summary', requireUser, async (req, res) => {
   try {
