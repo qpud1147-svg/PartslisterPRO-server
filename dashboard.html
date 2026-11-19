@@ -3,12 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PartsLister Pro Sales v427</title>
+<title>QPUD Lister Sales v428</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2064%2064%22%3E%3Crect%20width%3D%2264%22%20height%3D%2264%22%20rx%3D%2212%22%20fill%3D%22%23000%22/%3E%3Cpath%20fill%3D%22%230000FF%22%20d%3D%22M32.0%2052.25752919483712C34.71419791026429%2052.25752919483712%2037.28703134603565%2051.80516287645974%2039.63368162261831%2050.92870313460356L43.054701905347265%2055.0H52.073755377996314L45.74062692071297%2047.16840811309157C49.64228641671789%2043.49293177627535%2052.01720958819914%2037.92317148125384%2052.01720958819914%2030.657037492317144C52.01720958819914%2016.74677320221266%2043.28088506453595%209.0%2032.0%209.0C20.662569145666872%209.0%2011.926244622003688%2016.74677320221266%2011.926244622003688%2030.657037492317144C11.926244622003688%2044.482483097725876%2020.662569145666872%2052.25752919483712%2032.0%2052.25752919483712ZM28.946527350952675%2036.67916410571604%2034.00737553779963%2043.32329440688383C33.357098955132145%2043.43638598647818%2032.70682237246466%2043.49293177627535%2032.0%2043.49293177627535C25.86478180700676%2043.49293177627535%2022.132759680393363%2038.969268592501535%2022.132759680393363%2030.657037492317144C22.132759680393363%2022.316533497234172%2025.86478180700676%2017.76459741856177%2032.0%2017.76459741856177C38.10694529809465%2017.76459741856177%2041.83896742470805%2022.288260602335583%2041.83896742470805%2030.657037492317144C41.83896742470805%2034.55869698832206%2041.01905347264905%2037.640442532267976%2039.49231714812538%2039.78918254456054L37.03257529194837%2036.67916410571604Z%22/%3E%3C/svg%3E">   <!-- tab icon: style 2 Q, pure blue #0000FF, on black -->
+<style>/* QPUD Lister logo: QPUD in pure blue, LISTER in white, same letter style as the tab icon */ .logo, .auth-logo { font-family: 'Inter', 'Barlow Condensed', sans-serif !important; font-weight: 800 !important; letter-spacing: -0.5px !important; color: #fff !important; } .logo span, .auth-logo span { color: #0000FF !important; }</style>
 <!-- v383: eBay User Token removed from Keys. -->
 <!-- v382: switching views is instant; browser reload / Refresh really reloads. v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@400;500;600&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@400;500;600&family=Inter:wght@800&display=swap');
 
   /* Same palette as the listing tool so both pages feel like one app */
   :root {
@@ -548,8 +549,7 @@
 <div id="auth-overlay">
 <script>try { if (sessionStorage.getItem('plp-signed-in')) document.getElementById('auth-overlay').classList.add('hidden'); } catch (e) { /* show it */ }</script>   <!-- v381: signed in this tab → no sign-in screen flash -->
   <div class="auth-box">
-    <div class="auth-logo"><span>PARTS</span>LISTER</div>
-    <div class="auth-sub">Pro</div>
+    <div class="auth-logo"><span>QPUD</span>LISTER</div>
     <div id="auth-loading" style="color:var(--muted);font-size:13px;">Loading…</div>
     <form id="auth-form" onsubmit="event.preventDefault();authSubmit('login');">
       <div>
@@ -571,8 +571,8 @@
 <!-- HEADER -->
 <header>
   <a href="/" class="logo-link" title="Home">
-    <div class="logo"><span>PARTS</span>LISTER</div>
-    <div class="logo-sub">PRO <span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v427</span></div>
+    <div class="logo"><span>QPUD</span>LISTER</div>
+    <div class="logo-sub"><span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v428</span></div>
   </a>
   <!-- v316: switch pages -->
   <nav class="page-tabs" aria-label="Pages">
@@ -1252,7 +1252,7 @@ const pageCache = { urls: [], rerun: null, liveUntil: 0, live() { this.liveUntil
   }, 3000);
 })();
 pageCache.urls = [/^\/api\/me$/, /^\/api\/sales\?/, /^\/api\/fees\?/];   // v381: + /api/me   // v380
-// ─── PartsLister Pro Dashboard v305 ──────────────────────────────────────────
+// ─── QPUD Lister Dashboard v305 ──────────────────────────────────────────
 // v305: real eBay sales (when connected in ⚙ Settings → Admin); sample data otherwise.
 // v306: Admin lists each eBay permission and whether it's approved.
 // v307: eBay fees tile and penalty box.
@@ -2483,7 +2483,7 @@ async function syncNow() {
 }
 
 async function disconnectEbay() {
-  if (!confirm('Disconnect eBay? Your imported sales are removed from PartsLister and the dashboard goes back to sample data. You can connect again anytime.')) return;
+  if (!confirm('Disconnect eBay? Your imported sales are removed from QPUD Lister and the dashboard goes back to sample data. You can connect again anytime.')) return;
   await fetch('/api/ebay/disconnect', { method: 'POST' }).catch(() => {});
   showToast('eBay disconnected.');
   await refreshSales();

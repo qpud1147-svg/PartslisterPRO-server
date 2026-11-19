@@ -1,4 +1,5 @@
-// PartsLister Pro server — v501
+// QPUD Lister server — v502
+// v502: renamed PartsLister Pro → QPUD Lister (texts, download file names, startup log).
 // v501: retOnYou ignores eBay's leftover "approve request" once the status says ready for shipping or later.
 // v500: return progress.labelSent only counts the SELLER's label steps (not a buyer printing their own); + labelNeeded
 //       (the return ever needed a label from you), so the Label step shows on those returns only.
@@ -908,7 +909,7 @@ app.get('/api/sales/export', requireUser, async (req, res) => {
     }
     lines.push(['TOTAL', sum.n + ' orders', '', '', sum.qty, f(sum.total), f(sum.tax), f(sum.ref), f(sum.eb), f(sum.fees), f(sum.net), ''].join(','));
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="partslister-sales-${from}-to-${to}.csv"`);
+    res.setHeader('Content-Disposition', `attachment; filename="qpud-lister-sales-${from}-to-${to}.csv"`);
     res.send('\uFEFF' + lines.join('\r\n') + '\r\n');   // the mark at the start helps Excel read it right
   } catch (e) {
     console.error('[sales export]', e);
@@ -1934,7 +1935,7 @@ app.get('/api/orders/export', requireUser, requireAdmin, async (req, res) => {
       lines.push([x.order_id, x.sold_at, f(x.total), f(x.tax), f(x.refunded), f(x.refunded_tax), x.counted ? 'Yes' : 'No', f(ebayTotal), '"' + String(x.status || '').replace(/"/g, '') + '"'].join(','));
     }
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="partslister-orders-${from}-to-${to}.csv"`);
+    res.setHeader('Content-Disposition', `attachment; filename="qpud-lister-orders-${from}-to-${to}.csv"`);
     res.send(lines.join('\n') + '\n');
   } catch (e) {
     console.error('[orders export]', e);
@@ -4180,10 +4181,10 @@ app.get('/api/admin/messages-export', requireUser, requireAdmin, async (req, res
       }
     }
     await Promise.all([1, 2, 3, 4, 5].map(worker));
-    const head = 'PartsLister Pro — buyer messages, last ' + days + ' days — ' + pick.length + ' conversation' + (pick.length === 1 ? '' : 's') + (convs.length > CAP ? ' (newest ' + CAP + ' of ' + convs.length + ')' : '') + '\n'
+    const head = 'QPUD Lister — buyer messages, last ' + days + ' days — ' + pick.length + ' conversation' + (pick.length === 1 ? '' : 's') + (convs.length > CAP ? ' (newest ' + CAP + ' of ' + convs.length + ')' : '') + '\n'
       + 'Downloaded ' + new Date().toISOString().slice(0, 16).replace('T', ' ') + ' UTC. Usernames, emails, phone numbers and street addresses are removed (names written inside a message may remain).\n\n';
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-    res.setHeader('Content-Disposition', 'attachment; filename="partslister-messages-' + days + 'd-' + new Date().toISOString().slice(0, 10) + '.txt"');
+    res.setHeader('Content-Disposition', 'attachment; filename="qpud-lister-messages-' + days + 'd-' + new Date().toISOString().slice(0, 10) + '.txt"');
     res.send(head + texts.join('\n\n') + '\n');
   } catch (e) {
     console.error('[messages export]', e.message);
@@ -4290,7 +4291,7 @@ async function exportFactsLine(userId, itemId, buyer) {
 //     }
 //     await Promise.all([1, 2, 3, 4].map(worker));
 //     picked.sort((a, b) => a.i - b.i);
-//     job.text = 'PartsLister Pro — buyer messages with listing & order facts, last ' + days + ' days — ' + picked.length + ' conversation' + (picked.length === 1 ? '' : 's') + (draftsOnly ? ' answered with an AI draft' : '') + '\n'
+//     job.text = 'QPUD Lister — buyer messages with listing & order facts, last ' + days + ' days — ' + picked.length + ' conversation' + (picked.length === 1 ? '' : 's') + (draftsOnly ? ' answered with an AI draft' : '') + '\n'
 //       + 'Downloaded ' + new Date().toISOString().slice(0, 16).replace('T', ' ') + ' UTC. "Facts now" is the listing and this buyer\'s order as of the download (not when the message was sent). Usernames, emails, phone numbers, addresses and VINs are removed.\n\n'
 //       + picked.map((p, k) => '=== Conversation ' + (k + 1) + p.text).join('\n\n') + '\n';
 //   } catch (e) { job.error = e.message; }
@@ -4376,7 +4377,7 @@ async function runMsgExport(job, user, days, count, sandbox) {
       }
     }
     await Promise.all((sandbox ? [1, 2, 3] : [1, 2, 3, 4]).map(worker));
-    job.text = 'PartsLister Pro — buyer messages with listing & order facts' + (sandbox ? ' + SANDBOX AI replies' : '') + ', last ' + days + ' days — ' + out.filter(Boolean).length + ' conversations\n'
+    job.text = 'QPUD Lister — buyer messages with listing & order facts' + (sandbox ? ' + SANDBOX AI replies' : '') + ', last ' + days + ' days — ' + out.filter(Boolean).length + ' conversations\n'
       + 'Downloaded ' + new Date().toISOString().slice(0, 16).replace('T', ' ') + ' UTC. "Facts now" is the listing and this buyer\'s order as of the download (not when the message was sent).'
       + (sandbox ? ' Sandbox AI replies were written for this file only — nothing was sent to buyers. If you had already replied, the AI only saw the conversation up to your reply (but the listing/order facts are as of now).' : '')
       + ' Usernames, emails, phone numbers, addresses and VINs are removed.\n\n'
@@ -4404,7 +4405,7 @@ app.get('/api/admin/messages-export2/:id', requireUser, requireAdmin, (req, res)
   if (req.query.download === '1') {
     if (!job.finished || !job.text) return res.status(409).send(job.error || 'Not ready yet.');
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-    res.setHeader('Content-Disposition', 'attachment; filename="partslister-messages-' + (job.text.includes('SANDBOX') ? 'sandbox-' : 'facts-') + job.days + 'd-' + new Date(job.started).toISOString().slice(0, 10) + '.txt"');
+    res.setHeader('Content-Disposition', 'attachment; filename="qpud-lister-messages-' + (job.text.includes('SANDBOX') ? 'sandbox-' : 'facts-') + job.days + 'd-' + new Date(job.started).toISOString().slice(0, 10) + '.txt"');
     return res.send(job.text);
   }
   res.json({ target: job.target, candidates: job.candidates, checked: job.checked, found: job.found, finished: !!job.finished, error: job.error });
@@ -6492,7 +6493,7 @@ const PAGE_NAMES = { 'home.html': 'Home', 'dashboard.html': 'Sales', 'orders.htm
 function fileVersion(file) {
   try {
     const head = fs.readFileSync(path.join(__dirname, file), 'utf8').slice(0, 3000);
-    const m = /<title>[^<]*?v(\d+)[^<]*<\/title>/i.exec(head) || /PartsLister Pro server — v(\d+)/.exec(head);
+    const m = /<title>[^<]*?v(\d+)[^<]*<\/title>/i.exec(head) || /(?:PartsLister Pro|QPUD Lister) server — v(\d+)/.exec(head);
     return m ? 'v' + m[1] : '?';
   } catch (e) { return null; }   // file missing
 }
@@ -6974,5 +6975,5 @@ setupDatabase()
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v426 listening on ' + PORT)))   // v427
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v427 listening on ' + PORT)))   // v428
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v428 listening on ' + PORT)))   // v429
-  .then(() => app.listen(PORT, () => console.log('PartsLister Pro v450 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('QPUD Lister v502 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });
