@@ -9,7 +9,7 @@
   // refresh, overriding anything init does.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 </script>
-<title>QPUD Lister v490</title>
+<title>QPUD Lister v491</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2064%2064%22%3E%3Crect%20width%3D%2264%22%20height%3D%2264%22%20rx%3D%2212%22%20fill%3D%22%23000%22/%3E%3Cpath%20fill%3D%22%230000FF%22%20d%3D%22M32.0%2052.25752919483712C34.71419791026429%2052.25752919483712%2037.28703134603565%2051.80516287645974%2039.63368162261831%2050.92870313460356L43.054701905347265%2055.0H52.073755377996314L45.74062692071297%2047.16840811309157C49.64228641671789%2043.49293177627535%2052.01720958819914%2037.92317148125384%2052.01720958819914%2030.657037492317144C52.01720958819914%2016.74677320221266%2043.28088506453595%209.0%2032.0%209.0C20.662569145666872%209.0%2011.926244622003688%2016.74677320221266%2011.926244622003688%2030.657037492317144C11.926244622003688%2044.482483097725876%2020.662569145666872%2052.25752919483712%2032.0%2052.25752919483712ZM28.946527350952675%2036.67916410571604%2034.00737553779963%2043.32329440688383C33.357098955132145%2043.43638598647818%2032.70682237246466%2043.49293177627535%2032.0%2043.49293177627535C25.86478180700676%2043.49293177627535%2022.132759680393363%2038.969268592501535%2022.132759680393363%2030.657037492317144C22.132759680393363%2022.316533497234172%2025.86478180700676%2017.76459741856177%2032.0%2017.76459741856177C38.10694529809465%2017.76459741856177%2041.83896742470805%2022.288260602335583%2041.83896742470805%2030.657037492317144C41.83896742470805%2034.55869698832206%2041.01905347264905%2037.640442532267976%2039.49231714812538%2039.78918254456054L37.03257529194837%2036.67916410571604Z%22/%3E%3C/svg%3E">   <!-- tab icon: style 2 Q, pure blue #0000FF, on black -->
 <style>/* QPUD Lister logo: QPUD in pure blue, LISTER in white, same letter style as the tab icon */ .logo, .auth-logo { font-family: 'Inter', 'Barlow Condensed', sans-serif !important; font-weight: 800 !important; letter-spacing: -0.5px !important; color: #fff !important; } .logo span, .auth-logo span { color: #0000FF !important; }</style>
 <!-- v409: hover the green L to see exactly which listings (price + shipping) were averaged. -->
@@ -953,7 +953,7 @@
     <!-- v302: logo goes to the dashboard -->
     <a href="/" title="Dashboard" style="text-decoration:none;color:inherit;">
       <div class="logo"><span>QPUD</span>LISTER</div>
-      <div class="logo-sub"><span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v490</span></div>
+      <div class="logo-sub"><span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v491</span></div>
     </a>
     <!-- v303: removed — the logo is the dashboard button
     <a href="/" class="btn btn-secondary btn-sm" title="Back to your dashboard" style="font-size:11px;padding:4px 10px;text-decoration:none;margin-left:6px;">⌂ Dashboard</a>
@@ -3569,7 +3569,7 @@ function clearSearchCache() {
 
 // ─── FETCH REAL EBAY TITLES VIA FINDING API ──────────────────────────────────
 async function fetchEbayTitles(searchQuery, useZip = false) {
-  if (!settings.ebayClientId || !settings.ebayClientSecret) {
+  if (!_ebayKeysOk()) {   // v491: Sign in with eBay accounts search with the app's keys
     console.warn('[eBay Browse] No Client ID or Secret — skipping');
     return [];
   }
@@ -7043,6 +7043,9 @@ async function amendVehicle(btn) {
     showNotif('⚠ Could not amend it: ' + e.message, true);
   } finally { if (btn) { btn.disabled = false; btn.textContent = label || 'Amend'; } }
 }
+// v491: eBay searches need keys only when the account uses its own developer keys (Settings → Account);
+// with "Sign in with eBay" the server uses the app's keys
+function _ebayKeysOk() { return !!(settings.ebayClientId && settings.ebayClientSecret) || settings.ebayAuthMode !== 'own'; }
 function viewVehicle(view) {
   const car = (document.getElementById('np-vehicle') || {}).value || '';
   document.getElementById('view-vehicle-menu').style.display = 'none';
@@ -8979,7 +8982,7 @@ async function searchMyStore() {
     statusEl.textContent = '⚠ Enter a search term.';
     return;
   }
-  if (!settings.ebayClientId || !settings.ebayClientSecret) {
+  if (!_ebayKeysOk()) {   // v491: Sign in with eBay accounts search with the app's keys
     statusEl.textContent = '⚠ eBay API credentials not set in Settings.';
     return;
   }
@@ -9099,7 +9102,7 @@ async function pickActiveListings() {
     const partNum = document.getElementById('part-number').value.trim();
     if (!partNum) { showNotif('⚠ Enter a part number first', true); return; }
   }
-  if (!settings.ebayClientId || !settings.ebayClientSecret) {
+  if (!_ebayKeysOk()) {   // v491: Sign in with eBay accounts search with the app's keys
     showNotif('⚠ Add your eBay Client ID and Secret in Settings first', true);
     return;
   }
@@ -9280,7 +9283,7 @@ function ssApplyExactFilter() {
 async function alSearchFromInput() {
   const q = (_exactQueryFor('al') || '').trim();
   if (!q) { showNotif('\u26a0 Enter something to search', true); return; }
-  if (!settings.ebayClientId || !settings.ebayClientSecret) {
+  if (!_ebayKeysOk()) {   // v491: Sign in with eBay accounts search with the app's keys
     showNotif('\u26a0 Add your eBay Client ID and Secret in Settings first', true);
     return;
   }

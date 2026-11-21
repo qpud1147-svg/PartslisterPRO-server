@@ -1,4 +1,10 @@
-// QPUD Lister server — v502
+// QPUD Lister server — v503
+// v503: "Sign in with eBay" — each account picks (Settings → Account) between the app's own eBay developer keys
+//       (Railway: EBAY_CLIENT_ID, EBAY_CLIENT_SECRET, EBAY_RUNAME) or its own keys + RuName, like before. A connection
+//       keeps using the keys it was made with (ebay_connections.key_mode) until Reconnect, so switching never breaks it.
+//       Browse searches use the same choice. eBay account deletion notices: GET/POST /api/ebay/account-deletion
+//       (Railway: EBAY_DELETION_TOKEN; optional EBAY_DELETION_URL) — checks eBay's signature, then wipes that eBay
+//       account's imported data like Disconnect. Each connection now remembers its eBay user name (GetUser).
 // v502: renamed PartsLister Pro → QPUD Lister (texts, download file names, startup log).
 // v501: retOnYou ignores eBay's leftover "approve request" once the status says ready for shipping or later.
 // v500: return progress.labelSent only counts the SELLER's label steps (not a buyer printing their own); + labelNeeded
@@ -347,6 +353,9 @@ async function setupDatabase() {
       last_error      TEXT
     );
     ALTER TABLE ebay_connections ADD COLUMN IF NOT EXISTS scopes TEXT;   -- v306: permissions you approved
+    ALTER TABLE ebay_connections ADD COLUMN IF NOT EXISTS key_mode TEXT;        -- v503: 'own' or 'app' — which keys made this connection (empty = own)
+    ALTER TABLE ebay_connections ADD COLUMN IF NOT EXISTS ebay_username TEXT;   -- v503: the eBay account (for eBay's account deletion notices)
+    ALTER TABLE ebay_connections ADD COLUMN IF NOT EXISTS ebay_eias TEXT;       -- v503
     -- v307: eBay fees
     CREATE TABLE IF NOT EXISTS ebay_fee_lines (
       user_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -803,7 +812,7 @@ app.get('/api/data', requireUser, async (req, res) => {
 // Listing Tool saves its settings, the saved keys are kept, so a Listing Tool tab that
 // was opened before you changed a key can't put the old one back.
 const ACCOUNT_KEYS = ['apiKey', 'claudeModel', 'ebayClientId', 'ebayClientSecret', 'ebayUserToken', 'ebayTokenExpiry',
-  'ebayUsername', 'cloudinaryCloudName', 'cloudinaryApiKey', 'cloudinaryApiSecret', 'serpApiKey'];
+  'ebayUsername', 'ebayAuthMode', /* v503 */ 'cloudinaryCloudName', 'cloudinaryApiKey', 'cloudinaryApiSecret', 'serpApiKey'];
 async function readUserData(userId) {
   const r = await pool.query('SELECT data_enc FROM user_data WHERE user_id = $1', [userId]);
   return r.rows.length ? JSON.parse(decrypt(r.rows[0].data_enc)) : null;
@@ -865,6 +874,7 @@ app.post('/api/account/keys', requireUser, express.json(), async (req, res) => {
       if (k === 'ebayUserToken' && v && v !== d.settings.ebayUserToken) {
         d.settings.ebayTokenExpiry = new Date(Date.now() + 548 * 86400000).toISOString();   // Auth'n'Auth tokens last 18 months
       }
+      if (k === 'ebayAuthMode' && v && v !== 'own' && v !== 'app') return;   // v503
       d.settings[k] = k === 'claudeModel' ? (v || 'claude-sonnet-4-5') : v;
     });
     await writeUserData(req.user.id, d);
@@ -1034,10 +1044,17 @@ async function getAppToken(clientId, clientSecret) {
   return d.access_token;
 }
 
+// v503: keys for eBay's Browse searches — the account's choice: the app's keys (Sign in with eBay) or its own
+async function browseKeysFor(userId, b) {
+  const k = await getEbayKeys(userId);
+  if (k.mode === 'own') { const id = String(b.clientId || '') || k.clientId, sec = String(b.clientSecret || '') || k.clientSecret; return { clientId: id, clientSecret: sec, msg: missingKeysMsg(k) }; }
+  return { clientId: k.clientId, clientSecret: k.clientSecret, msg: missingKeysMsg(k) };
+}
 // v425: all the photos of one listing, fetched only when the user opens a photo in the Pick list
 app.post('/api/ebayitemphotos', requireUser, express.json(), async (req, res) => {
   const b = req.body || {};
-  const clientId = String(b.clientId || ''), clientSecret = String(b.clientSecret || '');
+  const bk = await browseKeysFor(req.user.id, b);   // v503
+  const clientId = bk.clientId, clientSecret = bk.clientSecret;
   const m = String(b.url || '').match(/\/itm\/(?:[^\/?]*\/)?(\d{9,14})/);
   if (!clientId || !clientSecret || !m) return res.status(400).json({ error: 'Missing keys or listing link', photos: [] });
   let token;
@@ -1061,8 +1078,9 @@ app.post('/api/ebayitemphotos', requireUser, express.json(), async (req, res) =>
 
 app.post('/api/ebaybrowse', requireUser, express.json(), async (req, res) => {
   const b = req.body || {};
-  const clientId = String(b.clientId || '');
-  const clientSecret = String(b.clientSecret || '');
+  const bk = await browseKeysFor(req.user.id, b);   // v503: Sign in with eBay accounts search with the app's keys
+  const clientId = bk.clientId;
+  const clientSecret = bk.clientSecret;
   const keywords = String(b.keywords || '');
   const limit = Math.min(parseInt(b.limit) || 10, 50);
   const offset = parseInt(b.offset) || 0;
@@ -1072,7 +1090,7 @@ app.post('/api/ebaybrowse', requireUser, express.json(), async (req, res) => {
   const categoryId = String(b.categoryId || '').trim();
 
   if (!clientId || !clientSecret || !keywords) {
-    return res.status(400).json({ error: 'Missing clientId, clientSecret, or keywords' });
+    return res.status(400).json({ error: !keywords ? 'Missing keywords' : bk.msg });   // v503
   }
 
   let token;
@@ -1274,12 +1292,26 @@ function requireAdmin(req, res, next) {
 }
 
 // The eBay keys you saved in the Listing Tool (read only — never changed here)
-async function getEbayKeys(userId) {
-  const r = await pool.query('SELECT data_enc FROM user_data WHERE user_id = $1', [userId]);
-  if (!r.rows.length) return { clientId: '', clientSecret: '' };
-  const s = (JSON.parse(decrypt(r.rows[0].data_enc)).settings) || {};
-  return { clientId: String(s.ebayClientId || '').trim(), clientSecret: String(s.ebayClientSecret || '').trim() };
+// v503: the app's own eBay developer keys (Railway) — used by accounts set to "Sign in with eBay"
+const APP_EBAY = { clientId: env('EBAY_CLIENT_ID'), clientSecret: env('EBAY_CLIENT_SECRET'), ruName: env('EBAY_RUNAME') };
+const appEbayReady = () => !!(APP_EBAY.clientId && APP_EBAY.clientSecret && APP_EBAY.ruName);
+// the account's choice; not picked yet → its own keys if it has them, otherwise Sign in with eBay
+function ebayAuthModeOf(s) {
+  const m = String((s && s.ebayAuthMode) || '');
+  if (m === 'own' || m === 'app') return m;
+  return s && String(s.ebayClientId || '').trim() && String(s.ebayClientSecret || '').trim() ? 'own' : 'app';
 }
+// v503: mode = 'own' | 'app' forces which keys (a connection uses the keys it was made with); empty = the account's choice
+async function getEbayKeys(userId, mode) {
+  const r = await pool.query('SELECT data_enc FROM user_data WHERE user_id = $1', [userId]);
+  const s = r.rows.length ? ((JSON.parse(decrypt(r.rows[0].data_enc)).settings) || {}) : {};
+  const m = mode === 'own' || mode === 'app' ? mode : ebayAuthModeOf(s);
+  if (m === 'app') return { clientId: APP_EBAY.clientId, clientSecret: APP_EBAY.clientSecret, mode: 'app' };
+  return { clientId: String(s.ebayClientId || '').trim(), clientSecret: String(s.ebayClientSecret || '').trim(), mode: 'own' };
+}
+const missingKeysMsg = (keys) => keys.mode === 'app'
+  ? 'Sign in with eBay isn’t set up on this server yet (the admin adds the app’s eBay keys in Railway) — or switch to your own keys in Settings → Account'
+  : 'Your eBay Client ID / Client Secret are missing — add them in Settings → Account';
 
 async function getConnection(userId) {
   const r = await pool.query('SELECT * FROM ebay_connections WHERE user_id = $1', [userId]);
@@ -1314,9 +1346,9 @@ async function getAccessToken(userId) {
   if (cached && Date.now() < cached.expires) return cached.token;
   const conn = await getConnection(userId);
   if (!conn || !conn.refresh_enc) throw new Error('eBay is not connected');
-  const keys = await getEbayKeys(userId);
+  const keys = await getEbayKeys(userId, conn.key_mode || 'own');   // v503: the keys this connection was made with
   // if (!keys.clientId || !keys.clientSecret) throw new Error('Your eBay Client ID / Client Secret are missing from Listing Tool settings');
-  if (!keys.clientId || !keys.clientSecret) throw new Error('Your eBay Client ID / Client Secret are missing — add them in Settings → Account');   // v326
+  if (!keys.clientId || !keys.clientSecret) throw new Error(missingKeysMsg(keys));   // v326, v503
   let d;
   try {
     // d = await ebayToken(keys, { grant_type: 'refresh_token', refresh_token: decrypt(conn.refresh_enc), scope: SALES_SCOPES });
@@ -1545,9 +1577,15 @@ setInterval(() => {
 app.get('/api/ebay/status', requireUser, async (req, res) => {
   try {
     const conn = await getConnection(req.user.id);
-    const keys = await getEbayKeys(req.user.id);
+    const keys = await getEbayKeys(req.user.id, 'own');
+    const mode = (await getEbayKeys(req.user.id)).mode;   // v503
     const count = await pool.query('SELECT COUNT(*)::int AS n FROM ebay_orders WHERE user_id = $1', [req.user.id]);
+    if (conn && conn.refresh_enc && !conn.ebay_username) ensureEbayIdentity(req.user.id);   // v503: fill in once, in the background
     res.json({
+      authMode: mode,                                   // v503: 'app' = Sign in with eBay, 'own' = own developer keys
+      appAvailable: appEbayReady(),
+      keyMode: conn && conn.refresh_enc ? (conn.key_mode || 'own') : null,   // which keys the current connection uses
+      ebayUser: (conn && conn.ebay_username) || null,
       ruName: (conn && conn.runame) || '',
       hasKeys: !!(keys.clientId && keys.clientSecret),
       connected: !!(conn && conn.refresh_enc),
@@ -1593,17 +1631,19 @@ app.post('/api/ebay/settings', requireUser, express.json(), async (req, res) => 
 app.get('/api/ebay/connect', requireUser, async (req, res) => {
   try {
     const conn = await getConnection(req.user.id);
-    const keys = await getEbayKeys(req.user.id);
-    if (!conn || !conn.runame) return res.redirect('/sales?ebay=error&msg=' + encodeURIComponent('Save your RuName first'));   // v316: was /
+    const keys = await getEbayKeys(req.user.id);   // v503: the account's choice — own keys or Sign in with eBay
+    const ruName = keys.mode === 'app' ? APP_EBAY.ruName : (conn && conn.runame) || '';
+    if (keys.mode === 'app' && !appEbayReady()) return res.redirect('/sales?ebay=error&msg=' + encodeURIComponent(missingKeysMsg(keys)));
+    if (!ruName) return res.redirect('/sales?ebay=error&msg=' + encodeURIComponent('Save your RuName first'));   // v316: was /
     if (!keys.clientId || !keys.clientSecret) {
       // return res.redirect('/sales?ebay=error&msg=' + encodeURIComponent('Add your eBay Client ID and Client Secret in Listing Tool settings first'));
       return res.redirect('/sales?ebay=error&msg=' + encodeURIComponent('Add your eBay Client ID and Client Secret in Settings → Account first'));   // v326
     }
     const state = crypto.randomBytes(24).toString('base64url');
-    oauthStates.set(state, { userId: req.user.id, expires: Date.now() + 10 * 60 * 1000 });
+    oauthStates.set(state, { userId: req.user.id, mode: keys.mode, expires: Date.now() + 10 * 60 * 1000 });   // v503: + mode
     const url = EBAY_AUTH_HOST + '/oauth2/authorize?' + new URLSearchParams({
       client_id: keys.clientId,
-      redirect_uri: conn.runame,
+      redirect_uri: ruName,
       response_type: 'code',
       scope: SALES_SCOPES,
       state,
@@ -1633,17 +1673,21 @@ app.get(CALLBACK_PATH, async (req, res) => {
   if (!code) return fail('eBay did not send an authorization code');
   try {
     const conn = await getConnection(st.userId);
-    const keys = await getEbayKeys(st.userId);
-    const d = await ebayToken(keys, { grant_type: 'authorization_code', code: String(code), redirect_uri: conn.runame });
+    const mode = st.mode === 'app' ? 'app' : 'own';   // v503: the keys the sign-in was started with
+    const keys = await getEbayKeys(st.userId, mode);
+    const ruName = mode === 'app' ? APP_EBAY.ruName : (conn && conn.runame) || '';
+    const d = await ebayToken(keys, { grant_type: 'authorization_code', code: String(code), redirect_uri: ruName });
     if (!d.refresh_token) throw new Error('eBay did not return a refresh token');
-    await pool.query(
-      `UPDATE ebay_connections SET refresh_enc = $2, refresh_expires = $3, connected_at = now(),
+    await pool.query(   // v503: insert-or-update — a "Sign in with eBay" account may have no row yet (no RuName of its own)
+      `INSERT INTO ebay_connections (user_id, refresh_enc, refresh_expires, connected_at, scopes, key_mode)
+       VALUES ($1, $2, $3, now(), $4, $5)
+       ON CONFLICT (user_id) DO UPDATE SET refresh_enc = $2, refresh_expires = $3, connected_at = now(),
          last_sync = NULL, last_error = NULL, history_from = NULL, scopes = $4,
-         fees_sync = NULL, fees_error = NULL
-       WHERE user_id = $1`,
-      [st.userId, encrypt(d.refresh_token), new Date(Date.now() + (d.refresh_token_expires_in || 47304000) * 1000), SALES_SCOPES]   // v306: + scopes
+         fees_sync = NULL, fees_error = NULL, key_mode = $5, ebay_username = NULL, ebay_eias = NULL`,
+      [st.userId, encrypt(d.refresh_token), new Date(Date.now() + (d.refresh_token_expires_in || 47304000) * 1000), SALES_SCOPES, mode]   // v306: + scopes
     );
     accessTokens.set(st.userId, { token: d.access_token, expires: Date.now() + Math.max(60, (d.expires_in || 7200) - 300) * 1000 });
+    ensureEbayIdentity(st.userId);   // v503: remember which eBay account this is
     syncOrders(st.userId);                 // start importing in the background
     res.redirect('/sales?ebay=connected');   // v316: was /
   } catch (e) {
@@ -1659,19 +1703,88 @@ app.post('/api/ebay/sync', requireUser, async (req, res) => {
   res.json({ ok: true, syncing: true });
 });
 
-app.post('/api/ebay/disconnect', requireUser, async (req, res) => {
-  accessTokens.delete(req.user.id);
+// v503: Disconnect and eBay's account deletion notice both use this
+async function wipeEbayConnection(userId) {
+  accessTokens.delete(userId);
   await pool.query(
     `UPDATE ebay_connections SET refresh_enc = NULL, refresh_expires = NULL, connected_at = NULL,
        last_sync = NULL, last_error = NULL, history_from = NULL, scopes = NULL,
-       fees_sync = NULL, fees_error = NULL WHERE user_id = $1`,
-    [req.user.id]
+       fees_sync = NULL, fees_error = NULL, ebay_username = NULL, ebay_eias = NULL WHERE user_id = $1`,
+    [userId]
   );
-  await pool.query('DELETE FROM ebay_orders WHERE user_id = $1', [req.user.id]);
-  await pool.query('DELETE FROM ebay_order_items WHERE user_id = $1', [req.user.id]);   // v319
-  await pool.query('DELETE FROM ebay_items WHERE user_id = $1', [req.user.id]);         // v320
-  await pool.query('DELETE FROM ebay_fee_lines WHERE user_id = $1', [req.user.id]);   // v307
+  await pool.query('DELETE FROM ebay_orders WHERE user_id = $1', [userId]);
+  await pool.query('DELETE FROM ebay_order_items WHERE user_id = $1', [userId]);   // v319
+  await pool.query('DELETE FROM ebay_items WHERE user_id = $1', [userId]);         // v320
+  await pool.query('DELETE FROM ebay_fee_lines WHERE user_id = $1', [userId]);   // v307
+}
+app.post('/api/ebay/disconnect', requireUser, async (req, res) => {
+  await wipeEbayConnection(req.user.id);
   res.json({ ok: true });
+});
+
+// v503: which eBay account a connection belongs to (asked once; eBay's deletion notices name the account)
+const identityAsked = new Map();
+async function ensureEbayIdentity(userId) {
+  const last = identityAsked.get(userId) || 0;
+  if (Date.now() - last < 3600000) return;   // at most once an hour per account
+  identityAsked.set(userId, Date.now());
+  try {
+    const xml = await tradingCall(userId, 'GetUser', '');
+    const user = xmlTag(xmlTag(xml, 'User') || '', 'UserID') || '';
+    const eias = xmlTag(xmlTag(xml, 'User') || '', 'EIASToken') || '';
+    if (user) await pool.query('UPDATE ebay_connections SET ebay_username = $2, ebay_eias = $3 WHERE user_id = $1', [userId, xmlDecode(user), eias || null]);
+  } catch (e) { console.warn('[ebay identity]', userId, e.message); }
+}
+
+// v503: eBay MARKETPLACE ACCOUNT DELETION notices. eBay first checks the address with a challenge code; after that it
+// POSTs here when an eBay member deletes their account, and the app wipes that account's imported eBay data.
+const DELETION_PATH = '/api/ebay/account-deletion';
+const deletionEndpoint = (req) => env('EBAY_DELETION_URL') || ('https://' + req.get('host') + DELETION_PATH);
+app.get(DELETION_PATH, (req, res) => {
+  const code = String(req.query.challenge_code || '');
+  const token = env('EBAY_DELETION_TOKEN');
+  if (!code) return res.status(400).json({ error: 'challenge_code missing' });
+  if (!token) return res.status(500).json({ error: 'EBAY_DELETION_TOKEN is not set' });
+  const hash = crypto.createHash('sha256').update(code).update(token).update(deletionEndpoint(req)).digest('hex');
+  res.status(200).type('application/json').send(JSON.stringify({ challengeResponse: hash }));
+});
+const ebayPublicKeys = new Map();
+async function ebayNotificationKey(kid) {
+  const c = ebayPublicKeys.get(kid); if (c && Date.now() - c.at < 3600000) return c.key;
+  if (!APP_EBAY.clientId || !APP_EBAY.clientSecret) throw new Error('EBAY_CLIENT_ID / EBAY_CLIENT_SECRET not set — can’t check eBay’s signature');
+  const tok = await getAppToken(APP_EBAY.clientId, APP_EBAY.clientSecret);
+  const r = await fetch('https://api.ebay.com/commerce/notification/v1/public_key/' + encodeURIComponent(kid), {
+    headers: { Authorization: 'Bearer ' + tok, Accept: 'application/json' }, signal: AbortSignal.timeout(15000) });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok || !d.key) throw new Error('eBay public key lookup failed (' + r.status + ')');
+  const b64 = String(d.key).replace(/-----(BEGIN|END) PUBLIC KEY-----/g, '').replace(/\s+/g, '');
+  const key = crypto.createPublicKey('-----BEGIN PUBLIC KEY-----\n' + b64.match(/.{1,64}/g).join('\n') + '\n-----END PUBLIC KEY-----\n');
+  ebayPublicKeys.set(kid, { at: Date.now(), key });
+  return key;
+}
+app.post(DELETION_PATH, express.raw({ type: '*/*', limit: '64kb' }), async (req, res) => {
+  const raw = Buffer.isBuffer(req.body) ? req.body : Buffer.from(String(req.body || ''));
+  let sig;
+  try { sig = JSON.parse(Buffer.from(String(req.get('x-ebay-signature') || ''), 'base64').toString('utf8')); } catch (e) { sig = null; }
+  if (!sig || !sig.kid || !sig.signature) { console.warn('[ebay deletion] no signature'); return res.status(412).end(); }
+  try {
+    const key = await ebayNotificationKey(sig.kid);
+    const ok = crypto.verify('sha1', raw, key, Buffer.from(sig.signature, 'base64'));
+    if (!ok) { console.warn('[ebay deletion] bad signature'); return res.status(412).end(); }
+  } catch (e) { console.error('[ebay deletion] could not check signature:', e.message); return res.status(500).end(); }   // eBay retries later
+  let body = {};
+  try { body = JSON.parse(raw.toString('utf8')); } catch (e) { return res.status(200).end(); }
+  const data = (body.notification && body.notification.data) || {};
+  const username = String(data.username || '').trim(), eias = String(data.eiasToken || '').trim();
+  try {
+    if (username || eias) {
+      const r = await pool.query(
+        `SELECT user_id FROM ebay_connections WHERE (ebay_username IS NOT NULL AND lower(ebay_username) = lower($1)) OR (ebay_eias IS NOT NULL AND ebay_eias = $2)`,
+        [username || '#none#', eias || '#none#']);
+      for (const row of r.rows) { await wipeEbayConnection(row.user_id); console.log('[ebay deletion] wiped eBay data for account', row.user_id); }
+    }
+  } catch (e) { console.error('[ebay deletion] wipe failed:', e.message); return res.status(500).end(); }
+  res.status(200).end();
 });
 
 // Daily sales totals for the dashboard, bucketed in YOUR time zone
@@ -2950,8 +3063,8 @@ async function shipCheck(userId, itemId, code) {
   } catch (e) { out.how.push('Couldn\u2019t read the listing\u2019s shipping settings: ' + e.message); }
   // 1) eBay's shopper view from that country
   try {
-    const s = await getUserSettings(userId);
-    const appToken = await getAppToken(String(s.ebayClientId || '').trim(), String(s.ebayClientSecret || '').trim());
+    const bk = await getEbayKeys(userId);   // v503: own keys or the app's
+    const appToken = await getAppToken(bk.clientId, bk.clientSecret);
     const ctx = 'contextualLocation=' + encodeURIComponent('country=' + c[0] + (c[3] ? ',zip=' + c[3] : ''));
     const r = await fetch('https://api.ebay.com/buy/browse/v1/item/get_item_by_legacy_id?legacy_item_id=' + encodeURIComponent(itemId), {
       headers: { Authorization: 'Bearer ' + appToken, 'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US', 'X-EBAY-C-ENDUSERCTX': ctx, Accept: 'application/json' },
@@ -6975,5 +7088,5 @@ setupDatabase()
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v426 listening on ' + PORT)))   // v427
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v427 listening on ' + PORT)))   // v428
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v428 listening on ' + PORT)))   // v429
-  .then(() => app.listen(PORT, () => console.log('QPUD Lister v502 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('QPUD Lister v503 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });

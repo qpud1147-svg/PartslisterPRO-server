@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>QPUD Lister Sales v428</title>
+<title>QPUD Lister Sales v429</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2064%2064%22%3E%3Crect%20width%3D%2264%22%20height%3D%2264%22%20rx%3D%2212%22%20fill%3D%22%23000%22/%3E%3Cpath%20fill%3D%22%230000FF%22%20d%3D%22M32.0%2052.25752919483712C34.71419791026429%2052.25752919483712%2037.28703134603565%2051.80516287645974%2039.63368162261831%2050.92870313460356L43.054701905347265%2055.0H52.073755377996314L45.74062692071297%2047.16840811309157C49.64228641671789%2043.49293177627535%2052.01720958819914%2037.92317148125384%2052.01720958819914%2030.657037492317144C52.01720958819914%2016.74677320221266%2043.28088506453595%209.0%2032.0%209.0C20.662569145666872%209.0%2011.926244622003688%2016.74677320221266%2011.926244622003688%2030.657037492317144C11.926244622003688%2044.482483097725876%2020.662569145666872%2052.25752919483712%2032.0%2052.25752919483712ZM28.946527350952675%2036.67916410571604%2034.00737553779963%2043.32329440688383C33.357098955132145%2043.43638598647818%2032.70682237246466%2043.49293177627535%2032.0%2043.49293177627535C25.86478180700676%2043.49293177627535%2022.132759680393363%2038.969268592501535%2022.132759680393363%2030.657037492317144C22.132759680393363%2022.316533497234172%2025.86478180700676%2017.76459741856177%2032.0%2017.76459741856177C38.10694529809465%2017.76459741856177%2041.83896742470805%2022.288260602335583%2041.83896742470805%2030.657037492317144C41.83896742470805%2034.55869698832206%2041.01905347264905%2037.640442532267976%2039.49231714812538%2039.78918254456054L37.03257529194837%2036.67916410571604Z%22/%3E%3C/svg%3E">   <!-- tab icon: style 2 Q, pure blue #0000FF, on black -->
 <style>/* QPUD Lister logo: QPUD in pure blue, LISTER in white, same letter style as the tab icon */ .logo, .auth-logo { font-family: 'Inter', 'Barlow Condensed', sans-serif !important; font-weight: 800 !important; letter-spacing: -0.5px !important; color: #fff !important; } .logo span, .auth-logo span { color: #0000FF !important; }</style>
 <!-- v383: eBay User Token removed from Keys. -->
@@ -572,7 +572,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>QPUD</span>LISTER</div>
-    <div class="logo-sub"><span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v428</span></div>
+    <div class="logo-sub"><span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v429</span></div>
   </a>
   <!-- v316: switch pages -->
   <nav class="page-tabs" aria-label="Pages">
@@ -867,9 +867,18 @@
       </div>
       <div class="set-section">
         <h3>eBay</h3>
+        <!-- v429: how this account connects to eBay -->
+        <div class="set-row" id="ebay-mode-row">
+          <label>How you connect</label>
+          <label style="display:flex;gap:8px;align-items:center;cursor:pointer;font-weight:600;text-transform:none;letter-spacing:0;font-size:14px;color:var(--text);"><input type="radio" name="ebay-mode" id="ebay-mode-app" value="app" onchange="setEbayMode('app')"> Sign in with eBay (easiest — no developer keys)</label>
+          <label style="display:flex;gap:8px;align-items:center;cursor:pointer;font-weight:600;text-transform:none;letter-spacing:0;font-size:14px;color:var(--text);"><input type="radio" name="ebay-mode" id="ebay-mode-own" value="own" onchange="setEbayMode('own')"> Use my own developer keys</label>
+          <div class="set-help" id="ebay-mode-note" style="margin-top:4px;"></div>
+        </div>
+        <div id="own-keys-rows">
         <p class="set-help">From <strong>developer.ebay.com</strong> → Application Keys → Production. The Listing Tool lists with your connected eBay account (Connect eBay), so no User Token is needed.</p>
         <div class="set-row"><label for="k-ebayClientId">Client ID (App ID)</label><div class="set-input-row"><input id="k-ebayClientId" type="text" autocomplete="off"></div></div>
         <div class="set-row"><label for="k-ebayClientSecret">Client Secret (Cert ID)</label><div class="set-input-row"><input id="k-ebayClientSecret" type="password" autocomplete="off"></div></div>
+        </div>
         <div class="set-row"><label for="k-ebayUsername">eBay username</label><div class="set-input-row"><input id="k-ebayUsername" type="text" placeholder="your eBay login name" autocomplete="off"></div></div>
         <!-- v383: User Token (Auth'n'Auth) row removed — the Listing Tool now lists with your connected eBay account, so no token is needed
         <div class="set-row"><label for="k-ebayUserToken">User Token (Auth'n'Auth)</label><div class="set-input-row"><textarea id="k-ebayUserToken" rows="3" autocomplete="off" style="flex:1;min-width:0;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:4px;font-family:ui-monospace,Menlo,monospace;font-size:11.5px;resize:vertical;"></textarea></div>
@@ -878,7 +887,7 @@
       </div>
       <!-- v413: eBay connection steps moved here from the eBay/Admin tab, next to the keys -->
       <div id="ebay-steps" style="margin-bottom:22px;">
-      <div class="set-section">
+      <div class="set-section" id="ebay-step1">
         <div class="set-step">Step 1</div>
         <h3>Register these addresses with eBay</h3>
         <p class="set-help">In your eBay developer account → <strong>User Tokens</strong> → <strong>Add eBay Redirect URL</strong>, choose <strong>OAuth</strong>, and paste these in. They fill in automatically from wherever this app is running — if your web address ever changes, these change too, and you paste the new ones into eBay.</p>
@@ -896,7 +905,7 @@
         </div>
       </div>
 
-      <div class="set-section">
+      <div class="set-section" id="ebay-step2">
         <div class="set-step">Step 2</div>
         <h3>Save the RuName eBay gives you</h3>
         <p class="set-help">After you save on eBay, it shows a name for that entry, like <strong>Peter_Hoffmann-PeterHof-Lister-abcde</strong>. Copy it here.</p>
@@ -907,7 +916,7 @@
       </div>
 
       <div class="set-section">
-        <div class="set-step">Step 3</div>
+        <div class="set-step" id="ebay-step3-label">Step 3</div>
         <h3>Connect</h3>
         <p class="set-help" id="connect-help">Opens eBay's sign-in. Approve access once and you're done — your sales import automatically after that.</p>
         <div class="set-buttons">
@@ -2393,6 +2402,7 @@ async function loadEbayStatus() {
     return;
   }
   ebayStatus = st;
+  applyEbayModeUI(st);   // v429
   document.getElementById('url-accepted').value = origin + st.callbackPath;
   document.getElementById('url-declined').value = origin + '/?ebay=declined';
   document.getElementById('url-privacy').value = origin + '/';
@@ -2410,6 +2420,8 @@ async function loadEbayStatus() {
   };
   if (st.connected) {
     line('Status:', st.syncing ? '✓ Connected — importing orders…' : '✓ Connected', 'ok');
+    if (st.ebayUser) line('eBay account:', st.ebayUser);   // v429
+    line('Connected with:', (st.keyMode === 'app' ? 'Sign in with eBay' : 'your own developer keys'));   // v429
     line('Orders imported:', Number(st.orders).toLocaleString());
     if (st.historyFrom) line('History from:', new Date(st.historyFrom).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }));
     line('Last update:', timeAgo(st.lastSync));
@@ -2425,8 +2437,11 @@ async function loadEbayStatus() {
     }
   } else {
     line('Status:', 'Not connected', 'bad');
+    if (st.authMode === 'app') line('Connecting with:', st.appAvailable ? 'Sign in with eBay' : 'Sign in with eBay — not set up on this server yet', st.appAvailable ? 'ok' : 'bad');   // v429
+    else {
     line('eBay keys (Settings → Account):', st.hasKeys ? '✓ Found' : '✗ Missing', st.hasKeys ? 'ok' : 'bad');
     line('RuName:', st.ruName ? '✓ Saved' : '✗ Not saved yet', st.ruName ? 'ok' : 'bad');
+    }
   }
   const err = document.getElementById('ebay-error');
   // err.style.display = st.lastError ? 'block' : 'none';
@@ -2445,9 +2460,14 @@ async function loadEbayStatus() {
   const help = document.getElementById('connect-help');
   btn.textContent = st.connected ? 'Reconnect eBay' : 'Connect eBay';
   const missing = st.connected && (st.permissions || []).some(pm => !pm.granted);   // v306
-  btn.disabled = !st.hasKeys || !st.ruName;
+  const appMode = st.authMode === 'app';   // v429: Sign in with eBay needs no keys or RuName of your own
+  btn.disabled = appMode ? !st.appAvailable : (!st.hasKeys || !st.ruName);
+  const switching = st.connected && st.keyMode && st.authMode && st.keyMode !== st.authMode;
+  if (appMode && !st.appAvailable) help.textContent = 'Sign in with eBay isn’t set up on this server yet — pick “Use my own developer keys” above for now.';
+  else if (switching) help.textContent = 'You changed how you connect. Click Reconnect eBay to finish switching — your current connection keeps working until then.';
+  else if (appMode) help.textContent = st.connected ? 'Only needed if the connection stops working.' : 'Opens eBay’s sign-in. Log in and approve access once — your sales import automatically after that.';
   // if (!st.hasKeys) help.textContent = 'First add your eBay Client ID and Client Secret in the Listing Tool → ⚙ Settings → Account.';
-  if (!st.hasKeys) help.textContent = 'First add your eBay Client ID and Client Secret in the Account tab, then Save keys.';   // v326
+  else if (!st.hasKeys) help.textContent = 'First add your eBay Client ID and Client Secret in the Account tab, then Save keys.';   // v326
   else if (!st.ruName) help.textContent = 'Save your RuName above first.';
   else if (missing) help.textContent = 'New permissions were added. Click Reconnect eBay and approve them on eBay\u2019s screen — your sales keep working in the meantime.';   // v306
   else help.textContent = st.connected
@@ -2455,6 +2475,28 @@ async function loadEbayStatus() {
     : 'Opens eBay’s sign-in. Approve access once and you’re done — your sales import automatically after that.';
 }
 
+// v429: Sign in with eBay  /  Use my own developer keys
+function applyEbayModeUI(st) {
+  const app = st.authMode === 'app';
+  const a = document.getElementById('ebay-mode-app'), o = document.getElementById('ebay-mode-own'); if (!a || !o) return;
+  a.checked = app; o.checked = !app;
+  a.disabled = !st.appAvailable && !app;
+  document.getElementById('own-keys-rows').style.display = app ? 'none' : '';
+  document.getElementById('ebay-step1').style.display = app ? 'none' : '';
+  document.getElementById('ebay-step2').style.display = app ? 'none' : '';
+  document.getElementById('ebay-step3-label').style.display = app ? 'none' : '';
+  document.getElementById('ebay-mode-note').textContent = !st.appAvailable
+    ? 'Sign in with eBay isn’t set up on this server yet, so use your own keys for now.'
+    : app ? 'The app’s own eBay developer keys are used — nothing to copy from developer.ebay.com.' : 'Your own Client ID, Client Secret and RuName are used, like before.';
+}
+async function setEbayMode(mode) {
+  try {
+    const r = await fetch('/api/account/keys', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ keys: { ebayAuthMode: mode } }) });
+    if (!r.ok) throw new Error('save failed');
+    showToast(mode === 'app' ? 'Switched to Sign in with eBay.' : 'Switched to your own developer keys.');
+  } catch (e) { showToast('Could not save that — try again.', true); }
+  loadEbayStatus();
+}
 async function saveRuName() {
   const value = document.getElementById('ru-name').value.trim();
   const btn = document.getElementById('ru-save');
