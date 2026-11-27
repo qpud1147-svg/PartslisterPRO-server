@@ -1,4 +1,5 @@
-// QPUD Lister server — v508
+// QPUD Lister server — v509
+// v509: feedback shows the buyer's full eBay username (it's your own page — no masking).
 // v508: /api/feedback — the default list is really just the latest 3 (eBay sends 25 at least); type=All&page=N = all feedback, 50 a page.
 // v507: GET /api/funds — your eBay available funds, on hold, processing (Finances seller_funds_summary); cached 5 min.
 // v506: /api/feedback?type=Positive|Neutral|Negative — just that kind (last 12 months, up to 25); without type the latest 3.
@@ -1764,11 +1765,10 @@ app.get('/api/feedback', requireUser, async (req, res) => {
       const m = [...a.matchAll(/<FeedbackPeriod>([\s\S]*?)<\/FeedbackPeriod>/g)].map(x => x[1]).find(x => xmlTag(x, 'PeriodInDays') === String(days));
       return m ? Number(xmlTag(m, 'Count')) || 0 : null;
     };
-    const mask = (u) => { u = String(u || ''); return u.length <= 2 ? u.replace(/./g, '*') : u[0] + '***' + u[u.length - 1]; };   // like eBay shows buyers
     const comments = [...fx.matchAll(/<FeedbackDetail>([\s\S]*?)<\/FeedbackDetail>/g)].map(x => x[1]).map(d => ({
       type: xmlTag(d, 'CommentType') || '',
       text: xmlDecode(xmlTag(d, 'CommentText') || ''),
-      buyer: mask(xmlDecode(xmlTag(d, 'CommentingUser') || '')),
+      buyer: xmlDecode(xmlTag(d, 'CommentingUser') || ''),   // v509: full username (was masked like eBay's public page)
       buyerScore: Number(xmlTag(d, 'CommentingUserScore')) || null,
       when: xmlTag(d, 'CommentTime') || null,
       item: xmlDecode(xmlTag(d, 'ItemTitle') || ''),
@@ -7173,5 +7173,5 @@ setupDatabase()
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v426 listening on ' + PORT)))   // v427
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v427 listening on ' + PORT)))   // v428
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v428 listening on ' + PORT)))   // v429
-  .then(() => app.listen(PORT, () => console.log('QPUD Lister v508 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('QPUD Lister v509 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });
