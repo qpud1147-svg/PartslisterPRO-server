@@ -1,4 +1,5 @@
-// QPUD Lister server — v507
+// QPUD Lister server — v508
+// v508: /api/feedback — the default list is really just the latest 3 (eBay sends 25 at least); type=All&page=N = all feedback, 50 a page.
 // v507: GET /api/funds — your eBay available funds, on hold, processing (Finances seller_funds_summary); cached 5 min.
 // v506: /api/feedback?type=Positive|Neutral|Negative — just that kind (last 12 months, up to 25); without type the latest 3.
 // v505: GET /api/feedback — your eBay seller feedback (score, % positive, 12-month counts, latest comments) for the Home page; cached 30 min.
@@ -1744,8 +1745,9 @@ async function ensureEbayIdentity(userId) {
 const feedbackCache = new Map();
 app.get('/api/feedback', requireUser, async (req, res) => {
   const uid = req.user.id, force = req.query.refresh === '1';
-  const type = ['Positive', 'Neutral', 'Negative'].includes(String(req.query.type || '')) ? String(req.query.type) : '';   // v506
-  const ck = uid + ':' + type;
+  const type = ['Positive', 'Neutral', 'Negative', 'All'].includes(String(req.query.type || '')) ? String(req.query.type) : '';   // v506, v508: + All
+  const page = type === 'All' ? Math.min(200, Math.max(1, parseInt(req.query.page, 10) || 1)) : 1;
+  const ck = uid + ':' + type + ':' + page;
   const c = feedbackCache.get(ck);
   if (c && !force && Date.now() - c.at < 30 * 60000) return res.json(c.data);
   try {
@@ -1753,8 +1755,8 @@ app.get('/api/feedback', requireUser, async (req, res) => {
     if (!conn || !conn.refresh_enc) return res.json({ connected: false });
     const [ux, fx] = await Promise.all([
       tradingCall(uid, 'GetUser', ''),
-      tradingCall(uid, 'GetFeedback', '<FeedbackType>FeedbackReceivedAsSeller</FeedbackType>' + (type ? '<CommentType>' + type + '</CommentType>' : '') +
-        '<DetailLevel>ReturnAll</DetailLevel><Pagination><EntriesPerPage>' + (type ? 25 : 3) + '</EntriesPerPage><PageNumber>1</PageNumber></Pagination>')
+      tradingCall(uid, 'GetFeedback', '<FeedbackType>FeedbackReceivedAsSeller</FeedbackType>' + (type && type !== 'All' ? '<CommentType>' + type + '</CommentType>' : '') +
+        '<DetailLevel>ReturnAll</DetailLevel><Pagination><EntriesPerPage>' + (type === 'All' ? 50 : 25) + '</EntriesPerPage><PageNumber>' + page + '</PageNumber></Pagination>')
     ]);
     const user = xmlTag(ux, 'User') || '';
     const period = (arr, days) => {   // count for one period (e.g. 365 days) inside a FeedbackPeriodArray
@@ -1772,14 +1774,16 @@ app.get('/api/feedback', requireUser, async (req, res) => {
       item: xmlDecode(xmlTag(d, 'ItemTitle') || ''),
       itemId: xmlTag(d, 'ItemID') || null,
       reply: xmlDecode(xmlTag(d, 'FeedbackResponse') || '') || null   // your reply, if any
-    })).filter(x => x.text && (!type || !x.when || Date.now() - new Date(x.when).getTime() < 366 * 86400000));   // v506: a kind = the last 12 months, like the counts
+    })).filter(x => x.text && (!type || type === 'All' || !x.when || Date.now() - new Date(x.when).getTime() < 366 * 86400000))   // v506: a kind = the last 12 months, like the counts
+      .slice(0, type ? 50 : 3);   // v508: the default really is just the latest 3
+    const pages = Number(xmlTag(xmlTag(fx, 'PaginationResult') || '', 'TotalNumberOfPages')) || 1;
     const data = {
       connected: true,
       score: Number(xmlTag(user, 'FeedbackScore')) || 0,
       positivePct: xmlTag(user, 'PositiveFeedbackPercent') ? Number(xmlTag(user, 'PositiveFeedbackPercent')) : null,
       star: xmlTag(user, 'FeedbackRatingStar') || null,
       year: { positive: period('PositiveFeedbackPeriodArray', 365), neutral: period('NeutralFeedbackPeriodArray', 365), negative: period('NegativeFeedbackPeriodArray', 365) },
-      comments, type,
+      comments, type, page, hasMore: type === 'All' && page < pages,   // v508
       user: xmlDecode(xmlTag(user, 'UserID') || ''),
       at: new Date().toISOString()
     };
@@ -7169,5 +7173,5 @@ setupDatabase()
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v426 listening on ' + PORT)))   // v427
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v427 listening on ' + PORT)))   // v428
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v428 listening on ' + PORT)))   // v429
-  .then(() => app.listen(PORT, () => console.log('QPUD Lister v507 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('QPUD Lister v508 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });
