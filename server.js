@@ -1,4 +1,5 @@
-// QPUD Lister server — v506
+// QPUD Lister server — v507
+// v507: GET /api/funds — your eBay available funds, on hold, processing (Finances seller_funds_summary); cached 5 min.
 // v506: /api/feedback?type=Positive|Neutral|Negative — just that kind (last 12 months, up to 25); without type the latest 3.
 // v505: GET /api/feedback — your eBay seller feedback (score, % positive, 12-month counts, latest comments) for the Home page; cached 30 min.
 // v504: "YOLO" is called "Trial" on screen (tables and routes keep their old names).
@@ -6347,6 +6348,31 @@ function returnEstimate(d) {
 }
 // v370: eBay's money records for one order — the sale's fees and any refunds with their fee credit.
 // Only amounts, dates and status are kept (no buyer details). Asked live, cached 2 minutes.
+// v507: your money on eBay for the Home page
+const fundsCache = new Map();
+app.get('/api/funds', requireUser, async (req, res) => {
+  const uid = req.user.id, c = fundsCache.get(uid);
+  if (c && req.query.refresh !== '1' && Date.now() - c.at < 5 * 60000) return res.json(c.data);
+  try {
+    const conn = await getConnection(uid);
+    if (!conn || !conn.refresh_enc) return res.json({ connected: false });
+    if (!hasScope(conn, FIN_SCOPE)) return res.json({ connected: true, needScope: true });
+    const token = await getAccessToken(uid);
+    const r = await fetch(EBAY_FIN_HOST + '/sell/finances/v1/seller_funds_summary', { headers: { 'Authorization': 'Bearer ' + token, 'Accept': 'application/json', 'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US' }, signal: AbortSignal.timeout(20000) });
+    const t = await r.text(); let d = {}; try { d = JSON.parse(t); } catch (e) { d = {}; }
+    if (!r.ok) throw new Error((d.errors && d.errors.map(e => e.longMessage || e.message).join('; ')) || ('HTTP ' + r.status));
+    const amt = (x) => x && x.value != null ? Number(x.value) : null;
+    const data = { connected: true, available: amt(d.availableFunds), onHold: amt(d.fundsOnHold), processing: amt(d.processingFunds), total: amt(d.totalFunds),
+      currency: (d.totalFunds && d.totalFunds.currency) || (d.availableFunds && d.availableFunds.currency) || 'USD', at: new Date().toISOString() };
+    fundsCache.set(uid, { at: Date.now(), data });
+    res.json(data);
+  } catch (e) {
+    console.error('[funds]', e.message);
+    if (c) return res.json(Object.assign({}, c.data, { stale: true }));
+    res.status(502).json({ error: 'eBay didn’t send your funds: ' + e.message });
+  }
+});
+
 const orderFinCache = new Map();
 async function orderFees(userId, orderId) {
   if (!orderId || !/^[0-9A-Za-z-]{5,40}$/.test(String(orderId))) return null;
@@ -7143,5 +7169,5 @@ setupDatabase()
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v426 listening on ' + PORT)))   // v427
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v427 listening on ' + PORT)))   // v428
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v428 listening on ' + PORT)))   // v429
-  .then(() => app.listen(PORT, () => console.log('QPUD Lister v506 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('QPUD Lister v507 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });
