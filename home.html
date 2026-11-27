@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>QPUD Lister Home v412</title>
+<title>QPUD Lister Home v413</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2064%2064%22%3E%3Crect%20width%3D%2264%22%20height%3D%2264%22%20rx%3D%2212%22%20fill%3D%22%23000%22/%3E%3Cpath%20fill%3D%22%230000FF%22%20d%3D%22M32.0%2052.25752919483712C34.71419791026429%2052.25752919483712%2037.28703134603565%2051.80516287645974%2039.63368162261831%2050.92870313460356L43.054701905347265%2055.0H52.073755377996314L45.74062692071297%2047.16840811309157C49.64228641671789%2043.49293177627535%2052.01720958819914%2037.92317148125384%2052.01720958819914%2030.657037492317144C52.01720958819914%2016.74677320221266%2043.28088506453595%209.0%2032.0%209.0C20.662569145666872%209.0%2011.926244622003688%2016.74677320221266%2011.926244622003688%2030.657037492317144C11.926244622003688%2044.482483097725876%2020.662569145666872%2052.25752919483712%2032.0%2052.25752919483712ZM28.946527350952675%2036.67916410571604%2034.00737553779963%2043.32329440688383C33.357098955132145%2043.43638598647818%2032.70682237246466%2043.49293177627535%2032.0%2043.49293177627535C25.86478180700676%2043.49293177627535%2022.132759680393363%2038.969268592501535%2022.132759680393363%2030.657037492317144C22.132759680393363%2022.316533497234172%2025.86478180700676%2017.76459741856177%2032.0%2017.76459741856177C38.10694529809465%2017.76459741856177%2041.83896742470805%2022.288260602335583%2041.83896742470805%2030.657037492317144C41.83896742470805%2034.55869698832206%2041.01905347264905%2037.640442532267976%2039.49231714812538%2039.78918254456054L37.03257529194837%2036.67916410571604Z%22/%3E%3C/svg%3E">   <!-- tab icon: style 2 Q, pure blue #0000FF, on black -->
 <style>/* QPUD Lister logo: QPUD in pure blue, LISTER in white, same letter style as the tab icon */ .logo, .auth-logo { font-family: 'Inter', 'Barlow Condensed', sans-serif !important; font-weight: 800 !important; letter-spacing: -0.5px !important; color: #fff !important; } .logo span, .auth-logo span { color: #0000FF !important; }</style>
 <!-- v400: yard tickets — divider styles (tiny dashes, dots, solid, double) with thickness, dash length, gap, width and position; mark one text row "This row has the date" ({date} there is the ticket's own day — tomorrow's for "Sell for tomorrow"); a print time per yard with a Randomize switch (adds 0–30 minutes, never earlier). -->
@@ -114,6 +114,11 @@
   .yt-saved { display: flex; gap: 26px; flex-wrap: wrap; margin-bottom: 14px; }
   .yt-saved .v { font-family: 'Barlow Condensed', sans-serif; font-size: 28px; font-weight: 700; line-height: 1.05; color: var(--success); }
   .yt-saved .k { font-size: 12px; color: var(--muted); }
+  .fb-c { display: flex; gap: 10px; padding: 10px 0; border-top: 1px solid var(--border); }   /* v413 */
+  .fb-c:first-child { border-top: none; }
+  .fb-ico { flex: none; width: 22px; height: 22px; border-radius: 50%; font: 700 13px/22px Arial, sans-serif; text-align: center; color: #fff; }
+  .fb-t { font-size: 14px; color: var(--text); }
+  .fb-m { font-size: 12px; color: var(--muted); margin-top: 2px; }
   .yt-yards { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
   .yt-yard { background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: 12px 14px; cursor: pointer; text-align: left; color: var(--text); font: inherit; }
   .yt-yard:hover { border-color: var(--accent); }
@@ -201,7 +206,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>QPUD</span>LISTER</div>
-    <div class="logo-sub"><span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v412</span></div>
+    <div class="logo-sub"><span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v413</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -273,6 +278,13 @@
       <div class="tile-value" id="h-attn" style="font-size:30px;">—</div>
       <div id="h-attn-list" style="margin-top:6px;font-size:13px;line-height:1.6;color:var(--text2);"></div>
     </div>
+  </div>
+
+  <!-- v413: YOUR eBAY FEEDBACK -->
+  <div class="yt" id="fb" style="display:none">
+    <div class="yt-top"><h2>Your feedback</h2><span id="fb-sub" style="font-size:13px;color:var(--muted)"></span><a class="btn btn-secondary btn-sm" id="fb-all" href="#" target="_blank" rel="noopener">See all on eBay</a></div>
+    <div class="yt-saved" id="fb-stats"></div>
+    <div id="fb-list"></div>
   </div>
 
   <!-- v386: YARD TICKETS -->
@@ -976,6 +988,28 @@ async function saveTicketSettings() {
 pageCache.rerun = () => { loadHome(); loadTickets(); };   // v386: + yard tickets
 loadTickets();
 loadHome();
+// v413: your eBay feedback — score, % positive, the last 12 months and the latest comments
+async function loadFeedback() {
+  try {
+    const r = await fetch('/api/feedback'); if (!r.ok) return;
+    const d = await r.json(); if (!d || !d.connected) return;
+    const box = document.getElementById('fb'); box.style.display = '';
+    const n = (v) => v == null ? '—' : Number(v).toLocaleString();
+    document.getElementById('fb-sub').textContent = d.user ? d.user + ' (' + n(d.score) + ')' : '';
+    document.getElementById('fb-all').href = 'https://www.ebay.com/fdbk/feedback_profile/' + encodeURIComponent(d.user || '');
+    const st = [[d.positivePct != null ? d.positivePct.toFixed(1) + '%' : '—', 'Positive feedback'], [n(d.score), 'Feedback score']];
+    if (d.year && d.year.positive != null) st.push([n(d.year.positive), 'Positive · 12 months'], [n(d.year.neutral), 'Neutral · 12 months'], [n(d.year.negative), 'Negative · 12 months']);
+    document.getElementById('fb-stats').innerHTML = st.map(([v, k], i) => '<div><div class="v"' + (i === 4 && Number(d.year.negative) > 0 ? ' style="color:#e05252"' : i > 1 ? ' style="color:var(--text)"' : '') + '>' + esc(v) + '</div><div class="k">' + esc(k) + '</div></div>').join('');
+    const ICO = { Positive: ['+', '#3fa65b'], Neutral: ['–', '#8a8f98'], Negative: ['−', '#e05252'] };
+    const ago = (iso) => { const t = new Date(iso).getTime(); if (!t) return ''; const dd = Math.floor((Date.now() - t) / 86400000); return dd < 1 ? 'today' : dd === 1 ? 'yesterday' : dd < 31 ? dd + ' days ago' : new Date(iso).toLocaleDateString(); };
+    document.getElementById('fb-list').innerHTML = (d.comments || []).length ? d.comments.map(c => {
+      const ic = ICO[c.type] || ICO.Neutral;
+      return '<div class="fb-c"><div class="fb-ico" style="background:' + ic[1] + '" title="' + esc(c.type) + '">' + ic[0] + '</div><div><div class="fb-t">' + esc(c.text) + '</div>' +
+        '<div class="fb-m">' + esc(c.buyer) + (c.buyerScore ? ' (' + n(c.buyerScore) + ')' : '') + (c.when ? ' · ' + esc(ago(c.when)) : '') + (c.item ? ' · ' + esc(c.item) : '') + '</div></div></div>';
+    }).join('') : '<div class="fb-m">No comments yet.</div>';
+  } catch (e) { /* feedback is extra — the rest of Home works without it */ }
+}
+loadFeedback();
 </script>
 </body>
 </html>

@@ -1,4 +1,5 @@
-// QPUD Lister server — v504
+// QPUD Lister server — v505
+// v505: GET /api/feedback — your eBay seller feedback (score, % positive, 12-month counts, latest comments) for the Home page; cached 30 min.
 // v504: "YOLO" is called "Trial" on screen (tables and routes keep their old names).
 // v503: "Sign in with eBay" — each account picks (Settings → Account) between the app's own eBay developer keys
 //       (Railway: EBAY_CLIENT_ID, EBAY_CLIENT_SECRET, EBAY_RUNAME) or its own keys + RuName, like before. A connection
@@ -1736,6 +1737,55 @@ async function ensureEbayIdentity(userId) {
     if (user) await pool.query('UPDATE ebay_connections SET ebay_username = $2, ebay_eias = $3 WHERE user_id = $1', [userId, xmlDecode(user), eias || null]);
   } catch (e) { console.warn('[ebay identity]', userId, e.message); }
 }
+
+// v505: your seller feedback for the Home page (eBay Trading GetUser + GetFeedback), cached 30 minutes per account
+const feedbackCache = new Map();
+app.get('/api/feedback', requireUser, async (req, res) => {
+  const uid = req.user.id, force = req.query.refresh === '1';
+  const c = feedbackCache.get(uid);
+  if (c && !force && Date.now() - c.at < 30 * 60000) return res.json(c.data);
+  try {
+    const conn = await getConnection(uid);
+    if (!conn || !conn.refresh_enc) return res.json({ connected: false });
+    const [ux, fx] = await Promise.all([
+      tradingCall(uid, 'GetUser', ''),
+      tradingCall(uid, 'GetFeedback', '<FeedbackType>FeedbackReceivedAsSeller</FeedbackType><DetailLevel>ReturnAll</DetailLevel><Pagination><EntriesPerPage>8</EntriesPerPage><PageNumber>1</PageNumber></Pagination>')
+    ]);
+    const user = xmlTag(ux, 'User') || '';
+    const period = (arr, days) => {   // count for one period (e.g. 365 days) inside a FeedbackPeriodArray
+      const a = xmlTag(fx, arr) || '';
+      const m = [...a.matchAll(/<FeedbackPeriod>([\s\S]*?)<\/FeedbackPeriod>/g)].map(x => x[1]).find(x => xmlTag(x, 'PeriodInDays') === String(days));
+      return m ? Number(xmlTag(m, 'Count')) || 0 : null;
+    };
+    const mask = (u) => { u = String(u || ''); return u.length <= 2 ? u.replace(/./g, '*') : u[0] + '***' + u[u.length - 1]; };   // like eBay shows buyers
+    const comments = [...fx.matchAll(/<FeedbackDetail>([\s\S]*?)<\/FeedbackDetail>/g)].map(x => x[1]).map(d => ({
+      type: xmlTag(d, 'CommentType') || '',
+      text: xmlDecode(xmlTag(d, 'CommentText') || ''),
+      buyer: mask(xmlDecode(xmlTag(d, 'CommentingUser') || '')),
+      buyerScore: Number(xmlTag(d, 'CommentingUserScore')) || null,
+      when: xmlTag(d, 'CommentTime') || null,
+      item: xmlDecode(xmlTag(d, 'ItemTitle') || ''),
+      itemId: xmlTag(d, 'ItemID') || null,
+      reply: xmlDecode(xmlTag(d, 'FeedbackResponse') || '') || null   // your reply, if any
+    })).filter(x => x.text);
+    const data = {
+      connected: true,
+      score: Number(xmlTag(user, 'FeedbackScore')) || 0,
+      positivePct: xmlTag(user, 'PositiveFeedbackPercent') ? Number(xmlTag(user, 'PositiveFeedbackPercent')) : null,
+      star: xmlTag(user, 'FeedbackRatingStar') || null,
+      year: { positive: period('PositiveFeedbackPeriodArray', 365), neutral: period('NeutralFeedbackPeriodArray', 365), negative: period('NegativeFeedbackPeriodArray', 365) },
+      comments,
+      user: xmlDecode(xmlTag(user, 'UserID') || ''),
+      at: new Date().toISOString()
+    };
+    feedbackCache.set(uid, { at: Date.now(), data });
+    res.json(data);
+  } catch (e) {
+    console.error('[feedback]', e.message);
+    if (c) return res.json(Object.assign({}, c.data, { stale: true }));
+    res.status(502).json({ error: 'eBay didn’t send your feedback: ' + e.message });
+  }
+});
 
 // v503: eBay MARKETPLACE ACCOUNT DELETION notices. eBay first checks the address with a challenge code; after that it
 // POSTs here when an eBay member deletes their account, and the app wipes that account's imported eBay data.
@@ -7089,5 +7139,5 @@ setupDatabase()
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v426 listening on ' + PORT)))   // v427
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v427 listening on ' + PORT)))   // v428
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v428 listening on ' + PORT)))   // v429
-  .then(() => app.listen(PORT, () => console.log('QPUD Lister v504 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('QPUD Lister v505 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });
