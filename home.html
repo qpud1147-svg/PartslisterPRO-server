@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>QPUD Lister Home v419</title>
+<title>QPUD Lister Home v420</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2064%2064%22%3E%3Crect%20width%3D%2264%22%20height%3D%2264%22%20rx%3D%2212%22%20fill%3D%22%23000%22/%3E%3Cpath%20fill%3D%22%230000FF%22%20d%3D%22M32.0%2052.25752919483712C34.71419791026429%2052.25752919483712%2037.28703134603565%2051.80516287645974%2039.63368162261831%2050.92870313460356L43.054701905347265%2055.0H52.073755377996314L45.74062692071297%2047.16840811309157C49.64228641671789%2043.49293177627535%2052.01720958819914%2037.92317148125384%2052.01720958819914%2030.657037492317144C52.01720958819914%2016.74677320221266%2043.28088506453595%209.0%2032.0%209.0C20.662569145666872%209.0%2011.926244622003688%2016.74677320221266%2011.926244622003688%2030.657037492317144C11.926244622003688%2044.482483097725876%2020.662569145666872%2052.25752919483712%2032.0%2052.25752919483712ZM28.946527350952675%2036.67916410571604%2034.00737553779963%2043.32329440688383C33.357098955132145%2043.43638598647818%2032.70682237246466%2043.49293177627535%2032.0%2043.49293177627535C25.86478180700676%2043.49293177627535%2022.132759680393363%2038.969268592501535%2022.132759680393363%2030.657037492317144C22.132759680393363%2022.316533497234172%2025.86478180700676%2017.76459741856177%2032.0%2017.76459741856177C38.10694529809465%2017.76459741856177%2041.83896742470805%2022.288260602335583%2041.83896742470805%2030.657037492317144C41.83896742470805%2034.55869698832206%2041.01905347264905%2037.640442532267976%2039.49231714812538%2039.78918254456054L37.03257529194837%2036.67916410571604Z%22/%3E%3C/svg%3E">   <!-- tab icon: style 2 Q, pure blue #0000FF, on black -->
 <style>/* QPUD Lister logo: QPUD in pure blue, LISTER in white, same letter style as the tab icon */ .logo, .auth-logo { font-family: 'Inter', 'Barlow Condensed', sans-serif !important; font-weight: 800 !important; letter-spacing: -0.5px !important; color: #fff !important; } .logo span, .auth-logo span { color: #0000FF !important; }</style>
 <!-- v400: yard tickets — divider styles (tiny dashes, dots, solid, double) with thickness, dash length, gap, width and position; mark one text row "This row has the date" ({date} there is the ticket's own day — tomorrow's for "Sell for tomorrow"); a print time per yard with a Randomize switch (adds 0–30 minutes, never earlier). -->
@@ -235,7 +235,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>QPUD</span>LISTER</div>
-    <div class="logo-sub"><span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v419</span></div>
+    <div class="logo-sub"><span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v420</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -1062,7 +1062,7 @@ function fbRender(pending) {
   if (!d) return;   // the list stays as it is until the picked one arrives
   const ICO = { Positive: ['+', '#3fa65b'], Neutral: ['–', '#8a8f98'], Negative: ['−', '#e05252'] };
   const ago = (iso) => { const t = new Date(iso).getTime(); if (!t) return ''; const dd = Math.floor((Date.now() - t) / 86400000); return dd < 1 ? 'today' : dd === 1 ? 'yesterday' : dd < 31 ? dd + ' days ago' : new Date(iso).toLocaleDateString(); };
-  const head = fbType ? '<div class="fb-m" style="margin-bottom:4px">' + (fbType === 'All' ? 'All feedback · newest first' : esc(fbType) + ' feedback · last 12 months' + ((d.comments || []).length >= 25 ? ' (latest 25)' : '')) + ' · <a href="#" style="color:var(--accent)" onclick="loadFeedback(\'\');return false">show the latest 3</a></div>' : '';
+  const head = fbType ? '<div class="fb-m" style="margin-bottom:4px">' + (fbType === 'All' ? 'All feedback · newest first' : esc(fbType) + ' feedback · last 12 months') + ' · <a href="#" style="color:var(--accent)" onclick="loadFeedback(\'\');return false">show the latest 3</a></div>' : '';
   document.getElementById('fb-list').innerHTML = head + ((d.comments || []).length ? d.comments.map(c => {
     const ic = ICO[c.type] || ICO.Neutral;
     // v418: a small photo of the item; the whole row opens that listing on the Active page
@@ -1071,7 +1071,7 @@ function fbRender(pending) {
     return (id ? '<a class="fb-c fb-link" href="#" onclick="openListing(\'' + id + '\');return false" title="Open this listing">' : '<div class="fb-c">') + pic + '<div class="fb-ico" style="background:' + ic[1] + '" title="' + esc(c.type) + '">' + ic[0] + '</div><div><div class="fb-t">' + esc(c.text) + '</div>' +
       '<div class="fb-m">' + esc(c.buyer) + (c.buyerScore ? ' (' + n(c.buyerScore) + ')' : '') + (c.when ? ' · ' + esc(ago(c.when)) : '') + (c.item ? ' · ' + esc(c.item) : '') + '</div></div>' + (id ? '</a>' : '</div>');
   }).join('') : '<div class="fb-m">' + (fbType && fbType !== 'All' ? 'No ' + fbType.toLowerCase() + ' feedback in the last 12 months.' : 'No comments yet.') + '</div>')
-    + (fbType === 'All' && d.hasMore ? '<div style="text-align:center;margin-top:10px"><button type="button" class="btn btn-secondary btn-sm" id="fb-more" onclick="fbMore()">Show more</button></div>' : '');
+    + (fbType && d.hasMore ? '<div style="text-align:center;margin-top:10px"><button type="button" class="btn btn-secondary btn-sm" id="fb-more" onclick="fbMore()">Show more</button></div>' : '');
   fbPics();   // v418
 }
 // v418: item photos for the feedback rows — asked for once each, filled in as they arrive
@@ -1141,13 +1141,13 @@ function fbPics() {
 })();
 // v417: next 50 of all feedback
 async function fbMore() {
-  const cur = fbData.All; if (!cur || !cur.hasMore) return;
+  const t = fbType, cur = fbData[t]; if (!t || !cur || !cur.hasMore) return;   // v420: every kind has Show more
   const b = document.getElementById('fb-more'); if (b) { b.disabled = true; b.textContent = 'Loading…'; }
   try {
-    const r = await fetch('/api/feedback?type=All&page=' + ((cur.page || 1) + 1)); const d = r.ok ? await r.json() : null;
-    if (d && d.connected) { fbData.All = Object.assign({}, d, { comments: (cur.comments || []).concat(d.comments || []) }); }
+    const r = await fetch('/api/feedback?type=' + t + '&page=' + ((cur.page || 1) + 1)); const d = r.ok ? await r.json() : null;
+    if (d && d.connected) { fbData[t] = Object.assign({}, d, { comments: (cur.comments || []).concat(d.comments || []) }); }
   } catch (e) { /* keep what's shown */ }
-  if (fbType === 'All') fbRender();
+  if (fbType === t) fbRender();
 }
 // latest 3 first, then the three kinds quietly in the background
 fbFetch('').then(d => { if (d) { if (!fbType) fbRender(); ['Negative', 'Neutral', 'Positive', 'All'].forEach(t => fbFetch(t)); } });

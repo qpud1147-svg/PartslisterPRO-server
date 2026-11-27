@@ -1,4 +1,5 @@
-// QPUD Lister server — v509
+// QPUD Lister server — v510
+// v510: feedback by kind (Positive / Neutral / Negative) also pages 50 at a time (Show more), within the last 12 months.
 // v509: feedback shows the buyer's full eBay username (it's your own page — no masking).
 // v508: /api/feedback — the default list is really just the latest 3 (eBay sends 25 at least); type=All&page=N = all feedback, 50 a page.
 // v507: GET /api/funds — your eBay available funds, on hold, processing (Finances seller_funds_summary); cached 5 min.
@@ -1747,7 +1748,7 @@ const feedbackCache = new Map();
 app.get('/api/feedback', requireUser, async (req, res) => {
   const uid = req.user.id, force = req.query.refresh === '1';
   const type = ['Positive', 'Neutral', 'Negative', 'All'].includes(String(req.query.type || '')) ? String(req.query.type) : '';   // v506, v508: + All
-  const page = type === 'All' ? Math.min(200, Math.max(1, parseInt(req.query.page, 10) || 1)) : 1;
+  const page = type ? Math.min(200, Math.max(1, parseInt(req.query.page, 10) || 1)) : 1;   // v510: every kind pages
   const ck = uid + ':' + type + ':' + page;
   const c = feedbackCache.get(ck);
   if (c && !force && Date.now() - c.at < 30 * 60000) return res.json(c.data);
@@ -1757,7 +1758,7 @@ app.get('/api/feedback', requireUser, async (req, res) => {
     const [ux, fx] = await Promise.all([
       tradingCall(uid, 'GetUser', ''),
       tradingCall(uid, 'GetFeedback', '<FeedbackType>FeedbackReceivedAsSeller</FeedbackType>' + (type && type !== 'All' ? '<CommentType>' + type + '</CommentType>' : '') +
-        '<DetailLevel>ReturnAll</DetailLevel><Pagination><EntriesPerPage>' + (type === 'All' ? 50 : 25) + '</EntriesPerPage><PageNumber>' + page + '</PageNumber></Pagination>')
+        '<DetailLevel>ReturnAll</DetailLevel><Pagination><EntriesPerPage>' + (type ? 50 : 25) + '</EntriesPerPage><PageNumber>' + page + '</PageNumber></Pagination>')
     ]);
     const user = xmlTag(ux, 'User') || '';
     const period = (arr, days) => {   // count for one period (e.g. 365 days) inside a FeedbackPeriodArray
@@ -1765,7 +1766,7 @@ app.get('/api/feedback', requireUser, async (req, res) => {
       const m = [...a.matchAll(/<FeedbackPeriod>([\s\S]*?)<\/FeedbackPeriod>/g)].map(x => x[1]).find(x => xmlTag(x, 'PeriodInDays') === String(days));
       return m ? Number(xmlTag(m, 'Count')) || 0 : null;
     };
-    const comments = [...fx.matchAll(/<FeedbackDetail>([\s\S]*?)<\/FeedbackDetail>/g)].map(x => x[1]).map(d => ({
+    const raw = [...fx.matchAll(/<FeedbackDetail>([\s\S]*?)<\/FeedbackDetail>/g)].map(x => x[1]).map(d => ({
       type: xmlTag(d, 'CommentType') || '',
       text: xmlDecode(xmlTag(d, 'CommentText') || ''),
       buyer: xmlDecode(xmlTag(d, 'CommentingUser') || ''),   // v509: full username (was masked like eBay's public page)
@@ -1774,7 +1775,8 @@ app.get('/api/feedback', requireUser, async (req, res) => {
       item: xmlDecode(xmlTag(d, 'ItemTitle') || ''),
       itemId: xmlTag(d, 'ItemID') || null,
       reply: xmlDecode(xmlTag(d, 'FeedbackResponse') || '') || null   // your reply, if any
-    })).filter(x => x.text && (!type || type === 'All' || !x.when || Date.now() - new Date(x.when).getTime() < 366 * 86400000))   // v506: a kind = the last 12 months, like the counts
+    }));
+    const comments = raw.filter(x => x.text && (!type || type === 'All' || !x.when || Date.now() - new Date(x.when).getTime() < 366 * 86400000))   // v506: a kind = the last 12 months, like the counts
       .slice(0, type ? 50 : 3);   // v508: the default really is just the latest 3
     const pages = Number(xmlTag(xmlTag(fx, 'PaginationResult') || '', 'TotalNumberOfPages')) || 1;
     const data = {
@@ -1783,7 +1785,7 @@ app.get('/api/feedback', requireUser, async (req, res) => {
       positivePct: xmlTag(user, 'PositiveFeedbackPercent') ? Number(xmlTag(user, 'PositiveFeedbackPercent')) : null,
       star: xmlTag(user, 'FeedbackRatingStar') || null,
       year: { positive: period('PositiveFeedbackPeriodArray', 365), neutral: period('NeutralFeedbackPeriodArray', 365), negative: period('NegativeFeedbackPeriodArray', 365) },
-      comments, type, page, hasMore: type === 'All' && page < pages,   // v508
+      comments, type, page, hasMore: !!type && page < pages && (type === 'All' || comments.length === raw.filter(x => x.text).length),   // v508, v510: kinds stop at 12 months
       user: xmlDecode(xmlTag(user, 'UserID') || ''),
       at: new Date().toISOString()
     };
@@ -7173,5 +7175,5 @@ setupDatabase()
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v426 listening on ' + PORT)))   // v427
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v427 listening on ' + PORT)))   // v428
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v428 listening on ' + PORT)))   // v429
-  .then(() => app.listen(PORT, () => console.log('QPUD Lister v509 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('QPUD Lister v510 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });
