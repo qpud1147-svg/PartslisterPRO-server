@@ -1,4 +1,5 @@
-// QPUD Lister server — v503
+// QPUD Lister server — v504
+// v504: "YOLO" is called "Trial" on screen (tables and routes keep their old names).
 // v503: "Sign in with eBay" — each account picks (Settings → Account) between the app's own eBay developer keys
 //       (Railway: EBAY_CLIENT_ID, EBAY_CLIENT_SECRET, EBAY_RUNAME) or its own keys + RuName, like before. A connection
 //       keeps using the keys it was made with (ebay_connections.key_mode) until Reconnect, so switching never breaks it.
@@ -4823,7 +4824,7 @@ app.post('/api/yolo', requireUser, express.json(), async (req, res) => {
        ON CONFLICT (user_id, item_id) DO UPDATE SET title = EXCLUDED.title, sku = EXCLUDED.sku, normal_price = EXCLUDED.normal_price, yolo_price = EXCLUDED.yolo_price`,
       [req.user.id, itemId, String(b.title || '').slice(0, 200), String(b.sku || '').slice(0, 60), normal.toFixed(2), yolo.toFixed(2)]);
     res.json({ ok: true });
-  } catch (e) { console.error('[yolo save]', e.message); res.status(500).json({ error: 'Could not save the YOLO record' }); }
+  } catch (e) { console.error('[yolo save]', e.message); res.status(500).json({ error: 'Could not save the trial price record' }); }
 });
 // v428: all live listings (photo, title, price, SKU, start) — kept 10 minutes so the Active page and the YOLO check don't ask eBay every time
 const liveCache = new Map();   // userId → { at, items }
@@ -5283,14 +5284,14 @@ app.get('/api/yolo', requireUser, async (req, res) => {
     const active = (await pool.query(`SELECT ${cols} FROM yolo_listings WHERE user_id = $1 AND status = 'active' ORDER BY listed_at ASC`, [req.user.id])).rows;
     const sold = (await pool.query(`SELECT ${cols} FROM yolo_listings WHERE user_id = $1 AND status = 'sold' ORDER BY sold_at DESC NULLS LAST`, [req.user.id])).rows;
     res.json({ items: active.map(mk), sold: sold.map(mk) });
-  } catch (e) { console.error('[yolo list]', e.message); res.status(500).json({ error: 'Could not load YOLO listings' }); }
+  } catch (e) { console.error('[yolo list]', e.message); res.status(500).json({ error: 'Could not load trial listings' }); }
 });
 // v427: Revert — put the regular price back on the live eBay listing, then stop tracking it
 app.post('/api/yolo/:itemId/revert', requireUser, async (req, res) => {
   try {
     const itemId = String(req.params.itemId || '').replace(/\D/g, '');
     const row = (await pool.query("SELECT normal_price FROM yolo_listings WHERE user_id = $1 AND item_id = $2 AND status = 'active'", [req.user.id, itemId])).rows[0];
-    if (!row) return res.status(404).json({ error: 'That YOLO listing is not on your list.' });
+    if (!row) return res.status(404).json({ error: 'That trial listing is not on your list.' });
     const price = Number(row.normal_price).toFixed(2);
     // v430: the title's emoji changes to the "Reverted from YOLO" emoji (Listing Tool settings). Not allowed on some listings (e.g. ones that already sold) → then the price still changes.
     let newTitle = '';
@@ -7088,5 +7089,5 @@ setupDatabase()
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v426 listening on ' + PORT)))   // v427
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v427 listening on ' + PORT)))   // v428
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v428 listening on ' + PORT)))   // v429
-  .then(() => app.listen(PORT, () => console.log('QPUD Lister v503 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('QPUD Lister v504 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });

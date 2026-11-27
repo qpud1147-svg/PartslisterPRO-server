@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>QPUD Lister Active v426</title>
+<title>QPUD Lister Active v427</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2064%2064%22%3E%3Crect%20width%3D%2264%22%20height%3D%2264%22%20rx%3D%2212%22%20fill%3D%22%23000%22/%3E%3Cpath%20fill%3D%22%230000FF%22%20d%3D%22M32.0%2052.25752919483712C34.71419791026429%2052.25752919483712%2037.28703134603565%2051.80516287645974%2039.63368162261831%2050.92870313460356L43.054701905347265%2055.0H52.073755377996314L45.74062692071297%2047.16840811309157C49.64228641671789%2043.49293177627535%2052.01720958819914%2037.92317148125384%2052.01720958819914%2030.657037492317144C52.01720958819914%2016.74677320221266%2043.28088506453595%209.0%2032.0%209.0C20.662569145666872%209.0%2011.926244622003688%2016.74677320221266%2011.926244622003688%2030.657037492317144C11.926244622003688%2044.482483097725876%2020.662569145666872%2052.25752919483712%2032.0%2052.25752919483712ZM28.946527350952675%2036.67916410571604%2034.00737553779963%2043.32329440688383C33.357098955132145%2043.43638598647818%2032.70682237246466%2043.49293177627535%2032.0%2043.49293177627535C25.86478180700676%2043.49293177627535%2022.132759680393363%2038.969268592501535%2022.132759680393363%2030.657037492317144C22.132759680393363%2022.316533497234172%2025.86478180700676%2017.76459741856177%2032.0%2017.76459741856177C38.10694529809465%2017.76459741856177%2041.83896742470805%2022.288260602335583%2041.83896742470805%2030.657037492317144C41.83896742470805%2034.55869698832206%2041.01905347264905%2037.640442532267976%2039.49231714812538%2039.78918254456054L37.03257529194837%2036.67916410571604Z%22/%3E%3C/svg%3E">   <!-- tab icon: style 2 Q, pure blue #0000FF, on black -->
 <style>/* QPUD Lister logo: QPUD in pure blue, LISTER in white, same letter style as the tab icon */ .logo, .auth-logo { font-family: 'Inter', 'Barlow Condensed', sans-serif !important; font-weight: 800 !important; letter-spacing: -0.5px !important; color: #fff !important; } .logo span, .auth-logo span { color: #0000FF !important; }</style>
 <!-- v387: click a listing → your own eBay-style view (big photos with arrows, price, shipping, condition, item specifics, description); sharper list photos; shipping on the rows when eBay gives it. -->
@@ -277,7 +277,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>QPUD</span>LISTER</div>
-    <div class="logo-sub"><span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v426</span></div>
+    <div class="logo-sub"><span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v427</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -310,7 +310,7 @@
 </div>   <!-- v384: the Drafts link moved into the bar below -->
   <div class="seg" role="group" aria-label="View" id="seg-view">
     <button type="button" id="seg-active" aria-pressed="true" onclick="setView('active')">Active</button>
-    <button type="button" id="seg-yolo" aria-pressed="false" onclick="setView('yolo')">YOLO</button>
+    <button type="button" id="seg-yolo" aria-pressed="false" onclick="setView('yolo')">Trial</button>
     <button type="button" id="seg-sold" aria-pressed="false" onclick="setView('sold')">Sold</button>
     <button type="button" id="seg-ended" aria-pressed="false" onclick="setView('ended')">Ended</button>
     <button type="button" id="seg-flagged" aria-pressed="false" onclick="setView('flagged')">Flagged<span class="cnt" id="flag-n"></span></button>
@@ -421,7 +421,7 @@
   </div>
   <div id="ld-ov" class="ld-ov" hidden onclick="if(event.target===this)closeListing()"><div class="ld" id="ld"></div></div>
   <div id="view-yolo" hidden>
-    <div class="seg" role="group" aria-label="YOLO view" style="margin-top:8px">
+    <div class="seg" role="group" aria-label="Trial view" style="margin-top:8px">
       <button type="button" id="yseg-active" aria-pressed="true" onclick="setYoloView('active')">Active</button>
       <button type="button" id="yseg-sold" aria-pressed="false" onclick="setYoloView('sold')">Sold</button>
     </div>
@@ -657,10 +657,10 @@ pageCache.rerun = () => { loadListings(false); loadDaily(false); };   // v380: f
       const r = await fetch('/api/yolo');
       if (r.status === 401) { location.href = '/sales?next=' + encodeURIComponent(location.pathname); return; }
       if (r.status === 404) { yfail('The server is out of date — upload the newest server.js to Railway.'); return; }
-      if (!r.ok) { yfail('Could not load YOLO listings (server problem ' + r.status + ').'); return; }
+      if (!r.ok) { yfail('Could not load trial listings (server problem ' + r.status + ').'); return; }
       yoData = await r.json();
       renderYolo();
-    } catch (e) { yfail('Could not load YOLO listings — check your connection and try again.'); }
+    } catch (e) { yfail('Could not load trial listings — check your connection and try again.'); }
   }
   window.setYoloView = function (v) {
     yoView = v === 'sold' ? 'sold' : 'active';
@@ -674,8 +674,8 @@ pageCache.rerun = () => { loadListings(false); loadDaily(false); };   // v380: f
     if (yoView === 'sold') {
       const tot = sold.reduce((a, x) => a + (x.soldPrice != null ? x.soldPrice : x.yoloPrice), 0);
       const extra = sold.reduce((a, x) => a + ((x.soldPrice != null ? x.soldPrice : x.yoloPrice) - x.normalPrice), 0);
-      g('yo-note').textContent = sold.length ? (sold.length + ' sold at YOLO prices · ' + money(tot) + ' total · ' + (extra >= 0 ? '+' : '−') + money(Math.abs(extra)) + ' over the regular prices') : '';
-      if (!sold.length) { g('yo-list').innerHTML = '<div class="dr-empty">Nothing sold at a YOLO price yet. Sold ones show up here by themselves.</div>'; return; }
+      g('yo-note').textContent = sold.length ? (sold.length + ' sold at trial prices · ' + money(tot) + ' total · ' + (extra >= 0 ? '+' : '−') + money(Math.abs(extra)) + ' over the regular prices') : '';
+      if (!sold.length) { g('yo-list').innerHTML = '<div class="dr-empty">Nothing sold at a trial price yet. Sold ones show up here by themselves.</div>'; return; }
       g('yo-list').innerHTML = sold.map((x, ix) => {
         const sp = x.soldPrice != null ? x.soldPrice : x.yoloPrice;
         const took = x.soldAt ? Math.max(0, Math.round((new Date(x.soldAt) - new Date(x.listedAt)) / 86400000)) : null;
@@ -687,11 +687,11 @@ pageCache.rerun = () => { loadListings(false); loadDaily(false); };   // v380: f
       return;
     }
     const old = items.filter(x => days(x) >= YO_DAYS).length;
-    g('yo-note').textContent = items.length ? (items.length + ' YOLO listing' + (items.length === 1 ? '' : 's') + (old ? ' · ' + old + ' past six months' : '')) : '';
-    if (!items.length) { g('yo-list').innerHTML = '<div class="dr-empty">No YOLO listings yet. In the Listing Tool, press <b>×5</b> next to the price before you launch.</div>'; return; }
+    g('yo-note').textContent = items.length ? (items.length + ' trial listing' + (items.length === 1 ? '' : 's') + (old ? ' · ' + old + ' past six months' : '')) : '';
+    if (!items.length) { g('yo-list').innerHTML = '<div class="dr-empty">No trial listings yet. In the Listing Tool, press <b>Trial</b> next to the price and type the trial price before you launch.</div>'; return; }
     g('yo-list').innerHTML = items.map((x, ix) => {
       const n = days(x), isOld = n >= YO_DAYS;
-      return '<div class="ebl' + (isOld ? ' old' : '') + '"><span class="ebl-n">' + (ix + 1) + '</span>' + photo(x) + '<div class="ebl-body"><div class="ebl-title"><a href="#" onclick="openListing(\'' + esc(x.itemId) + '\');return false">' + esc(x.title || ('Item ' + x.itemId)) + '</a><span class="ebl-tag">YOLO</span></div>' +
+      return '<div class="ebl' + (isOld ? ' old' : '') + '"><span class="ebl-n">' + (ix + 1) + '</span>' + photo(x) + '<div class="ebl-body"><div class="ebl-title"><a href="#" onclick="openListing(\'' + esc(x.itemId) + '\');return false">' + esc(x.title || ('Item ' + x.itemId)) + '</a><span class="ebl-tag">TRIAL</span></div>' +
         '<div class="ebl-price"><span class="yo-g">' + money(x.yoloPrice) + '</span><small>regular ' + money(x.normalPrice) + '</small></div>' +
         '<div class="ebl-sub">Listed <b class="yo-age" style="' + (isOld ? 'color:#ff6b66' : '') + '">' + n + (n === 1 ? ' day' : ' days') + '</b> ago' + (isOld ? ' · <b style="color:#ff6b66">time to revert</b>' : '') + '</div>' +
         (x.sku ? '<div class="ebl-sku-l"><small>SKU</small>' + esc(x.sku) + '</div>' : '<div class="ebl-sub" style="opacity:.55">No SKU</div>') + '</div>' +
@@ -710,7 +710,7 @@ pageCache.rerun = () => { loadListings(false); loadDaily(false); };   // v380: f
     } catch (e) { yfail(e.message || 'Could not change the price.'); }
   };
   window.removeYolo = async function (id) {
-    if (!confirm('Stop tracking this YOLO listing? (eBay is not changed.)')) return;
+    if (!confirm('Stop tracking this trial listing? (eBay is not changed.)')) return;
     try { const r = await fetch('/api/yolo/' + id + '/remove', { method: 'POST' }); if (!r.ok) throw 0; loadYolo(); }
     catch (e) { yfail('Could not remove it — try again.'); }
   };
@@ -834,7 +834,7 @@ pageCache.rerun = () => { loadListings(false); loadDaily(false); };   // v380: f
     if (llStatus && llAll.length) g('ll-note').textContent += ' · ' + llStatus;   // v437
     g('ll-list').innerHTML = a.slice(0, llShown).map((x, ix) => {
       const n = x.start ? Math.floor((Date.now() - new Date(x.start).getTime()) / 86400000) : null;
-      return '<div class="ebl ll"><span class="ebl-n">' + (() => { const fg = flAll.find(f => f.itemId === x.itemId); return fg ? '<span class="ebl-flag" title="Flagged">\u2691 ' + esc(FLAG_WHY[fg.reason] || 'Flagged') + '</span>' : ''; })() + (ix + 1) + '</span>' + photo(x) + '<div class="ebl-body"><div class="ebl-title"><a href="#" onclick="openListing(\'' + esc(x.itemId) + '\');return false">' + esc(x.title) + '</a>' + (/(^|\s)YOLO$/i.test(x.sku || '') ? '<span class="ebl-tag">YOLO</span>' : '') + '</div>' +
+      return '<div class="ebl ll"><span class="ebl-n">' + (() => { const fg = flAll.find(f => f.itemId === x.itemId); return fg ? '<span class="ebl-flag" title="Flagged">\u2691 ' + esc(FLAG_WHY[fg.reason] || 'Flagged') + '</span>' : ''; })() + (ix + 1) + '</span>' + photo(x) + '<div class="ebl-body"><div class="ebl-title"><a href="#" onclick="openListing(\'' + esc(x.itemId) + '\');return false">' + esc(x.title) + '</a>' + (/(^|\s)(YOLO|TRIAL)$/i.test(x.sku || '') ? '<span class="ebl-tag">TRIAL</span>' : '') + '</div>' +
         '<div class="ebl-price">' + money(x.price) + (x.shipping != null ? '<small>' + (x.shipping === 0 ? 'Free shipping' : '+ ' + money(x.shipping) + ' shipping') + '</small>' : '') + (x.qty > 1 ? '<small>' + x.qty + ' available</small>' : '') + '</div>' +
         '<div class="ebl-sub">' + (n != null ? 'Listed <b>' + n + (n === 1 ? ' day' : ' days') + '</b> ago' : '') + (x.watchers ? ' · <b>' + x.watchers + '</b> watching' : '') + '</div>' +
         (x.sku ? '<div class="ebl-sku-l"><small>SKU</small>' + esc(x.sku) + '</div>' : '<div class="ebl-sub" style="opacity:.55">No SKU</div>') +
