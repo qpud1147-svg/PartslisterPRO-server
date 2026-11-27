@@ -1,4 +1,5 @@
-// QPUD Lister server — v505
+// QPUD Lister server — v506
+// v506: /api/feedback?type=Positive|Neutral|Negative — just that kind (last 12 months, up to 25); without type the latest 3.
 // v505: GET /api/feedback — your eBay seller feedback (score, % positive, 12-month counts, latest comments) for the Home page; cached 30 min.
 // v504: "YOLO" is called "Trial" on screen (tables and routes keep their old names).
 // v503: "Sign in with eBay" — each account picks (Settings → Account) between the app's own eBay developer keys
@@ -1742,14 +1743,17 @@ async function ensureEbayIdentity(userId) {
 const feedbackCache = new Map();
 app.get('/api/feedback', requireUser, async (req, res) => {
   const uid = req.user.id, force = req.query.refresh === '1';
-  const c = feedbackCache.get(uid);
+  const type = ['Positive', 'Neutral', 'Negative'].includes(String(req.query.type || '')) ? String(req.query.type) : '';   // v506
+  const ck = uid + ':' + type;
+  const c = feedbackCache.get(ck);
   if (c && !force && Date.now() - c.at < 30 * 60000) return res.json(c.data);
   try {
     const conn = await getConnection(uid);
     if (!conn || !conn.refresh_enc) return res.json({ connected: false });
     const [ux, fx] = await Promise.all([
       tradingCall(uid, 'GetUser', ''),
-      tradingCall(uid, 'GetFeedback', '<FeedbackType>FeedbackReceivedAsSeller</FeedbackType><DetailLevel>ReturnAll</DetailLevel><Pagination><EntriesPerPage>8</EntriesPerPage><PageNumber>1</PageNumber></Pagination>')
+      tradingCall(uid, 'GetFeedback', '<FeedbackType>FeedbackReceivedAsSeller</FeedbackType>' + (type ? '<CommentType>' + type + '</CommentType>' : '') +
+        '<DetailLevel>ReturnAll</DetailLevel><Pagination><EntriesPerPage>' + (type ? 25 : 3) + '</EntriesPerPage><PageNumber>1</PageNumber></Pagination>')
     ]);
     const user = xmlTag(ux, 'User') || '';
     const period = (arr, days) => {   // count for one period (e.g. 365 days) inside a FeedbackPeriodArray
@@ -1767,18 +1771,18 @@ app.get('/api/feedback', requireUser, async (req, res) => {
       item: xmlDecode(xmlTag(d, 'ItemTitle') || ''),
       itemId: xmlTag(d, 'ItemID') || null,
       reply: xmlDecode(xmlTag(d, 'FeedbackResponse') || '') || null   // your reply, if any
-    })).filter(x => x.text);
+    })).filter(x => x.text && (!type || !x.when || Date.now() - new Date(x.when).getTime() < 366 * 86400000));   // v506: a kind = the last 12 months, like the counts
     const data = {
       connected: true,
       score: Number(xmlTag(user, 'FeedbackScore')) || 0,
       positivePct: xmlTag(user, 'PositiveFeedbackPercent') ? Number(xmlTag(user, 'PositiveFeedbackPercent')) : null,
       star: xmlTag(user, 'FeedbackRatingStar') || null,
       year: { positive: period('PositiveFeedbackPeriodArray', 365), neutral: period('NeutralFeedbackPeriodArray', 365), negative: period('NegativeFeedbackPeriodArray', 365) },
-      comments,
+      comments, type,
       user: xmlDecode(xmlTag(user, 'UserID') || ''),
       at: new Date().toISOString()
     };
-    feedbackCache.set(uid, { at: Date.now(), data });
+    feedbackCache.set(ck, { at: Date.now(), data });
     res.json(data);
   } catch (e) {
     console.error('[feedback]', e.message);
@@ -7139,5 +7143,5 @@ setupDatabase()
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v426 listening on ' + PORT)))   // v427
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v427 listening on ' + PORT)))   // v428
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v428 listening on ' + PORT)))   // v429
-  .then(() => app.listen(PORT, () => console.log('QPUD Lister v505 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('QPUD Lister v506 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });
