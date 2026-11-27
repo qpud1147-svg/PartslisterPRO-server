@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>QPUD Lister Performance v1</title>
+<title>QPUD Lister Performance v2</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2064%2064%22%3E%3Crect%20width%3D%2264%22%20height%3D%2264%22%20rx%3D%2212%22%20fill%3D%22%23000%22/%3E%3Cpath%20fill%3D%22%230000FF%22%20d%3D%22M32.0%2052.25752919483712C34.71419791026429%2052.25752919483712%2037.28703134603565%2051.80516287645974%2039.63368162261831%2050.92870313460356L43.054701905347265%2055.0H52.073755377996314L45.74062692071297%2047.16840811309157C49.64228641671789%2043.49293177627535%2052.01720958819914%2037.92317148125384%2052.01720958819914%2030.657037492317144C52.01720958819914%2016.74677320221266%2043.28088506453595%209.0%2032.0%209.0C20.662569145666872%209.0%2011.926244622003688%2016.74677320221266%2011.926244622003688%2030.657037492317144C11.926244622003688%2044.482483097725876%2020.662569145666872%2052.25752919483712%2032.0%2052.25752919483712ZM28.946527350952675%2036.67916410571604%2034.00737553779963%2043.32329440688383C33.357098955132145%2043.43638598647818%2032.70682237246466%2043.49293177627535%2032.0%2043.49293177627535C25.86478180700676%2043.49293177627535%2022.132759680393363%2038.969268592501535%2022.132759680393363%2030.657037492317144C22.132759680393363%2022.316533497234172%2025.86478180700676%2017.76459741856177%2032.0%2017.76459741856177C38.10694529809465%2017.76459741856177%2041.83896742470805%2022.288260602335583%2041.83896742470805%2030.657037492317144C41.83896742470805%2034.55869698832206%2041.01905347264905%2037.640442532267976%2039.49231714812538%2039.78918254456054L37.03257529194837%2036.67916410571604Z%22/%3E%3C/svg%3E">   <!-- tab icon: style 2 Q, pure blue #0000FF, on black -->
 <style>/* QPUD Lister logo: QPUD in pure blue, LISTER in white, same letter style as the tab icon */ .logo, .auth-logo { font-family: 'Inter', 'Barlow Condensed', sans-serif !important; font-weight: 800 !important; letter-spacing: -0.5px !important; color: #fff !important; } .logo span, .auth-logo span { color: #0000FF !important; }</style>
 <!-- v1: Performance page — your eBay seller standards (current + projected) and service metrics, from eBay's Analytics API. -->
@@ -184,6 +184,22 @@
   .pf-dim { font-weight: 600; }
   .pf-sub { font-size: 12px; color: var(--muted); }
   .pf-note { font-size: 13px; color: var(--muted); margin: 6px 0 14px; }
+  /* v2: eBay-style rating bar — Low · Average · High · Very high, your spot marked */
+  .pf-cat { padding: 12px 0; border-top: 1px solid var(--border); }
+  .pf-cat:first-of-type { border-top: none; }
+  .pf-cat-top { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; align-items: baseline; }
+  .pf-bar { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3px; margin: 24px 0 4px; position: relative; max-width: 620px; }
+  .pf-seg { height: 10px; border-radius: 3px; background: var(--surface2); border: 1px solid var(--border); position: relative; }
+  .pf-seg.on.s0, .pf-seg.on.s1 { background: var(--success); border-color: var(--success); }
+  .pf-seg.on.s2 { background: var(--accent); border-color: var(--accent); }
+  .pf-seg.on.s3 { background: var(--danger); border-color: var(--danger); }
+  .pf-seg .you { position: absolute; left: 50%; top: -18px; transform: translateX(-50%); font-size: 11px; font-weight: 700; white-space: nowrap; }
+  .pf-seg .you::after { content: '▼'; display: block; text-align: center; font-size: 9px; line-height: 9px; }
+  .pf-labels { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3px; max-width: 620px; font-size: 11px; color: var(--muted); }
+  .pf-labels span { text-align: center; }
+  .pf-labels span.on { color: var(--text); font-weight: 700; }
+  .pf-nums { display: flex; gap: 22px; flex-wrap: wrap; margin-top: 8px; font-size: 13px; }
+  .pf-nums b { font-size: 16px; }
   @media (max-width: 700px) { .pf-tbl { font-size: 13px; } .pf-tbl td, .pf-tbl th { padding: 6px 4px; } }
 </style>
 </head>
@@ -192,7 +208,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>QPUD</span>LISTER</div>
-    <div class="logo-sub"><span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v1</span></div>
+    <div class="logo-sub"><span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v2</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <a href="/">Home</a>
@@ -212,7 +228,8 @@
 <main>
   <div class="title-row"><div class="page-title">Performance</div>
     <button type="button" class="btn btn-secondary btn-sm" id="pf-refresh" onclick="load(true)">Refresh</button>
-    <a class="btn btn-secondary btn-sm" href="https://www.ebay.com/sh/performance/dashboard" target="_blank" rel="noopener">Seller dashboard on eBay</a></div>
+    <a class="btn btn-secondary btn-sm" href="https://sellerstandards.ebay.com/dashboard" target="_blank" rel="noopener">Seller level on eBay</a>
+    <a class="btn btn-secondary btn-sm" href="https://www.ebay.com/sh/performance/service-metrics" target="_blank" rel="noopener">Service metrics on eBay</a></div>   <!-- v2: the old dashboard link didn't open -->
   <div class="pf-note" id="pf-note">&nbsp;</div>
   <div class="error-box" id="pf-error" style="display:none"></div>
   <div id="pf-body"></div>
@@ -287,26 +304,39 @@ function render(d) {
   }
   h += '</div>';
   // ── service metrics ──
-  const svc = (key, title, help) => {
+  // v2: each category gets eBay's bar — Low · Average · High · Very high — with your spot marked, your rate and the average for similar sellers
+  const SEG = ['LOW', 'AVERAGE', 'HIGH', 'VERY_HIGH'], SEGN = ['Low', 'Average', 'High', 'Very high'];
+  const pct = (v) => v == null || isNaN(Number(v)) ? '—' : (Math.round(Number(v) * 100) / 100) + '%';
+  const svc = (key, title, help, link) => {
     const x = d.service && d.service[key];
     let s = '<div class="pf-sec"><h2>' + title + '</h2><div class="pf-help">' + help + '</div>';
     const err = d.errors && d.errors[key];
     if (!x) return s + '<div class="pf-sub">' + (err ? 'eBay didn’t send this: ' + esc(err) : 'Nothing to show — eBay only rates this once you have enough sales in a category.') + '</div></div>';
     const dims = x.dimensionMetrics || [];
-    if (x.evaluationCycle && (x.evaluationCycle.startDate || x.evaluationCycle.endDate)) s += '<div class="pf-sub" style="margin-bottom:8px">Period: ' + esc(dstr(x.evaluationCycle.startDate)) + ' – ' + esc(dstr(x.evaluationCycle.endDate)) + '</div>';
+    if (x.evaluationCycle && (x.evaluationCycle.startDate || x.evaluationCycle.endDate)) s += '<div class="pf-sub" style="margin-bottom:4px">Period: ' + esc(dstr(x.evaluationCycle.startDate)) + ' – ' + esc(dstr(x.evaluationCycle.endDate)) + '</div>';
     if (!dims.length) return s + '<div class="pf-sub">Nothing to show for this period.</div></div>';
-    s += '<table class="pf-tbl"><thead><tr><th>Category</th><th>Your numbers</th><th>Compared with similar sellers</th></tr></thead><tbody>';
     dims.forEach(dm => {
-      const dim = dm.dimension || {};
-      const ms = dm.metrics || [];
-      const rating = (ms.find(q => q.benchmark && q.benchmark.rating) || {}).benchmark;
-      s += '<tr><td class="pf-dim">' + esc(dim.name || dim.value || nice(dim.dimensionKey)) + '</td><td class="n">' +
-        ms.map(q => '<div>' + esc(nice(q.metricKey)) + ': <b>' + fmt(q.value, q.metricKey, '') + '</b></div>').join('') + '</td><td>' + (rating ? rtTag(rating.rating) : '<span class="pf-sub">—</span>') + '</td></tr>';
+      const dim = dm.dimension || {}, ms = dm.metrics || [];
+      const rate = ms.find(q => q.metricKey === 'RATE') || ms.find(q => q.benchmark) || {};
+      const bm = rate.benchmark || {}, avg = bm.metadata && bm.metadata.average;
+      const cnt = ms.find(q => q.metricKey === 'COUNT'), tx = ms.find(q => q.metricKey === 'TRANSACTION_COUNT');
+      const si = SEG.indexOf(bm.rating);
+      s += '<div class="pf-cat"><div class="pf-cat-top"><span class="pf-dim">' + esc(dim.name || dim.value || nice(dim.dimensionKey)) + '</span>' + (si < 0 && bm.rating ? '<span class="pf-sub">' + esc(bm.rating === 'NOT_APPLICABLE' ? 'Not rated — not enough sales yet' : nice(bm.rating)) + '</span>' : '') + '</div>';
+      if (si >= 0) {
+        s += '<div class="pf-bar">' + SEG.map((z, i) => '<div class="pf-seg s' + i + (i === si ? ' on' : '') + '">' + (i === si ? '<span class="you">You</span>' : '') + '</div>').join('') + '</div>' +
+             '<div class="pf-labels">' + SEGN.map((z, i) => '<span' + (i === si ? ' class="on"' : '') + '>' + z + '</span>').join('') + '</div>';
+      }
+      s += '<div class="pf-nums"><div>Your rate <b>' + pct(rate.value) + '</b></div>' + (avg != null ? '<div>Similar sellers <b>' + pct(avg) + '</b></div>' : '') +
+        (cnt && cnt.value != null ? '<div>Your cases <b>' + Number(cnt.value).toLocaleString() + '</b></div>' : '') +
+        (tx && tx.value != null ? '<div>Transactions <b>' + Number(tx.value).toLocaleString() + '</b></div>' : '') + '</div>';
+      const dist = cnt && cnt.distributions && cnt.distributions[0] && cnt.distributions[0].data;
+      if (dist && dist.length) s += '<div class="pf-sub" style="margin-top:6px">Reasons: ' + dist.filter(z => Number(z.value) > 0).map(z => esc(nice(z.name)) + ' ' + Number(z.value)).join(' · ') + '</div>';
+      s += '</div>';
     });
-    return s + '</tbody></table></div>';
+    return s + '</div>';
   };
-  h += svc('inad', 'Service: items not as described', 'Returns where the buyer said the item didn’t match the listing, by category, compared with sellers like you. “Very high” can mean extra fees or limits.');
-  h += svc('inr', 'Service: items not received', 'Buyers who said their item didn’t arrive, by category, compared with sellers like you.');
+  h += svc('inad', 'Service: items not as described', 'Returns where the buyer said the item didn’t match the listing, by category, compared with sellers like you. Low is best; “Very high” can mean extra fees or limits.');
+  h += svc('inr', 'Service: items not received', 'Buyers who said their item didn’t arrive, by shipping region, compared with sellers like you. Low is best.');
   $('pf-body').innerHTML = h;
 }
 load();
