@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>QPUD Lister Active v427</title>
+<title>QPUD Lister Active v428</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2064%2064%22%3E%3Crect%20width%3D%2264%22%20height%3D%2264%22%20rx%3D%2212%22%20fill%3D%22%23000%22/%3E%3Cpath%20fill%3D%22%230000FF%22%20d%3D%22M32.0%2052.25752919483712C34.71419791026429%2052.25752919483712%2037.28703134603565%2051.80516287645974%2039.63368162261831%2050.92870313460356L43.054701905347265%2055.0H52.073755377996314L45.74062692071297%2047.16840811309157C49.64228641671789%2043.49293177627535%2052.01720958819914%2037.92317148125384%2052.01720958819914%2030.657037492317144C52.01720958819914%2016.74677320221266%2043.28088506453595%209.0%2032.0%209.0C20.662569145666872%209.0%2011.926244622003688%2016.74677320221266%2011.926244622003688%2030.657037492317144C11.926244622003688%2044.482483097725876%2020.662569145666872%2052.25752919483712%2032.0%2052.25752919483712ZM28.946527350952675%2036.67916410571604%2034.00737553779963%2043.32329440688383C33.357098955132145%2043.43638598647818%2032.70682237246466%2043.49293177627535%2032.0%2043.49293177627535C25.86478180700676%2043.49293177627535%2022.132759680393363%2038.969268592501535%2022.132759680393363%2030.657037492317144C22.132759680393363%2022.316533497234172%2025.86478180700676%2017.76459741856177%2032.0%2017.76459741856177C38.10694529809465%2017.76459741856177%2041.83896742470805%2022.288260602335583%2041.83896742470805%2030.657037492317144C41.83896742470805%2034.55869698832206%2041.01905347264905%2037.640442532267976%2039.49231714812538%2039.78918254456054L37.03257529194837%2036.67916410571604Z%22/%3E%3C/svg%3E">   <!-- tab icon: style 2 Q, pure blue #0000FF, on black -->
 <style>/* QPUD Lister logo: QPUD in pure blue, LISTER in white, same letter style as the tab icon */ .logo, .auth-logo { font-family: 'Inter', 'Barlow Condensed', sans-serif !important; font-weight: 800 !important; letter-spacing: -0.5px !important; color: #fff !important; } .logo span, .auth-logo span { color: #0000FF !important; }</style>
 <!-- v387: click a listing → your own eBay-style view (big photos with arrows, price, shipping, condition, item specifics, description); sharper list photos; shipping on the rows when eBay gives it. -->
@@ -277,7 +277,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>QPUD</span>LISTER</div>
-    <div class="logo-sub"><span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v427</span></div>
+    <div class="logo-sub"><span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v428</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -424,6 +424,12 @@
     <div class="seg" role="group" aria-label="Trial view" style="margin-top:8px">
       <button type="button" id="yseg-active" aria-pressed="true" onclick="setYoloView('active')">Active</button>
       <button type="button" id="yseg-sold" aria-pressed="false" onclick="setYoloView('sold')">Sold</button>
+    </div>
+    <!-- v428: search, sort and refresh — same as Live listings -->
+    <div class="ll-bar" style="margin-top:8px">
+      <input type="search" id="yo-q" placeholder="Search title, SKU or item number" oninput="renderYolo()">
+      <select id="yo-sort" onchange="try{localStorage.setItem('plp_yo_sort',this.value)}catch(e){};renderYolo()"><option value="old">Oldest first</option><option value="new">Newest first</option><option value="hi">Price, high to low</option><option value="lo">Price, low to high</option></select>
+      <button type="button" class="btn btn-secondary btn-sm" onclick="loadYolo()">Refresh</button>
     </div>
     <div class="dr-note" id="yo-note">&nbsp;</div>
     <div class="error-box" id="yo-error" style="display:none"></div>
@@ -667,15 +673,29 @@ pageCache.rerun = () => { loadListings(false); loadDaily(false); };   // v380: f
     g('yseg-active').setAttribute('aria-pressed', yoView === 'active' ? 'true' : 'false'); g('yseg-sold').setAttribute('aria-pressed', yoView === 'sold' ? 'true' : 'false');
     renderYolo();
   };
+  // v428: search + sort for the Trial lists
+  try { const sv = localStorage.getItem('plp_yo_sort'); if (sv && document.getElementById('yo-sort')) document.getElementById('yo-sort').value = sv; } catch (e) { /* fine */ }
+  function yoPick(list, isSold) {
+    const q = ((g('yo-q') || {}).value || '').trim().toLowerCase(), so = (g('yo-sort') || {}).value || 'old';
+    let out = list.filter(x => !q || [x.title, x.sku, x.itemId].some(v => String(v || '').toLowerCase().includes(q)));
+    const when = x => new Date(isSold ? (x.soldAt || x.listedAt) : x.listedAt).getTime() || 0;
+    const price = x => Number(isSold ? (x.soldPrice != null ? x.soldPrice : x.yoloPrice) : x.yoloPrice) || 0;
+    const cmp = { old: (a, b) => when(a) - when(b), new: (a, b) => when(b) - when(a), hi: (a, b) => price(b) - price(a), lo: (a, b) => price(a) - price(b) }[so];
+    return cmp ? out.slice().sort(cmp) : out;
+  }
+  window.renderYolo = renderYolo; window.loadYolo = loadYolo;   // used by the search box and Refresh
   function renderYolo() {
-    const items = yoData.items || [], sold = yoData.sold || [];
+    const allItems = yoData.items || [], allSold = yoData.sold || [];
+    const items = yoPick(allItems, false), sold = yoPick(allSold, true);
+    const qOn = !!((g('yo-q') || {}).value || '').trim();
     setTimeout(() => fillPics(yoView === 'sold' ? sold : items, renderYolo), 0);
     const days = x => Math.floor((Date.now() - new Date(x.listedAt).getTime()) / 86400000);
     if (yoView === 'sold') {
-      const tot = sold.reduce((a, x) => a + (x.soldPrice != null ? x.soldPrice : x.yoloPrice), 0);
-      const extra = sold.reduce((a, x) => a + ((x.soldPrice != null ? x.soldPrice : x.yoloPrice) - x.normalPrice), 0);
-      g('yo-note').textContent = sold.length ? (sold.length + ' sold at trial prices · ' + money(tot) + ' total · ' + (extra >= 0 ? '+' : '−') + money(Math.abs(extra)) + ' over the regular prices') : '';
-      if (!sold.length) { g('yo-list').innerHTML = '<div class="dr-empty">Nothing sold at a trial price yet. Sold ones show up here by themselves.</div>'; return; }
+      const tot = allSold.reduce((a, x) => a + (x.soldPrice != null ? x.soldPrice : x.yoloPrice), 0);
+      const extra = allSold.reduce((a, x) => a + ((x.soldPrice != null ? x.soldPrice : x.yoloPrice) - x.normalPrice), 0);
+      g('yo-note').textContent = allSold.length ? (allSold.length + ' sold at trial prices · ' + money(tot) + ' total · ' + (extra >= 0 ? '+' : '−') + money(Math.abs(extra)) + ' over the regular prices') : '';
+      if (qOn) g('yo-note').textContent += ' · ' + sold.length + ' match' + (sold.length === 1 ? '' : 'es');
+      if (!sold.length) { g('yo-list').innerHTML = qOn ? '<div class="dr-empty">Nothing matches that search.</div>' : '<div class="dr-empty">Nothing sold at a trial price yet. Sold ones show up here by themselves.</div>'; return; }
       g('yo-list').innerHTML = sold.map((x, ix) => {
         const sp = x.soldPrice != null ? x.soldPrice : x.yoloPrice;
         const took = x.soldAt ? Math.max(0, Math.round((new Date(x.soldAt) - new Date(x.listedAt)) / 86400000)) : null;
@@ -686,8 +706,10 @@ pageCache.rerun = () => { loadListings(false); loadDaily(false); };   // v380: f
       }).join('');
       return;
     }
-    const old = items.filter(x => days(x) >= YO_DAYS).length;
-    g('yo-note').textContent = items.length ? (items.length + ' trial listing' + (items.length === 1 ? '' : 's') + (old ? ' · ' + old + ' past six months' : '')) : '';
+    const old = allItems.filter(x => days(x) >= YO_DAYS).length;
+    g('yo-note').textContent = allItems.length ? (allItems.length + ' trial listing' + (allItems.length === 1 ? '' : 's') + (old ? ' · ' + old + ' past six months' : '')) : '';
+    if (qOn) g('yo-note').textContent += ' · ' + items.length + ' match' + (items.length === 1 ? '' : 'es');
+    if (qOn && !items.length) { g('yo-list').innerHTML = '<div class="dr-empty">Nothing matches that search.</div>'; return; }
     if (!items.length) { g('yo-list').innerHTML = '<div class="dr-empty">No trial listings yet. In the Listing Tool, press <b>Trial</b> next to the price and type the trial price before you launch.</div>'; return; }
     g('yo-list').innerHTML = items.map((x, ix) => {
       const n = days(x), isOld = n >= YO_DAYS;
