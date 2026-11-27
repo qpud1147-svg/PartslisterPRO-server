@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QPUD Lister Performance v1</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2064%2064%22%3E%3Crect%20width%3D%2264%22%20height%3D%2264%22%20rx%3D%2212%22%20fill%3D%22%23000%22/%3E%3Cpath%20fill%3D%22%230000FF%22%20d%3D%22M32.0%2052.25752919483712C34.71419791026429%2052.25752919483712%2037.28703134603565%2051.80516287645974%2039.63368162261831%2050.92870313460356L43.054701905347265%2055.0H52.073755377996314L45.74062692071297%2047.16840811309157C49.64228641671789%2043.49293177627535%2052.01720958819914%2037.92317148125384%2052.01720958819914%2030.657037492317144C52.01720958819914%2016.74677320221266%2043.28088506453595%209.0%2032.0%209.0C20.662569145666872%209.0%2011.926244622003688%2016.74677320221266%2011.926244622003688%2030.657037492317144C11.926244622003688%2044.482483097725876%2020.662569145666872%2052.25752919483712%2032.0%2052.25752919483712ZM28.946527350952675%2036.67916410571604%2034.00737553779963%2043.32329440688383C33.357098955132145%2043.43638598647818%2032.70682237246466%2043.49293177627535%2032.0%2043.49293177627535C25.86478180700676%2043.49293177627535%2022.132759680393363%2038.969268592501535%2022.132759680393363%2030.657037492317144C22.132759680393363%2022.316533497234172%2025.86478180700676%2017.76459741856177%2032.0%2017.76459741856177C38.10694529809465%2017.76459741856177%2041.83896742470805%2022.288260602335583%2041.83896742470805%2030.657037492317144C41.83896742470805%2034.55869698832206%2041.01905347264905%2037.640442532267976%2039.49231714812538%2039.78918254456054L37.03257529194837%2036.67916410571604Z%22/%3E%3C/svg%3E">   <!-- tab icon: style 2 Q, pure blue #0000FF, on black -->
+<style>/* QPUD Lister logo: QPUD in pure blue, LISTER in white, same letter style as the tab icon */ .logo, .auth-logo { font-family: 'Inter', 'Barlow Condensed', sans-serif !important; font-weight: 800 !important; letter-spacing: -0.5px !important; color: #fff !important; } .logo span, .auth-logo span { color: #0000FF !important; }</style>
+<!-- v1: Performance page — your eBay seller standards (current + projected) and service metrics, from eBay's Analytics API. -->
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@400;500;600&family=Inter:wght@800&display=swap');
+
+  /* Same palette as the Sales page and the listing tool */
+  :root {
+    --bg: #0f0f0f;
+    --surface: #1a1a1a;
+    --surface2: #222222;
+    --border: #2e2e2e;
+    --accent: #f5a623;
+    --accent2: #e8912a;
+    --text: #e8e8e8;
+    --text2: #b8b8b8;
+    --muted: #888;
+    --success: #4caf82;
+    --danger: #e05252;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'Barlow', sans-serif; font-size: 14px; min-height: 100vh; }
+
+  /* HEADER — same as the Sales page */
+  header {
+    background: var(--surface); border-bottom: 2px solid var(--accent); padding: 0 24px;
+    display: flex; align-items: center; gap: 16px; height: 56px; position: sticky; top: 0; z-index: 10;
+  }
+  .logo-link { text-decoration: none; color: inherit; }
+  .logo { font-family: 'Barlow Condensed', sans-serif; font-size: 26px; font-weight: 900; letter-spacing: -0.5px; line-height: 1; }
+  .logo span { color: var(--accent); }
+  .logo-sub { font-family: 'Barlow Condensed', sans-serif; font-size: 12px; font-weight: 600; letter-spacing: 3px; color: var(--accent); text-transform: uppercase; margin-top: -2px; }
+  .page-tabs { display: flex; gap: 2px; margin-left: 12px; }
+  .page-tabs a {
+    font-family: 'Barlow Condensed', sans-serif; font-size: 15px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;
+    color: var(--muted); text-decoration: none; padding: 6px 12px; border-radius: 4px;
+  }
+  .page-tabs a:hover { color: var(--text); background: var(--surface2); }
+  .page-tabs a[aria-current="page"] { color: #000; background: var(--accent); }
+  .header-right { margin-left: auto; display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .who { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 260px; }
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 9px 18px; border-radius: 4px;
+    border: 1px solid transparent; cursor: pointer; font-family: 'Barlow Condensed', sans-serif; font-size: 14px; font-weight: 700;
+    letter-spacing: 1px; text-transform: uppercase; text-decoration: none; white-space: nowrap;
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
+  }
+  .btn-secondary { background: var(--surface2); color: var(--text); border-color: var(--border); }
+  .btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
+  .btn-sm { padding: 5px 12px; font-size: 12px; }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  main { max-width: 1200px; margin: 0 auto; padding: 24px 24px 48px; }
+  .page-title { font-family: 'Barlow Condensed', sans-serif; font-size: 30px; font-weight: 700; letter-spacing: 0.5px; margin-bottom: 4px; }
+  .page-note { color: var(--muted); font-size: 13px; margin-bottom: 18px; }
+  .page-note button { background: none; border: none; color: var(--accent); cursor: pointer; font: inherit; padding: 0; }
+  .page-note button:hover { text-decoration: underline; }
+  .page-note button:disabled { color: var(--muted); cursor: default; text-decoration: none; }
+
+  /* TILES — click a tile to open its page */
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 12px; }
+  .tile {
+    display: block; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 16px 18px;
+    min-width: 0; color: inherit; text-decoration: none; position: relative;
+  }
+  a.tile { transition: border-color 0.15s; }
+  a.tile:hover { border-color: var(--accent); }
+  a.tile::after { content: '→'; position: absolute; top: 14px; right: 16px; color: var(--muted); font-size: 14px; }
+  a.tile:hover::after { color: var(--accent); }
+  .tile-label { font-size: 12px; color: var(--muted); margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 18px; }
+  .tile-value { font-family: 'Barlow Condensed', sans-serif; font-size: 40px; font-weight: 700; line-height: 1.05; color: var(--text); white-space: nowrap; }
+  .tile-value.accent { color: var(--accent); }
+  .tile-sub { font-size: 12px; color: var(--muted); margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tile.status { border-left-width: 3px; }
+  .tile.status.ok { border-left-color: var(--success); }
+  .tile.status.bad { border-left-color: var(--danger); background: rgba(224,82,82,0.06); }
+  .tile.status.bad .tile-value { color: var(--danger); }
+  .status-tag { display: inline-block; font-family: 'Barlow Condensed', sans-serif; font-size: 12px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; margin-left: 8px; vertical-align: 10px; }
+  .tile.status.ok .status-tag { color: var(--success); }
+  .tile.status.bad .status-tag { color: var(--danger); }
+
+  .section-title {
+    font-family: 'Barlow Condensed', sans-serif; font-size: 12px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase;
+    color: var(--muted); padding-bottom: 8px; border-bottom: 1px solid var(--border); margin: 24px 0 12px;
+  }
+  .soon-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+  .soon { background: var(--surface); border: 1px dashed var(--border); border-radius: 6px; padding: 14px 16px; }
+  .soon h3 { font-family: 'Barlow Condensed', sans-serif; font-size: 17px; font-weight: 700; letter-spacing: 0.5px; margin-bottom: 4px; }
+  .soon p { color: var(--muted); font-size: 12px; line-height: 1.45; }
+  .error-box { background: rgba(224,82,82,0.08); border: 1px solid rgba(224,82,82,0.4); color: #f0a0a0; border-radius: 6px; padding: 10px 12px; font-size: 13px; line-height: 1.5; margin-bottom: 12px; display: none; }
+
+  /* v374: LISTINGS PER DAY — same look as the Sales chart */
+  :root { --grid: #2a2a2a; --bar-dim: #7a5a24; }
+  .chart-card { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 16px 18px 10px; margin-bottom: 12px; }
+  .chart-top { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+  .chart-top h2 { font-family: 'Barlow Condensed', sans-serif; font-size: 20px; font-weight: 700; letter-spacing: 0.5px; }
+  .range-picker { margin-left: auto; display: inline-flex; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 3px; gap: 2px; }
+  .range-picker button { background: none; border: none; color: var(--muted); font-family: 'Barlow Condensed', sans-serif; font-size: 14px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; padding: 6px 12px; border-radius: 4px; cursor: pointer; }
+  .range-picker button:hover { color: var(--text); }
+  .range-picker button[aria-pressed="true"] { background: var(--accent); color: #000; }
+  .lstats { display: flex; gap: 28px; flex-wrap: wrap; margin-bottom: 8px; }
+  .lstat .v { font-family: 'Barlow Condensed', sans-serif; font-size: 30px; font-weight: 700; line-height: 1.05; }
+  .lstat .v.accent { color: var(--accent); }
+  .lstat .k { font-size: 12px; color: var(--muted); }
+  .chart-note { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+  #lchart-wrap { position: relative; height: 300px; }
+  #lchart { display: block; width: 100%; height: 100%; touch-action: pan-y; }
+  #lchart .gridline { stroke: var(--grid); stroke-width: 1; shape-rendering: crispEdges; }
+  #lchart .baseline { stroke: #3a3a3a; stroke-width: 1; shape-rendering: crispEdges; }
+  #lchart .tick { fill: var(--muted); font-family: 'Barlow', sans-serif; font-size: 11px; }
+  #lchart .bar { fill: var(--accent); }
+  #lchart.hovering .bar { fill: var(--bar-dim); }
+  #lchart.hovering .bar.active { fill: var(--accent); }
+  #lchart .avgline { stroke: var(--text2); stroke-width: 1; stroke-dasharray: 4 4; }
+  .tooltip { position: absolute; pointer-events: none; background: #0b0b0b; border: 1px solid #3a3a3a; border-radius: 6px; padding: 8px 12px; font-size: 12px; color: var(--text2); white-space: nowrap; opacity: 0; transform: translate(-50%, -100%); z-index: 5; box-shadow: 0 6px 20px rgba(0,0,0,0.5); }
+  .tooltip.show { opacity: 1; }
+  .tooltip .tt-value { display: block; font-family: 'Barlow Condensed', sans-serif; font-size: 22px; font-weight: 700; color: var(--text); line-height: 1.1; }
+  @media (max-width: 700px) { .range-picker { margin-left: 0; } .range-picker button { padding: 6px 9px; font-size: 13px; } #lchart-wrap { height: 230px; } .lstats { gap: 18px; } .lstat .v { font-size: 26px; } }
+
+  /* v382: the same "eBay · updated … · ↻" box as the Sales page */
+  .title-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
+  .title-row .page-title { margin-bottom: 0; }
+  .sample-badge { font-family: 'Barlow Condensed', sans-serif; font-size: 11px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--text); border: 1px solid var(--border); background: var(--surface2); border-radius: 3px; padding: 3px 8px; cursor: pointer; }
+  .sample-badge:hover { border-color: var(--accent); }
+  .sample-badge:disabled { cursor: default; }
+  .sample-badge .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--success); margin-right: 6px; vertical-align: 1px; }
+  .sample-badge.warn .dot { background: var(--danger); }
+  .sample-badge.busy .dot { background: var(--accent); animation: pulse 1s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: 0.3; } }
+
+  #loading { position: fixed; inset: 0; background: var(--bg); z-index: 100; display: flex; align-items: center; justify-content: center; color: var(--muted); font-family: 'Barlow Condensed', sans-serif; letter-spacing: 2px; text-transform: uppercase; }
+  #loading.hidden { display: none; }
+
+  @media (max-width: 1000px) { .grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 700px) {
+    header { padding: 0 12px; gap: 8px; }
+    .who, .header-wide { display: none !important; }
+    .header-right { gap: 6px; }
+    .header-right .btn-sm { padding: 5px 8px; font-size: 11px; letter-spacing: 0.5px; }
+    .page-tabs { margin-left: 4px; }
+    .page-tabs a { padding: 5px 7px; font-size: 13px; letter-spacing: 0.5px; }
+    .page-tabs { overflow-x: auto; scrollbar-width: none; flex-shrink: 1; min-width: 0; }   /* v319: 5 tabs — slide sideways if needed */
+    .page-tabs a { padding: 5px 6px; font-size: 12px; flex-shrink: 0; }
+    .logo { font-size: 20px; }
+    main { padding: 16px 16px 40px; }
+    .grid { grid-template-columns: 1fr; }
+    .tile-value { font-size: 34px; }
+  }
+  .dr-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 14px; margin-top: 16px; }
+  .dr { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; overflow: hidden; display: flex; flex-direction: column; }
+  .dr-img { aspect-ratio: 4/3; background: var(--surface2); display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 12px; overflow: hidden; }
+  .dr-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .dr-body { padding: 10px 12px; flex: 1; }
+  .dr-title { font-weight: 600; font-size: 14px; line-height: 1.3; word-break: break-word; }
+  .dr-meta { color: var(--muted); font-size: 12px; margin-top: 4px; }
+  .dr-price { color: var(--accent); font-weight: 700; }
+  .dr-btns { display: flex; gap: 6px; padding: 0 12px 12px; flex-wrap: wrap; }
+  .dr-btns .btn { flex: 1; text-align: center; justify-content: center; }
+  .dr-note { color: var(--muted); font-size: 13px; margin-top: 6px; }
+  .dr-empty { color: var(--muted); padding: 40px 0; text-align: center; }
+
+  /* v1: performance page */
+  .pf-sec { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 16px 18px; margin-bottom: 14px; }
+  .pf-sec h2 { font-family: 'Barlow Condensed', sans-serif; font-size: 20px; font-weight: 700; letter-spacing: .5px; margin-bottom: 4px; }
+  .pf-help { font-size: 12px; color: var(--muted); margin-bottom: 12px; }
+  .pf-levels { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 14px; }
+  .pf-lv { flex: 1; min-width: 220px; background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: 12px 14px; }
+  .pf-lv .k { font-size: 12px; color: var(--muted); }
+  .pf-lv .v { font-family: 'Barlow Condensed', sans-serif; font-size: 28px; font-weight: 700; line-height: 1.1; margin-top: 2px; }
+  .pf-tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .pf-tbl th { text-align: left; font-size: 11px; letter-spacing: .5px; text-transform: uppercase; color: var(--muted); font-weight: 600; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+  .pf-tbl td { padding: 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  .pf-tbl td.n { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .pf-tag { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+  .pf-good { background: rgba(76,175,130,.15); color: var(--success); }
+  .pf-ok { background: rgba(245,166,35,.15); color: var(--accent); }
+  .pf-bad { background: rgba(224,82,82,.15); color: var(--danger); }
+  .pf-dim { font-weight: 600; }
+  .pf-sub { font-size: 12px; color: var(--muted); }
+  .pf-note { font-size: 13px; color: var(--muted); margin: 6px 0 14px; }
+  @media (max-width: 700px) { .pf-tbl { font-size: 13px; } .pf-tbl td, .pf-tbl th { padding: 6px 4px; } }
+</style>
+</head>
+<body>
+<div id="loading">Loading…</div>
+<header>
+  <a href="/" class="logo-link" title="Home">
+    <div class="logo"><span>QPUD</span>LISTER</div>
+    <div class="logo-sub"><span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v1</span></div>
+  </a>
+  <nav class="page-tabs" aria-label="Pages">
+    <a href="/">Home</a>
+    <a href="/sales">Sales</a>
+    <a href="/orders">Orders</a>
+    <a href="/messages">Messages</a>
+    <a href="/returns">Returns</a>
+    <a href="/active">Active</a>
+    <a href="/list" title="Open the Listing Tool">Listings</a>
+    <a href="/performance" aria-current="page">Performance</a>
+  </nav>
+  <div class="header-right">
+    <span class="who" id="who"></span>
+    <a href="/sales?settings=1" class="btn btn-secondary btn-sm" title="Settings (Log Out is in there)" aria-label="Settings">⚙</a>
+  </div>
+</header>
+<main>
+  <div class="title-row"><div class="page-title">Performance</div>
+    <button type="button" class="btn btn-secondary btn-sm" id="pf-refresh" onclick="load(true)">Refresh</button>
+    <a class="btn btn-secondary btn-sm" href="https://www.ebay.com/sh/performance/dashboard" target="_blank" rel="noopener">Seller dashboard on eBay</a></div>
+  <div class="pf-note" id="pf-note">&nbsp;</div>
+  <div class="error-box" id="pf-error" style="display:none"></div>
+  <div id="pf-body"></div>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function fail(msg) { const e = $('pf-error'); e.textContent = msg; e.style.display = 'block'; }
+const LEVEL = { TOP_RATED: ['Top Rated', 'pf-good'], ABOVE_STANDARD: ['Above Standard', 'pf-good'], BELOW_STANDARD: ['Below Standard', 'pf-bad'] };
+const lvTag = (l) => { const x = LEVEL[l] || [nice(l), 'pf-ok']; return '<span class="pf-tag ' + x[1] + '">' + esc(x[0]) + '</span>'; };
+const RATING = { LOW: ['Low', 'pf-good'], AVERAGE: ['Average', 'pf-good'], HIGH: ['High', 'pf-ok'], VERY_HIGH: ['Very high', 'pf-bad'] };
+const rtTag = (r) => { if (!r) return ''; const x = RATING[r] || [nice(r), 'pf-ok']; return '<span class="pf-tag ' + x[1] + '">' + esc(x[0]) + '</span>'; };
+function nice(s) { return String(s || '').toLowerCase().replace(/_/g, ' ').replace(/^./, c => c.toUpperCase()); }
+const dstr = (v) => { const t = new Date(v); return isNaN(t) ? '' : t.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }); };
+// eBay sends values as a number, a true/false, an amount {value, currency} or a fraction — shown as plainly as possible
+function fmt(v, key, type) {
+  if (v == null || v === '') return '—';
+  if (typeof v === 'boolean') return v ? 'Yes' : 'No';
+  if (typeof v === 'object') {
+    if (v.numerator != null && v.denominator != null) { const n = +v.numerator, d = +v.denominator; return (d ? (n / d * 100).toFixed(2) : '0.00') + '% <span class="pf-sub">(' + n + ' of ' + d + ')</span>'; }
+    if (v.value != null) return (v.currency === 'USD' ? '$' : '') + fmt(v.value, key, type) + (v.currency && v.currency !== 'USD' ? ' ' + esc(v.currency) : '');
+    return esc(JSON.stringify(v));
+  }
+  const n = Number(v); if (isNaN(n)) return esc(v);
+  if (/RATE/i.test(key || '') || /PERCENT/i.test(type || '')) return (Math.round(n * 100) / 100) + '%';
+  return n.toLocaleString();
+}
+async function load(force) {
+  const btn = $('pf-refresh'); if (force) { btn.disabled = true; btn.textContent = 'Checking eBay…'; }
+  $('pf-error').style.display = 'none';
+  try {
+    const m = await fetch('/api/me');
+    if (m.status === 401) { location.href = '/sales?next=' + encodeURIComponent(location.pathname); return; }
+    if (m.ok) { const me = await m.json(); $('who').textContent = String(me.email || '').split('@')[0] + (me.isAdmin ? '  · admin' : ''); }
+    const r = await fetch('/api/performance' + (force ? '?refresh=1' : ''));
+    if (r.status === 404) { fail('The server is out of date — upload the newest server.js to Railway.'); return; }
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { fail(d.error || ('Could not load your performance (server problem ' + r.status + ').')); return; }
+    render(d);
+  } catch (e) { fail('Could not load your performance — check your connection and reload.'); }
+  finally { $('loading').classList.add('hidden'); if (force) { btn.disabled = false; btn.textContent = 'Refresh'; } }
+}
+function render(d) {
+  if (!d.connected) { $('pf-note').textContent = ''; $('pf-body').innerHTML = '<div class="pf-sec">Connect eBay first (Settings → Account).</div>'; return; }
+  if (d.needScope) { $('pf-note').textContent = ''; $('pf-body').innerHTML = '<div class="pf-sec">Your eBay connection doesn’t include <b>Seller metrics &amp; standing</b> yet. In Settings → Account, click <b>Reconnect eBay</b> and approve it.</div>'; return; }
+  $('pf-note').textContent = 'From eBay · checked ' + (d.at ? new Date(d.at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '') + (d.stale ? ' (eBay didn’t answer just now — showing the last copy)' : '') + ' · updates every 30 minutes';
+  let h = '';
+  // ── seller standards ──
+  const ps = d.profiles || [];
+  const prog = (ps.find(p => p.defaultProgram) || ps.find(p => p.program === 'PROGRAM_US') || ps[0] || {}).program;
+  const cyc = (t) => ps.find(p => p.program === prog && p.cycle && p.cycle.cycleType === t);
+  const cur = cyc('CURRENT'), pro = cyc('PROJECTED');
+  h += '<div class="pf-sec"><h2>Seller level</h2><div class="pf-help">eBay rates you once a month (around the 20th) on the last 12 months, or the last 3 months if you sell a lot. “Projected” is where you’re heading for the next rating.</div>';
+  if (!cur && !pro) h += '<div class="pf-sub">' + (d.errors && d.errors.standards ? 'eBay didn’t send your seller level: ' + esc(d.errors.standards) : 'eBay didn’t send a seller level.') + '</div>';
+  else {
+    h += '<div class="pf-levels">' + [[cur, 'Current'], [pro, 'Projected']].filter(x => x[0]).map(([p, t]) =>
+      '<div class="pf-lv"><div class="k">' + t + (p.cycle && (p.cycle.evaluationDate || p.cycle.evaluationMonth) ? ' · ' + esc(p.cycle.evaluationDate ? dstr(p.cycle.evaluationDate) : p.cycle.evaluationMonth) : '') + '</div><div class="v">' + lvTag(p.standardsLevel).replace('class="pf-tag', 'style="font-size:20px;padding:4px 12px" class="pf-tag') + '</div>' +
+      (p.evaluationReason ? '<div class="pf-sub" style="margin-top:4px">' + esc(p.evaluationReason) + '</div>' : '') + '</div>').join('') + '</div>';
+    const base = cur || pro, other = base === cur ? pro : null;
+    const metrics = base.metrics || [];
+    if (metrics.length) {
+      h += '<table class="pf-tbl"><thead><tr><th>Metric</th><th>You (current)</th>' + (other ? '<th>You (projected)</th>' : '') + '<th>eBay’s limit</th><th>Level</th></tr></thead><tbody>';
+      metrics.forEach(mt => {
+        const om = other && (other.metrics || []).find(x => x.metricKey === mt.metricKey);
+        const lim = mt.thresholdUpperBound != null ? 'at most ' + fmt(mt.thresholdUpperBound, mt.metricKey, mt.type) : mt.thresholdLowerBound != null ? 'at least ' + fmt(mt.thresholdLowerBound, mt.metricKey, mt.type) : '—';
+        const lb = mt.lookbackStartDate && mt.lookbackEndDate ? '<div class="pf-sub">' + esc(dstr(mt.lookbackStartDate)) + ' – ' + esc(dstr(mt.lookbackEndDate)) + '</div>' : '';
+        h += '<tr><td>' + esc(mt.name || nice(mt.metricKey)) + lb + '</td><td class="n">' + fmt(mt.value, mt.metricKey, mt.type) + '</td>' + (other ? '<td class="n">' + (om ? fmt(om.value, om.metricKey, om.type) : '—') + '</td>' : '') +
+          '<td class="n">' + lim + '</td><td>' + (mt.level ? lvTag(mt.level) : '') + '</td></tr>';
+      });
+      h += '</tbody></table>';
+    }
+  }
+  h += '</div>';
+  // ── service metrics ──
+  const svc = (key, title, help) => {
+    const x = d.service && d.service[key];
+    let s = '<div class="pf-sec"><h2>' + title + '</h2><div class="pf-help">' + help + '</div>';
+    const err = d.errors && d.errors[key];
+    if (!x) return s + '<div class="pf-sub">' + (err ? 'eBay didn’t send this: ' + esc(err) : 'Nothing to show — eBay only rates this once you have enough sales in a category.') + '</div></div>';
+    const dims = x.dimensionMetrics || [];
+    if (x.evaluationCycle && (x.evaluationCycle.startDate || x.evaluationCycle.endDate)) s += '<div class="pf-sub" style="margin-bottom:8px">Period: ' + esc(dstr(x.evaluationCycle.startDate)) + ' – ' + esc(dstr(x.evaluationCycle.endDate)) + '</div>';
+    if (!dims.length) return s + '<div class="pf-sub">Nothing to show for this period.</div></div>';
+    s += '<table class="pf-tbl"><thead><tr><th>Category</th><th>Your numbers</th><th>Compared with similar sellers</th></tr></thead><tbody>';
+    dims.forEach(dm => {
+      const dim = dm.dimension || {};
+      const ms = dm.metrics || [];
+      const rating = (ms.find(q => q.benchmark && q.benchmark.rating) || {}).benchmark;
+      s += '<tr><td class="pf-dim">' + esc(dim.name || dim.value || nice(dim.dimensionKey)) + '</td><td class="n">' +
+        ms.map(q => '<div>' + esc(nice(q.metricKey)) + ': <b>' + fmt(q.value, q.metricKey, '') + '</b></div>').join('') + '</td><td>' + (rating ? rtTag(rating.rating) : '<span class="pf-sub">—</span>') + '</td></tr>';
+    });
+    return s + '</tbody></table></div>';
+  };
+  h += svc('inad', 'Service: items not as described', 'Returns where the buyer said the item didn’t match the listing, by category, compared with sellers like you. “Very high” can mean extra fees or limits.');
+  h += svc('inr', 'Service: items not received', 'Buyers who said their item didn’t arrive, by category, compared with sellers like you.');
+  $('pf-body').innerHTML = h;
+}
+load();
+</script>
+</body>
+</html>

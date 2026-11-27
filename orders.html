@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>QPUD Lister Orders v450</title>
+<title>QPUD Lister Orders v451</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2064%2064%22%3E%3Crect%20width%3D%2264%22%20height%3D%2264%22%20rx%3D%2212%22%20fill%3D%22%23000%22/%3E%3Cpath%20fill%3D%22%230000FF%22%20d%3D%22M32.0%2052.25752919483712C34.71419791026429%2052.25752919483712%2037.28703134603565%2051.80516287645974%2039.63368162261831%2050.92870313460356L43.054701905347265%2055.0H52.073755377996314L45.74062692071297%2047.16840811309157C49.64228641671789%2043.49293177627535%2052.01720958819914%2037.92317148125384%2052.01720958819914%2030.657037492317144C52.01720958819914%2016.74677320221266%2043.28088506453595%209.0%2032.0%209.0C20.662569145666872%209.0%2011.926244622003688%2016.74677320221266%2011.926244622003688%2030.657037492317144C11.926244622003688%2044.482483097725876%2020.662569145666872%2052.25752919483712%2032.0%2052.25752919483712ZM28.946527350952675%2036.67916410571604%2034.00737553779963%2043.32329440688383C33.357098955132145%2043.43638598647818%2032.70682237246466%2043.49293177627535%2032.0%2043.49293177627535C25.86478180700676%2043.49293177627535%2022.132759680393363%2038.969268592501535%2022.132759680393363%2030.657037492317144C22.132759680393363%2022.316533497234172%2025.86478180700676%2017.76459741856177%2032.0%2017.76459741856177C38.10694529809465%2017.76459741856177%2041.83896742470805%2022.288260602335583%2041.83896742470805%2030.657037492317144C41.83896742470805%2034.55869698832206%2041.01905347264905%2037.640442532267976%2039.49231714812538%2039.78918254456054L37.03257529194837%2036.67916410571604Z%22/%3E%3C/svg%3E">   <!-- tab icon: style 2 Q, pure blue #0000FF, on black -->
 <style>/* QPUD Lister logo: QPUD in pure blue, LISTER in white, same letter style as the tab icon */ .logo, .auth-logo { font-family: 'Inter', 'Barlow Condensed', sans-serif !important; font-weight: 800 !important; letter-spacing: -0.5px !important; color: #fff !important; } .logo span, .auth-logo span { color: #0000FF !important; }</style>
 <!-- v382: switching views is instant; browser reload / Refresh really reloads. v381: no sign-in flash; the other pages load in the background. v380: comes back instantly — shows what this page loaded last time, then quietly updates from eBay (kept in this browser tab only). -->
@@ -293,7 +293,7 @@
 <header>
   <a href="/" class="logo-link" title="Home">
     <div class="logo"><span>QPUD</span>LISTER</div>
-    <div class="logo-sub"><span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v450</span></div>
+    <div class="logo-sub"><span style="font-size:9px;opacity:0.6;font-weight:400;letter-spacing:0.5px;">v451</span></div>
   </a>
   <nav class="page-tabs" aria-label="Pages">
     <!-- v318: was Home / Sales / Listings (the active page)
@@ -308,12 +308,13 @@
     <a href="/returns">Returns</a>   <!-- v324 -->
     <a href="/active">Active</a>
     <a href="/list" title="Open the Listing Tool">Listings</a>   <!-- v318: the Listing Tool -->
+    <a href="/performance">Performance</a>   <!-- v1 page -->
   </nav>
   <div class="header-right">
     <span class="who" id="who"></span>
     <!-- <a href="/list" class="btn btn-secondary btn-sm header-wide">Listing Tool →</a>   v318: now the Listings tab -->
     <a href="/sales?settings=1" class="btn btn-secondary btn-sm" title="Settings" aria-label="Settings">⚙</a>
-    <button class="btn btn-secondary btn-sm header-wide" onclick="logout()">Log Out</button>
+    <!-- Log Out is in Settings (⚙) -->
   </div>
 </header>
 
@@ -450,7 +451,7 @@ async function logout() {
 async function loadMe() {
   const me = await getJSON('/api/me');
   if (!me || me._signedOut) { location.href = '/sales?next=' + encodeURIComponent(location.pathname); return null; }
-  setText('who', me.email + (me.isAdmin ? '  · admin' : ''));
+  setText('who', String(me.email || '').split('@')[0] + (me.isAdmin ? '  · admin' : ''));   // just the name part
   return me;
 }
 

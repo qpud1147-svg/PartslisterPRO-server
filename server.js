@@ -1,4 +1,6 @@
-// QPUD Lister server — v510
+// QPUD Lister server — v511
+// v511: Performance page (/performance, performance.html) + GET /api/performance — seller standards (current + projected) and
+//       service metrics (not as described / not received) from eBay's Analytics API; cached 30 min.
 // v510: feedback by kind (Positive / Neutral / Negative) also pages 50 at a time (Show more), within the last 12 months.
 // v509: feedback shows the buyer's full eBay username (it's your own page — no masking).
 // v508: /api/feedback — the default list is really just the latest 3 (eBay sends 25 at least); type=All&page=N = all feedback, 50 a page.
@@ -6354,6 +6356,41 @@ function returnEstimate(d) {
 }
 // v370: eBay's money records for one order — the sale's fees and any refunds with their fee credit.
 // Only amounts, dates and status are kept (no buyer details). Asked live, cached 2 minutes.
+// v511: seller performance for the Performance page — eBay Analytics API (seller standards + service metrics)
+const ANALYTICS_SCOPE = 'https://api.ebay.com/oauth/api_scope/sell.analytics.readonly';
+const perfCache = new Map();
+app.get('/api/performance', requireUser, async (req, res) => {
+  const uid = req.user.id, c = perfCache.get(uid);
+  if (c && req.query.refresh !== '1' && Date.now() - c.at < 30 * 60000) return res.json(c.data);
+  try {
+    const conn = await getConnection(uid);
+    if (!conn || !conn.refresh_enc) return res.json({ connected: false });
+    if (!hasScope(conn, ANALYTICS_SCOPE)) return res.json({ connected: true, needScope: true });
+    const token = await getAccessToken(uid);
+    const get = async (path) => {
+      const r = await fetch(EBAY_API_HOST + '/sell/analytics/v1' + path, { headers: { 'Authorization': 'Bearer ' + token, 'Accept': 'application/json' }, signal: AbortSignal.timeout(25000) });
+      if (r.status === 204) return null;
+      const t = await r.text(); let d = null; try { d = JSON.parse(t); } catch (e) { /* not JSON */ }
+      if (!r.ok) throw new Error((d && d.errors && d.errors.map(e => e.longMessage || e.message).join('; ')) || ('HTTP ' + r.status));
+      return d;
+    };
+    const errors = {};
+    const safe = (k, pr) => pr.catch(e => { errors[k] = e.message; return null; });
+    const [std, inad, inr] = await Promise.all([
+      safe('standards', get('/seller_standards_profile')),
+      safe('inad', get('/customer_service_metric/ITEM_NOT_AS_DESCRIBED/CURRENT?evaluation_marketplace_id=EBAY_US')),
+      safe('inr', get('/customer_service_metric/ITEM_NOT_RECEIVED/CURRENT?evaluation_marketplace_id=EBAY_US'))
+    ]);
+    const data = { connected: true, profiles: (std && std.standardsProfiles) || [], service: { inad, inr }, errors, at: new Date().toISOString() };
+    perfCache.set(uid, { at: Date.now(), data });
+    res.json(data);
+  } catch (e) {
+    console.error('[performance]', e.message);
+    if (c) return res.json(Object.assign({}, c.data, { stale: true }));
+    res.status(502).json({ error: 'eBay didn’t send your performance: ' + e.message });
+  }
+});
+
 // v507: your money on eBay for the Home page
 const fundsCache = new Map();
 app.get('/api/funds', requireUser, async (req, res) => {
@@ -6687,9 +6724,9 @@ app.post('/api/returns/cancel/:id/decline', requireUser, express.json(), async (
 
 // ─── v327: DIAGNOSTICS (admin) ───────────────────────────────────────────────
 // One place to see what's working, what isn't, and what to do about it.
-const PAGE_FILES = ['home.html', 'dashboard.html', 'orders.html', 'messages.html', 'messages-classic.html', 'returns.html', 'active.html', 'drafts.html', 'index.html', 'diagnostics.html'];   // v422: + drafts.html
+const PAGE_FILES = ['home.html', 'dashboard.html', 'orders.html', 'messages.html', 'messages-classic.html', 'returns.html', 'active.html', 'drafts.html', 'performance.html', 'index.html', 'diagnostics.html'];   // v511: + performance.html   // v422: + drafts.html
 const PAGE_NAMES = { 'home.html': 'Home', 'dashboard.html': 'Sales', 'orders.html': 'Orders', 'messages.html': 'Messages', 'messages-classic.html': 'Messages (classic)',
-  'returns.html': 'Returns', 'active.html': 'Active', 'drafts.html': 'Drafts', 'index.html': 'Listing Tool', 'diagnostics.html': 'Diagnostics' };
+  'returns.html': 'Returns', 'active.html': 'Active', 'drafts.html': 'Drafts', 'performance.html': 'Performance', 'index.html': 'Listing Tool', 'diagnostics.html': 'Diagnostics' };
 function fileVersion(file) {
   try {
     const head = fs.readFileSync(path.join(__dirname, file), 'utf8').slice(0, 3000);
@@ -7109,6 +7146,7 @@ const MESSAGES_CLASSIC = path.join(__dirname, 'messages-classic.html');   // v32
 const RETURNS = path.join(__dirname, 'returns.html');      // v324
 const DRAFTS_PAGE = path.join(__dirname, 'drafts.html');      // v422
 const DIAGNOSTICS = path.join(__dirname, 'diagnostics.html');   // v327
+const PERFORMANCE = path.join(__dirname, 'performance.html');   // v511
 
 // app.get('/', (req, res) => res.sendFile(DASHBOARD));
 // v316: Home is the landing page; the sales dashboard is /sales
@@ -7120,6 +7158,7 @@ app.get(['/orders', '/orders/'], (req, res) => res.sendFile(ORDERS));           
 app.get(['/messages', '/messages/'], (req, res) => res.sendFile(MESSAGES));               // v321
 app.get(['/messages/classic'], (req, res) => res.sendFile(MESSAGES_CLASSIC));             // v322
 app.get(['/drafts', '/drafts/'], (req, res) => res.sendFile(DRAFTS_PAGE));                   // v422
+app.get(['/performance', '/performance/'], (req, res) => res.sendFile(PERFORMANCE));          // v511
 app.get(['/returns', '/returns/'], (req, res) => res.sendFile(RETURNS));                  // v324
 app.get(['/returns.html'], (req, res) => res.redirect(301, '/returns'));                  // v324
 app.get(['/diagnostics', '/diagnostics/'], (req, res) => res.sendFile(DIAGNOSTICS));      // v327 (the page itself checks you're the admin)
@@ -7175,5 +7214,5 @@ setupDatabase()
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v426 listening on ' + PORT)))   // v427
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v427 listening on ' + PORT)))   // v428
   // .then(() => app.listen(PORT, () => console.log('PartsLister Pro v428 listening on ' + PORT)))   // v429
-  .then(() => app.listen(PORT, () => console.log('QPUD Lister v510 listening on ' + PORT)))
+  .then(() => app.listen(PORT, () => console.log('QPUD Lister v511 listening on ' + PORT)))
   .catch((e) => { console.error('Database setup failed:', e); process.exit(1); });
